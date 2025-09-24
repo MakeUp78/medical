@@ -23,11 +23,16 @@ class VideoAnalyzer:
         self.frame_callback = None
         self.preview_callback = None  # Callback per l'anteprima video
         self.completion_callback = None  # Callback per notificare la fine dell'analisi
+        self.debug_callback = None  # Callback per debug logs
+
+        # Contatori per frame processing
+        self.frame_counter = 0  # Contatore totale frame processati
+        self.best_frame_number = 0  # Numero del miglior frame
 
         # Parametri di analisi
         self.min_face_size = 100  # Dimensione minima del volto in pixel
         self.analysis_interval = 0.1  # Intervallo di analisi in secondi
-        self.capture_duration = 30.0  # Aumentato a 30 secondi
+        self.capture_duration = None  # RIMOSSO LIMITE DI DURATA
         self.preview_interval = 0.033  # ~30 FPS per l'anteprima
 
     def set_frame_callback(self, callback: Callable[[np.ndarray, float], None]):
@@ -41,6 +46,10 @@ class VideoAnalyzer:
     def set_completion_callback(self, callback: Callable[[], None]):
         """Imposta la callback per notificare il completamento dell'analisi."""
         self.completion_callback = callback
+
+    def set_debug_callback(self, callback: Callable[[str, dict], None]):
+        """Imposta la callback per i debug logs."""
+        self.debug_callback = callback
 
     def start_camera_capture(self, camera_index: int = 0) -> bool:
         """
@@ -153,6 +162,8 @@ class VideoAnalyzer:
         self.best_frame = None
         self.best_landmarks = None
         self.best_score = 0.0
+        self.frame_counter = 0  # Reset contatore frame
+        self.best_frame_number = 0  # Reset numero miglior frame
 
         # Avvia il thread di analisi
         analysis_thread = threading.Thread(target=self._analysis_loop)
@@ -167,11 +178,13 @@ class VideoAnalyzer:
         last_analysis = 0
         last_preview = 0
 
-        while self.is_capturing and (time.time() - start_time) < self.capture_duration:
+        # MODALITÀ ILLIMITATA: rimosso limite di durata
+        while self.is_capturing:
             ret, frame = self.capture.read()
             if not ret:
                 break
 
+            self.frame_counter += 1  # Incrementa contatore frame
             self.current_frame = frame.copy()
             current_time = time.time()
 
@@ -194,6 +207,49 @@ class VideoAnalyzer:
                     self.best_frame = frame.copy()
                     self.best_landmarks = landmarks
                     self.best_score = frontal_score
+                    self.best_frame_number = self.frame_counter  # Salva numero frame
+
+                    # Debug callback per il nuovo miglior frame
+                    if self.debug_callback:
+                        try:
+                            from src.utils import get_advanced_orientation_score
+
+                            image_size = (frame.shape[1], frame.shape[0])
+                            _, debug_data = get_advanced_orientation_score(
+                                landmarks, image_size
+                            )
+
+                            # Calcola il timestamp relativo dall'inizio dell'analisi
+                            elapsed = current_time - start_time
+
+                            # Prepara i dati per il debug log
+                            debug_info = {
+                                "timestamp": f"{elapsed:.1f}s",
+                                "score": f"{frontal_score:.3f}",
+                                "yaw": f"{debug_data.get('yaw', 0):.1f}°",
+                                "pitch": f"{debug_data.get('pitch', 0):.1f}°",
+                                "roll": f"{debug_data.get('roll', 0):.1f}°",
+                                "debug": debug_data.get(
+                                    "debug", {}
+                                ),  # Passa tutto il debug data
+                                "description": f"#{self.frame_counter}",  # Numero del frame
+                            }
+
+                            self.debug_callback("Miglior frame aggiornato", debug_info)
+
+                        except Exception as e:
+                            # Fallback se il debug dettagliato fallisce
+                            elapsed = current_time - start_time
+                            debug_info = {
+                                "timestamp": f"{elapsed:.1f}s",
+                                "score": f"{frontal_score:.3f}",
+                                "yaw": "N/A",
+                                "pitch": "N/A",
+                                "roll": "N/A",
+                                "debug": {"symmetry_score": 0.0},
+                                "description": f"#{self.frame_counter}",
+                            }
+                            self.debug_callback("Nuovo miglior frame", debug_info)
 
                 # Chiama la callback per l'aggiornamento dell'interfaccia
                 if self.frame_callback:
