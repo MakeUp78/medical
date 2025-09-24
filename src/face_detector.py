@@ -142,3 +142,60 @@ class FaceDetector:
                 )
 
         return result_image
+
+    def draw_symmetry_axis(
+        self, image: np.ndarray, landmarks: List[Tuple[float, float]]
+    ) -> np.ndarray:
+        """
+        Disegna l'asse di simmetria dal glabella al philtrum.
+
+        Landmark MediaPipe:
+        - Glabella (area tra le sopracciglia): landmark 9
+        - Philtrum (area naso-labbro): landmark 164
+        """
+        result_image = image.copy()
+
+        if len(landmarks) > 164:  # Assicurati che abbiamo abbastanza landmark
+            # Punto superiore: glabella (tra le sopracciglia)
+            glabella = landmarks[9]
+            # Punto inferiore: philtrum (area naso-labbro)
+            philtrum = landmarks[164]
+
+            # Estendi la linea per tutta l'altezza dell'immagine
+            height, width = image.shape[:2]
+
+            # Calcola la direzione della linea
+            dx = philtrum[0] - glabella[0]
+            dy = philtrum[1] - glabella[1]
+
+            # Evita divisione per zero
+            if abs(dy) > 0.1:
+                # Calcola i punti di estensione
+                # Punto in alto (y=0)
+                top_x = glabella[0] - (glabella[1] * dx / dy)
+                top_point = (int(top_x), 0)
+
+                # Punto in basso (y=height)
+                bottom_x = glabella[0] + ((height - glabella[1]) * dx / dy)
+                bottom_point = (int(bottom_x), height)
+
+                # Disegna la linea dell'asse
+                cv2.line(result_image, top_point, bottom_point, (255, 0, 0), 2)
+
+                # Disegna i punti di riferimento
+                cv2.circle(
+                    result_image,
+                    (int(glabella[0]), int(glabella[1])),
+                    3,
+                    (255, 0, 0),
+                    -1,
+                )
+                cv2.circle(
+                    result_image,
+                    (int(philtrum[0]), int(philtrum[1])),
+                    3,
+                    (255, 0, 0),
+                    -1,
+                )
+
+        return result_image
