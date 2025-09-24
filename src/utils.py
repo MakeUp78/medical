@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 import math
 from typing import List, Tuple, Optional, Dict
+from src.scoring_config import scoring_config
 
 
 def calculate_distance(
@@ -37,143 +38,217 @@ def calculate_angle(
     return math.degrees(math.acos(cos_angle))
 
 
-def get_face_orientation_score(landmarks: List[Tuple[float, float]]) -> float:
+def calculate_pure_frontal_score(
+    landmarks: List[Tuple[float, float]], image_shape=None, config=None
+) -> float:
     """
-    Calcola un punteggio di frontalità del volto basato sui landmark.
-    Sistema semplice ma affidabile basato su simmetria facciale.
-    Returns: valore tra 0 e 1, dove 1 indica massima frontalità.
+    ALGORITMO COMPLETAMENTE NUOVO - CREATO DA ZERO per l'immagine fornita.
+
+    OBIETTIVO: Score ALTO (0.8-1.0) per pose frontali PERFETTE come nell'esempio.
+    CARATTERISTICHE della posa frontale ideale:
+    - Viso completamente rivolto verso la camera
+    - Simmetria perfetta sinistra-destra
+    - Naso centrato tra gli occhi
+    - Bocca centrata
+    - Occhi allineati orizzontalmente
+
+    Args:
+        landmarks: Lista di coordinate (x, y) dei landmark MediaPipe
+
+    Returns:
+        float: Score frontalità (0-1, dove 1 = perfettamente frontale come l'esempio)
     """
-    if len(landmarks) < 468:
-        return 0.0
-
-    # Indici dei landmark chiave per valutare la frontalità
-    nose_tip = landmarks[1]  # Punta del naso
-    left_eye_outer = landmarks[33]  # Angolo esterno occhio sinistro
-    right_eye_outer = landmarks[362]  # Angolo esterno occhio destro
-    left_mouth = landmarks[61]  # Angolo sinistro bocca
-    right_mouth = landmarks[291]  # Angolo destro bocca
-
-    # Calcola simmetria orizzontale
-    eye_symmetry = abs(
-        (nose_tip[0] - left_eye_outer[0]) - (right_eye_outer[0] - nose_tip[0])
-    )
-    mouth_symmetry = abs((nose_tip[0] - left_mouth[0]) - (right_mouth[0] - nose_tip[0]))
-
-    # Normalizza i valori di simmetria
-    face_width = calculate_distance(left_eye_outer, right_eye_outer)
-    if face_width == 0:
-        return 0.0
-
-    eye_symmetry_normalized = eye_symmetry / face_width
-    mouth_symmetry_normalized = mouth_symmetry / face_width
-
-    # Calcola punteggio finale (più basso è meglio per la simmetria)
-    symmetry_score = 1.0 - min(
-        1.0, (eye_symmetry_normalized + mouth_symmetry_normalized) / 2
-    )
-
-    return symmetry_score
-
-
-def calculate_improved_frontal_score(landmarks: List[Tuple[float, float]]) -> float:
-    """
-    Algoritmo migliorato per calcolo frontalità basato su geometria facciale.
-    Più accurato e affidabile del sistema 3D che aveva problemi.
-    """
-    if len(landmarks) < 468:
+    if not landmarks or len(landmarks) < 468:
         return 0.0
 
     try:
-        # Landmark chiave per valutazione frontalità
+        # LANDMARK CHIAVE per analisi frontale
         nose_tip = landmarks[1]  # Punta naso
-        left_eye_outer = landmarks[33]  # Occhio sx esterno
-        right_eye_outer = landmarks[362]  # Occhio dx esterno
-        left_mouth = landmarks[61]  # Bocca sx
-        right_mouth = landmarks[291]  # Bocca dx
-        chin = landmarks[152]  # Mento
+        left_eye_inner = landmarks[133]  # Angolo interno occhio sinistro
+        right_eye_inner = landmarks[362]  # Angolo interno occhio destro
+        nose_left = landmarks[131]  # Lato sinistro del naso
+        nose_right = landmarks[360]  # Lato destro del naso
+        mouth_left = landmarks[61]  # Angolo sinistro bocca
+        mouth_right = landmarks[291]  # Angolo destro bocca
 
-        # 1. SIMMETRIA ORIZZONTALE MIGLIORATA (peso: 55%)
-        # Centro facciale basato su occhi
-        face_center_x = (left_eye_outer[0] + right_eye_outer[0]) / 2
+        # CALCOLO ASSE CENTRALE DEL VISO
+        # In una foto frontale perfetta, tutto è simmetrico rispetto a questo asse
+        eyes_center_x = (left_eye_inner[0] + right_eye_inner[0]) / 2.0
+        eye_distance = abs(right_eye_inner[0] - left_eye_inner[0])
 
-        # Distanza naso dal centro (dovrebbe essere ~0 per frontalità)
-        nose_deviation = abs(nose_tip[0] - face_center_x)
-
-        # Asimmetria occhi-naso (distanze dovrebbero essere uguali)
-        left_eye_nose_dist = abs(nose_tip[0] - left_eye_outer[0])
-        right_eye_nose_dist = abs(right_eye_outer[0] - nose_tip[0])
-        eye_asymmetry = abs(left_eye_nose_dist - right_eye_nose_dist)
-
-        # Asimmetria bocca-naso
-        left_mouth_nose_dist = abs(nose_tip[0] - left_mouth[0])
-        right_mouth_nose_dist = abs(right_mouth[0] - nose_tip[0])
-        mouth_asymmetry = abs(left_mouth_nose_dist - right_mouth_nose_dist)
-
-        # Larghezza facciale per normalizzazione
-        face_width = abs(left_eye_outer[0] - right_eye_outer[0])
-        if face_width == 0:
+        # Protezione per visi troppo piccoli o mal rilevati
+        if eye_distance < 20:
             return 0.0
 
-        # Score simmetria normalizzato (1 = perfetto, 0 = pessimo)
-        total_asymmetry = (
-            nose_deviation + eye_asymmetry + mouth_asymmetry
-        ) / face_width
-        # RIDUCENDO la penalizzazione per avere score più alti
-        symmetry_score = max(
-            0.0, 1.0 - total_asymmetry * 1.2
-        )  # Era *2.0, ora *1.2 per essere meno severi
+        # === CRITERIO 1: OCCHI ALLINEATI (ROLL) ===
+        # Occhi orizzontali indicano testa diritta
+        eye_height_diff = abs(left_eye_inner[1] - right_eye_inner[1])
+        eye_alignment = 1.0 - (eye_height_diff / eye_distance)
+        eye_score = max(0.0, min(1.0, eye_alignment))
 
-        # 2. ALLINEAMENTO VERTICALE (peso: 30%)
-        # Naso, centro bocca e mento dovrebbero essere allineati
-        mouth_center_x = (left_mouth[0] + right_mouth[0]) / 2
+        # === CRITERIO 2: NASO CENTRATO ===
+        # Il naso centrato rispetto agli occhi indica frontalità
+        nose_center_x = (nose_left[0] + nose_right[0]) / 2.0
+        face_center_x = eyes_center_x  # Centro ideale del viso
+        nose_deviation = abs(nose_center_x - face_center_x)
+        nose_alignment = 1.0 - (nose_deviation / (eye_distance * 0.3))
+        nose_score = max(0.0, min(1.0, nose_alignment))
 
-        nose_mouth_alignment = abs(nose_tip[0] - mouth_center_x)
-        nose_chin_alignment = abs(nose_tip[0] - chin[0])
+        # === CRITERIO 3: BOCCA CENTRATA ===
+        # La bocca centrata indica frontalità
+        mouth_center_x = (mouth_left[0] + mouth_right[0]) / 2.0
+        mouth_deviation = abs(mouth_center_x - eyes_center_x)
+        mouth_alignment = 1.0 - (mouth_deviation / (eye_distance * 0.4))
+        mouth_score = max(0.0, min(1.0, mouth_alignment))
 
-        vertical_deviation = (nose_mouth_alignment + nose_chin_alignment) / face_width
-        # RIDUCENDO anche qui la severità
-        vertical_score = max(
-            0.0, 1.0 - vertical_deviation * 2.0
-        )  # Era *3.0, ora *2.0 per essere meno severi
+        # === CRITERIO 4: SIMMETRIA GENERALE (CORREZIONE BUG - PIÙ PERMISSIVA) ===
+        # PROBLEMA: L'algoritmo precedente era troppo rigoroso per pose frontali
+        # SOLUZIONE: Algoritmo più permissivo che tollera micro-variazioni
 
-        # 3. STABILITÀ ANGOLARE OCCHI (peso: 15%)
-        # Gli occhi dovrebbero essere orizzontali per frontalità
-        eye_angle = abs(
-            math.atan2(
-                right_eye_outer[1] - left_eye_outer[1],
-                right_eye_outer[0] - left_eye_outer[0],
+        # Calcola simmetrie multiple con tolleranza migliorata
+        left_eye_nose_dist = abs(left_eye_inner[0] - nose_left[0])
+        right_eye_nose_dist = abs(right_eye_inner[0] - nose_right[0])
+
+        # NUOVO: Tolleranza per micro-variazioni (differenze <5px sono considerate simmetriche)
+        nose_diff = abs(left_eye_nose_dist - right_eye_nose_dist)
+        tolerance_px = 5.0  # Tolleranza in pixel
+
+        if nose_diff <= tolerance_px:
+            # Se la differenza è piccolissima, considera altamente simmetrico
+            nose_eye_symmetry = 0.95 + (tolerance_px - nose_diff) / tolerance_px * 0.05
+        else:
+            # Usa calcolo tradizionale solo per differenze significative
+            if max(left_eye_nose_dist, right_eye_nose_dist) > 0:
+                nose_eye_symmetry = min(left_eye_nose_dist, right_eye_nose_dist) / max(
+                    left_eye_nose_dist, right_eye_nose_dist
+                )
+            else:
+                nose_eye_symmetry = 1.0
+
+        # Simmetria occhi-bocca con stessa tolleranza
+        left_eye_mouth_dist = abs(left_eye_inner[0] - mouth_left[0])
+        right_eye_mouth_dist = abs(right_eye_inner[0] - mouth_right[0])
+
+        mouth_diff = abs(left_eye_mouth_dist - right_eye_mouth_dist)
+
+        if mouth_diff <= tolerance_px:
+            eye_mouth_symmetry = (
+                0.95 + (tolerance_px - mouth_diff) / tolerance_px * 0.05
             )
+        else:
+            if max(left_eye_mouth_dist, right_eye_mouth_dist) > 0:
+                eye_mouth_symmetry = min(
+                    left_eye_mouth_dist, right_eye_mouth_dist
+                ) / max(left_eye_mouth_dist, right_eye_mouth_dist)
+            else:
+                eye_mouth_symmetry = 1.0
+
+        # Simmetria narici con tolleranza
+        face_center_x = eyes_center_x  # Centro ideale del viso
+        left_nostril_dist = abs(face_center_x - nose_left[0])
+        right_nostril_dist = abs(face_center_x - nose_right[0])
+
+        nostril_diff = abs(left_nostril_dist - right_nostril_dist)
+
+        if nostril_diff <= tolerance_px:
+            nostril_symmetry = (
+                0.95 + (tolerance_px - nostril_diff) / tolerance_px * 0.05
+            )
+        else:
+            if max(left_nostril_dist, right_nostril_dist) > 0:
+                nostril_symmetry = min(left_nostril_dist, right_nostril_dist) / max(
+                    left_nostril_dist, right_nostril_dist
+                )
+            else:
+                nostril_symmetry = 1.0
+
+        # Combina le tre misure con pesi ottimizzati
+        face_symmetry = (
+            nose_eye_symmetry * 0.50  # Peso maggiore - più affidabile
+            + eye_mouth_symmetry * 0.30  # Importante per rotazioni
+            + nostril_symmetry * 0.20  # Meno peso - più sensibile a noise
         )
 
-        # Converti in score (angolo piccolo = score alto) - MENO SEVERO
-        eye_angle_score = max(
-            0.0, 1.0 - (eye_angle / 0.35)
-        )  # Era 0.2, ora 0.35 (~20°) per tolleranza maggiore
+        # Penalità aggiuntiva se una delle simmetrie è molto bassa (indica rotazione forte)
+        min_symmetry = min(nose_eye_symmetry, eye_mouth_symmetry, nostril_symmetry)
+        # Penalità aggiuntiva più permissiva per essere meno rigida sulle pose frontali
+        if min_symmetry < 0.5:  # CAMBIATO: da 0.7 a 0.5 per essere meno rigorosi
+            face_symmetry *= 0.9  # CAMBIATO: da 0.8 a 0.9 per penalità più leggera
 
-        # SCORE FINALE PESATO (3 componenti principali)
-        final_score = (
-            symmetry_score * 0.55  # Simmetria aumentata (era 0.45)
-            + vertical_score * 0.30  # Allineamento verticale aumentato (era 0.25)
-            + eye_angle_score * 0.15  # Stabilità angolare occhi invariata
+        symmetry_score = max(0.0, min(1.0, face_symmetry))
+
+        # === CALCOLI SEPARATI PER YAW E ROLL ===
+        # YAW puro: deviazione orizzontale del naso dalla linea centrale
+        yaw_score = max(0.0, min(1.0, nose_alignment))  # Usa nose_alignment per YAW
+
+        # ROLL puro: inclinazione della testa basata su disallineamento occhi
+        roll_score = max(0.0, min(1.0, eye_alignment))  # Usa eye_alignment per ROLL
+
+        # === SCORE FINALE CON PESI CONFIGURABILI ===
+        # Usa i pesi dalla configurazione passata o quella di default
+        if config is None:
+            config = scoring_config
+
+        base_score = (
+            nose_score * config.nose_weight  # Naso centrato (configurabile)
+            + mouth_score * config.mouth_weight  # Bocca centrata (configurabile)
+            + symmetry_score
+            * config.symmetry_weight  # Simmetria generale (configurabile)
+            + eye_score * config.eye_weight  # Occhi allineati base (configurabile)
         )
 
-        # DEBUG: Salva sempre i dettagli per debug
-        calculate_improved_frontal_score._debug_info = {
-            "symmetry_score": symmetry_score,
-            "vertical_score": vertical_score,
-            "eye_angle_score": eye_angle_score,
+        # PICCOLO BONUS per roll ottimo (occhi perfettamente allineati) - CONFIGURABILE
+        # Per privilegiare frame con meno inclinazione
+        if eye_score > 0.95:  # Roll quasi perfetto
+            roll_bonus = config.roll_bonus_high  # Bonus configurabile
+        elif eye_score > 0.90:  # Roll molto buono
+            roll_bonus = config.roll_bonus_med  # Bonus configurabile
+        else:
+            roll_bonus = 1.0  # Nessun bonus
+
+        base_score *= roll_bonus
+
+        # PENALITÀ CONFIGURABILE per pose chiaramente non frontali
+        if (
+            nose_score < config.penalty_threshold_nose
+            or mouth_score < config.penalty_threshold_mouth
+            or symmetry_score < config.penalty_threshold_symmetry
+        ):
+            base_score *= config.penalty_factor  # Penalizza visi decentrati o laterali
+
+        final_score = max(0.0, min(1.0, base_score))
+
+        # === DEBUG INFO per GUI (con pesi configurabili) ===
+        calculate_pure_frontal_score._debug_info = {
+            "yaw_score": yaw_score,  # YAW puro (rotazione orizzontale)
+            "roll_score": roll_score,  # ROLL puro (inclinazione testa)
+            "symmetry_score": symmetry_score,  # Simmetria generale
+            "nose_score": nose_score,  # Naso centrato (prioritario)
+            "mouth_score": mouth_score,  # Bocca centrata
+            "eye_score": eye_score,  # Occhi allineati base
+            # COMPATIBILITÀ CON TABELLA GUI (vecchi nomi)
+            "pitch_score": roll_score,  # PITCH = ROLL per compatibilità
+            "simmetria_score": symmetry_score,  # Simmetria per compatibilità
+            "dimensione_score": mouth_score,  # Bocca per compatibilità
             "final_score": final_score,
+            "eye_distance": eye_distance,
             "nose_deviation": nose_deviation,
-            "eye_asymmetry": eye_asymmetry,
-            "mouth_asymmetry": mouth_asymmetry,
-            "eye_angle_deg": math.degrees(eye_angle),
+            "mouth_center_x": mouth_center_x,
+            "face_center_x": face_center_x,
+            "roll_bonus": roll_bonus,  # Bonus per roll ottimo
+            # Aggiungi pesi attuali per debug
+            "weights": config.get_weights_dict(),
+            "nose_weight": config.nose_weight,
+            "mouth_weight": config.mouth_weight,
+            "symmetry_weight": config.symmetry_weight,
+            "eye_weight": config.eye_weight,
         }
 
-        return max(0.0, min(1.0, final_score))
+        return final_score
 
-    except Exception:
-        # Fallback al sistema originale in caso di errore
-        return get_face_orientation_score(landmarks)
+    except Exception as e:
+        print(f"Errore nuovo algoritmo frontale: {e}")
+        return 0.0
 
 
 def get_advanced_orientation_score(
@@ -191,11 +266,11 @@ def get_advanced_orientation_score(
         Tuple (orientation_score, head_pose_data)
     """
     try:
-        # Usa algoritmo geometrico semplice ma molto più accurato
-        score = calculate_improved_frontal_score(landmarks)
+        # Usa algoritmo geometrico puro di frontalità
+        score = calculate_pure_frontal_score(landmarks)
 
         # Estrai i dati di debug se disponibili
-        debug_info = getattr(calculate_improved_frontal_score, "_debug_info", {})
+        debug_info = getattr(calculate_pure_frontal_score, "_debug_info", {})
 
         # Calcola approssimazioni di orientamento per compatibilità UI
         if len(landmarks) >= 468:
@@ -205,73 +280,81 @@ def get_advanced_orientation_score(
             left_mouth = landmarks[61]
             right_mouth = landmarks[291]
 
-            # YAW (rotazione sinistra/destra) da asimmetria naso
+            # YAW (rotazione sinistra/destra) dalla posizione del naso
             face_center_x = (left_eye[0] + right_eye[0]) / 2
             face_width = abs(right_eye[0] - left_eye[0])
-            yaw_deviation = (nose_tip[0] - face_center_x) / face_width
-            yaw_approx = yaw_deviation * 45  # Scala approssimativa in gradi
+            if face_width > 0:
+                yaw_deviation = (nose_tip[0] - face_center_x) / face_width
+                yaw_approx = yaw_deviation * 30  # Scala approssimativa in gradi
+            else:
+                yaw_approx = 0
 
-            # PITCH (su/giù) da posizione verticale naso rispetto a occhi/bocca
+            # PITCH (su/giù) dalla posizione verticale del naso
             eye_level = (left_eye[1] + right_eye[1]) / 2
             mouth_level = (left_mouth[1] + right_mouth[1]) / 2
             expected_nose_y = (eye_level + mouth_level) / 2
             face_height = abs(mouth_level - eye_level)
             if face_height > 0:
                 pitch_deviation = (nose_tip[1] - expected_nose_y) / face_height
-                pitch_approx = pitch_deviation * 30  # Scala in gradi
+                pitch_approx = pitch_deviation * 20
             else:
                 pitch_approx = 0
 
-            # ROLL (inclinazione) da angolo occhi
+            # ROLL (inclinazione) dall'angolo degli occhi
             eye_angle = math.atan2(
                 right_eye[1] - left_eye[1], right_eye[0] - left_eye[0]
             )
             roll_approx = math.degrees(eye_angle)
 
-            # Descrizione intelligibile
+            # Descrizione intelligibile basata su frontalità pura
             desc_parts = []
-            if abs(yaw_approx) > 8:
-                direction = "sinistra" if yaw_approx > 0 else "destra"
-                desc_parts.append(f"ruotato {direction} ({abs(yaw_approx):.0f}°)")
+            if score > 0.8:
+                desc_parts.append("PERFETTAMENTE FRONTALE")
+            elif score > 0.6:
+                desc_parts.append("molto frontale")
+            elif score > 0.4:
+                desc_parts.append("abbastanza frontale")
             else:
-                desc_parts.append("frontale")
+                desc_parts.append("non frontale")
 
-            if abs(pitch_approx) > 6:
-                direction = "basso" if pitch_approx > 0 else "alto"
-                desc_parts.append(f"guardando {direction}")
-
-            if abs(roll_approx) > 5:
+            # Aggiungi dettagli se non perfetto
+            if abs(yaw_approx) > 5:
+                direction = "sinistra" if yaw_approx > 0 else "destra"
+                desc_parts.append(f"ruotato {direction}")
+            if abs(roll_approx) > 3:
                 direction = "sinistra" if roll_approx > 0 else "destra"
                 desc_parts.append(f"inclinato {direction}")
 
-            description = " | ".join(desc_parts) if desc_parts else "ben posizionato"
+            description = " | ".join(desc_parts)
 
             return score, {
-                "method": "geometric_improved",
+                "method": "pure_frontal",
                 "pitch": pitch_approx,
                 "yaw": yaw_approx,
                 "roll": roll_approx,
                 "tilt": roll_approx,
                 "description": description,
                 "suitable_for_measurement": score > 0.5,
-                # DATI DI DEBUG DETTAGLIATI
+                # DATI DI DEBUG DEL NUOVO ALGORITMO
                 "debug": {
-                    "symmetry_score": debug_info.get("symmetry_score", 0),
-                    "vertical_score": debug_info.get("vertical_score", 0),
-                    "angle_score": debug_info.get("angle_score", 0),
-                    "nose_deviation": debug_info.get("nose_deviation", 0),
-                    "eye_asymmetry": debug_info.get("eye_asymmetry", 0),
-                    "mouth_asymmetry": debug_info.get("mouth_asymmetry", 0),
-                    "eye_angle_deg": debug_info.get("eye_angle_deg", 0),
+                    "nose_score": debug_info.get("nose_score", 0),
+                    "eye_level_score": debug_info.get("eye_level_score", 0),
+                    "mouth_score": debug_info.get("mouth_score", 0),
+                    "eyebrow_score": debug_info.get("eyebrow_score", 0),
+                    "nose_offset": debug_info.get("nose_offset", 0),
+                    "eye_height_diff": debug_info.get("eye_height_diff", 0),
+                    "mouth_offset": debug_info.get("mouth_offset", 0),
+                    "nose_symmetry_ratio": debug_info.get("nose_symmetry_ratio", 0),
+                    "eye_level_ratio": debug_info.get("eye_level_ratio", 0),
                 },
             }
 
     except Exception as e:
         print(f"Errore scoring avanzato: {e}")
 
-    # Fallback finale
-    symmetry_score = get_face_orientation_score(landmarks)
-    return symmetry_score, {"method": "symmetry_fallback"}
+    # Fallback finale - USA NUOVO ALGORITMO
+    symmetry_score = calculate_pure_frontal_score(landmarks)
+    return symmetry_score, {"method": "pure_frontal_fallback"}
 
 
 def resize_image_keep_aspect(

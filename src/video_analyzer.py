@@ -12,7 +12,7 @@ from src.face_detector import FaceDetector
 
 class VideoAnalyzer:
     def __init__(self):
-        """Inizializza l'analizzatore video."""
+        """Inizializza l'analizzatore video SEMPLIFICATO per massima efficacia."""
         self.face_detector = FaceDetector()
         self.capture = None
         self.is_capturing = False
@@ -20,36 +20,42 @@ class VideoAnalyzer:
         self.best_landmarks = None
         self.best_score = 0.0
         self.current_frame = None
-        self.frame_callback = None
-        self.preview_callback = None  # Callback per l'anteprima video
-        self.completion_callback = None  # Callback per notificare la fine dell'analisi
-        self.debug_callback = None  # Callback per debug logs
+        self.scoring_config = None  # Sarà impostato tramite set_scoring_config
 
-        # Contatori per frame processing
-        self.frame_counter = 0  # Contatore totale frame processati
-        self.best_frame_number = 0  # Numero del miglior frame
+        # CALLBACK ESSENZIALI
+        self.completion_callback = None  # Solo per notificare la fine
+        self.preview_callback = None  # RIPRISTINATO: Per anteprima video
+        self.frame_callback = None  # NUOVO: Per aggiornare canvas principale
+        self.debug_callback = None  # NUOVO: Per inviare dati alla tabella debug GUI
 
-        # Parametri di analisi
+        # Parametri di analisi ottimizzati per trovare il miglior frame frontale
         self.min_face_size = 100  # Dimensione minima del volto in pixel
-        self.analysis_interval = 0.1  # Intervallo di analisi in secondi
-        self.capture_duration = None  # RIMOSSO LIMITE DI DURATA
-        self.preview_interval = 0.033  # ~30 FPS per l'anteprima
-
-    def set_frame_callback(self, callback: Callable[[np.ndarray, float], None]):
-        """Imposta la callback per i frame in tempo reale."""
-        self.frame_callback = callback
-
-    def set_preview_callback(self, callback: Callable[[np.ndarray], None]):
-        """Imposta la callback per l'anteprima video in tempo reale."""
-        self.preview_callback = callback
+        self.analysis_interval = 0.05  # Analizza ogni 50ms per più precisione
+        self.min_score_threshold = (
+            0.1  # MOLTO BASSO: Accetta quasi tutti per testare nuovo algoritmo
+        )
 
     def set_completion_callback(self, callback: Callable[[], None]):
         """Imposta la callback per notificare il completamento dell'analisi."""
         self.completion_callback = callback
 
-    def set_debug_callback(self, callback: Callable[[str, dict], None]):
-        """Imposta la callback per i debug logs."""
+    def set_preview_callback(self, callback: Callable[[np.ndarray], None]):
+        """Imposta la callback per l'anteprima video in tempo reale."""
+        self.preview_callback = callback
+
+    def set_frame_callback(self, callback: Callable[[np.ndarray, list, float], None]):
+        """Imposta la callback per aggiornare il canvas principale con frame migliori."""
+        self.frame_callback = callback
+
+    def set_debug_callback(
+        self, callback: Callable[[int, float, dict, np.ndarray], None]
+    ):
+        """Imposta la callback per inviare dati debug alla tabella GUI."""
         self.debug_callback = callback
+
+    def set_scoring_config(self, scoring_config):
+        """Imposta la configurazione dei pesi per lo scoring."""
+        self.scoring_config = scoring_config
 
     def start_camera_capture(self, camera_index: int = 0) -> bool:
         """
@@ -102,19 +108,32 @@ class VideoAnalyzer:
 
     def load_video_file(self, video_path: str) -> bool:
         """
-        Carica un file video.
-
-        Args:
-            video_path: Percorso del file video
-
-        Returns:
-            True se il file è stato caricato con successo
+        Carica un file video con logging dettagliato per debug.
         """
         try:
+            print(f"📹 VIDEO_ANALYZER: Tentativo caricamento {video_path}")
             self.capture = cv2.VideoCapture(video_path)
-            return self.capture.isOpened()
+
+            if self.capture.isOpened():
+                # Verifica che il video sia effettivamente leggibile
+                ret, test_frame = self.capture.read()
+                if ret:
+                    print(
+                        f"✅ VIDEO_ANALYZER: Video caricato correttamente, primo frame letto"
+                    )
+                    # Riporta al frame 0
+                    self.capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    return True
+                else:
+                    print(
+                        f"❌ VIDEO_ANALYZER: Video aperto ma impossibile leggere frame"
+                    )
+                    return False
+            else:
+                print(f"❌ VIDEO_ANALYZER: Impossibile aprire il video")
+                return False
         except Exception as e:
-            print(f"Errore nel caricamento del video: {e}")
+            print(f"❌ VIDEO_ANALYZER: Errore nel caricamento del video: {e}")
             return False
 
     def analyze_frame(
@@ -122,20 +141,15 @@ class VideoAnalyzer:
     ) -> Tuple[Optional[List[Tuple[float, float]]], float]:
         """
         Analizza un singolo frame per rilevare volti e calcolare il punteggio di frontalità.
-
-        Args:
-            frame: Frame da analizzare
-
-        Returns:
-            Tupla (landmarks, frontal_score) o (None, 0.0) se nessun volto rilevato
+        SEMPLIFICATO per massima efficacia nel trovare frame frontali.
         """
+        # Rileva landmark 2D standard
         landmarks = self.face_detector.detect_face_landmarks(frame)
 
         if landmarks is None:
             return None, 0.0
 
-        # Verifica dimensione minima del volto usando landmark diretti
-        # Landmark 33: occhio sinistro esterno, Landmark 362: occhio destro esterno
+        # Verifica dimensione minima del volto
         if len(landmarks) > 362:
             left_eye_outer = landmarks[33]
             right_eye_outer = landmarks[362]
@@ -143,17 +157,21 @@ class VideoAnalyzer:
             if face_width < self.min_face_size:
                 return None, 0.0
 
-        # Calcola punteggio di frontalità
-        frontal_score = self.face_detector.calculate_frontal_score(landmarks)
+        # Calcola punteggio di frontalità usando l'algoritmo puro
+        frontal_score = self.face_detector.calculate_frontal_score(
+            landmarks, config=self.scoring_config
+        )
+
+        # Solo frame con un minimo di qualità frontale
+        if frontal_score < self.min_score_threshold:
+            return None, 0.0
 
         return landmarks, frontal_score
 
     def start_live_analysis(self) -> bool:
         """
         Avvia l'analisi live del video per trovare il frame migliore.
-
-        Returns:
-            True se l'analisi è stata avviata con successo
+        SEMPLIFICATO per massima efficacia.
         """
         if self.capture is None or not self.capture.isOpened():
             return False
@@ -162,113 +180,131 @@ class VideoAnalyzer:
         self.best_frame = None
         self.best_landmarks = None
         self.best_score = 0.0
-        self.frame_counter = 0  # Reset contatore frame
-        self.best_frame_number = 0  # Reset numero miglior frame
 
-        # Avvia il thread di analisi
-        analysis_thread = threading.Thread(target=self._analysis_loop)
+        # Avvia il thread di analisi semplificato
+        analysis_thread = threading.Thread(target=self._simple_analysis_loop)
         analysis_thread.daemon = True
         analysis_thread.start()
 
         return True
 
-    def _analysis_loop(self):
-        """Loop principale di analisi video."""
-        start_time = time.time()
+    def _simple_analysis_loop(self):
+        """
+        Loop semplificato di analisi video con anteprima e logging dettagliato.
+        FOCUS: Trova il frame più frontale possibile + mostra anteprima.
+        """
         last_analysis = 0
         last_preview = 0
+        frames_processed = 0
+        frames_analyzed = 0
+        preview_interval = 0.1  # Aggiorna anteprima ogni 100ms
 
-        # MODALITÀ ILLIMITATA: rimosso limite di durata
+        print("🎯 ANALYSIS_LOOP: Avvio analisi semplificata per frame frontale...")
+
         while self.is_capturing:
             ret, frame = self.capture.read()
             if not ret:
+                print(
+                    f"🎯 ANALYSIS_LOOP: Fine video raggiunta dopo {frames_processed} frame"
+                )
                 break
 
-            self.frame_counter += 1  # Incrementa contatore frame
             self.current_frame = frame.copy()
             current_time = time.time()
+            frames_processed += 1
 
-            # Aggiorna l'anteprima più frequentemente
+            # AGGIORNA ANTEPRIMA ogni 100ms
             if (
                 self.preview_callback
-                and current_time - last_preview >= self.preview_interval
+                and (current_time - last_preview) >= preview_interval
             ):
                 preview_frame = frame.copy()
-                last_preview = current_time
-                # Chiama la callback per l'anteprima
                 self.preview_callback(preview_frame)
+                last_preview = current_time
 
-            # Analizza solo a intervalli regolari per ottimizzare le performance
+            # Log ogni 100 frame per vedere il progresso
+            if frames_processed % 100 == 0:
+                print(
+                    f"🎯 ANALYSIS_LOOP: Processati {frames_processed} frame, analizzati {frames_analyzed}"
+                )
+
+            # Analizza solo a intervalli per ottimizzare le performance
             if current_time - last_analysis >= self.analysis_interval:
+                frames_analyzed += 1
                 landmarks, frontal_score = self.analyze_frame(frame)
 
-                # Aggiorna il migliore frame se necessario
-                if landmarks is not None and frontal_score > self.best_score:
-                    self.best_frame = frame.copy()
-                    self.best_landmarks = landmarks
-                    self.best_score = frontal_score
-                    self.best_frame_number = self.frame_counter  # Salva numero frame
+                if landmarks is not None:
+                    # *** INVIO DATI ALLA TABELLA GUI (SOLO SE SCORE ALTO) ***
+                    if frontal_score >= 0.3:  # Soglia per mostrare nella tabella debug
+                        # Ottieni dati debug dall'algoritmo di utils.py
+                        from src.utils import calculate_pure_frontal_score
 
-                    # Debug callback per il nuovo miglior frame
-                    if self.debug_callback:
-                        try:
-                            from src.utils import get_advanced_orientation_score
+                        debug_info = getattr(
+                            calculate_pure_frontal_score, "_debug_info", {}
+                        )
 
-                            image_size = (frame.shape[1], frame.shape[0])
-                            _, debug_data = get_advanced_orientation_score(
-                                landmarks, image_size
+                        # Invia alla tabella GUI
+                        if self.debug_callback:
+                            self.debug_callback(
+                                frames_processed,
+                                frontal_score,
+                                debug_info,
+                                frame.copy(),
                             )
 
-                            # Calcola il timestamp relativo dall'inizio dell'analisi
-                            elapsed = current_time - start_time
+                    # Aggiorna il migliore frame se necessario
+                    if frontal_score > self.best_score:
+                        self.best_frame = frame.copy()
+                        self.best_landmarks = landmarks
+                        self.best_score = frontal_score
 
-                            # Prepara i dati per il debug log
-                            debug_info = {
-                                "timestamp": f"{elapsed:.1f}s",
-                                "score": f"{frontal_score:.3f}",
-                                "yaw": f"{debug_data.get('yaw', 0):.1f}°",
-                                "pitch": f"{debug_data.get('pitch', 0):.1f}°",
-                                "roll": f"{debug_data.get('roll', 0):.1f}°",
-                                "debug": debug_data.get(
-                                    "debug", {}
-                                ),  # Passa tutto il debug data
-                                "description": f"#{self.frame_counter}",  # Numero del frame
-                            }
-
-                            self.debug_callback("Miglior frame aggiornato", debug_info)
-
-                        except Exception as e:
-                            # Fallback se il debug dettagliato fallisce
-                            elapsed = current_time - start_time
-                            debug_info = {
-                                "timestamp": f"{elapsed:.1f}s",
-                                "score": f"{frontal_score:.3f}",
-                                "yaw": "N/A",
-                                "pitch": "N/A",
-                                "roll": "N/A",
-                                "debug": {"symmetry_score": 0.0},
-                                "description": f"#{self.frame_counter}",
-                            }
-                            self.debug_callback("Nuovo miglior frame", debug_info)
-
-                # Chiama la callback per l'aggiornamento dell'interfaccia
-                if self.frame_callback:
-                    annotated_frame = frame.copy()
-                    if landmarks:
-                        annotated_frame = self.face_detector.draw_landmarks(
-                            annotated_frame, landmarks, key_only=True
+                        # Solo messaggi essenziali nel terminale
+                        print(
+                            f"📸 NUOVO MIGLIOR FRAME: Score {frontal_score:.3f} (frame #{frames_processed})"
                         )
-                    self.frame_callback(annotated_frame, frontal_score)
+
+                        print(
+                            f"📸 NUOVO MIGLIOR FRAME: Score {frontal_score:.3f} (frame #{frames_processed})"
+                        )
+
+                        # *** AGGIORNA CANVAS PRINCIPALE CON NUOVO FRAME MIGLIORE ***
+                        if self.frame_callback:
+                            try:
+                                # Mostra immediatamente il nuovo frame migliore nel canvas
+                                self.frame_callback(
+                                    frame.copy(), landmarks, frontal_score
+                                )
+                                print(
+                                    f"🖼️ CANVAS AGGIORNATO con nuovo miglior frame (score: {frontal_score:.3f})"
+                                )
+                            except Exception as e:
+                                print(f"❌ Errore aggiornamento canvas: {e}")
+                        else:
+                            print("⚠️ Nessun frame_callback per aggiornare canvas")
+                else:
+                    # Log solo occasionalmente per frame senza volto
+                    if frames_analyzed % 50 == 0:
+                        print(
+                            f"🎯 ANALYSIS_LOOP: Frame #{frames_processed} - Nessun volto rilevato"
+                        )
 
                 last_analysis = current_time
 
-            # Breve pausa per evitare sovraccarico CPU
+            # Pausa minima per evitare sovraccarico CPU
             time.sleep(0.01)
 
-        # L'analisi è terminata (timeout o interruzione manuale)
+        # Fine analisi
         self.is_capturing = False
+        print(f"✅ ANALYSIS_LOOP: Analisi completata")
+        print(f"   - Frame totali processati: {frames_processed}")
+        print(f"   - Frame analizzati: {frames_analyzed}")
+        print(f"   - Miglior score finale: {self.best_score:.3f}")
+
         if self.completion_callback:
+            print("🎯 ANALYSIS_LOOP: Chiamando completion_callback")
             self.completion_callback()
+        else:
+            print("⚠️ ANALYSIS_LOOP: Nessun completion_callback impostato")
 
     def stop_analysis(self):
         """Ferma l'analisi video."""

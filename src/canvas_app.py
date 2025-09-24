@@ -12,6 +12,7 @@ from src.face_detector import FaceDetector
 from src.video_analyzer import VideoAnalyzer
 from src.measurement_tools import MeasurementTools
 from src.green_dots_processor import GreenDotsProcessor
+from src.scoring_config import ScoringConfig
 from src.utils import resize_image_keep_aspect
 
 
@@ -69,19 +70,31 @@ class CanvasApp:
 
         # Buffer per salvare i migliori frame per il doppio click
         self.frame_buffer = {}  # {frame_number: (frame, landmarks)}
-        self.max_buffer_size = 50  # Massimo numero di frame nel buffer
+        self.max_buffer_size = (
+            100  # Massimo numero di frame nel buffer - AUMENTATO per debug table
+        )
 
-        # Finestra anteprima video (ora integrata)
-        self.preview_window = None  # Mantenuto per compatibilità, ma non usato
-        self.preview_label = None  # Ora usato per l'anteprima integrata
-        self.preview_enabled = None  # Inizializzato in setup_integrated_preview
+        # Variabili per interfaccia semplificata
+        self.preview_enabled = None  # Inizializzato nel setup GUI
+        self.preview_label = None
+        self.preview_window = None  # Per compatibilità con close_preview_window
+
+        # Configurazione pesi per scoring
+        self.scoring_config = ScoringConfig()
+        self.scoring_config.set_callback(self.on_scoring_config_change)
+
+        # Imposta la configurazione nel video analyzer
+        self.video_analyzer.set_scoring_config(self.scoring_config)
+
         self.setup_gui()
 
-        # Callback per il video analyzer
-        self.video_analyzer.set_frame_callback(self.on_video_frame_update)
-        self.video_analyzer.set_preview_callback(self.on_video_preview_update)
+        # CALLBACK ESSENZIALI
         self.video_analyzer.set_completion_callback(self.on_analysis_completion)
-        self.video_analyzer.set_debug_callback(self.on_debug_log)
+        self.video_analyzer.set_preview_callback(self.on_video_preview_update)
+        self.video_analyzer.set_frame_callback(self.on_frame_update)  # *** AGGIUNTO ***
+        self.video_analyzer.set_debug_callback(
+            self.on_debug_update
+        )  # *** NUOVO PER TABELLA ***
 
     def setup_gui(self):
         """Configura l'interfaccia grafica con layout professionale stabile."""
@@ -483,6 +496,115 @@ class CanvasApp:
             command=self.toggle_green_dots_overlay,
         ).pack(anchor=tk.W)
 
+        # Sezione Controlli Score Frontalità
+        self.setup_scoring_controls(parent)
+
+    def setup_scoring_controls(self, parent):
+        """Configura il pannello dei controlli per i pesi dello scoring."""
+        scoring_frame = ttk.LabelFrame(
+            parent, text="⚖️ Pesi Scoring Frontalità", padding=8
+        )
+        scoring_frame.pack(fill=tk.X, pady=(0, 8))
+
+        # Info correnti
+        info_frame = ttk.Frame(scoring_frame)
+        info_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.scoring_info_label = ttk.Label(
+            info_frame,
+            text=f"Score corrente: {self.current_best_score:.3f}",
+            font=("Arial", 9, "bold"),
+        )
+        self.scoring_info_label.pack()
+
+        # Sliders per i pesi
+        sliders_frame = ttk.Frame(scoring_frame)
+        sliders_frame.pack(fill=tk.X)
+
+        # Nose weight
+        nose_frame = ttk.Frame(sliders_frame)
+        nose_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(nose_frame, text="Naso:", width=12).pack(side=tk.LEFT)
+        self.nose_scale = ttk.Scale(
+            nose_frame,
+            from_=0.0,
+            to=1.0,
+            orient=tk.HORIZONTAL,
+            command=self.on_nose_weight_change,
+        )
+        self.nose_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
+        self.nose_value_label = ttk.Label(nose_frame, text="0.40", width=6)
+        self.nose_value_label.pack(side=tk.RIGHT)
+        self.nose_scale.set(self.scoring_config.nose_weight)
+
+        # Mouth weight
+        mouth_frame = ttk.Frame(sliders_frame)
+        mouth_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(mouth_frame, text="Bocca:", width=12).pack(side=tk.LEFT)
+        self.mouth_scale = ttk.Scale(
+            mouth_frame,
+            from_=0.0,
+            to=1.0,
+            orient=tk.HORIZONTAL,
+            command=self.on_mouth_weight_change,
+        )
+        self.mouth_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
+        self.mouth_value_label = ttk.Label(mouth_frame, text="0.30", width=6)
+        self.mouth_value_label.pack(side=tk.RIGHT)
+        self.mouth_scale.set(self.scoring_config.mouth_weight)
+
+        # Symmetry weight
+        symmetry_frame = ttk.Frame(sliders_frame)
+        symmetry_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(symmetry_frame, text="Simmetria:", width=12).pack(side=tk.LEFT)
+        self.symmetry_scale = ttk.Scale(
+            symmetry_frame,
+            from_=0.0,
+            to=1.0,
+            orient=tk.HORIZONTAL,
+            command=self.on_symmetry_weight_change,
+        )
+        self.symmetry_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
+        self.symmetry_value_label = ttk.Label(symmetry_frame, text="0.20", width=6)
+        self.symmetry_value_label.pack(side=tk.RIGHT)
+        self.symmetry_scale.set(self.scoring_config.symmetry_weight)
+
+        # Eye weight
+        eye_frame = ttk.Frame(sliders_frame)
+        eye_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(eye_frame, text="Occhi:", width=12).pack(side=tk.LEFT)
+        self.eye_scale = ttk.Scale(
+            eye_frame,
+            from_=0.0,
+            to=1.0,
+            orient=tk.HORIZONTAL,
+            command=self.on_eye_weight_change,
+        )
+        self.eye_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
+        self.eye_value_label = ttk.Label(eye_frame, text="0.10", width=6)
+        self.eye_value_label.pack(side=tk.RIGHT)
+        self.eye_scale.set(self.scoring_config.eye_weight)
+
+        # Pulsanti preset
+        preset_frame = ttk.Frame(scoring_frame)
+        preset_frame.pack(fill=tk.X, pady=(10, 5))
+
+        preset_frame.columnconfigure(0, weight=1)
+        preset_frame.columnconfigure(1, weight=1)
+        preset_frame.columnconfigure(2, weight=1)
+
+        ttk.Button(
+            preset_frame, text="Reset Default", command=self.reset_scoring_weights
+        ).grid(row=0, column=0, sticky="ew", padx=2)
+
+        ttk.Button(preset_frame, text="Più Naso", command=self.preset_nose_focus).grid(
+            row=0, column=1, sticky="ew", padx=2
+        )
+
+        ttk.Button(
+            preset_frame, text="Meno Simmetria", command=self.preset_less_symmetry
+        ).grid(row=0, column=2, sticky="ew", padx=2)
+
     def setup_canvas(self, parent):
         """Configura il canvas per la visualizzazione."""
         # Canvas con scrollbar
@@ -819,7 +941,7 @@ class CanvasApp:
                 messagebox.showerror("Errore", f"Errore nel caricamento: {e}")
 
     def load_video(self):
-        """Carica e analizza un file video."""
+        """Carica e analizza un file video con logging dettagliato per debug."""
         file_path = filedialog.askopenfilename(
             title="Seleziona Video",
             filetypes=[
@@ -829,23 +951,30 @@ class CanvasApp:
         )
 
         if file_path:
+            print(f"🎬 STEP 1: File selezionato: {file_path}")
+
             # Reset completo interfaccia per nuovo video
             self.reset_interface_for_new_analysis()
+            print("🎬 STEP 2: Interfaccia resettata")
 
             if self.video_analyzer.load_video_file(file_path):
+                print("🎬 STEP 3: Video caricato correttamente in VideoAnalyzer")
                 self.status_bar.config(text="Avviando analisi video...")
                 self.root.update()
 
-                # Avvia l'analisi live che userà l'anteprima integrata
+                # Avvia l'analisi live
                 if self.video_analyzer.start_live_analysis():
+                    print("🎬 STEP 4: Analisi live avviata")
                     self.best_frame_info.config(text="Analizzando video file...")
                     self.status_bar.config(text=f"Analisi video avviata: {file_path}")
                 else:
+                    print("❌ ERRORE STEP 4: Impossibile avviare l'analisi live")
                     messagebox.showerror(
                         "Errore", "Impossibile avviare l'analisi video"
                     )
                     self.status_bar.config(text="Errore nell'analisi video")
             else:
+                print("❌ ERRORE STEP 3: Impossibile caricare il video")
                 messagebox.showerror("Errore", "Impossibile caricare il video")
 
     def test_webcam(self):
@@ -929,7 +1058,7 @@ class CanvasApp:
             self.status_bar.config(text="Nessun frame valido trovato")
 
     def on_video_frame_update(self, frame: np.ndarray, score: float):
-        """Callback per aggiornamento frame in tempo reale - CON ORIENTAMENTO 3D."""
+        """Callback per aggiornamento frame in tempo reale - CON AGGIORNAMENTO ISTANTANEO."""
 
         # Ottieni info dettagliate sull'orientamento se disponibili
         try:
@@ -945,92 +1074,106 @@ class CanvasApp:
                 if head_pose_data.get("method") in [
                     "head_pose_3d",
                     "geometric_improved",
+                    "pure_frontal",  # AGGIUNTO il nuovo metodo
                 ]:
-                    # Mostra info dettagliate con orientamento E DEBUG
+                    # Mostra info dettagliate con il NUOVO ALGORITMO
                     pitch = head_pose_data.get("pitch", 0)
                     yaw = head_pose_data.get("yaw", 0)
                     roll = head_pose_data.get("roll", 0)
 
-                    # Ottieni dati di debug se disponibili
+                    # Ottieni dati di debug del NUOVO algoritmo
                     debug = head_pose_data.get("debug", {})
-                    if debug:
-                        symmetry = debug.get("symmetry_score", 0)
-                        vertical = debug.get("vertical_score", 0)
-                        angle = debug.get("angle_score", 0)
-                        nose_dev = debug.get("nose_deviation", 0)
+                    if debug and head_pose_data.get("method") == "pure_frontal":
+                        nose_score = debug.get("nose_score", 0)
+                        eye_score = debug.get("eye_level_score", 0)
+                        mouth_score = debug.get("mouth_score", 0)
+                        nose_ratio = debug.get("nose_symmetry_ratio", 0)
 
                         info_text = (
-                            f"Score: {score:.3f} | P:{pitch:.1f}° Y:{yaw:.1f}° R:{roll:.1f}° | "
-                            f"Sym:{symmetry:.2f} Ver:{vertical:.2f} Ang:{angle:.2f} | "
-                            f"NoseDev:{nose_dev:.2f}"
+                            f"Score: {score:.4f} | Naso:{nose_score:.3f} Occhi:{eye_score:.3f} "
+                            f"Bocca:{mouth_score:.3f} | Y:{yaw:.1f}° R:{roll:.1f}°"
                         )
                     else:
-                        info_text = f"Score: {score:.3f} | Pitch: {pitch:.1f}° | Yaw: {yaw:.1f}° | Roll: {roll:.1f}°"
+                        info_text = f"Score: {score:.4f} | Y:{yaw:.1f}° P:{pitch:.1f}° R:{roll:.1f}°"
                 else:
                     info_text = f"Score: {score:.3f} (fallback)"
             else:
                 info_text = f"Score: {score:.2f}"
-        except Exception:
-            info_text = f"Score: {score:.2f}"
+        except Exception as e:
+            info_text = f"Score: {score:.2f} (error: {str(e)[:30]})"
 
         # Aggiorna info in tempo reale
         self.root.after(0, lambda: self.best_frame_info.config(text=info_text))
 
-        # Logica per aggiornamento automatico del canvas (MIGLIORATA)
+        # AGGIORNAMENTO FREQUENTE: ad ogni miglioramento dello score
         current_best_score = getattr(self, "current_best_score", 0.0)
 
-        # Aggiorna il canvas se:
-        # 1. Non c'è ancora un'immagine caricata E lo score è buono
-        # 2. O se questo frame ha uno score significativamente migliore del precedente
-        should_update = (score > 0.6 and self.current_image is None) or (
-            score > current_best_score + 0.05
-        )
+        # NUOVO APPROCCIO: aggiorna ad OGNI miglioramento, anche minimo
+        should_update = (
+            score > 0.3 and self.current_image is None
+        ) or (  # Primo frame decente
+            score > current_best_score + 0.01
+        )  # QUALSIASI miglioramento
 
         if should_update:
-            # Ottieni i landmark del frame corrente
-            landmarks = self.face_detector.detect_face_landmarks(frame)
+            # Ottieni i landmark del frame corrente se non li abbiamo già
+            if landmarks is None:
+                landmarks = self.face_detector.detect_face_landmarks(frame)
+
             if landmarks is not None:
-                # Salva nel buffer dei frame per il doppio click
+                # Salva nel buffer per il doppio click
                 frame_number = getattr(self.video_analyzer, "frame_counter", 0)
                 self.save_frame_to_buffer(frame_number, frame.copy(), landmarks)
 
-                # Aggiorna nel thread principale
+                # Aggiorna nel thread principale IMMEDIATAMENTE
+                frame_copy = frame.copy()
+                landmarks_copy = (
+                    landmarks.copy() if hasattr(landmarks, "copy") else list(landmarks)
+                )
                 self.root.after(
                     0,
-                    lambda: self.update_canvas_with_new_frame(frame, landmarks, score),
+                    lambda: self.update_canvas_with_new_frame(
+                        frame_copy, landmarks_copy, score
+                    ),
                 )
                 self.current_best_score = score
-                print(f"Canvas aggiornato con nuovo miglior frame! Score: {score:.3f}")
 
-        # Salva anche i frame con score discreto nel buffer (non solo quelli che aggiornano il canvas)
-        elif score > 0.4:  # Score soglia più basso per il buffer
-            landmarks = self.face_detector.detect_face_landmarks(frame)
-            if landmarks is not None:
-                frame_number = getattr(self.video_analyzer, "frame_counter", 0)
-                self.save_frame_to_buffer(frame_number, frame.copy(), landmarks)
+                print(
+                    f"Canvas aggiornato! Score: {score:.4f} (era: {current_best_score:.4f})"
+                )
 
-        # Aggiorna info anteprima se presente con nuovi parametri
+        # Salva TUTTI i frame con score discreto nel buffer (per debug table)
+        elif (
+            score > 0.2 and landmarks is not None
+        ):  # Soglia molto bassa per buffer completo
+            frame_number = getattr(self.video_analyzer, "frame_counter", 0)
+            self.save_frame_to_buffer(frame_number, frame.copy(), landmarks)
+
+        # Aggiorna info anteprima se presente con nuovi parametri YAW/ROLL
         if hasattr(self, "preview_info") and self.preview_info:
             try:
                 if head_pose_data and head_pose_data.get("method") in [
                     "head_pose_3d",
                     "geometric_improved",
+                    "pure_frontal",  # AGGIUNTO nuovo metodo
                 ]:
                     desc = head_pose_data.get("description", "N/A")
                     suitable = head_pose_data.get("suitable_for_measurement", False)
 
-                    # Debug aggiuntivo per preview
+                    # Debug specifico per il nuovo algoritmo
                     debug = head_pose_data.get("debug", {})
-                    if debug:
-                        debug_text = f" | S:{debug.get('symmetry_score', 0):.2f} V:{debug.get('vertical_score', 0):.2f}"
+                    if debug and head_pose_data.get("method") == "pure_frontal":
+                        nose_score = debug.get("nose_score", 0)
+                        eye_score = debug.get("eye_level_score", 0)
+                        debug_text = f" | N:{nose_score:.2f} E:{eye_score:.2f}"
                         desc_with_debug = desc + debug_text
                     else:
                         desc_with_debug = desc
 
                     if suitable:
-                        status_text = f"🎯 Score: {score:.3f} - {desc_with_debug} ✅"
+                        status_text = f"🎯 Score: {score:.4f} - {desc_with_debug} ✅"
                     else:
-                        status_text = f"🎯 Score: {score:.3f} - {desc_with_debug} ⚠️"
+                        status_text = f"🎯 Score: {score:.4f} - {desc_with_debug} ⚠️"
                 else:
                     # Fallback al sistema originale
                     status_text = f"🎯 Score frontalità: {score:.2f}"
@@ -1111,30 +1254,221 @@ class CanvasApp:
             print(f"Errore nell'aggiornamento automatico del canvas: {e}")
 
     def on_analysis_completion(self):
-        """Callback chiamato quando l'analisi video termina automaticamente."""
+        """Callback chiamato quando l'analisi video termina. SEMPLIFICATO."""
 
         def handle_completion():
-            # Carica il frame migliore
+            # Carica direttamente il frame migliore
             best_frame, best_landmarks, best_score = (
                 self.video_analyzer.get_best_frame_data()
             )
 
             if best_frame is not None:
+                print(f"🎯 Analisi completata! Miglior score: {best_score:.3f}")
                 self.set_current_image(best_frame, best_landmarks, auto_resize=False)
                 self.best_frame_info.config(
-                    text=f"Miglior frame: Score {best_score:.2f} (Auto-completato)"
+                    text=f"✅ MIGLIOR FRAME FRONTALE: Score {best_score:.3f}"
                 )
-                self.status_bar.config(text="Analisi completata automaticamente")
-            else:
                 self.status_bar.config(
-                    text="Analisi completata - Nessun volto rilevato"
+                    text="Analisi completata - Frame frontale caricato"
                 )
-
-            # Chiudi la finestra di anteprima
-            self.close_preview_window()
+            else:
+                print("❌ Nessun volto frontale trovato")
+                self.status_bar.config(
+                    text="Analisi completata - Nessun volto frontale rilevato"
+                )
 
         # Esegui nel thread principale
         self.root.after(0, handle_completion)
+
+    def on_frame_update(self, frame, landmarks, score):
+        """
+        Callback per aggiornare il canvas principale in tempo reale con i frame migliori.
+        *** NUOVO METODO PER CANVAS DINAMICO ***
+        """
+
+        def update_canvas():
+            try:
+                print(f"🔄 INIZIO aggiornamento canvas dinamico - Score: {score:.3f}")
+
+                # Aggiorna canvas principale con il nuovo frame migliore
+                self.set_current_image(frame, landmarks, auto_resize=False)
+
+                # Forza il refresh del canvas per assicurarsi che si veda
+                self.root.update_idletasks()  # AGGIUNTO: forza aggiornamento UI
+
+                # Aggiorna info score
+                self.best_frame_info.config(
+                    text=f"📸 FRAME FRONTALE IN TEMPO REALE: Score {score:.3f}"
+                )
+
+                # Aggiorna status
+                self.status_bar.config(
+                    text=f"Trovato frame frontale - Score: {score:.3f}"
+                )
+
+                print(f"✅ Canvas aggiornato e UI forzata - Score: {score:.3f}")
+
+            except Exception as e:
+                print(f"❌ Errore aggiornamento canvas in tempo reale: {e}")
+                import traceback
+
+                traceback.print_exc()
+
+        # Esegui nel thread principale
+        self.root.after(0, update_canvas)
+
+    def on_debug_update(self, frame_number, score, debug_info, frame):
+        """
+        Callback per aggiungere dati debug alla tabella GUI e al buffer.
+        *** NUOVO METODO PER TABELLA DEBUG CLICCABILE ***
+        """
+
+        def update_debug_table():
+            try:
+                # Salva frame nel buffer per click
+                self.frame_buffer[frame_number] = (
+                    frame.copy(),
+                    None,
+                )  # Landmarks verranno calcolati se necessario
+
+                # Mantieni buffer limitato
+                if len(self.frame_buffer) > self.max_buffer_size:
+                    # Rimuovi il frame più vecchio
+                    oldest_frame = min(self.frame_buffer.keys())
+                    del self.frame_buffer[oldest_frame]
+
+                # Estrai dati debug
+                yaw_score = debug_info.get("yaw_score", 0) * 100
+                pitch_score = debug_info.get("pitch_score", 0) * 100
+                simmetria_score = debug_info.get("simmetria_score", 0) * 100
+                dimensione_score = debug_info.get("dimensione_score", 0) * 100
+
+                # Aggiungi alla tabella
+                new_item = self.debug_tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        f"{frame_number}",  # timestamp/numero frame
+                        f"{score:.3f}",  # score finale
+                        f"{yaw_score:.0f}",  # yaw (rotazione sx/dx)
+                        f"{pitch_score:.0f}",  # pitch (su/giù)
+                        f"{dimensione_score:.0f}",  # roll -> dimensione
+                        f"{simmetria_score:.0f}",  # simmetria
+                        f"#{frame_number}",  # description
+                    ),
+                    tags=(str(frame_number),),  # Tag per identificare il frame
+                )
+
+                # Riordina la tabella per score decrescente (migliori in cima)
+                self._sort_debug_table_by_score()
+
+                # Scroll all'inizio per mostrare i migliori frame
+                self.debug_tree.yview_moveto(0.0)
+
+                # *** AGGIORNAMENTO AUTOMATICO CANVAS SE NUOVO MIGLIOR FRAME ***
+                if score > self.current_best_score:
+                    print(
+                        f"🆕 Nuovo miglior frame! Score: {score:.3f} (precedente: {self.current_best_score:.3f})"
+                    )
+                    self.current_best_score = score
+                    # Aggiorna il canvas con il nuovo frame migliore
+                    self.set_current_image(frame, None, auto_resize=False)
+                    # Aggiorna info score
+                    self.best_frame_info.config(
+                        text=f"Miglior frame: Score {score:.3f}"
+                    )
+
+                    # *** SALVA AUTOMATICAMENTE IL MIGLIOR FRAME COME PNG ***
+                    try:
+                        import cv2
+
+                        png_filename = "best_frontal_frame.png"
+                        # Converti da BGR (OpenCV) a RGB per il salvataggio
+                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        cv2.imwrite(
+                            png_filename, cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+                        )
+                        print(
+                            f"💾 Salvato automaticamente: {png_filename} (Score: {score:.3f})"
+                        )
+                    except Exception as save_error:
+                        print(f"❌ Errore salvataggio PNG: {save_error}")
+
+                    print(
+                        f"🖼️ Canvas aggiornato automaticamente con frame #{frame_number}"
+                    )
+
+            except Exception as e:
+                print(f"❌ Errore aggiornamento tabella debug: {e}")
+
+        # Esegui nel thread principale
+        self.root.after(0, update_debug_table)
+
+    def _sort_debug_table_by_score(self):
+        """
+        Riordina la tabella debug per score decrescente (migliori in cima).
+        """
+        try:
+            # Ottieni tutti gli elementi
+            items = []
+            for child in self.debug_tree.get_children():
+                item = self.debug_tree.item(child)
+                values = item["values"]
+                score = float(values[1])  # Score è nella seconda colonna
+                items.append((score, child, values, item["tags"]))
+
+            # Ordina per score decrescente
+            items.sort(key=lambda x: x[0], reverse=True)
+
+            # Rimuovi tutti gli elementi
+            for child in self.debug_tree.get_children():
+                self.debug_tree.delete(child)
+
+            # Reinserisci in ordine
+            for score, old_child, values, tags in items:
+                self.debug_tree.insert("", "end", values=values, tags=tags)
+
+        except Exception as e:
+            print(f"❌ Errore ordinamento tabella debug: {e}")
+
+    def on_debug_row_double_click(self, event):
+        """
+        Gestisce il doppio click sulle righe della tabella debug.
+        Carica il frame corrispondente nel canvas principale.
+        """
+        try:
+            selection = self.debug_tree.selection()
+            if not selection:
+                return
+
+            item = self.debug_tree.item(selection[0])
+            frame_number = int(item["values"][0])  # Primo valore è il numero frame
+
+            # Cerca frame nel buffer
+            if frame_number in self.frame_buffer:
+                frame, landmarks = self.frame_buffer[frame_number]
+
+                # Carica nel canvas
+                self.set_current_image(frame, landmarks, auto_resize=False)
+
+                # Aggiorna info
+                score = float(item["values"][1])  # Secondo valore è lo score
+                self.best_frame_info.config(
+                    text=f"📸 FRAME DA TABELLA: #{frame_number} - Score {score:.3f}"
+                )
+                self.status_bar.config(
+                    text=f"Caricato frame #{frame_number} dalla tabella debug"
+                )
+
+                print(f"📸 Caricato frame #{frame_number} dalla tabella debug")
+            else:
+                self.status_bar.config(
+                    text=f"Frame #{frame_number} non disponibile nel buffer"
+                )
+
+        except Exception as e:
+            print(f"❌ Errore caricamento frame da tabella: {e}")
+            self.status_bar.config(text="Errore nel caricamento del frame")
 
     def update_preview_display(self, photo):
         """Aggiorna il display dell'anteprima nel thread principale."""
@@ -2729,54 +3063,97 @@ Aree calcolate:
         except Exception as e:
             print(f"Errore nel debug log callback: {e}")
 
-    def on_debug_row_double_click(self, event):
-        """Gestisce il doppio click su una riga della tabella debug."""
-        try:
-            # Ottieni l'item selezionato
-            selection = self.debug_tree.selection()
-            if not selection:
-                return
+    # CALLBACK SCORING CONFIG
+    def on_nose_weight_change(self, value):
+        """Callback per cambio peso naso."""
+        weight = float(value)
+        self.scoring_config.set_nose_weight(weight)
+        self.nose_value_label.config(text=f"{weight:.2f}")
+        self.recalculate_current_score()
 
-            # Ottieni i valori della riga selezionata
-            item = selection[0]
-            values = self.debug_tree.item(item, "values")
+    def on_mouth_weight_change(self, value):
+        """Callback per cambio peso bocca."""
+        weight = float(value)
+        self.scoring_config.set_mouth_weight(weight)
+        self.mouth_value_label.config(text=f"{weight:.2f}")
+        self.recalculate_current_score()
 
-            if len(values) >= 7:
-                # Estrai il numero del frame dalla descrizione (formato #123)
-                frame_description = values[6]  # La colonna "Frame"
-                if frame_description.startswith("#"):
-                    try:
-                        frame_number = int(frame_description[1:])
+    def on_symmetry_weight_change(self, value):
+        """Callback per cambio peso simmetria."""
+        weight = float(value)
+        self.scoring_config.set_symmetry_weight(weight)
+        self.symmetry_value_label.config(text=f"{weight:.2f}")
+        self.recalculate_current_score()
 
-                        # Cerca nel buffer locale
-                        if frame_number in self.frame_buffer:
-                            frame, landmarks = self.frame_buffer[frame_number]
-                            self.set_current_image(frame, landmarks, auto_resize=True)
-                            score = float(values[1])  # Score dalla tabella
-                            self.status_bar.config(
-                                text=f"Caricato frame #{frame_number} (Score: {score:.3f})"
-                            )
-                            print(f"Frame #{frame_number} caricato dal buffer")
-                            return
-                        else:
-                            # Frame non nel buffer
-                            self.status_bar.config(
-                                text=f"Frame #{frame_number} non disponibile nel buffer"
-                            )
-                            print(
-                                f"Frame #{frame_number} non trovato nel buffer. Disponibili: {list(self.frame_buffer.keys())}"
-                            )
+    def on_eye_weight_change(self, value):
+        """Callback per cambio peso occhi."""
+        weight = float(value)
+        self.scoring_config.set_eye_weight(weight)
+        self.eye_value_label.config(text=f"{weight:.2f}")
+        self.recalculate_current_score()
 
-                    except ValueError:
-                        self.status_bar.config(text="Formato numero frame non valido")
-                else:
-                    self.status_bar.config(
-                        text="Numero frame non trovato nella descrizione"
-                    )
+    def on_scoring_config_change(self):
+        """Callback chiamato quando la configurazione scoring cambia."""
+        self.recalculate_current_score()
 
-        except Exception as e:
-            print(f"Errore nel doppio click debug row: {e}")
-            self.status_bar.config(text="Errore nel caricamento del frame")
+    def recalculate_current_score(self):
+        """Ricalcola lo score del frame corrente con i nuovi pesi."""
+        if self.current_landmarks is not None and self.current_image is not None:
+            # Importa qui per evitare dipendenze circolari
+            from src.utils import calculate_pure_frontal_score
+
+            new_score = calculate_pure_frontal_score(
+                self.current_landmarks,
+                self.current_image.shape,
+                config=self.scoring_config,
+            )
+
+            self.current_best_score = new_score
+            self.scoring_info_label.config(text=f"Score corrente: {new_score:.3f}")
+
+            # Aggiorna anche il display del best frame se presente
+            if hasattr(self, "best_frame_info") and self.best_frame_info:
+                self.best_frame_info.config(
+                    text=f"Score frame corrente: {new_score:.3f} - Pesi: N:{self.scoring_config.nose_weight:.2f} B:{self.scoring_config.mouth_weight:.2f} S:{self.scoring_config.symmetry_weight:.2f} O:{self.scoring_config.eye_weight:.2f}"
+                )
+
+    def reset_scoring_weights(self):
+        """Reset ai pesi di default."""
+        self.scoring_config.set_nose_weight(0.30)
+        self.scoring_config.set_mouth_weight(0.25)
+        self.scoring_config.set_symmetry_weight(0.25)
+        self.scoring_config.set_eye_weight(0.20)
+        self.update_slider_values()
+
+    def preset_nose_focus(self):
+        """Preset con focus sul naso."""
+        self.scoring_config.set_nose_weight(0.50)
+        self.scoring_config.set_mouth_weight(0.25)
+        self.scoring_config.set_symmetry_weight(0.15)
+        self.scoring_config.set_eye_weight(0.10)
+        self.update_slider_values()
+
+    def preset_less_symmetry(self):
+        """Preset with meno enfasi sulla simmetria."""
+        self.scoring_config.set_nose_weight(0.40)
+        self.scoring_config.set_mouth_weight(0.35)
+        self.scoring_config.set_symmetry_weight(0.15)
+        self.scoring_config.set_eye_weight(0.10)
+        self.update_slider_values()
+
+    def update_slider_values(self):
+        """Aggiorna i valori degli slider dall'oggetto config."""
+        self.nose_scale.set(self.scoring_config.nose_weight)
+        self.mouth_scale.set(self.scoring_config.mouth_weight)
+        self.symmetry_scale.set(self.scoring_config.symmetry_weight)
+        self.eye_scale.set(self.scoring_config.eye_weight)
+
+        self.nose_value_label.config(text=f"{self.scoring_config.nose_weight:.2f}")
+        self.mouth_value_label.config(text=f"{self.scoring_config.mouth_weight:.2f}")
+        self.symmetry_value_label.config(
+            text=f"{self.scoring_config.symmetry_weight:.2f}"
+        )
+        self.eye_value_label.config(text=f"{self.scoring_config.eye_weight:.2f}")
 
 
 def main():
