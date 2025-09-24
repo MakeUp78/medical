@@ -54,8 +54,20 @@ class FaceDetector:
         return landmarks
 
     def calculate_frontal_score(self, landmarks: List[Tuple[float, float]]) -> float:
-        """Calcola il punteggio di frontalità del volto."""
-        return get_face_orientation_score(landmarks)
+        """
+        Calcola il punteggio di frontalità del volto.
+        AGGIORNATO: Prova prima il nuovo sistema di scoring 3D, fallback al vecchio.
+        """
+        try:
+            from src.utils import get_advanced_orientation_score
+
+            # Assumiamo dimensioni standard se non disponibili
+            image_size = (640, 480)  # Fallback size
+            score, _ = get_advanced_orientation_score(landmarks, image_size)
+            return score
+        except Exception:
+            # Fallback al sistema originale
+            return get_face_orientation_score(landmarks)
 
     def draw_landmarks(
         self,

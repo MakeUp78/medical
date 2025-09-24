@@ -47,7 +47,7 @@ class CanvasApp:
         # Sistema overlay per misurazioni
         self.measurement_overlays = []  # Lista di overlay delle misurazioni
         self.show_measurement_overlays = True
-        
+
         # Sistema per puntini verdi sopraccigliare
         self.green_dots_results = None  # Risultati dell'ultimo rilevamento
         self.green_dots_overlay = None  # Overlay dei poligoni sopraccigliare
@@ -67,6 +67,10 @@ class CanvasApp:
         # Variabile per tracciare il miglior score corrente per aggiornamento dinamico
         self.current_best_score = 0.0
 
+        # Buffer per salvare i migliori frame per il doppio click
+        self.frame_buffer = {}  # {frame_number: (frame, landmarks)}
+        self.max_buffer_size = 50  # Massimo numero di frame nel buffer
+
         # Finestra anteprima video (ora integrata)
         self.preview_window = None  # Mantenuto per compatibilità, ma non usato
         self.preview_label = None  # Ora usato per l'anteprima integrata
@@ -77,6 +81,7 @@ class CanvasApp:
         self.video_analyzer.set_frame_callback(self.on_video_frame_update)
         self.video_analyzer.set_preview_callback(self.on_video_preview_update)
         self.video_analyzer.set_completion_callback(self.on_analysis_completion)
+        self.video_analyzer.set_debug_callback(self.on_debug_log)
 
     def setup_gui(self):
         """Configura l'interfaccia grafica con layout professionale stabile."""
@@ -96,15 +101,15 @@ class CanvasApp:
 
         # Colonne con larghezze fisse per prevenire tremolii
         self.root.grid_columnconfigure(
-            0, weight=0, minsize=350
-        )  # Controlli (larghezza fissa)
+            0, weight=0, minsize=420
+        )  # Controlli (larghezza aumentata)
         self.root.grid_columnconfigure(1, weight=1, minsize=600)  # Canvas (espandibile)
         self.root.grid_columnconfigure(
             2, weight=0, minsize=400
         )  # Anteprima (larghezza fissa)
 
         # Setup area controlli (sinistra) con larghezza fissa
-        control_main_frame = ttk.Frame(self.root, width=350)
+        control_main_frame = ttk.Frame(self.root, width=420)
         control_main_frame.grid(row=0, column=0, sticky="nsew", padx=(5, 2), pady=5)
         control_main_frame.grid_propagate(
             False
@@ -113,7 +118,7 @@ class CanvasApp:
         control_main_frame.grid_columnconfigure(0, weight=1)
 
         # Canvas scrollabile per i controlli
-        control_canvas = tk.Canvas(control_main_frame, highlightthickness=0, width=330)
+        control_canvas = tk.Canvas(control_main_frame, highlightthickness=0, width=400)
         control_scrollbar = ttk.Scrollbar(
             control_main_frame, orient="vertical", command=control_canvas.yview
         )
@@ -159,17 +164,53 @@ class CanvasApp:
         canvas_frame.grid_columnconfigure(0, weight=1)
         self.setup_canvas(canvas_frame)
 
-        # Setup area anteprima integrata (destra) con larghezza fissa
-        preview_frame = ttk.LabelFrame(
-            self.root, text="Anteprima Video", padding=10, width=400
+        # Setup area anteprima integrata (destra) con scrolling moderno
+        preview_main_frame = ttk.Frame(self.root, width=400)
+        preview_main_frame.grid(row=0, column=2, sticky="nsew", padx=(2, 5), pady=5)
+        preview_main_frame.grid_propagate(
+            False
+        )  # Impedisce ridimensionamento automatico
+        preview_main_frame.grid_rowconfigure(0, weight=1)
+        preview_main_frame.grid_columnconfigure(0, weight=1)
+
+        # Canvas scrollabile per l'area anteprima
+        preview_canvas = tk.Canvas(preview_main_frame, highlightthickness=0, width=380)
+        preview_scrollbar = ttk.Scrollbar(
+            preview_main_frame, orient="vertical", command=preview_canvas.yview
         )
-        preview_frame.grid(row=0, column=2, sticky="nsew", padx=(2, 5), pady=5)
-        preview_frame.grid_propagate(False)  # Impedisce ridimensionamento automatico
-        preview_frame.grid_rowconfigure(0, weight=0, minsize=40)  # Controlli
-        preview_frame.grid_rowconfigure(1, weight=1, minsize=300)  # Video
-        preview_frame.grid_rowconfigure(2, weight=0, minsize=60)  # Info
-        preview_frame.grid_columnconfigure(0, weight=1)
-        self.setup_integrated_preview(preview_frame)
+
+        # Frame scrollabile per il contenuto anteprima
+        self.scrollable_preview_frame = ttk.LabelFrame(
+            preview_canvas, text="Anteprima Video", padding=10
+        )
+
+        self.scrollable_preview_frame.bind(
+            "<Configure>",
+            lambda e: preview_canvas.configure(scrollregion=preview_canvas.bbox("all")),
+        )
+
+        preview_canvas.create_window(
+            (0, 0), window=self.scrollable_preview_frame, anchor="nw"
+        )
+        preview_canvas.configure(yscrollcommand=preview_scrollbar.set)
+
+        preview_canvas.grid(row=0, column=0, sticky="nsew")
+        preview_scrollbar.grid(row=0, column=1, sticky="ns")
+
+        # Funzione per scroll migliorata area anteprima
+        def _on_preview_mousewheel(event):
+            preview_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        # Bind ricorsivo del mouse wheel per l'area anteprima
+        def bind_preview_mousewheel(widget):
+            """Applica il binding del mouse wheel ricorsivamente all'area anteprima."""
+            widget.bind("<MouseWheel>", _on_preview_mousewheel)
+            for child in widget.winfo_children():
+                bind_preview_mousewheel(child)
+
+        preview_canvas.bind("<MouseWheel>", _on_preview_mousewheel)
+
+        self.setup_integrated_preview(self.scrollable_preview_frame)
 
         # Setup area misurazioni (in basso) con altezza fissa
         measurements_frame = ttk.LabelFrame(
@@ -186,6 +227,9 @@ class CanvasApp:
 
         # Setup status bar con altezza fissa
         self.setup_status_bar()
+
+        # Applica il binding del mouse wheel all'area anteprima dopo la creazione
+        bind_preview_mousewheel(self.scrollable_preview_frame)
 
         # Gestisci chiusura applicazione
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -253,8 +297,10 @@ class CanvasApp:
             video_frame, text="⏹️ Ferma Analisi", command=self.stop_video_analysis
         ).grid(row=2, column=1, sticky="ew", pady=2, padx=(1, 2))
 
-        # Info frame migliore
-        self.best_frame_info = ttk.Label(video_frame, text="Nessun frame analizzato")
+        # Info frame migliore con larghezza fissa
+        self.best_frame_info = ttk.Label(
+            video_frame, text="Nessun frame analizzato", width=60
+        )
         self.best_frame_info.grid(
             row=3, column=0, columnspan=2, sticky="ew", pady=5, padx=2
         )
@@ -460,7 +506,14 @@ class CanvasApp:
         self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
 
     def setup_integrated_preview(self, parent):
-        """Configura l'area anteprima integrata con layout stabile."""
+        """Configura l'area anteprima integrata con layout scrollabile moderno."""
+        # Configura il grid del parent
+        parent.grid_rowconfigure(0, weight=0, minsize=40)  # Controlli
+        parent.grid_rowconfigure(1, weight=0, minsize=300)  # Video
+        parent.grid_rowconfigure(2, weight=0, minsize=60)  # Info
+        parent.grid_rowconfigure(3, weight=1, minsize=200)  # Debug logs (espandibile)
+        parent.grid_columnconfigure(0, weight=1)
+
         # Frame controlli anteprima con altezza fissa
         controls_frame = ttk.Frame(parent, height=40)
         controls_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
@@ -513,6 +566,203 @@ class CanvasApp:
             width=50,
         )
         self.preview_info.pack(pady=5)
+
+        # NUOVO: Area Debug Logs con tabella migliori frame
+        debug_frame = ttk.LabelFrame(
+            parent, text="🔍 Debug - Migliori Frame", padding=5
+        )
+        debug_frame.grid(row=3, column=0, sticky="nsew", pady=(5, 0))
+        debug_frame.grid_rowconfigure(0, weight=1)
+        debug_frame.grid_columnconfigure(0, weight=1)
+
+        # Frame per contenere treeview + scrollbar
+        debug_container = ttk.Frame(debug_frame)
+        debug_container.pack(fill="both", expand=True)
+        debug_container.grid_rowconfigure(0, weight=1)
+        debug_container.grid_columnconfigure(0, weight=1)
+
+        # Treeview per i logs con colonne personalizzate
+        columns = (
+            "timestamp",
+            "score",
+            "yaw",
+            "pitch",
+            "roll",
+            "symmetry",
+            "description",
+        )
+        self.debug_tree = ttk.Treeview(
+            debug_container, columns=columns, show="headings", height=8
+        )
+
+        # Configura le colonne
+        self.debug_tree.heading("timestamp", text="Tempo")
+        self.debug_tree.heading("score", text="Score")
+        self.debug_tree.heading("yaw", text="Yaw")
+        self.debug_tree.heading("pitch", text="Pitch")
+        self.debug_tree.heading("roll", text="Roll")
+        self.debug_tree.heading("symmetry", text="Sym")
+        self.debug_tree.heading("description", text="Frame")
+
+        # Imposta larghezze colonne ottimizzate per mostrare tutto senza scroll orizzontale
+        self.debug_tree.column("timestamp", width=45, minwidth=40)
+        self.debug_tree.column("score", width=55, minwidth=50)
+        self.debug_tree.column("yaw", width=40, minwidth=35)
+        self.debug_tree.column("pitch", width=40, minwidth=35)
+        self.debug_tree.column("roll", width=40, minwidth=35)
+        self.debug_tree.column("symmetry", width=50, minwidth=45)
+        self.debug_tree.column("description", width=50, minwidth=45)
+
+        # Solo scrollbar verticale
+        debug_scrollbar_v = ttk.Scrollbar(
+            debug_container, orient="vertical", command=self.debug_tree.yview
+        )
+        self.debug_tree.configure(yscrollcommand=debug_scrollbar_v.set)
+
+        # Grid layout semplificato
+        self.debug_tree.grid(row=0, column=0, sticky="nsew")
+        debug_scrollbar_v.grid(row=0, column=1, sticky="ns")
+
+        # Binding per doppio click su righe della tabella
+        self.debug_tree.bind("<Double-1>", self.on_debug_row_double_click)
+
+        # Configura il grid container
+        debug_container.grid_rowconfigure(0, weight=1)
+        debug_container.grid_columnconfigure(0, weight=1)
+
+        # Frame controlli debug
+        debug_controls = ttk.Frame(debug_frame)
+        debug_controls.pack(fill="x", pady=(5, 0))
+
+        ttk.Button(
+            debug_controls, text="Pulisci Log", command=self.clear_debug_logs
+        ).pack(side="left")
+
+        self.debug_auto_scroll = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            debug_controls, text="Auto-scroll", variable=self.debug_auto_scroll
+        ).pack(side="right")
+
+        # Inizializza lista debug logs
+        self.debug_logs = []
+        self.max_debug_logs = 50  # Limite massimo entries
+
+    def add_debug_log(self, score, debug_data, elapsed_time):
+        """Aggiunge una entry ai debug logs."""
+        import datetime
+
+        # Timestamp formattato
+        timestamp = f"{elapsed_time:.1f}s"
+
+        # Estrai dati dal debug_data e gestisci stringhe formattate
+        yaw_str = debug_data.get("yaw", "0°")
+        yaw = float(str(yaw_str).replace("°", "")) if yaw_str != "N/A" else 0
+
+        pitch_str = debug_data.get("pitch", "0°")
+        pitch = float(str(pitch_str).replace("°", "")) if pitch_str != "N/A" else 0
+
+        roll_str = debug_data.get("roll", "0°")
+        roll = float(str(roll_str).replace("°", "")) if roll_str != "N/A" else 0
+
+        # Per symmetry, controlla prima nella sezione debug, poi nei dati principali
+        symmetry_str = debug_data.get("debug", {}).get(
+            "symmetry_score", debug_data.get("symmetry", "0")
+        )
+        symmetry = float(str(symmetry_str)) if symmetry_str != "N/A" else 0
+
+        description = debug_data.get("description", "N/A")
+
+        # Non troncare il numero del frame
+        # (la descrizione ora contiene solo il numero del frame come #123)
+
+        # Aggiungi alla lista
+        log_entry = {
+            "timestamp": timestamp,
+            "score": f"{score:.3f}",
+            "yaw": f"{yaw:.1f}°",
+            "pitch": f"{pitch:.1f}°",
+            "roll": f"{roll:.1f}°",
+            "symmetry": f"{symmetry:.3f}",
+            "description": description,
+        }
+
+        self.debug_logs.append(log_entry)
+
+        # Rimuovi entries vecchie se troppo lunghe
+        if len(self.debug_logs) > self.max_debug_logs:
+            self.debug_logs.pop(0)
+
+        # Aggiorna la treeview
+        self.update_debug_tree()
+
+    def update_debug_tree(self):
+        """Aggiorna la visualizzazione della tabella debug."""
+        # Pulisci treeview esistente
+        for item in self.debug_tree.get_children():
+            self.debug_tree.delete(item)
+
+        # Ordina per score dal più alto al più basso
+        sorted_logs = sorted(
+            self.debug_logs, key=lambda x: float(x["score"]), reverse=True
+        )
+
+        for log_entry in sorted_logs:
+            self.debug_tree.insert(
+                "",
+                "end",
+                values=(
+                    log_entry["timestamp"],
+                    log_entry["score"],
+                    log_entry["yaw"],
+                    log_entry["pitch"],
+                    log_entry["roll"],
+                    log_entry["symmetry"],
+                    log_entry["description"],
+                ),
+            )
+
+        # Auto-scroll all'ultima entry se abilitato
+        if hasattr(self, "debug_auto_scroll") and self.debug_auto_scroll.get():
+            children = self.debug_tree.get_children()
+            if children:
+                self.debug_tree.selection_set(children[0])
+                self.debug_tree.focus(children[0])
+                self.debug_tree.see(children[0])
+
+    def clear_debug_logs(self):
+        """Pulisce tutti i debug logs."""
+        self.debug_logs.clear()
+        self.update_debug_tree()
+
+    def reset_interface_for_new_analysis(self):
+        """Reset completo dell'interfaccia per una nuova analisi."""
+        # Reset debug logs
+        self.debug_logs.clear()
+        self.update_debug_tree()
+
+        # Reset buffer frame per doppio click
+        self.frame_buffer.clear()
+
+        # Reset canvas centrale
+        self.canvas.delete("all")
+        self.current_image = None
+        self.current_landmarks = None
+        self.canvas_image = None
+
+        # Reset contatori e stato
+        self.current_best_score = 0.0
+
+        # Reset info miglior frame
+        self.best_frame_info.config(text="Nessun frame analizzato")
+
+        # Reset status bar
+        self.status_bar.config(text="Pronto per nuova analisi")
+
+        # Reset anteprima se presente
+        if hasattr(self, "preview_info") and self.preview_info:
+            self.preview_info.config(text="🎯 Anteprima: Nessun frame")
+
+        print("Interfaccia resettata per nuova analisi")
 
     def setup_measurements_area(self, parent):
         """Configura l'area delle misurazioni."""
@@ -579,12 +829,12 @@ class CanvasApp:
         )
 
         if file_path:
+            # Reset completo interfaccia per nuovo video
+            self.reset_interface_for_new_analysis()
+
             if self.video_analyzer.load_video_file(file_path):
                 self.status_bar.config(text="Avviando analisi video...")
                 self.root.update()
-
-                # Reset del miglior score per nuova analisi
-                self.current_best_score = 0.0
 
                 # Avvia l'analisi live che userà l'anteprima integrata
                 if self.video_analyzer.start_live_analysis():
@@ -627,11 +877,12 @@ class CanvasApp:
     def start_webcam(self):
         """Avvia l'analisi dalla webcam."""
         print("Tentativo di avvio webcam...")
+
+        # Reset completo interfaccia per nuova analisi webcam
+        self.reset_interface_for_new_analysis()
+
         if self.video_analyzer.start_camera_capture():
             print("Webcam avviata con successo, iniziando analisi...")
-
-            # Reset del miglior score per nuova analisi
-            self.current_best_score = 0.0
 
             if self.video_analyzer.start_live_analysis():
                 # Aggiorna l'anteprima integrata
@@ -671,49 +922,127 @@ class CanvasApp:
         )
 
         if best_frame is not None:
-            self.set_current_image(best_frame, best_landmarks)
+            self.set_current_image(best_frame, best_landmarks, auto_resize=False)
             self.best_frame_info.config(text=f"Miglior frame: Score {best_score:.2f}")
             self.status_bar.config(text="Analisi completata - Frame migliore caricato")
         else:
             self.status_bar.config(text="Nessun frame valido trovato")
 
     def on_video_frame_update(self, frame: np.ndarray, score: float):
-        """Callback per aggiornamento frame in tempo reale."""
-        # Aggiorna info in tempo reale
-        self.root.after(
-            0, lambda: self.best_frame_info.config(text=f"Score attuale: {score:.2f}")
-        )
+        """Callback per aggiornamento frame in tempo reale - CON ORIENTAMENTO 3D."""
 
-        # Logica per aggiornamento automatico del canvas
+        # Ottieni info dettagliate sull'orientamento se disponibili
+        try:
+            from src.utils import get_advanced_orientation_score
+
+            landmarks = self.face_detector.detect_face_landmarks(frame)
+            if landmarks:
+                image_size = (frame.shape[1], frame.shape[0])
+                _, head_pose_data = get_advanced_orientation_score(
+                    landmarks, image_size
+                )
+
+                if head_pose_data.get("method") in [
+                    "head_pose_3d",
+                    "geometric_improved",
+                ]:
+                    # Mostra info dettagliate con orientamento E DEBUG
+                    pitch = head_pose_data.get("pitch", 0)
+                    yaw = head_pose_data.get("yaw", 0)
+                    roll = head_pose_data.get("roll", 0)
+
+                    # Ottieni dati di debug se disponibili
+                    debug = head_pose_data.get("debug", {})
+                    if debug:
+                        symmetry = debug.get("symmetry_score", 0)
+                        vertical = debug.get("vertical_score", 0)
+                        angle = debug.get("angle_score", 0)
+                        nose_dev = debug.get("nose_deviation", 0)
+
+                        info_text = (
+                            f"Score: {score:.3f} | P:{pitch:.1f}° Y:{yaw:.1f}° R:{roll:.1f}° | "
+                            f"Sym:{symmetry:.2f} Ver:{vertical:.2f} Ang:{angle:.2f} | "
+                            f"NoseDev:{nose_dev:.2f}"
+                        )
+                    else:
+                        info_text = f"Score: {score:.3f} | Pitch: {pitch:.1f}° | Yaw: {yaw:.1f}° | Roll: {roll:.1f}°"
+                else:
+                    info_text = f"Score: {score:.3f} (fallback)"
+            else:
+                info_text = f"Score: {score:.2f}"
+        except Exception:
+            info_text = f"Score: {score:.2f}"
+
+        # Aggiorna info in tempo reale
+        self.root.after(0, lambda: self.best_frame_info.config(text=info_text))
+
+        # Logica per aggiornamento automatico del canvas (MIGLIORATA)
         current_best_score = getattr(self, "current_best_score", 0.0)
 
         # Aggiorna il canvas se:
-        # 1. Score > 0.7 E non abbiamo ancora un frame, OPPURE
-        # 2. Score > current_best_score (sempre meglio)
-        should_update = (score > 0.7 and self.current_image is None) or (
-            score > current_best_score and score > 0.3
-        )  # Soglia minima 0.3
+        # 1. Non c'è ancora un'immagine caricata E lo score è buono
+        # 2. O se questo frame ha uno score significativamente migliore del precedente
+        should_update = (score > 0.6 and self.current_image is None) or (
+            score > current_best_score + 0.05
+        )
 
         if should_update:
             # Ottieni i landmark del frame corrente
             landmarks = self.face_detector.detect_face_landmarks(frame)
             if landmarks is not None:
+                # Salva nel buffer dei frame per il doppio click
+                frame_number = getattr(self.video_analyzer, "frame_counter", 0)
+                self.save_frame_to_buffer(frame_number, frame.copy(), landmarks)
+
                 # Aggiorna nel thread principale
                 self.root.after(
                     0,
                     lambda: self.update_canvas_with_new_frame(frame, landmarks, score),
                 )
                 self.current_best_score = score
+                print(f"Canvas aggiornato con nuovo miglior frame! Score: {score:.3f}")
 
-        # Aggiorna info anteprima se presente
-        if self.preview_info:
-            status_text = f"🎯 Score frontalità: {score:.2f}"
-            if score > 0.7:
-                status_text += " - Ottimo! 🟢"
-            elif score > 0.5:
-                status_text += " - Buono 🟡"
-            else:
-                status_text += " - Migliora posizione 🔴"
+        # Salva anche i frame con score discreto nel buffer (non solo quelli che aggiornano il canvas)
+        elif score > 0.4:  # Score soglia più basso per il buffer
+            landmarks = self.face_detector.detect_face_landmarks(frame)
+            if landmarks is not None:
+                frame_number = getattr(self.video_analyzer, "frame_counter", 0)
+                self.save_frame_to_buffer(frame_number, frame.copy(), landmarks)
+
+        # Aggiorna info anteprima se presente con nuovi parametri
+        if hasattr(self, "preview_info") and self.preview_info:
+            try:
+                if head_pose_data and head_pose_data.get("method") in [
+                    "head_pose_3d",
+                    "geometric_improved",
+                ]:
+                    desc = head_pose_data.get("description", "N/A")
+                    suitable = head_pose_data.get("suitable_for_measurement", False)
+
+                    # Debug aggiuntivo per preview
+                    debug = head_pose_data.get("debug", {})
+                    if debug:
+                        debug_text = f" | S:{debug.get('symmetry_score', 0):.2f} V:{debug.get('vertical_score', 0):.2f}"
+                        desc_with_debug = desc + debug_text
+                    else:
+                        desc_with_debug = desc
+
+                    if suitable:
+                        status_text = f"🎯 Score: {score:.3f} - {desc_with_debug} ✅"
+                    else:
+                        status_text = f"🎯 Score: {score:.3f} - {desc_with_debug} ⚠️"
+                else:
+                    # Fallback al sistema originale
+                    status_text = f"🎯 Score frontalità: {score:.2f}"
+                    if score > 0.7:
+                        status_text += " - Ottimo! 🟢"
+                    elif score > 0.5:
+                        status_text += " - Buono 🟡"
+                    else:
+                        status_text += " - Migliora posizione 🔴"
+            except Exception:
+                status_text = f"🎯 Score: {score:.2f}"
+
             self.root.after(0, lambda: self.preview_info.config(text=status_text))
 
     def on_video_preview_update(self, frame: np.ndarray):
@@ -791,7 +1120,7 @@ class CanvasApp:
             )
 
             if best_frame is not None:
-                self.set_current_image(best_frame, best_landmarks)
+                self.set_current_image(best_frame, best_landmarks, auto_resize=False)
                 self.best_frame_info.config(
                     text=f"Miglior frame: Score {best_score:.2f} (Auto-completato)"
                 )
@@ -826,7 +1155,10 @@ class CanvasApp:
             print(f"Errore nell'aggiornamento display anteprima: {e}")
 
     def set_current_image(
-        self, image: np.ndarray, landmarks: Optional[List[Tuple[float, float]]] = None
+        self,
+        image: np.ndarray,
+        landmarks: Optional[List[Tuple[float, float]]] = None,
+        auto_resize: bool = True,
     ):
         """Imposta l'immagine corrente nel canvas."""
         self.current_image = image.copy()
@@ -836,7 +1168,11 @@ class CanvasApp:
             # Rileva automaticamente i landmark
             self.detect_landmarks()
 
-        self.update_canvas_display()
+        # Usa refresh_canvas_only() se non vogliamo ridimensionare automaticamente
+        if auto_resize:
+            self.update_canvas_display()
+        else:
+            self.refresh_canvas_only()
 
     def detect_landmarks(self):
         """Rileva i landmark facciali nell'immagine corrente."""
@@ -857,61 +1193,53 @@ class CanvasApp:
         if self.current_image is None:
             messagebox.showwarning("Attenzione", "Nessuna immagine caricata")
             return
-        
+
         try:
             # Converte l'immagine OpenCV in formato PIL
             image_rgb = cv2.cvtColor(self.current_image, cv2.COLOR_BGR2RGB)
             pil_image = Image.fromarray(image_rgb)
-            
+
             # Processa l'immagine per rilevare i puntini verdi
             results = self.green_dots_processor.process_pil_image(pil_image)
-            
+
             # Salva i risultati
             self.green_dots_results = results
-            
-            if results['success']:
+
+            if results["success"]:
                 # Salva l'overlay generato
-                self.green_dots_overlay = results['overlay']
-                
+                self.green_dots_overlay = results["overlay"]
+
                 # Abilita automaticamente la visualizzazione dell'overlay
                 self.show_green_dots_overlay = True
                 self.green_dots_var.set(True)
-                
+
                 # Aggiorna la visualizzazione del canvas
                 self.refresh_canvas_only()
-                
+
                 # Aggiunge misurazioni alla tabella
-                left_stats = results['statistics']['left']
-                right_stats = results['statistics']['right']
-                combined_stats = results['statistics']['combined']
-                
+                left_stats = results["statistics"]["left"]
+                right_stats = results["statistics"]["right"]
+                combined_stats = results["statistics"]["combined"]
+
                 # Aggiunge le statistiche delle aree sopraccigliare
                 self.add_measurement(
-                    "Area Sopracciglio Sx", 
-                    f"{left_stats['area']:.1f}", 
-                    "px²"
+                    "Area Sopracciglio Sx", f"{left_stats['area']:.1f}", "px²"
                 )
                 self.add_measurement(
-                    "Area Sopracciglio Dx", 
-                    f"{right_stats['area']:.1f}", 
-                    "px²"
+                    "Area Sopracciglio Dx", f"{right_stats['area']:.1f}", "px²"
                 )
                 self.add_measurement(
-                    "Perimetro Sopracciglio Sx", 
-                    f"{left_stats['perimeter']:.1f}", 
-                    "px"
+                    "Perimetro Sopracciglio Sx", f"{left_stats['perimeter']:.1f}", "px"
                 )
                 self.add_measurement(
-                    "Perimetro Sopracciglio Dx", 
-                    f"{right_stats['perimeter']:.1f}", 
-                    "px"
+                    "Perimetro Sopracciglio Dx", f"{right_stats['perimeter']:.1f}", "px"
                 )
                 self.add_measurement(
-                    "Differenza Aree Sopraccigli", 
-                    f"{abs(left_stats['area'] - right_stats['area']):.1f}", 
-                    "px²"
+                    "Differenza Aree Sopraccigli",
+                    f"{abs(left_stats['area'] - right_stats['area']):.1f}",
+                    "px²",
                 )
-                
+
                 # Mostra messaggio di successo
                 message = f"""Rilevamento completato con successo!
                 
@@ -923,27 +1251,29 @@ Aree calcolate:
 • Sinistra: {left_stats['area']:.1f} px²
 • Destra: {right_stats['area']:.1f} px²
 • Differenza: {abs(left_stats['area'] - right_stats['area']):.1f} px²"""
-                
+
                 messagebox.showinfo("Rilevamento Puntini Verdi", message)
-                self.status_bar.config(text=f"Puntini verdi rilevati: {results['detection_results']['total_dots']}")
-                
+                self.status_bar.config(
+                    text=f"Puntini verdi rilevati: {results['detection_results']['total_dots']}"
+                )
+
             else:
                 # Errore nel rilevamento
-                error_msg = results.get('error', 'Errore sconosciuto nel rilevamento')
+                error_msg = results.get("error", "Errore sconosciuto nel rilevamento")
                 messagebox.showerror("Errore Rilevamento", error_msg)
                 self.status_bar.config(text="Errore nel rilevamento puntini verdi")
-                
+
                 # Reset dei dati
                 self.green_dots_results = None
                 self.green_dots_overlay = None
                 self.show_green_dots_overlay = False
                 self.green_dots_var.set(False)
-        
+
         except Exception as e:
             error_msg = f"Errore durante il rilevamento dei puntini verdi: {str(e)}"
             messagebox.showerror("Errore", error_msg)
             self.status_bar.config(text="Errore nel rilevamento puntini verdi")
-            
+
             # Reset dei dati in caso di errore
             self.green_dots_results = None
             self.green_dots_overlay = None
@@ -953,19 +1283,19 @@ Aree calcolate:
     def toggle_green_dots_overlay(self):
         """Attiva/disattiva la visualizzazione dell'overlay dei puntini verdi."""
         self.show_green_dots_overlay = self.green_dots_var.get()
-        
+
         if self.show_green_dots_overlay and self.green_dots_overlay is None:
             messagebox.showwarning(
-                "Attenzione", 
-                "Nessun overlay disponibile. Esegui prima il rilevamento dei puntini verdi."
+                "Attenzione",
+                "Nessun overlay disponibile. Esegui prima il rilevamento dei puntini verdi.",
             )
             self.green_dots_var.set(False)
             self.show_green_dots_overlay = False
             return
-        
+
         # Aggiorna la visualizzazione
         self.refresh_canvas_only()
-        
+
         status = "attivato" if self.show_green_dots_overlay else "disattivato"
         self.status_bar.config(text=f"Overlay puntini verdi {status}")
 
@@ -1021,16 +1351,19 @@ Aree calcolate:
         # Sovrappone l'overlay dei puntini verdi se abilitato
         if self.show_green_dots_overlay and self.green_dots_overlay is not None:
             # Converte l'immagine OpenCV in PIL per la composizione
-            display_pil = Image.fromarray(cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB))
-            
+            display_pil = Image.fromarray(
+                cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
+            )
+
             # Compone l'overlay trasparente con l'immagine
             display_pil = Image.alpha_composite(
-                display_pil.convert('RGBA'), 
-                self.green_dots_overlay.convert('RGBA')
+                display_pil.convert("RGBA"), self.green_dots_overlay.convert("RGBA")
             )
-            
+
             # Riconverte in formato OpenCV
-            display_image = cv2.cvtColor(np.array(display_pil.convert('RGB')), cv2.COLOR_RGB2BGR)
+            display_image = cv2.cvtColor(
+                np.array(display_pil.convert("RGB")), cv2.COLOR_RGB2BGR
+            )
 
         # Usa la scala esistente per ridimensionare
         canvas_width = self.canvas.winfo_width()
@@ -1090,16 +1423,19 @@ Aree calcolate:
         # Sovrappone l'overlay dei puntini verdi se abilitato
         if self.show_green_dots_overlay and self.green_dots_overlay is not None:
             # Converte l'immagine OpenCV in PIL per la composizione
-            display_pil = Image.fromarray(cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB))
-            
+            display_pil = Image.fromarray(
+                cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
+            )
+
             # Compone l'overlay trasparente con l'immagine
             display_pil = Image.alpha_composite(
-                display_pil.convert('RGBA'), 
-                self.green_dots_overlay.convert('RGBA')
+                display_pil.convert("RGBA"), self.green_dots_overlay.convert("RGBA")
             )
-            
+
             # Riconverte in formato OpenCV
-            display_image = cv2.cvtColor(np.array(display_pil.convert('RGB')), cv2.COLOR_RGB2BGR)
+            display_image = cv2.cvtColor(
+                np.array(display_pil.convert("RGB")), cv2.COLOR_RGB2BGR
+            )
 
         # Disegna gli overlay delle misurazioni
         if self.show_measurement_overlays:
@@ -2327,7 +2663,7 @@ Aree calcolate:
             landmarks = self.face_detector.detect_face_landmarks(current_frame)
 
             # Carica nel canvas principale
-            self.set_current_image(current_frame, landmarks)
+            self.set_current_image(current_frame, landmarks, auto_resize=False)
 
             # Mostra messaggio di conferma
             if landmarks:
@@ -2345,6 +2681,21 @@ Aree calcolate:
         else:
             messagebox.showwarning("Errore", "Nessun frame disponibile per la cattura.")
 
+    def save_frame_to_buffer(self, frame_number: int, frame: np.ndarray, landmarks):
+        """Salva un frame nel buffer per il doppio click."""
+        try:
+            # Aggiungi al buffer
+            self.frame_buffer[frame_number] = (frame, landmarks)
+
+            # Mantieni solo i frame più recenti per evitare uso eccessivo della memoria
+            if len(self.frame_buffer) > self.max_buffer_size:
+                # Rimuovi il frame più vecchio (numero più basso)
+                oldest_frame = min(self.frame_buffer.keys())
+                del self.frame_buffer[oldest_frame]
+
+        except Exception as e:
+            print(f"Errore nel salvare frame nel buffer: {e}")
+
     def on_closing(self):
         """Gestisce la chiusura dell'applicazione."""
         # Ferma l'analisi video se in corso
@@ -2359,6 +2710,73 @@ Aree calcolate:
 
         # Chiudi applicazione
         self.root.destroy()
+
+    def on_debug_log(self, message: str, debug_info: dict):
+        """Callback per ricevere debug logs dal video analyzer."""
+        try:
+            # Estrai i parametri necessari dal debug_info
+            score_str = debug_info.get("score", "0.0").replace("°", "")
+            score = float(score_str)
+
+            # Estrai il tempo numerico dalla stringa timestamp
+            timestamp_str = debug_info.get("timestamp", "0.0s")
+            elapsed_time = float(timestamp_str.replace("s", ""))
+
+            # Assicurati che l'aggiornamento avvenga nel thread principale
+            self.root.after(
+                0, lambda: self.add_debug_log(score, debug_info, elapsed_time)
+            )
+        except Exception as e:
+            print(f"Errore nel debug log callback: {e}")
+
+    def on_debug_row_double_click(self, event):
+        """Gestisce il doppio click su una riga della tabella debug."""
+        try:
+            # Ottieni l'item selezionato
+            selection = self.debug_tree.selection()
+            if not selection:
+                return
+
+            # Ottieni i valori della riga selezionata
+            item = selection[0]
+            values = self.debug_tree.item(item, "values")
+
+            if len(values) >= 7:
+                # Estrai il numero del frame dalla descrizione (formato #123)
+                frame_description = values[6]  # La colonna "Frame"
+                if frame_description.startswith("#"):
+                    try:
+                        frame_number = int(frame_description[1:])
+
+                        # Cerca nel buffer locale
+                        if frame_number in self.frame_buffer:
+                            frame, landmarks = self.frame_buffer[frame_number]
+                            self.set_current_image(frame, landmarks, auto_resize=True)
+                            score = float(values[1])  # Score dalla tabella
+                            self.status_bar.config(
+                                text=f"Caricato frame #{frame_number} (Score: {score:.3f})"
+                            )
+                            print(f"Frame #{frame_number} caricato dal buffer")
+                            return
+                        else:
+                            # Frame non nel buffer
+                            self.status_bar.config(
+                                text=f"Frame #{frame_number} non disponibile nel buffer"
+                            )
+                            print(
+                                f"Frame #{frame_number} non trovato nel buffer. Disponibili: {list(self.frame_buffer.keys())}"
+                            )
+
+                    except ValueError:
+                        self.status_bar.config(text="Formato numero frame non valido")
+                else:
+                    self.status_bar.config(
+                        text="Numero frame non trovato nella descrizione"
+                    )
+
+        except Exception as e:
+            print(f"Errore nel doppio click debug row: {e}")
+            self.status_bar.config(text="Errore nel caricamento del frame")
 
 
 def main():
