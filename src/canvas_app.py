@@ -14,6 +14,8 @@ from src.measurement_tools import MeasurementTools
 from src.green_dots_processor import GreenDotsProcessor
 from src.scoring_config import ScoringConfig
 from src.utils import resize_image_keep_aspect
+from src.professional_canvas import ProfessionalCanvas
+import matplotlib.pyplot as plt
 
 
 class CanvasApp:
@@ -37,6 +39,11 @@ class CanvasApp:
         self.canvas_image = None
         self.canvas_scale = 1.0
         self.canvas_offset = (0, 0)
+
+        # Variabili per display e scaling del canvas professionale
+        self.display_scale = 1.0
+        self.display_size = (800, 600)  # Default size
+
         self.selected_points = []
         self.selected_landmarks = []  # Landmark selezionati per misurazione
         self.measurement_mode = "distance"
@@ -628,26 +635,20 @@ class CanvasApp:
         ).pack(anchor=tk.W)
 
     def setup_canvas(self, parent):
-        """Configura il canvas per la visualizzazione."""
-        # Canvas con scrollbar
-        self.canvas = tk.Canvas(parent, bg="white", cursor="cross")
+        """Configura il canvas professionale per la visualizzazione."""
+        # Inizializza il canvas professionale
+        self.professional_canvas = ProfessionalCanvas(parent)
 
-        h_scroll = ttk.Scrollbar(
-            parent, orient=tk.HORIZONTAL, command=self.canvas.xview
+        # Mantieni riferimento al canvas per compatibilità
+        self.canvas = self.professional_canvas.mpl_canvas.get_tk_widget()
+
+        # Collega eventi del canvas professionale ai metodi esistenti
+        self.professional_canvas.mpl_canvas.mpl_connect(
+            "button_press_event", self.on_professional_canvas_click
         )
-        v_scroll = ttk.Scrollbar(parent, orient=tk.VERTICAL, command=self.canvas.yview)
 
-        self.canvas.configure(xscrollcommand=h_scroll.set, yscrollcommand=v_scroll.set)
-
-        # Grid layout per il canvas
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        h_scroll.grid(row=1, column=0, sticky="ew")
-        v_scroll.grid(row=0, column=1, sticky="ns")
-
-        # Eventi canvas
-        self.canvas.bind("<Button-1>", self.on_canvas_click)
-        self.canvas.bind("<MouseWheel>", self.on_canvas_zoom)
-        self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
+        # Configura callback per compatibilità con misurazione
+        self.professional_canvas.measurement_callback = self.on_measurement_completed
 
     def setup_integrated_preview(self, parent):
         """Configura l'area anteprima integrata con layout scrollabile moderno."""
@@ -1098,10 +1099,10 @@ class CanvasApp:
         self.frame_buffer.clear()
 
         # Reset canvas centrale
-        self.canvas.delete("all")
+        if hasattr(self, "professional_canvas"):
+            self.professional_canvas.clear_canvas()
         self.current_image = None
         self.current_landmarks = None
-        self.canvas_image = None
 
         # Reset contatori e stato
         self.current_best_score = 0.0
@@ -1976,106 +1977,9 @@ Aree calcolate:
         pil_image = Image.fromarray(display_image_rgb)
         self.canvas_image = ImageTk.PhotoImage(pil_image)
 
-        # Aggiorna canvas
-        self.canvas.delete("all")
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.canvas_image)
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-
-    def update_canvas_display(self):
-        """Aggiorna la visualizzazione del canvas."""
-        if self.current_image is None:
-            return
-
-        # Crea una copia dell'immagine per la visualizzazione
-        display_image = self.current_image.copy()
-
-        # Disegna tutti i landmark se abilitati
-        if self.show_all_landmarks and self.current_landmarks:
-            display_image = self.face_detector.draw_landmarks(
-                display_image,
-                self.current_landmarks,
-                draw_all=True,
-                key_only=False,
-            )
-
-        # Disegna l'asse di simmetria se abilitato
-        if self.show_axis_var.get() and self.current_landmarks:
-            display_image = self.face_detector.draw_symmetry_axis(
-                display_image, self.current_landmarks
-            )
-
-        # Disegna le selezioni correnti
-        for i, point in enumerate(self.selected_points):
-            cv2.circle(display_image, point, 5, (255, 0, 255), -1)
-
-        # Disegna i landmark selezionati in modalità landmark
-        if self.landmark_measurement_mode and self.current_landmarks:
-            for i, landmark_idx in enumerate(self.selected_landmarks):
-                if landmark_idx < len(self.current_landmarks):
-                    point = self.current_landmarks[landmark_idx]
-                    # Cerchio più grande per landmark selezionati
-                    cv2.circle(
-                        display_image,
-                        (int(point[0]), int(point[1])),
-                        8,
-                        (0, 255, 255),
-                        3,
-                    )
-
-        # Sovrappone l'overlay dei puntini verdi se abilitato
-        if self.show_green_dots_overlay and self.green_dots_overlay is not None:
-            # Converte l'immagine OpenCV in PIL per la composizione
-            display_pil = Image.fromarray(
-                cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
-            )
-
-            # Compone l'overlay trasparente con l'immagine
-            display_pil = Image.alpha_composite(
-                display_pil.convert("RGBA"), self.green_dots_overlay.convert("RGBA")
-            )
-
-            # Riconverte in formato OpenCV
-            display_image = cv2.cvtColor(
-                np.array(display_pil.convert("RGB")), cv2.COLOR_RGB2BGR
-            )
-
-        # Disegna gli overlay delle misurazioni
-        if self.show_measurement_overlays:
-            display_image = self.draw_measurement_overlays(display_image)
-
-        # Ridimensiona per il canvas mantenendo le proporzioni
-        canvas_width = self.canvas.winfo_width()
-        canvas_height = self.canvas.winfo_height()
-
-        if canvas_width > 1 and canvas_height > 1:
-            # Calcola il fattore di scala prima del ridimensionamento
-            original_height, original_width = self.current_image.shape[:2]
-
-            # Calcola il fattore di scala
-            scale_w = canvas_width / original_width
-            scale_h = canvas_height / original_height
-            self.display_scale = min(scale_w, scale_h)
-
-            # Ridimensiona l'immagine
-            display_image = resize_image_keep_aspect(
-                display_image, canvas_width, canvas_height
-            )
-
-            # Salva le dimensioni dell'immagine visualizzata
-            self.display_size = display_image.shape[:2][::-1]  # (width, height)
-        else:
-            self.display_scale = 1.0
-            self.display_size = display_image.shape[:2][::-1]
-
-        # Converte per Tkinter
-        display_image_rgb = cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
-        pil_image = Image.fromarray(display_image_rgb)
-        self.canvas_image = ImageTk.PhotoImage(pil_image)
-
-        # Aggiorna canvas
-        self.canvas.delete("all")
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.canvas_image)
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        # Aggiorna canvas professionale
+        if hasattr(self, "professional_canvas"):
+            self.update_canvas_display()
 
     def canvas_to_image_coordinates(
         self, canvas_x: float, canvas_y: float
@@ -3433,6 +3337,318 @@ Aree calcolate:
             text=f"{self.scoring_config.symmetry_weight:.2f}"
         )
         self.eye_value_label.config(text=f"{self.scoring_config.eye_weight:.2f}")
+
+    # === METODI INTEGRAZIONE CANVAS PROFESSIONALE ===
+
+    def on_professional_canvas_click(self, event):
+        """Gestisce i click sul canvas professionale per compatibilità con misurazione."""
+        if event.inaxes and hasattr(self, "measurement_tools"):
+            # Le coordinate matplotlib sono già nel sistema di coordinate dell'immagine
+            x, y = event.xdata, event.ydata
+
+            if x is None or y is None:
+                return
+
+            # Converte in coordinate intere per compatibilità
+            image_x, image_y = int(x), int(y)
+
+            # Gestisce la selezione diretta senza conversione coordinate
+            if self.landmark_measurement_mode:
+                # Modalità landmark: trova il landmark più vicino
+                if self.current_landmarks:
+                    closest_landmark_idx = self.find_closest_landmark(image_x, image_y)
+                    if closest_landmark_idx is not None:
+                        self.add_landmark_selection(closest_landmark_idx)
+            else:
+                # Modalità manuale: aggiunge punto diretto
+                self.selected_points.append((image_x, image_y))
+
+                # Limita il numero di punti in base alla modalità
+                max_points = {"distance": 2, "angle": 3, "area": 4}
+                if len(self.selected_points) > max_points.get(self.measurement_mode, 2):
+                    self.selected_points.pop(0)
+
+                self.status_bar.config(
+                    text=f"Punto selezionato: ({image_x}, {image_y})"
+                )
+
+            self.update_canvas_display()
+
+    def on_measurement_completed(self, measurement_data):
+        """Callback quando una misurazione è completata nel canvas professionale."""
+        if hasattr(self, "measurement_result"):
+            self.measurement_result = measurement_data
+            # Aggiorna la visualizzazione se necessario
+            if hasattr(self, "status_bar"):
+                self.status_bar.config(
+                    text=f"Misurazione completata: {measurement_data}"
+                )
+
+    def update_canvas_display(self):
+        """Aggiorna la visualizzazione del canvas professionale con tutti gli overlay."""
+        if not hasattr(self, "professional_canvas") or self.current_image is None:
+            return
+
+        # Crea una copia dell'immagine per la visualizzazione con tutti gli overlay
+        display_image = self.current_image.copy()
+
+        # Disegna tutti i landmark se abilitati
+        if self.show_all_landmarks and self.current_landmarks:
+            display_image = self.face_detector.draw_landmarks(
+                display_image,
+                self.current_landmarks,
+                draw_all=True,
+                key_only=False,
+            )
+
+        # Disegna l'asse di simmetria se abilitato
+        if (
+            hasattr(self, "show_axis_var")
+            and self.show_axis_var.get()
+            and self.current_landmarks
+        ):
+            display_image = self.face_detector.draw_symmetry_axis(
+                display_image, self.current_landmarks
+            )
+
+        # Disegna le selezioni correnti
+        for i, point in enumerate(self.selected_points):
+            cv2.circle(display_image, point, 5, (255, 0, 255), -1)
+
+        # Disegna i landmark selezionati in modalità landmark
+        if (
+            hasattr(self, "landmark_measurement_mode")
+            and self.landmark_measurement_mode
+            and self.current_landmarks
+        ):
+            for i, landmark_idx in enumerate(self.selected_landmarks):
+                if landmark_idx < len(self.current_landmarks):
+                    point = self.current_landmarks[landmark_idx]
+                    # Cerchio più grande per landmark selezionati
+                    cv2.circle(
+                        display_image,
+                        (int(point[0]), int(point[1])),
+                        8,
+                        (0, 255, 255),
+                        3,
+                    )
+
+        # Sovrappone l'overlay dei puntini verdi se abilitato
+        if (
+            hasattr(self, "show_green_dots_overlay")
+            and self.show_green_dots_overlay
+            and hasattr(self, "green_dots_overlay")
+            and self.green_dots_overlay is not None
+        ):
+            # Converte l'immagine OpenCV in PIL per la composizione
+            display_pil = Image.fromarray(
+                cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
+            )
+
+            # Compone l'overlay trasparente con l'immagine
+            display_pil = Image.alpha_composite(
+                display_pil.convert("RGBA"), self.green_dots_overlay.convert("RGBA")
+            )
+
+            # Riconverte in formato OpenCV
+            display_image = cv2.cvtColor(
+                np.array(display_pil.convert("RGB")), cv2.COLOR_RGB2BGR
+            )
+
+        # Disegna gli overlay delle misurazioni
+        if (
+            hasattr(self, "show_measurement_overlays")
+            and self.show_measurement_overlays
+        ):
+            if hasattr(self, "draw_measurement_overlays"):
+                display_image = self.draw_measurement_overlays(display_image)
+
+        # Converte OpenCV image in PIL
+        if isinstance(display_image, np.ndarray):
+            # Converte BGR to RGB se necessario
+            if len(display_image.shape) == 3:
+                image_rgb = cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
+            else:
+                image_rgb = display_image
+            pil_image = Image.fromarray(image_rgb)
+        else:
+            pil_image = display_image
+
+        # Imposta l'immagine nel canvas professionale
+        self.professional_canvas.set_image(pil_image)
+
+        # Aggiunge i landmark aggiuntivi direttamente sul canvas matplotlib se presenti
+        if self.current_landmarks is not None:
+            self.draw_landmarks_on_professional_canvas()
+
+        # Aggiunge le misurazioni se presenti
+        if (
+            hasattr(self, "measurement_overlays")
+            and hasattr(self, "show_measurement_overlays")
+            and self.show_measurement_overlays
+        ):
+            self.draw_measurements_on_professional_canvas()
+
+    def draw_landmarks_on_professional_canvas(self):
+        """Disegna i landmark sul canvas professionale."""
+        if not self.current_landmarks or not hasattr(self, "professional_canvas"):
+            return
+
+        ax = self.professional_canvas.ax
+
+        # Disegna i landmark principali
+        if not self.show_all_landmarks:
+            # Solo landmark principali (come nel sistema originale)
+            important_landmarks = [
+                33,
+                7,
+                163,
+                144,
+                145,
+                153,
+                154,
+                155,
+                133,
+                173,
+                157,
+                158,
+                159,
+                160,
+                161,
+                246,
+                9,
+                10,
+                151,
+                337,
+                299,
+                333,
+                298,
+                301,
+                366,
+                389,
+                356,
+                454,
+                323,
+                361,
+                435,
+                103,
+                67,
+                109,
+                10,
+                151,
+                9,
+                175,
+                136,
+                150,
+                149,
+                176,
+                148,
+                152,
+                377,
+                400,
+                378,
+                379,
+                365,
+                397,
+                288,
+                361,
+                323,
+            ]
+
+            for idx in important_landmarks:
+                if idx < len(self.current_landmarks):
+                    landmark = self.current_landmarks[idx]
+                    # I landmark sono tuple (x, y), non oggetti con proprietà
+                    ax.plot(landmark[0], landmark[1], "ro", markersize=2)
+        else:
+            # Tutti i 468 landmark
+            for landmark in self.current_landmarks:
+                # I landmark sono tuple (x, y), non oggetti con proprietà
+                ax.plot(landmark[0], landmark[1], "bo", markersize=1)
+
+        self.professional_canvas.mpl_canvas.draw()
+
+    def draw_measurements_on_professional_canvas(self):
+        """Disegna le misurazioni sul canvas professionale."""
+        if not hasattr(self, "professional_canvas") or not hasattr(
+            self, "measurement_overlays"
+        ):
+            return
+
+        ax = self.professional_canvas.ax
+
+        # Disegna gli overlay delle misurazioni
+        for overlay in self.measurement_overlays:
+            if overlay.get("visible", True):
+                measurement_type = overlay.get("type", "line")
+                color = overlay.get("color", "red")
+
+                if measurement_type == "line":
+                    points = overlay.get("points", [])
+                    if len(points) >= 2:
+                        x_coords = [p[0] for p in points]
+                        y_coords = [p[1] for p in points]
+                        ax.plot(x_coords, y_coords, color=color, linewidth=2)
+
+                elif measurement_type == "circle":
+                    center = overlay.get("center", (0, 0))
+                    radius = overlay.get("radius", 10)
+                    circle = plt.Circle(
+                        center, radius, color=color, fill=False, linewidth=2
+                    )
+                    ax.add_patch(circle)
+
+        self.professional_canvas.mpl_canvas.draw()
+
+    def clear_canvas(self):
+        """Pulisce il canvas professionale."""
+        if hasattr(self, "professional_canvas"):
+            self.professional_canvas.clear_canvas()
+
+    def save_image(self):
+        """Salva l'immagine corrente con le annotazioni."""
+        if not self.current_image is None:
+            file_path = filedialog.asksaveasfilename(
+                title="Salva Immagine",
+                defaultextension=".png",
+                filetypes=[
+                    ("PNG", "*.png"),
+                    ("JPEG", "*.jpg"),
+                    ("Tutti i file", "*.*"),
+                ],
+            )
+
+            if file_path:
+                # Salva l'immagine dal canvas professionale
+                if hasattr(self, "professional_canvas"):
+                    self.professional_canvas.fig.savefig(
+                        file_path, dpi=300, bbox_inches="tight"
+                    )
+                    self.status_bar.config(text=f"Immagine salvata: {file_path}")
+                else:
+                    # Fallback al metodo originale
+                    cv2.imwrite(file_path, self.current_image)
+
+    def export_measurements(self):
+        """Esporta le misurazioni in formato JSON."""
+        if hasattr(self, "professional_canvas"):
+            measurements = self.professional_canvas.export_measurements()
+
+            if measurements:
+                file_path = filedialog.asksaveasfilename(
+                    title="Esporta Misurazioni",
+                    defaultextension=".json",
+                    filetypes=[("JSON", "*.json"), ("Tutti i file", "*.*")],
+                )
+
+                if file_path:
+                    import json
+
+                    with open(file_path, "w") as f:
+                        json.dump(measurements, f, indent=2)
+                    self.status_bar.config(text=f"Misurazioni esportate: {file_path}")
+            else:
+                messagebox.showinfo("Info", "Nessuna misurazione da esportare")
 
 
 def main():
