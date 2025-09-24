@@ -28,6 +28,17 @@ class VideoAnalyzer:
         self.frame_callback = None  # NUOVO: Per aggiornare canvas principale
         self.debug_callback = None  # NUOVO: Per inviare dati alla tabella debug GUI
 
+        # Tracciamento sorgente video per timestamp
+        self.is_video_file = False  # True per file video, False per webcam
+        self.analysis_start_time = None  # Tempo di inizio per webcam
+
+        # Controlli player video
+        self.is_paused = False  # Stato di pausa
+        self.playback_speed = 1.0  # Velocità di riproduzione (1.0 = normale)
+        self.current_position_ms = 0  # Posizione corrente in ms
+        self.total_duration_ms = 0  # Durata totale del video in ms
+        self.fps = 30  # Frame rate del video
+
         # Parametri di analisi ottimizzati per trovare il miglior frame frontale
         self.min_face_size = 100  # Dimensione minima del volto in pixel
         self.analysis_interval = 0.05  # Analizza ogni 50ms per più precisione
@@ -56,6 +67,110 @@ class VideoAnalyzer:
     def set_scoring_config(self, scoring_config):
         """Imposta la configurazione dei pesi per lo scoring."""
         self.scoring_config = scoring_config
+
+    # =============== CONTROLLI PLAYER VIDEO ===============
+
+    def play_pause(self) -> bool:
+        """
+        Toggle play/pause per il video.
+        Returns: True se ora è in play, False se in pausa
+        """
+        if not self.is_video_file:
+            # Per webcam - Play/Pause gestisce solo la pausa del flusso
+            if self.is_capturing:
+                self.is_paused = not self.is_paused
+                print(f"📹 Webcam {'in pausa' if self.is_paused else 'ripresa'}")
+                return not self.is_paused
+            else:
+                print("❌ Webcam non attiva - usa 'Avvia Webcam' per iniziare")
+                return False
+
+        # Per file video
+        if not self.is_capturing:
+            # Video finito o mai avviato - riavvia l'analisi
+            print("🔄 Video finito, riavvio analisi...")
+            if self.start_live_analysis():
+                self.is_paused = False
+                return True
+            else:
+                return False
+        else:
+            # Video in corso - toggle pausa
+            self.is_paused = not self.is_paused
+            print(f"🎬 Video {'in pausa' if self.is_paused else 'in riproduzione'}")
+            return not self.is_paused
+
+    def stop(self):
+        """Ferma il video/webcam."""
+        if not self.is_video_file:
+            # Per webcam - Stop spegne completamente la webcam
+            if self.is_capturing:
+                self.is_capturing = False
+
+            if self.capture and self.capture.isOpened():
+                self.capture.release()
+                self.capture = None
+
+            self.is_paused = True
+            print("📹 Webcam spenta")
+        else:
+            # Per file video - Stop riporta all'inizio
+            if self.is_capturing:
+                self.is_capturing = False
+
+            if self.capture and self.capture.isOpened():
+                self.capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                self.current_position_ms = 0
+
+            self.is_paused = True
+            print("⏹️ Video fermato e riportato all'inizio")
+
+    def seek_to_time(self, time_ms: float):
+        """
+        Sposta la posizione del video al tempo specificato.
+        Args:
+            time_ms: Tempo in millisecondi
+        """
+        if not self.is_video_file or not self.capture or not self.capture.isOpened():
+            return False
+
+        # Limita ai bounds del video
+        time_ms = max(0, min(time_ms, self.total_duration_ms))
+
+        # Converte in frame number
+        frame_number = int((time_ms / 1000.0) * self.fps)
+        self.capture.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+        self.current_position_ms = time_ms
+
+        return True
+
+    def set_playback_speed(self, speed: float):
+        """
+        Imposta la velocità di riproduzione.
+        Args:
+            speed: Velocità (0.5 = metà, 1.0 = normale, 2.0 = doppia)
+        """
+        self.playback_speed = max(0.1, min(speed, 5.0))
+
+    def get_current_time_ms(self) -> float:
+        """Restituisce la posizione corrente in millisecondi."""
+        if self.is_video_file and self.capture and self.capture.isOpened():
+            return self.capture.get(cv2.CAP_PROP_POS_MSEC)
+        return 0
+
+    def get_duration_ms(self) -> float:
+        """Restituisce la durata totale in millisecondi."""
+        return self.total_duration_ms
+
+    def get_fps(self) -> float:
+        """Restituisce il frame rate del video."""
+        return self.fps
+
+    def is_video_playing(self) -> bool:
+        """Restituisce True se il video sta riproducendo."""
+        return self.is_capturing and not self.is_paused
+
+    # =============== FINE CONTROLLI PLAYER ===============
 
     def start_camera_capture(self, camera_index: int = 0) -> bool:
         """
@@ -91,6 +206,7 @@ class VideoAnalyzer:
                         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
                         self.capture.set(cv2.CAP_PROP_FPS, 30)
 
+                        self.is_video_file = False  # Impostato come webcam
                         return True
                     else:
                         print(f"Camera {idx} aperta ma non legge frame")
@@ -123,6 +239,20 @@ class VideoAnalyzer:
                     )
                     # Riporta al frame 0
                     self.capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    self.is_video_file = True  # Impostato come file video
+
+                    # Inizializza proprietà video
+                    self.fps = self.capture.get(cv2.CAP_PROP_FPS) or 30
+                    total_frames = self.capture.get(cv2.CAP_PROP_FRAME_COUNT)
+                    self.total_duration_ms = (
+                        (total_frames / self.fps) * 1000 if total_frames > 0 else 0
+                    )
+                    self.current_position_ms = 0
+                    self.is_paused = False
+
+                    print(
+                        f"📊 Video info: FPS={self.fps:.1f}, Durata={self.total_duration_ms/1000:.1f}s"
+                    )
                     return True
                 else:
                     print(
@@ -199,9 +329,18 @@ class VideoAnalyzer:
         frames_analyzed = 0
         preview_interval = 0.1  # Aggiorna anteprima ogni 100ms
 
+        # Inizializza il tempo di start per webcam
+        if not self.is_video_file:
+            self.analysis_start_time = time.time()
+
         print("🎯 ANALYSIS_LOOP: Avvio analisi semplificata per frame frontale...")
 
         while self.is_capturing:
+            # Gestione pausa
+            if self.is_paused:
+                time.sleep(0.1)  # Attesa durante la pausa
+                continue
+
             ret, frame = self.capture.read()
             if not ret:
                 print(
@@ -212,6 +351,10 @@ class VideoAnalyzer:
             self.current_frame = frame.copy()
             current_time = time.time()
             frames_processed += 1
+
+            # Aggiorna posizione corrente per file video
+            if self.is_video_file:
+                self.current_position_ms = self.get_current_time_ms()
 
             # AGGIORNA ANTEPRIMA ogni 100ms
             if (
@@ -245,8 +388,20 @@ class VideoAnalyzer:
 
                         # Invia alla tabella GUI
                         if self.debug_callback:
+                            # Calcola il timestamp appropriato
+                            if self.is_video_file:
+                                # Per file video: usa la posizione nel video
+                                video_time_ms = self.capture.get(cv2.CAP_PROP_POS_MSEC)
+                                video_time_seconds = video_time_ms / 1000.0
+                            else:
+                                # Per webcam: usa il tempo trascorso dall'inizio dell'analisi
+                                video_time_seconds = (
+                                    current_time - self.analysis_start_time
+                                )
+
                             self.debug_callback(
-                                frames_processed,
+                                video_time_seconds,
+                                frames_processed,  # Numero del frame per l'ultima colonna
                                 frontal_score,
                                 debug_info,
                                 frame.copy(),
@@ -290,8 +445,16 @@ class VideoAnalyzer:
 
                 last_analysis = current_time
 
-            # Pausa minima per evitare sovraccarico CPU
-            time.sleep(0.01)
+            # Controllo velocità di riproduzione
+            if self.is_video_file and self.playback_speed != 1.0:
+                # Calcola delay basato sulla velocità
+                frame_delay = (1.0 / self.fps) / self.playback_speed
+                time.sleep(
+                    max(0.01, frame_delay - 0.01)
+                )  # Sottrae il tempo di processing base
+            else:
+                # Pausa minima per evitare sovraccarico CPU
+                time.sleep(0.01)
 
         # Fine analisi
         self.is_capturing = False

@@ -79,6 +79,16 @@ class CanvasApp:
         self.preview_label = None
         self.preview_window = None  # Per compatibilità con close_preview_window
 
+        # Controlli player video
+        self.is_playing = False
+        self.current_time_var = tk.StringVar(value="00:00")
+        self.total_time_var = tk.StringVar(value="00:00")
+        self.seek_var = tk.DoubleVar(value=0)
+        self.speed_var = tk.DoubleVar(value=1.0)
+        self.updating_seek = (
+            False  # Flag per evitare loop durante aggiornamento seek bar
+        )
+
         # Configurazione pesi per scoring
         self.scoring_config = ScoringConfig()
         self.scoring_config.set_callback(self.on_scoring_config_change)
@@ -605,6 +615,18 @@ class CanvasApp:
             preset_frame, text="Meno Simmetria", command=self.preset_less_symmetry
         ).grid(row=0, column=2, sticky="ew", padx=2)
 
+        # Controllo asse di simmetria
+        axis_frame = ttk.Frame(scoring_frame)
+        axis_frame.pack(fill=tk.X, pady=(10, 5))
+
+        self.show_axis_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            axis_frame,
+            text="Asse",
+            variable=self.show_axis_var,
+            command=self.toggle_axis,
+        ).pack(anchor=tk.W)
+
     def setup_canvas(self, parent):
         """Configura il canvas per la visualizzazione."""
         # Canvas con scrollbar
@@ -636,26 +658,96 @@ class CanvasApp:
         parent.grid_rowconfigure(3, weight=1, minsize=200)  # Debug logs (espandibile)
         parent.grid_columnconfigure(0, weight=1)
 
-        # Frame controlli anteprima con altezza fissa
-        controls_frame = ttk.Frame(parent, height=40)
+        # Frame controlli video avanzati
+        controls_frame = ttk.LabelFrame(parent, text="🎬 Controlli Video", padding=5)
         controls_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
-        controls_frame.grid_propagate(False)  # Mantiene altezza fissa
+        controls_frame.grid_columnconfigure(1, weight=1)  # Seek bar espandibile
 
-        # Checkbox per attivare/disattivare anteprima
+        # Prima riga: controlli di base
+        control_row1 = ttk.Frame(controls_frame)
+        control_row1.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 5))
+        control_row1.grid_columnconfigure(2, weight=1)  # Spazio centrale espandibile
+
+        # Checkbox anteprima attiva
         self.preview_enabled = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            controls_frame,
-            text="Anteprima Attiva",
+            control_row1,
+            text="Attiva",
             variable=self.preview_enabled,
             command=self.toggle_video_preview,
-        ).pack(side=tk.LEFT, pady=8)
+        ).grid(row=0, column=0, padx=(0, 5), sticky="w")
 
-        # Pulsante per catturare frame corrente
+        # Controlli playback
+        playback_frame = ttk.Frame(control_row1)
+        playback_frame.grid(row=0, column=1, padx=5)
+
+        # Pulsanti controllo
+        self.play_pause_btn = ttk.Button(
+            playback_frame, text="▶️", width=3, command=self.toggle_play_pause
+        )
+        self.play_pause_btn.pack(side=tk.LEFT, padx=1)
+
+        ttk.Button(playback_frame, text="⏹️", width=3, command=self.stop_video).pack(
+            side=tk.LEFT, padx=1
+        )
+
+        # Pulsante cattura
         ttk.Button(
-            controls_frame,
-            text="📸 Cattura",
+            control_row1,
+            text="📸",
+            width=3,
             command=self.capture_current_frame,
-        ).pack(side=tk.RIGHT, pady=8)
+        ).grid(row=0, column=3, padx=(5, 0), sticky="e")
+
+        # Seconda riga: seek bar e indicatori tempo (solo per file video)
+        self.seek_frame = ttk.Frame(controls_frame)
+        self.seek_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=2)
+        self.seek_frame.grid_columnconfigure(1, weight=1)
+
+        # Tempo corrente
+        self.current_time_label = ttk.Label(
+            self.seek_frame, textvariable=self.current_time_var, width=6
+        )
+        self.current_time_label.grid(row=0, column=0, padx=(0, 5))
+
+        # Seek bar
+        self.seek_scale = ttk.Scale(
+            self.seek_frame,
+            from_=0,
+            to=100,
+            orient="horizontal",
+            variable=self.seek_var,
+            command=self.on_seek_change,
+        )
+        self.seek_scale.grid(row=0, column=1, sticky="ew", padx=5)
+
+        # Tempo totale
+        self.total_time_label = ttk.Label(
+            self.seek_frame, textvariable=self.total_time_var, width=6
+        )
+        self.total_time_label.grid(row=0, column=2, padx=(5, 0))
+
+        # Terza riga: controlli velocità
+        speed_frame = ttk.Frame(controls_frame)
+        speed_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(2, 0))
+        speed_frame.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(speed_frame, text="Velocità:").grid(
+            row=0, column=0, padx=(0, 5), sticky="w"
+        )
+
+        speed_scale = ttk.Scale(
+            speed_frame,
+            from_=0.25,
+            to=3.0,
+            orient="horizontal",
+            variable=self.speed_var,
+            command=self.on_speed_change,
+        )
+        speed_scale.grid(row=0, column=1, sticky="ew", padx=5)
+
+        self.speed_label = ttk.Label(speed_frame, text="1.0x", width=6)
+        self.speed_label.grid(row=0, column=2, padx=(5, 0))
 
         # Area anteprima video con dimensioni responsive
         self.integrated_preview_frame = ttk.Frame(
@@ -768,6 +860,146 @@ class CanvasApp:
         # Inizializza lista debug logs
         self.debug_logs = []
         self.max_debug_logs = 50  # Limite massimo entries
+
+        # Inizializza stato controlli video
+        self.update_video_controls_state()
+
+    # =============== CONTROLLI VIDEO PLAYER ===============
+
+    def toggle_play_pause(self):
+        """Toggle play/pause per il video."""
+        if self.video_analyzer.capture and self.video_analyzer.capture.isOpened():
+            is_playing = self.video_analyzer.play_pause()
+            self.is_playing = is_playing
+
+            # Aggiorna icona pulsante
+            if is_playing:
+                self.play_pause_btn.config(text="⏸️")
+                # Se il video è ripartito dall'inizio, aggiorna anche i controlli
+                if not self.video_analyzer.is_capturing:
+                    self.update_video_controls_state()
+                    if hasattr(self, "update_seek_position"):
+                        self.update_seek_position()
+            else:
+                self.play_pause_btn.config(text="▶️")
+
+            print(f"🎬 Video {'riprodotto' if is_playing else 'in pausa'}")
+
+    def stop_video(self):
+        """Ferma il video/webcam."""
+        self.video_analyzer.stop()
+        self.is_playing = False
+        self.play_pause_btn.config(text="▶️")
+
+        if self.video_analyzer.is_video_file:
+            # Per file video - Reset seek bar
+            if not self.updating_seek:
+                self.updating_seek = True
+                self.seek_var.set(0)
+                self.current_time_var.set("00:00")
+                self.updating_seek = False
+            print("🎬 Video fermato e riportato all'inizio")
+        else:
+            # Per webcam - Aggiorna interfaccia
+            self.update_video_controls_state()
+            self.preview_label.config(
+                text="Webcam spenta\n\nUsa 'Avvia Webcam'\nper riattivare"
+            )
+            print("📹 Webcam spenta")
+
+    def on_seek_change(self, value):
+        """Gestisce il cambio della seek bar."""
+        if self.updating_seek or not self.video_analyzer.is_video_file:
+            return
+
+        try:
+            # Converte percentuale in millisecondi
+            total_duration = self.video_analyzer.get_duration_ms()
+            if total_duration > 0:
+                seek_time = (float(value) / 100.0) * total_duration
+                self.video_analyzer.seek_to_time(seek_time)
+
+                # Aggiorna tempo corrente
+                minutes = int(seek_time // 60000)
+                seconds = int((seek_time % 60000) // 1000)
+                self.current_time_var.set(f"{minutes:02d}:{seconds:02d}")
+
+                print(f"🎬 Seek to {minutes:02d}:{seconds:02d}")
+        except ValueError:
+            pass
+
+    def on_speed_change(self, value):
+        """Gestisce il cambio di velocità."""
+        try:
+            speed = float(value)
+            self.video_analyzer.set_playback_speed(speed)
+            self.speed_label.config(text=f"{speed:.1f}x")
+            print(f"🎬 Velocità impostata a {speed:.1f}x")
+        except ValueError:
+            pass
+
+    def update_video_controls_state(self):
+        """Aggiorna lo stato dei controlli video in base alla sorgente."""
+        if hasattr(self, "seek_frame") and hasattr(self, "play_button"):
+            if self.video_analyzer.is_video_file:
+                # Abilita controlli per file video
+                self.seek_frame.grid()
+                self.seek_scale.config(state="normal")
+                self.play_button.config(state="normal")
+                self.stop_button.config(state="normal")
+
+                # Aggiorna durata totale
+                duration_ms = self.video_analyzer.get_duration_ms()
+                if duration_ms > 0:
+                    minutes = int(duration_ms // 60000)
+                    seconds = int((duration_ms % 60000) // 1000)
+                    self.total_time_var.set(f"{minutes:02d}:{seconds:02d}")
+
+                # Aggiorna il testo del pulsante play/pause
+                if self.video_analyzer.is_paused:
+                    self.play_button.config(text="▶ Play")
+                else:
+                    self.play_button.config(text="⏸ Pause")
+            else:
+                # Per webcam, nascondi seek bar ma mantieni controlli base
+                self.seek_frame.grid_remove()
+                self.total_time_var.set("LIVE")
+                self.current_time_var.set("LIVE")
+                self.play_button.config(state="normal")
+                self.stop_button.config(state="normal")
+
+                # Per webcam: Play/Pause per il flusso live
+                if self.video_analyzer.is_paused:
+                    self.play_button.config(text="▶ Resume")
+                else:
+                    self.play_button.config(text="⏸ Pause")
+
+    def update_seek_position(self):
+        """Aggiorna la posizione della seek bar (chiamato periodicamente)."""
+        if (
+            self.video_analyzer.is_video_file
+            and self.video_analyzer.is_capturing
+            and not self.updating_seek
+        ):
+
+            current_ms = self.video_analyzer.get_current_time_ms()
+            total_ms = self.video_analyzer.get_duration_ms()
+
+            if total_ms > 0:
+                self.updating_seek = True
+                percentage = (current_ms / total_ms) * 100
+                self.seek_var.set(percentage)
+
+                # Aggiorna tempo corrente
+                minutes = int(current_ms // 60000)
+                seconds = int((current_ms % 60000) // 1000)
+                self.current_time_var.set(f"{minutes:02d}:{seconds:02d}")
+                self.updating_seek = False
+
+        # Schedula prossimo aggiornamento
+        self.root.after(500, self.update_seek_position)  # Ogni 500ms
+
+    # =============== FINE CONTROLLI VIDEO ===============
 
     def add_debug_log(self, score, debug_data, elapsed_time):
         """Aggiunge una entry ai debug logs."""
@@ -959,6 +1191,11 @@ class CanvasApp:
 
             if self.video_analyzer.load_video_file(file_path):
                 print("🎬 STEP 3: Video caricato correttamente in VideoAnalyzer")
+
+                # Aggiorna controlli video per file video
+                self.update_video_controls_state()
+                self.update_seek_position()  # Inizia aggiornamenti seek bar
+
                 self.status_bar.config(text="Avviando analisi video...")
                 self.root.update()
 
@@ -1012,6 +1249,9 @@ class CanvasApp:
 
         if self.video_analyzer.start_camera_capture():
             print("Webcam avviata con successo, iniziando analisi...")
+
+            # Aggiorna controlli video per webcam
+            self.update_video_controls_state()
 
             if self.video_analyzer.start_live_analysis():
                 # Aggiorna l'anteprima integrata
@@ -1257,6 +1497,10 @@ class CanvasApp:
         """Callback chiamato quando l'analisi video termina. SEMPLIFICATO."""
 
         def handle_completion():
+            # Aggiorna stato interfaccia
+            self.is_playing = False
+            self.play_pause_btn.config(text="▶️")
+
             # Carica direttamente il frame migliore
             best_frame, best_landmarks, best_score = (
                 self.video_analyzer.get_best_frame_data()
@@ -1317,16 +1561,21 @@ class CanvasApp:
         # Esegui nel thread principale
         self.root.after(0, update_canvas)
 
-    def on_debug_update(self, frame_number, score, debug_info, frame):
+    def on_debug_update(
+        self, video_time_seconds, frame_number, score, debug_info, frame
+    ):
         """
         Callback per aggiungere dati debug alla tabella GUI e al buffer.
-        *** NUOVO METODO PER TABELLA DEBUG CLICCABILE ***
+        *** METODO PER TABELLA DEBUG CLICCABILE CON TEMPO IN SECONDI ***
         """
 
         def update_debug_table():
             try:
+                # Genera un ID unico basato sul timestamp per il buffer
+                buffer_id = f"t_{video_time_seconds:.3f}"
+
                 # Salva frame nel buffer per click
-                self.frame_buffer[frame_number] = (
+                self.frame_buffer[buffer_id] = (
                     frame.copy(),
                     None,
                 )  # Landmarks verranno calcolati se necessario
@@ -1348,15 +1597,15 @@ class CanvasApp:
                     "",
                     "end",
                     values=(
-                        f"{frame_number}",  # timestamp/numero frame
+                        f"{video_time_seconds:.1f}s",  # tempo in secondi
                         f"{score:.3f}",  # score finale
                         f"{yaw_score:.0f}",  # yaw (rotazione sx/dx)
                         f"{pitch_score:.0f}",  # pitch (su/giù)
                         f"{dimensione_score:.0f}",  # roll -> dimensione
                         f"{simmetria_score:.0f}",  # simmetria
-                        f"#{frame_number}",  # description
+                        f"#{frame_number}",  # numero del frame
                     ),
-                    tags=(str(frame_number),),  # Tag per identificare il frame
+                    tags=(buffer_id,),  # Tag per identificare il frame
                 )
 
                 # Riordina la tabella per score decrescente (migliori in cima)
@@ -1395,7 +1644,7 @@ class CanvasApp:
                         print(f"❌ Errore salvataggio PNG: {save_error}")
 
                     print(
-                        f"🖼️ Canvas aggiornato automaticamente con frame #{frame_number}"
+                        f"🖼️ Canvas aggiornato automaticamente con frame #{frame_number} al tempo {video_time_seconds:.1f}s"
                     )
 
             except Exception as e:
@@ -1442,28 +1691,35 @@ class CanvasApp:
                 return
 
             item = self.debug_tree.item(selection[0])
-            frame_number = int(item["values"][0])  # Primo valore è il numero frame
+
+            # Ottieni il tag che contiene l'ID del buffer
+            tags = item["tags"]
+            if not tags:
+                return
+
+            buffer_id = tags[0]  # Il tag contiene l'ID del buffer (es. "t_12.345")
 
             # Cerca frame nel buffer
-            if frame_number in self.frame_buffer:
-                frame, landmarks = self.frame_buffer[frame_number]
+            if buffer_id in self.frame_buffer:
+                frame, landmarks = self.frame_buffer[buffer_id]
 
                 # Carica nel canvas
                 self.set_current_image(frame, landmarks, auto_resize=False)
 
                 # Aggiorna info
+                timestamp = item["values"][0]  # Primo valore è il tempo (es. "12.3s")
                 score = float(item["values"][1])  # Secondo valore è lo score
                 self.best_frame_info.config(
-                    text=f"📸 FRAME DA TABELLA: #{frame_number} - Score {score:.3f}"
+                    text=f"📸 FRAME DA TABELLA: {timestamp} - Score {score:.3f}"
                 )
                 self.status_bar.config(
-                    text=f"Caricato frame #{frame_number} dalla tabella debug"
+                    text=f"Caricato frame al tempo {timestamp} dalla tabella debug"
                 )
 
-                print(f"📸 Caricato frame #{frame_number} dalla tabella debug")
+                print(f"📸 Caricato frame al tempo {timestamp} dalla tabella debug")
             else:
                 self.status_bar.config(
-                    text=f"Frame #{frame_number} non disponibile nel buffer"
+                    text=f"Frame al tempo {item['values'][0]} non disponibile nel buffer"
                 )
 
         except Exception as e:
@@ -1655,6 +1911,12 @@ Aree calcolate:
                 key_only=False,
             )
 
+        # Disegna l'asse di simmetria se abilitato
+        if self.show_axis_var.get() and self.current_landmarks:
+            display_image = self.face_detector.draw_symmetry_axis(
+                display_image, self.current_landmarks
+            )
+
         # Disegna le selezioni correnti
         for i, point in enumerate(self.selected_points):
             cv2.circle(display_image, point, 5, (255, 0, 255), -1)
@@ -1734,6 +1996,12 @@ Aree calcolate:
                 self.current_landmarks,
                 draw_all=True,
                 key_only=False,
+            )
+
+        # Disegna l'asse di simmetria se abilitato
+        if self.show_axis_var.get() and self.current_landmarks:
+            display_image = self.face_detector.draw_symmetry_axis(
+                display_image, self.current_landmarks
             )
 
         # Disegna le selezioni correnti
@@ -2855,6 +3123,12 @@ Aree calcolate:
                         key_only=False,
                     )
 
+                # Disegna l'asse di simmetria se abilitato
+                if self.show_axis_var.get() and self.current_landmarks:
+                    annotated_image = self.face_detector.draw_symmetry_axis(
+                        annotated_image, self.current_landmarks
+                    )
+
                 cv2.imwrite(file_path, annotated_image)
                 self.status_bar.config(text=f"Immagine salvata: {file_path}")
             except Exception as e:
@@ -3140,6 +3414,11 @@ Aree calcolate:
         self.scoring_config.set_symmetry_weight(0.15)
         self.scoring_config.set_eye_weight(0.10)
         self.update_slider_values()
+
+    def toggle_axis(self):
+        """Gestisce il toggle dell'asse di simmetria."""
+        if self.current_landmarks:
+            self.update_canvas_display()
 
     def update_slider_values(self):
         """Aggiorna i valori degli slider dall'oggetto config."""
