@@ -132,12 +132,50 @@ SOLUZIONI:
     def create_gui(self):
         """Crea e configura l'interfaccia grafica."""
         try:
+            # Importa layout manager per geometria finestra
+            from src.layout_manager import layout_manager
+
             # Crea la finestra principale
             self.root = tk.Tk()
             self.root.title("Facial Analysis Application v2.0")
 
+            # Ripristina geometria salvata PRIMA di creare l'app
+            try:
+                from src.layout_manager import layout_manager
+
+                print("\n🔄 Caricamento configurazione layout all'avvio...")
+                saved_geometry = layout_manager.get_window_geometry()
+                self.root.geometry(saved_geometry)
+                logger.info(f"Geometria finestra ripristinata: {saved_geometry}")
+
+                # Mostra status della configurazione
+                status = layout_manager.get_config_status()
+                print(f"📊 Status configurazione: {status}")
+
+            except Exception as e:
+                # Fallback se non c'è geometria salvata
+                self.root.geometry("1600x1000")
+                logger.warning(f"Impossibile ripristinare geometria, uso default: {e}")
+
+                # Crea configurazione default se non esiste
+                try:
+                    from src.layout_manager import layout_manager
+
+                    layout_manager.save_config()  # Crea file con valori default
+                except Exception as create_e:
+                    logger.warning(
+                        f"Impossibile creare configurazione default: {create_e}"
+                    )
+
+            self.root.minsize(1400, 900)
+
             # Configura il comportamento di chiusura
             self.root.protocol("WM_DELETE_WINDOW", self.on_window_close)
+
+            # NUOVO: Imposta finestra a schermo intero all'avvio
+            self.root.state("zoomed")  # Windows: massimizza la finestra
+            # Alternativa per Linux/macOS: self.root.attributes('-zoomed', True)
+            logger.info("Finestra impostata a schermo intero")
 
             # Gestisce l'interruzione da tastiera nella GUI
             self.root.bind("<Control-c>", lambda e: self.graceful_shutdown())
@@ -169,6 +207,50 @@ SOLUZIONI:
     def on_window_close(self):
         """Gestisce la chiusura della finestra."""
         logger.info("Richiesta chiusura finestra")
+
+        # Salva geometria finestra E layout pannelli prima di chiudere
+        try:
+            if self.root and self.root.winfo_exists():
+                from src.layout_manager import layout_manager
+
+                print("\n🔄 Salvataggio configurazione alla chiusura...")
+
+                current_geometry = self.root.geometry()
+                layout_manager.save_window_geometry(current_geometry)
+                logger.info(f"Geometria finestra salvata: {current_geometry}")
+
+                # Salva anche layout pannelli se l'app esiste
+                if (
+                    hasattr(self, "app")
+                    and self.app
+                    and hasattr(self.app, "on_closing_with_layout_save")
+                ):
+                    # Chiama solo la parte di salvataggio layout, non la distruzione
+                    try:
+                        self.app._save_layout_only()
+                        logger.info("Layout pannelli salvato")
+                    except Exception as layout_e:
+                        logger.warning(
+                            f"Errore salvataggio layout pannelli: {layout_e}"
+                        )
+
+                # Test di validazione finale
+                try:
+                    if layout_manager.validate_and_test_config():
+                        print("✅ Configurazione validata e salvata correttamente")
+                    else:
+                        print("⚠️ Problemi nella validazione configurazione")
+
+                    # Mostra stato finale
+                    status = layout_manager.get_config_status()
+                    print(f"📊 Status finale: {status}")
+
+                except Exception as test_e:
+                    logger.warning(f"Errore test validazione: {test_e}")
+
+        except Exception as e:
+            logger.warning(f"Errore salvataggio geometria: {e}")
+
         self.graceful_shutdown()
 
     def graceful_shutdown(self):
