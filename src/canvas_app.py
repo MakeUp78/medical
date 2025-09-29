@@ -1,21 +1,142 @@
 """
 Interactive canvas application for facial analysis with measurement tools.
+VERSIONE UNIFICATA - Include funzionalità professional canvas integrate
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, colorchooser
 import cv2
 import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Any
+import uuid
+from dataclasses import dataclass
+from enum import Enum
+
+# Import componenti core
 from src.face_detector import FaceDetector
 from src.video_analyzer import VideoAnalyzer
 from src.measurement_tools import MeasurementTools
 from src.green_dots_processor import GreenDotsProcessor
 from src.scoring_config import ScoringConfig
 from src.utils import resize_image_keep_aspect
-from src.professional_canvas import ProfessionalCanvas
+from src.layout_manager import layout_manager
+
+# Canvas system unificato - sistema integrato senza professional_canvas
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle, Circle, Polygon, FancyArrowPatch
+from matplotlib.lines import Line2D
+from matplotlib.text import Text
+import matplotlib.patches as patches
+
+
+# === ENUM E CLASSI PROFESSIONALI INTEGRATE ===
+
+
+class Tool(Enum):
+    """Strumenti canvas professionale integrati."""
+
+    SELECTION = "selection"
+    ZOOM_IN = "zoom_in"
+    ZOOM_OUT = "zoom_out"
+    PAN = "pan"
+    LINE = "line"
+    ARROW = "arrow"
+    RECTANGLE = "rectangle"
+    CIRCLE = "circle"
+    POLYGON = "polygon"
+    TEXT = "text"
+    MEASURE = "measure"
+    RULER_H = "ruler_horizontal"
+    RULER_V = "ruler_vertical"
+
+
+class DrawMode(Enum):
+    """Modalità di disegno."""
+
+    DRAWING = "drawing"
+    EDITING = "editing"
+    MOVING = "moving"
+
+
+@dataclass
+class Layer:
+    """Layer del canvas professionale."""
+
+    id: str
+    name: str
+    visible: bool = True
+    locked: bool = False
+    opacity: float = 1.0
+    objects: List[Any] = None
+
+    def __post_init__(self):
+        if self.objects is None:
+            self.objects = []
+
+
+@dataclass
+class DrawingObject:
+    """Oggetto di disegno."""
+
+    id: str
+    type: str
+    layer_id: str
+    artist: Any  # Matplotlib artist object
+    properties: Dict[str, Any] = None
+
+    def __post_init__(self):
+        if self.properties is None:
+            self.properties = {}
+
+
+class ToolTip:
+    """Classe per creare tooltip su widget Tkinter."""
+
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tooltip_window = None
+        self.widget.bind("<Enter>", self.on_enter)
+        self.widget.bind("<Leave>", self.on_leave)
+
+    def on_enter(self, event=None):
+        """Mostra il tooltip."""
+        if self.tooltip_window or not self.text:
+            return
+
+        # Calcola la posizione del tooltip in modo più sicuro
+        try:
+            x = self.widget.winfo_rootx() + 20
+            y = self.widget.winfo_rooty() + 20
+        except tk.TclError:
+            return
+
+        self.tooltip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+
+        label = tk.Label(
+            tw,
+            text=self.text,
+            justify=tk.LEFT,
+            background="#ffffe0",
+            relief=tk.SOLID,
+            borderwidth=1,
+            font=("TkDefaultFont", "8", "normal"),
+        )
+        label.pack(ipadx=1)
+
+    def on_leave(self, event=None):
+        """Nasconde il tooltip."""
+        if self.tooltip_window:
+            try:
+                self.tooltip_window.destroy()
+            except tk.TclError:
+                pass
+            self.tooltip_window = None
 
 
 class CanvasApp:
@@ -23,7 +144,7 @@ class CanvasApp:
         """Inizializza l'applicazione canvas."""
         self.root = root
         self.root.title("Facial Analysis Canvas")
-        self.root.geometry("1600x1000")
+        # Geometria gestita da main.py - non sovrascrivere
         self.root.minsize(1200, 800)  # Dimensione minima
         self.root.resizable(True, True)  # Finestra ridimensionabile
 
@@ -33,14 +154,21 @@ class CanvasApp:
         self.measurement_tools = MeasurementTools()
         self.green_dots_processor = GreenDotsProcessor()
 
-        # Variabili di stato
+        # Variabili di stato per canvas tkinter (RIPRISTINATE)
         self.current_image = None
         self.current_landmarks = None
-        self.canvas_image = None
-        self.canvas_scale = 1.0
-        self.canvas_offset = (0, 0)
 
-        # Variabili per display e scaling del canvas professionale
+        # Variabili canvas tkinter ripristinate
+        self.canvas_image = None  # Per il canvas tkinter
+        self.canvas_scale = 1.0  # Per lo zoom del canvas tkinter
+        self.canvas_offset = (0, 0)  # Per il panning del canvas tkinter
+        self.current_canvas_tool = "SELECTION"  # Tool attivo per il canvas
+        # self.active_layer e self.layers_list già definiti sopra
+
+        # Sistema di memorizzazione coordinate originali per scaling corretto
+        self.original_drawing_coords = {}  # Dizionario per coordinate originali
+
+        # Variabili per display e scaling (MANTENUTE per retrocompatibilità)
         self.display_scale = 1.0
         self.display_size = (800, 600)  # Default size
 
@@ -60,6 +188,38 @@ class CanvasApp:
         self.green_dots_results = None  # Risultati dell'ultimo rilevamento
         self.green_dots_overlay = None  # Overlay dei poligoni sopraccigliare
         self.show_green_dots_overlay = False  # Flag per mostrare l'overlay
+
+        # === STATO CANVAS PROFESSIONALE INTEGRATO ===
+        self.current_tool = Tool.SELECTION
+        self.draw_mode = DrawMode.DRAWING
+        self.is_drawing = False
+        self.start_point = None
+        self.current_color = "#FF0000"
+        self.line_width = 2
+        self.font_size = 12
+        self.snap_to_grid = False
+        self.grid_size = 20
+
+        # Variabili per PAN (trascinamento vista) - INTEGRATE
+        self.is_panning = False
+        self.pan_start_point = None
+        self.pan_start_xlim = None
+        self.pan_start_ylim = None
+
+        # Sistema layer unificato
+        self.layers_list = []  # Lista unificata dei layer
+        self.active_layer = None  # Layer attualmente attivo per i nuovi disegni
+        self.create_default_layer_unified()
+
+        # Oggetti disegnati integrati
+        self.drawing_objects = {}
+        self.selected_objects = []
+        self.temp_artist = None  # Per preview durante il disegno
+
+        # Rulers e guide integrate
+        self.rulers = {"horizontal": [], "vertical": []}
+        self.show_grid = True
+        self.show_rulers = True
 
         # Stato per overlay di misurazioni predefinite (per logica toggle)
         self.preset_overlays = {
@@ -113,39 +273,48 @@ class CanvasApp:
             self.on_debug_update
         )  # *** NUOVO PER TABELLA ***
 
+    def create_default_layer_unified(self):
+        """Crea il layer di default per il sistema unificato."""
+        import uuid
+
+        default_layer = {
+            "id": str(uuid.uuid4()),
+            "name": "Layer Base",
+            "tag": "layer_base",
+            "visible": True,
+            "locked": False,
+        }
+        self.layers_list.append(default_layer)
+        self.active_layer = default_layer
+        print("🏗️ Layer Base creato e impostato come attivo")
+
     def setup_gui(self):
-        """Configura l'interfaccia grafica con layout professionale stabile."""
+        """Configura l'interfaccia grafica con layout ridimensionabile."""
         # Menu principale
         self.create_menu()
 
-        # Imposta dimensioni finestra
-        self.root.minsize(1400, 900)
-        self.root.geometry("1600x1000")
+        # Configura la griglia principale per espandersi (geometria già impostata da main.py)
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
 
-        # Configura la griglia principale con dimensioni fisse per stabilità
-        self.root.grid_rowconfigure(0, weight=1, minsize=600)  # Area principale
-        self.root.grid_rowconfigure(
-            1, weight=0, minsize=280
-        )  # Area misurazioni (fissa)
-        self.root.grid_rowconfigure(2, weight=0, minsize=30)  # Status bar (fisso)
+        # PANNELLO VERTICALE PRINCIPALE (area principale | misurazioni)
+        self.main_vertical_paned = ttk.PanedWindow(self.root, orient=tk.VERTICAL)
+        self.main_vertical_paned.grid(row=0, column=0, sticky="nsew")
 
-        # Colonne con larghezze fisse per prevenire tremolii
-        self.root.grid_columnconfigure(
-            0, weight=0, minsize=420
-        )  # Controlli (larghezza aumentata)
-        self.root.grid_columnconfigure(1, weight=1, minsize=600)  # Canvas (espandibile)
-        self.root.grid_columnconfigure(
-            2, weight=0, minsize=400
-        )  # Anteprima (larghezza fissa)
+        # PANNELLI PRINCIPALI: Controlli | Canvas | (Layers + Anteprima)
+        # PanedWindow orizzontale per la parte superiore (controlli | canvas | sidebar)
+        self.main_horizontal_paned = ttk.PanedWindow(
+            self.main_vertical_paned, orient=tk.HORIZONTAL
+        )
+        self.main_vertical_paned.add(self.main_horizontal_paned, weight=1)
 
-        # Setup area controlli (sinistra) con larghezza fissa
-        control_main_frame = ttk.Frame(self.root, width=420)
-        control_main_frame.grid(row=0, column=0, sticky="nsew", padx=(5, 2), pady=5)
-        control_main_frame.grid_propagate(
-            False
-        )  # Impedisce ridimensionamento automatico
-        control_main_frame.grid_rowconfigure(0, weight=1)
+        # PANNELLO CONTROLLI (sinistra)
+        control_main_frame = ttk.LabelFrame(
+            self.main_horizontal_paned, text="Controlli", padding=2, width=400
+        )
         control_main_frame.grid_columnconfigure(0, weight=1)
+        control_main_frame.grid_rowconfigure(0, weight=1)
+        self.main_horizontal_paned.add(control_main_frame, weight=1)
 
         # Canvas scrollabile per i controlli
         control_canvas = tk.Canvas(control_main_frame, highlightthickness=0, width=400)
@@ -166,45 +335,45 @@ class CanvasApp:
 
         control_canvas.grid(row=0, column=0, sticky="nsew")
         control_scrollbar.grid(row=0, column=1, sticky="ns")
+        control_main_frame.grid_rowconfigure(0, weight=1)
+        control_main_frame.grid_columnconfigure(0, weight=1)
 
-        # Funzione per scroll migliorata
-        def _on_mousewheel(event):
-            control_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        # Bind ricorsivo del mouse wheel per tutti i widget del frame controlli
-        def bind_mousewheel_to_frame(widget):
-            """Applica il binding del mouse wheel ricorsivamente."""
-            widget.bind("<MouseWheel>", _on_mousewheel)
-            for child in widget.winfo_children():
-                bind_mousewheel_to_frame(child)
-
-        # Applica il binding iniziale
-        control_canvas.bind("<MouseWheel>", _on_mousewheel)
-
-        # Dopo aver creato i controlli, applicheremo il binding ricorsivo
-        self.setup_controls(self.scrollable_control_frame)
-
-        # Applica il binding a tutti i widget figli dopo la creazione
-        bind_mousewheel_to_frame(self.scrollable_control_frame)
-
-        # Setup area canvas principale (centro) - espandibile
-        canvas_frame = ttk.LabelFrame(self.root, text="Canvas Principale", padding=10)
-        canvas_frame.grid(row=0, column=1, sticky="nsew", padx=2, pady=5)
-        canvas_frame.grid_rowconfigure(0, weight=1)
+        # AREA CANVAS UNIFICATO (centro) - Sistema professionale integrato
+        canvas_frame = ttk.LabelFrame(
+            self.main_horizontal_paned,
+            text="Canvas Professionale Unificato",
+            padding=2,
+            width=800,
+        )
         canvas_frame.grid_columnconfigure(0, weight=1)
-        self.setup_canvas(canvas_frame)
+        canvas_frame.grid_rowconfigure(0, weight=1)
+        self.main_horizontal_paned.add(canvas_frame, weight=3)
 
-        # Setup area anteprima integrata (destra) con scrolling moderno
-        preview_main_frame = ttk.Frame(self.root, width=400)
-        preview_main_frame.grid(row=0, column=2, sticky="nsew", padx=(2, 5), pady=5)
-        preview_main_frame.grid_propagate(
-            False
-        )  # Impedisce ridimensionamento automatico
-        preview_main_frame.grid_rowconfigure(0, weight=1)
+        # PANNELLO DESTRO: Layers + Anteprima
+        # PanedWindow verticale per layers | anteprima
+        self.right_sidebar_paned = ttk.PanedWindow(
+            self.main_horizontal_paned, orient=tk.VERTICAL, width=350
+        )
+        self.main_horizontal_paned.add(self.right_sidebar_paned, weight=1)
+
+        # Area Layers (sopra)
+        layers_frame = ttk.LabelFrame(
+            self.right_sidebar_paned, text="Layers", padding=2, width=350
+        )
+        layers_frame.grid_columnconfigure(0, weight=1)
+        layers_frame.grid_rowconfigure(0, weight=1)
+        self.right_sidebar_paned.add(layers_frame, weight=1)
+
+        # Setup area anteprima integrata (sotto)
+        preview_main_frame = ttk.LabelFrame(
+            self.right_sidebar_paned, text="Anteprima Video", padding=2
+        )
         preview_main_frame.grid_columnconfigure(0, weight=1)
+        preview_main_frame.grid_rowconfigure(0, weight=1)
+        self.right_sidebar_paned.add(preview_main_frame, weight=1)
 
         # Canvas scrollabile per l'area anteprima
-        preview_canvas = tk.Canvas(preview_main_frame, highlightthickness=0, width=380)
+        preview_canvas = tk.Canvas(preview_main_frame, highlightthickness=0, width=330)
         preview_scrollbar = ttk.Scrollbar(
             preview_main_frame, orient="vertical", command=preview_canvas.yview
         )
@@ -226,43 +395,83 @@ class CanvasApp:
 
         preview_canvas.grid(row=0, column=0, sticky="nsew")
         preview_scrollbar.grid(row=0, column=1, sticky="ns")
+        preview_main_frame.grid_rowconfigure(0, weight=1)
+        preview_main_frame.grid_columnconfigure(0, weight=1)
 
-        # Funzione per scroll migliorata area anteprima
+        # Funzioni per il binding dello scroll
+        def _on_mousewheel(event):
+            control_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def bind_mousewheel_to_frame(widget):
+            """Applica il binding del mouse wheel ricorsivamente."""
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            for child in widget.winfo_children():
+                bind_mousewheel_to_frame(child)
+
         def _on_preview_mousewheel(event):
             preview_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-        # Bind ricorsivo del mouse wheel per l'area anteprima
         def bind_preview_mousewheel(widget):
             """Applica il binding del mouse wheel ricorsivamente all'area anteprima."""
             widget.bind("<MouseWheel>", _on_preview_mousewheel)
             for child in widget.winfo_children():
                 bind_preview_mousewheel(child)
 
+        # Applica il binding iniziale
+        control_canvas.bind("<MouseWheel>", _on_mousewheel)
         preview_canvas.bind("<MouseWheel>", _on_preview_mousewheel)
 
+        # Setup dei contenuti
+        self.setup_controls(self.scrollable_control_frame)
+        self.setup_canvas(canvas_frame)
+        self.setup_layers_panel(layers_frame)
         self.setup_integrated_preview(self.scrollable_preview_frame)
 
-        # Setup area misurazioni (in basso) con altezza fissa
-        measurements_frame = ttk.LabelFrame(
-            self.root, text="Lista Misurazioni", padding=10, height=280
-        )
-        measurements_frame.grid(
-            row=1, column=0, columnspan=3, sticky="ew", padx=5, pady=(0, 5)
-        )
-        measurements_frame.grid_propagate(
-            False
-        )  # Impedisce ridimensionamento automatico
-        measurements_frame.grid_columnconfigure(0, weight=1)
-        self.setup_measurements_area(measurements_frame)
-
-        # Setup status bar con altezza fissa
-        self.setup_status_bar()
-
-        # Applica il binding del mouse wheel all'area anteprima dopo la creazione
+        # Applica il binding a tutti i widget figli
+        bind_mousewheel_to_frame(self.scrollable_control_frame)
         bind_preview_mousewheel(self.scrollable_preview_frame)
 
-        # Gestisci chiusura applicazione
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        # Setup area misurazioni (in basso) ridimensionabile
+        measurements_frame = ttk.LabelFrame(
+            self.main_vertical_paned, text="Lista Misurazioni", padding=2
+        )
+        measurements_frame.grid_columnconfigure(0, weight=1)
+        measurements_frame.grid_rowconfigure(0, weight=1)
+        self.setup_measurements_area(measurements_frame)
+        self.main_vertical_paned.add(measurements_frame, weight=0)
+
+        # Setup status bar
+        self.setup_status_bar()
+
+        # Ripristina posizioni dei pannelli dalla configurazione dell'utente
+        self.root.after(200, self._simple_restore_layout)
+
+        # Bind eventi per salvare layout
+        print("🔧 Configurazione bind eventi per ridimensionamento pannelli...")
+        self.main_vertical_paned.bind(
+            "<ButtonRelease-1>", self._on_vertical_paned_resize
+        )
+        print("   ✅ Vertical paned bind configurato")
+
+        self.main_horizontal_paned.bind("<ButtonRelease-1>", self._on_main_paned_resize)
+        print("   ✅ Main horizontal paned bind configurato")
+
+        self.right_sidebar_paned.bind(
+            "<ButtonRelease-1>", self._on_sidebar_paned_resize
+        )
+        print("   ✅ Right sidebar paned bind configurato")
+
+        # Aggiungiamo anche eventi per il trascinamento continuo
+        self.main_vertical_paned.bind("<B1-Motion>", self._on_vertical_paned_drag)
+        self.main_horizontal_paned.bind("<B1-Motion>", self._on_main_paned_drag)
+        self.right_sidebar_paned.bind("<B1-Motion>", self._on_sidebar_paned_drag)
+
+        # AGGIUNTA: Bind alternativo per catturare eventi Configure sui pannelli
+        self.right_sidebar_paned.bind("<Configure>", self._on_sidebar_paned_configure)
+        print("   ✅ Right sidebar Configure bind configurato")
+
+        # Gestione chiusura delegata a main.py - non sovrascrivere
+        # self.root.protocol("WM_DELETE_WINDOW", self.on_closing_with_layout_save)  # DISABILITATO per evitare conflitti
 
     def create_menu(self):
         """Crea il menu principale."""
@@ -635,20 +844,1778 @@ class CanvasApp:
         ).pack(anchor=tk.W)
 
     def setup_canvas(self, parent):
-        """Configura il canvas professionale per la visualizzazione."""
-        # Inizializza il canvas professionale
-        self.professional_canvas = ProfessionalCanvas(parent)
+        """Configura il canvas principale per la visualizzazione (RIPRISTINO ORIGINALE)."""
+        print("🔧 Ripristino canvas originale tkinter...")
 
-        # Mantieni riferimento al canvas per compatibilità
-        self.canvas = self.professional_canvas.mpl_canvas.get_tk_widget()
+        # CANVAS TKINTER TRADIZIONALE (come era originalmente)
+        self.canvas = tk.Canvas(
+            parent,
+            bg="white",
+            highlightthickness=1,
+            highlightbackground="gray",
+            cursor="cross",
+        )
+        self.canvas.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
 
-        # Collega eventi del canvas professionale ai metodi esistenti
-        self.professional_canvas.mpl_canvas.mpl_connect(
-            "button_press_event", self.on_professional_canvas_click
+        # TOOLBAR INTEGRATA (sistema unificato)
+        self.setup_canvas_toolbar(parent)
+
+        # EVENTI MOUSE UNIFICATI (PAN + MISURAZIONE)
+        self.canvas.bind("<Button-1>", self.on_canvas_click_UNIFIED)
+        self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
+        self.canvas.bind("<Motion>", self.on_canvas_motion)
+        self.canvas.bind("<Enter>", lambda e: self.canvas.focus_set())
+        self.canvas.bind("<Leave>", lambda e: self.update_cursor_info(""))
+        # RIMOSSO: self.canvas.bind("<MouseWheel>", self.on_canvas_mousewheel)  # Causava zoom con due dita!
+        self.canvas.bind("<Double-Button-1>", self.on_canvas_double_click)
+        self.canvas.bind("<Button-3>", self.on_canvas_right_click)
+
+        # EVENTI TOUCHPAD per PAN universale (funziona sempre, anche senza tool PAN)
+        self.canvas.bind(
+            "<Button-2>", self.on_touchpad_pan_start
+        )  # Middle mouse/touchpad
+        self.canvas.bind("<B2-Motion>", self.on_touchpad_pan_drag)
+        self.canvas.bind("<ButtonRelease-2>", self.on_touchpad_pan_release)
+
+        # TOUCHPAD GESTURE: Due dita = PAN omnidirezionale
+        self.canvas.bind(
+            "<MouseWheel>", self.on_touchpad_omnidirectional_pan
+        )  # Due dita qualsiasi direzione
+        self.canvas.bind(
+            "<Shift-MouseWheel>", self.on_touchpad_omnidirectional_pan
+        )  # Due dita con shift
+
+        # Variabili per movimento touchpad unificato
+        self.touchpad_last_time = 0
+        self.touchpad_accumulator_x = 0
+        self.touchpad_accumulator_y = 0
+
+        # ZOOM solo con Ctrl+MouseWheel (opzionale)
+        self.canvas.bind("<Control-MouseWheel>", self.on_canvas_mousewheel)
+
+        # VARIABILI DI STATO ORIGINALI
+        self.current_image_on_canvas = None
+        self.canvas_image_id = None
+        self.canvas_scale = 1.0
+        self.canvas_offset_x = 0
+        self.canvas_offset_y = 0
+        self.canvas_drag_start = None
+        self.touchpad_drag_start = None  # Per PAN universale con touchpad
+        self.current_canvas_tool = (
+            "SELECTION"  # Tool predefinito: SELECTION invece di PAN
         )
 
-        # Configura callback per compatibilità con misurazione
-        self.professional_canvas.measurement_callback = self.on_measurement_completed
+        # CALLBACK PER MISURAZIONI (retrocompatibilità)
+        self.measurement_callback = self.on_canvas_measurement_click_legacy
+
+        # Imposta il cursore iniziale per il tool SELECTION
+        self.canvas.configure(cursor="arrow")
+
+        print("✅ Canvas tkinter originale ripristinato!")
+
+    def setup_canvas_toolbar(self, parent):
+        """Configura la toolbar per il canvas unificato."""
+        print("🔧 Configurazione toolbar canvas...")
+
+        # Configura stili per pulsanti attivi/inattivi
+        style = ttk.Style()
+        style.configure(
+            "Pressed.TButton", background="lightblue", relief="sunken", borderwidth=2
+        )
+
+        # Toolbar compatta con controlli essenziali
+        self.canvas_toolbar_frame = ttk.Frame(parent)
+        self.canvas_toolbar_frame.pack(side=tk.TOP, fill=tk.X, padx=2, pady=1)
+
+        # Gruppo controlli visualizzazione
+        view_frame = ttk.LabelFrame(self.canvas_toolbar_frame, text="Vista", padding=2)
+        view_frame.pack(side=tk.LEFT, padx=(0, 3))
+
+        view_buttons = [
+            ("🏠", self.fit_to_window, "Adatta alla finestra"),
+            ("🔍+", self.zoom_in, "Zoom In"),
+            ("🔍-", self.zoom_out, "Zoom Out"),
+        ]
+
+        for icon, command, tooltip in view_buttons:
+            btn = ttk.Button(view_frame, text=icon, width=4, command=command)
+            btn.pack(side=tk.LEFT, padx=1)
+            # TODO: Aggiungere tooltip se necessario
+
+        # Gruppo navigazione
+        nav_frame = ttk.LabelFrame(
+            self.canvas_toolbar_frame, text="Navigazione", padding=2
+        )
+        nav_frame.pack(side=tk.LEFT, padx=(0, 3))
+
+        # Memorizza riferimenti ai pulsanti per feedback visivo
+        self.tool_buttons = {}
+
+        nav_buttons = [
+            ("✋", "PAN", "Pan (trascina vista)"),
+            (
+                "🎯",
+                "SELECTION",
+                "Selezione disegni (clicca per selezionare/modificare)",
+            ),
+            ("📐", "MEASURE", "Strumento misura"),
+        ]
+
+        for icon, tool, tooltip in nav_buttons:
+            btn = ttk.Button(
+                nav_frame,
+                text=icon,
+                width=4,
+                command=lambda t=tool: self.set_canvas_tool(t),
+            )
+            btn.pack(side=tk.LEFT, padx=1)
+            # Memorizza riferimento per feedback visivo
+            self.tool_buttons[tool] = btn
+
+        # Gruppo disegno
+        draw_frame = ttk.LabelFrame(
+            self.canvas_toolbar_frame, text="Disegno", padding=2
+        )
+        draw_frame.pack(side=tk.LEFT, padx=(0, 3))
+
+        draw_buttons = [
+            ("📏", "LINE", "Linea"),
+            ("○", "CIRCLE", "Cerchio"),
+            ("▢", "RECTANGLE", "Rettangolo"),
+            ("✏️", "TEXT", "Testo"),
+        ]
+
+        for icon, tool, tooltip in draw_buttons:
+            btn = ttk.Button(
+                draw_frame,
+                text=icon,
+                width=4,
+                command=lambda t=tool: self.set_canvas_tool(t),
+            )
+            btn.pack(side=tk.LEFT, padx=1)
+            # Memorizza riferimento per feedback visivo
+            self.tool_buttons[tool] = btn
+
+        # Pulsante per cancellare tutti i disegni
+        clear_btn = ttk.Button(
+            draw_frame,
+            text="🗑️",
+            width=4,
+            command=self.clear_all_drawings,
+        )
+        clear_btn.pack(side=tk.LEFT, padx=1)
+
+        # Inizializza stato visivo dei pulsanti
+        self.update_button_states()
+
+        print("✅ Toolbar canvas configurata")
+
+    def set_canvas_tool(self, tool_name):
+        """Imposta il tool corrente del canvas con supporto toggle per PAN e feedback visivo."""
+        # Comportamento toggle per il pulsante PAN
+        if tool_name == "PAN" and self.current_canvas_tool == "PAN":
+            # Se PAN è già attivo, torna a SELECTION
+            tool_name = "SELECTION"
+            print(f"🔧 PAN disattivato - torno a: {tool_name}")
+        else:
+            print(f"🔧 Tool selezionato: {tool_name}")
+
+        self.current_canvas_tool = tool_name
+
+        # Aggiorna feedback visivo dei pulsanti
+        self.update_button_states()
+
+        # Cambia cursore in base al tool
+        if tool_name == "PAN":
+            self.canvas.configure(cursor="fleur")
+        elif tool_name in ["LINE", "CIRCLE", "RECTANGLE"]:
+            self.canvas.configure(cursor="cross")
+        elif tool_name == "MEASURE":
+            self.canvas.configure(cursor="target")
+        else:
+            self.canvas.configure(cursor="arrow")
+
+    def update_button_states(self):
+        """Aggiorna lo stato visivo dei pulsanti (attivo/inattivo)."""
+        if hasattr(self, "tool_buttons") and hasattr(self, "current_canvas_tool"):
+            print(
+                f"🔄 Aggiornamento stati pulsanti - tool attivo: {self.current_canvas_tool}"
+            )
+            for tool, button in self.tool_buttons.items():
+                try:
+                    if tool == self.current_canvas_tool:
+                        # Pulsante attivo - evidenziato
+                        button.configure(style="Pressed.TButton")
+                        print(f"🔵 Pulsante {tool} ATTIVATO")
+                    else:
+                        # Pulsante inattivo - normale
+                        button.configure(style="TButton")
+                except Exception as e:
+                    print(f"⚠️ Errore aggiornamento pulsante {tool}: {e}")
+        else:
+            print("⚠️ tool_buttons o current_canvas_tool non inizializzati")
+
+    def fit_to_window(self):
+        """Adatta l'immagine alla finestra."""
+        if self.current_image_on_canvas is not None:
+            self.canvas_scale = 1.0
+            self.canvas_offset_x = 0
+            self.canvas_offset_y = 0
+            self.update_canvas_display()
+            print("🏠 Vista adattata alla finestra")
+
+    # Metodo reset_view rimosso - funzionalità consolidata in fit_to_window (pulsante 🏠)
+
+    def zoom_in(self):
+        """Zoom in sul canvas."""
+        if self.current_image_on_canvas is not None:
+            center_x = self.canvas.winfo_width() / 2
+            center_y = self.canvas.winfo_height() / 2
+
+            old_scale = self.canvas_scale
+            self.canvas_scale *= 1.2
+            self.canvas_scale = min(10.0, self.canvas_scale)
+
+            if self.canvas_scale != old_scale:
+                scale_change = self.canvas_scale / old_scale
+
+                # Prima aggiorna gli offset dell'immagine
+                self.canvas_offset_x = (
+                    center_x - (center_x - self.canvas_offset_x) * scale_change
+                )
+                self.canvas_offset_y = (
+                    center_y - (center_y - self.canvas_offset_y) * scale_change
+                )
+
+                # Poi aggiorna il display dell'immagine
+                self.update_canvas_display()
+
+                # Infine scala i disegni con le coordinate corrette dell'immagine
+                self.scale_all_drawings(scale_change, center_x, center_y)
+
+                print(f"🔍+ Zoom in: {self.canvas_scale:.2f}")
+
+    def zoom_out(self):
+        """Zoom out sul canvas."""
+        if self.current_image_on_canvas is not None:
+            center_x = self.canvas.winfo_width() / 2
+            center_y = self.canvas.winfo_height() / 2
+
+            old_scale = self.canvas_scale
+            self.canvas_scale /= 1.2
+            self.canvas_scale = max(0.1, self.canvas_scale)
+
+            if self.canvas_scale != old_scale:
+                scale_change = self.canvas_scale / old_scale
+
+                # Prima aggiorna gli offset dell'immagine
+                self.canvas_offset_x = (
+                    center_x - (center_x - self.canvas_offset_x) * scale_change
+                )
+                self.canvas_offset_y = (
+                    center_y - (center_y - self.canvas_offset_y) * scale_change
+                )
+
+                # Poi aggiorna il display dell'immagine
+                self.update_canvas_display()
+
+                # Infine scala i disegni con le coordinate corrette dell'immagine
+                self.scale_all_drawings(scale_change, center_x, center_y)
+                print(f"🔍- Zoom out: {self.canvas_scale:.2f}")
+
+    def on_canvas_click(self, event):
+        """Gestisce il click sul canvas."""
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+
+        print(
+            f"CANVAS CLICK: tool={self.current_canvas_tool}, pos=({canvas_x:.1f}, {canvas_y:.1f})"
+        )
+
+        if self.current_canvas_tool == "PAN":
+            self.canvas_drag_start = (canvas_x, canvas_y)
+            print(
+                f"PAN TOOL ATTIVATO - drag iniziato da ({canvas_x:.1f}, {canvas_y:.1f})"
+            )
+        elif self.current_canvas_tool in ["LINE", "CIRCLE", "RECTANGLE", "MEASURE"]:
+            # Gestisci disegno/misurazione
+            self.on_canvas_measurement_click_new(event)
+            print(
+                f"📐 Click con tool {self.current_canvas_tool}: ({canvas_x:.1f}, {canvas_y:.1f})"
+            )
+
+    def on_canvas_drag(self, event):
+        """Gestisce il trascinamento sul canvas (CORRETTO per PAN)."""
+        if not self.canvas_drag_start:
+            return
+
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+
+        if self.current_canvas_tool == "PAN":
+            print(
+                f"✋ PAN ATTIVO - elaboro drag da {self.canvas_drag_start} a ({canvas_x}, {canvas_y})"
+            )
+            # CORRETTO: Calcola movimento dalla posizione iniziale
+            dx = canvas_x - self.canvas_drag_start[0]
+            dy = canvas_y - self.canvas_drag_start[1]
+
+            # Sposta tutti i disegni esistenti insieme all'immagine
+            self.move_all_drawings(dx, dy)
+
+            # Aggiorna offset dell'immagine
+            self.canvas_offset_x += dx
+            self.canvas_offset_y += dy
+
+            print(
+                f"�️ PAN: spostamento dx={dx:.1f}, dy={dy:.1f} -> offset=({self.canvas_offset_x:.1f}, {self.canvas_offset_y:.1f})"
+            )
+
+            # Aggiorna posizione di riferimento per il prossimo movimento
+            self.canvas_drag_start = (canvas_x, canvas_y)
+
+            # Ridisegna canvas con nuova posizione
+            self.update_canvas_display()
+
+    def on_canvas_release(self, event):
+        """Gestisce il rilascio del mouse sul canvas."""
+        self.canvas_drag_start = None
+
+    def on_canvas_double_click(self, event):
+        """Gestisce il doppio click sul canvas."""
+        if self.current_canvas_tool == "PAN":
+            self.fit_to_window()
+
+    def on_canvas_right_click(self, event):
+        """Gestisce il click destro sul canvas."""
+        # Torna al tool PAN
+        self.set_canvas_tool("PAN")
+
+    def on_canvas_scroll(self, event):
+        """Gestisce lo scroll del mouse per zoom."""
+        if self.current_image_on_canvas is None:
+            return
+
+        # Calcola il fattore di zoom
+        if event.delta > 0 or event.num == 4:  # Scroll up / Linux
+            zoom_factor = 1.1
+        else:  # Scroll down
+            zoom_factor = 0.9
+
+        # Applica zoom centrato sulla posizione del mouse
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+
+        old_scale = self.canvas_scale
+        self.canvas_scale *= zoom_factor
+
+        # Limita il range di zoom
+        self.canvas_scale = max(0.1, min(10.0, self.canvas_scale))
+
+        if self.canvas_scale != old_scale:
+            scale_change = self.canvas_scale / old_scale
+
+            # Aggiusta offset per zoom centrato
+            self.canvas_offset_x = (
+                canvas_x - (canvas_x - self.canvas_offset_x) * scale_change
+            )
+            self.canvas_offset_y = (
+                canvas_y - (canvas_y - self.canvas_offset_y) * scale_change
+            )
+
+            # Aggiorna la visualizzazione dell'immagine
+            self.update_canvas_display()
+
+            # Scala i disegni esistenti DOPO l'aggiornamento della posizione
+            self.scale_all_drawings(scale_change, canvas_x, canvas_y)
+
+    def on_canvas_mouse_motion(self, event):
+        """Gestisce il movimento del mouse sul canvas."""
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+
+        # TODO: Mostra coordinate nella status bar se necessario
+        pass
+
+    def on_touchpad_pan_start(self, event):
+        """Inizia PAN con touchpad (middle mouse o gesture due dita)."""
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+        self.touchpad_drag_start = (canvas_x, canvas_y)
+        print("🖱️ Touchpad PAN iniziato")
+
+    def on_touchpad_pan_drag(self, event):
+        """PAN con touchpad - funziona sempre indipendentemente dal tool selezionato."""
+        if not hasattr(self, "touchpad_drag_start") or not self.touchpad_drag_start:
+            return
+
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+
+        # Calcola movimento
+        dx = canvas_x - self.touchpad_drag_start[0]
+        dy = canvas_y - self.touchpad_drag_start[1]
+
+        # Aggiorna offset dell'immagine (PAN universale)
+        self.canvas_offset_x += dx
+        self.canvas_offset_y += dy
+
+        print(
+            f"👆 Touchpad PAN: dx={dx:.1f}, dy={dy:.1f} -> offset=({self.canvas_offset_x:.1f}, {self.canvas_offset_y:.1f})"
+        )
+
+        # Aggiorna posizione di riferimento
+        self.touchpad_drag_start = (canvas_x, canvas_y)
+
+        # Ridisegna canvas
+        self.update_canvas_display()
+
+    def on_touchpad_pan_release(self, event):
+        """Fine PAN con touchpad."""
+        if hasattr(self, "touchpad_drag_start"):
+            self.touchpad_drag_start = None
+        print("🖱️ Touchpad PAN terminato")
+
+    def on_touchpad_omnidirectional_pan(self, event):
+        """PAN omnidirezionale con touchpad - due dita in qualsiasi direzione."""
+        if self.current_image_on_canvas is None:
+            return
+
+        import time
+
+        current_time = time.time()
+
+        # Determina se è movimento orizzontale (con Shift) o verticale (normale)
+        is_horizontal = hasattr(event, "state") and (event.state & 0x1)  # Shift pressed
+
+        # Movimento più fluido e sensibile
+        movement_amount = 25 if event.delta > 0 else -25
+
+        # PRIMA sposta i disegni, POI aggiorna gli offset
+        if is_horizontal:
+            # Movimento orizzontale (con Shift)
+            self.move_all_drawings(movement_amount, 0)
+            self.canvas_offset_x += movement_amount
+            print(f"↔️ Touchpad PAN orizzontale: offset_x={self.canvas_offset_x}")
+        else:
+            # Movimento verticale (normale)
+            self.move_all_drawings(0, movement_amount)
+            self.canvas_offset_y += movement_amount
+            print(f"↕️ Touchpad PAN verticale: offset_y={self.canvas_offset_y}")
+
+        # Aggiorna immediatamente per movimento fluido
+        self.update_canvas_display()
+
+    # Metodo rimosso: on_touchpad_pan_horizontal - sostituito da on_touchpad_omnidirectional_pan
+
+    def on_canvas_measurement_click_new(self, event):
+        """Gestisce i click per misurazioni e disegno (NUOVO SISTEMA - SEMPLIFICATO)."""
+        try:
+            # Converte coordinate event -> coordinate immagine
+            canvas_x = self.canvas.canvasx(event.x)
+            canvas_y = self.canvas.canvasy(event.y)
+
+            # Converti coordinate canvas -> coordinate immagine
+            img_x, img_y = self.canvas_to_image_coords(canvas_x, canvas_y)
+
+            # Chiama il metodo legacy per compatibilità
+            self.on_canvas_measurement_click_legacy(img_x, img_y)
+            print(
+                f"📐 Click misurazione: canvas({canvas_x:.1f},{canvas_y:.1f}) -> img({img_x},{img_y})"
+            )
+        except Exception as e:
+            print(f"⚠️ Errore callback misurazione: {e}")
+
+    def canvas_to_image_coords(self, canvas_x, canvas_y):
+        """Converte coordinate canvas in coordinate immagine."""
+        if self.current_image_on_canvas is None:
+            return int(canvas_x), int(canvas_y)
+
+        # Prendi in considerazione scala e offset
+        img_height, img_width = self.current_image_on_canvas.shape[:2]
+
+        # Calcola posizione immagine sul canvas
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+
+        # Dimensioni scalate
+        scaled_width = int(img_width * self.canvas_scale)
+        scaled_height = int(img_height * self.canvas_scale)
+
+        # Centro se l'immagine è più piccola del canvas
+        img_x_offset = max(0, (canvas_width - scaled_width) // 2) + self.canvas_offset_x
+        img_y_offset = (
+            max(0, (canvas_height - scaled_height) // 2) + self.canvas_offset_y
+        )
+
+        # Coordinate relative all'immagine
+        rel_x = canvas_x - img_x_offset
+        rel_y = canvas_y - img_y_offset
+
+        # Scala alle coordinate immagine originale
+        img_x = int(rel_x / self.canvas_scale)
+        img_y = int(rel_y / self.canvas_scale)
+
+        # Limita alle dimensioni dell'immagine
+        img_x = max(0, min(img_width - 1, img_x))
+        img_y = max(0, min(img_height - 1, img_y))
+
+        return img_x, img_y
+
+    def image_to_canvas_coords(self, img_x, img_y):
+        """Converte coordinate immagine in coordinate canvas."""
+        if self.current_image_on_canvas is None:
+            return img_x, img_y
+
+        # Prendi in considerazione scala e offset
+        img_height, img_width = self.current_image_on_canvas.shape[:2]
+
+        # Calcola posizione immagine sul canvas
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+
+        # Dimensioni scalate
+        scaled_width = int(img_width * self.canvas_scale)
+        scaled_height = int(img_height * self.canvas_scale)
+
+        # Centro se l'immagine è più piccola del canvas
+        img_x_offset = max(0, (canvas_width - scaled_width) // 2) + self.canvas_offset_x
+        img_y_offset = (
+            max(0, (canvas_height - scaled_height) // 2) + self.canvas_offset_y
+        )
+
+        # Scala e trasla
+        canvas_x = img_x * self.canvas_scale + img_x_offset
+        canvas_y = img_y * self.canvas_scale + img_y_offset
+
+        return canvas_x, canvas_y
+
+    def on_canvas_click_UNIFIED(self, event):
+        """Gestisce i click sul canvas - SISTEMA UNIFICATO (PAN + MISURAZIONI)."""
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+
+        print(
+            f"CANVAS CLICK UNIFICATO: tool={self.current_canvas_tool}, pos=({canvas_x:.1f}, {canvas_y:.1f})"
+        )
+
+        # GESTIONE PAN TOOL
+        if self.current_canvas_tool == "PAN":
+            self.canvas_drag_start = (canvas_x, canvas_y)
+            print(
+                f"PAN TOOL ATTIVATO - drag iniziato da ({canvas_x:.1f}, {canvas_y:.1f})"
+            )
+            return  # Non processare come misurazione
+
+        # GESTIONE TOOL DISEGNO/MISURAZIONE - FIX COORDINATE
+        elif self.current_canvas_tool in [
+            "LINE",
+            "CIRCLE",
+            "RECTANGLE",
+            "MEASURE",
+            "TEXT",
+            "SELECTION",
+        ]:
+            # Usa direttamente le coordinate canvas senza doppia conversione
+            if self.current_canvas_tool == "LINE":
+                self.handle_line_tool(canvas_x, canvas_y)
+            elif self.current_canvas_tool == "CIRCLE":
+                self.handle_circle_tool(canvas_x, canvas_y)
+            elif self.current_canvas_tool == "RECTANGLE":
+                self.handle_rectangle_tool(canvas_x, canvas_y)
+            elif self.current_canvas_tool == "MEASURE":
+                self.handle_measure_tool(canvas_x, canvas_y)
+            elif self.current_canvas_tool == "TEXT":
+                self.handle_text_tool(canvas_x, canvas_y)
+            elif self.current_canvas_tool == "SELECTION":
+                self.handle_selection_tool(canvas_x, canvas_y)
+            print(
+                f"🎯 Click DIRETTO con tool {self.current_canvas_tool}: ({canvas_x:.1f}, {canvas_y:.1f})"
+            )
+            return
+
+        # FALLBACK: Comportamento legacy per misurazioni
+        if self.current_image_on_canvas is not None:
+            # Converti coordinate canvas a coordinate immagine
+            img_x, img_y = self.canvas_to_image_coords(event.x, event.y)
+
+            # Chiama il callback per le misurazioni se esiste
+            if hasattr(self, "measurement_callback") and self.measurement_callback:
+                self.measurement_callback(img_x, img_y)
+
+            print(
+                f"🖱️ Click misurazione legacy: canvas({event.x}, {event.y}) -> immagine({img_x:.0f}, {img_y:.0f})"
+            )
+
+    def on_canvas_motion(self, event):
+        """Gestisce il movimento del mouse sul canvas (RIPRISTINO ORIGINALE)."""
+        if self.current_image_on_canvas is not None:
+            # Converti coordinate canvas a coordinate immagine
+            img_x, img_y = self.canvas_to_image_coords(event.x, event.y)
+
+            # Aggiorna info cursore
+            self.update_cursor_info(f"({img_x:.0f}, {img_y:.0f})")
+
+    def on_canvas_mousewheel(self, event):
+        """Gestisce lo zoom con rotellina mouse (RIPRISTINO ORIGINALE)."""
+        if self.current_image_on_canvas is not None:
+            # Zoom in/out
+            if event.delta > 0:
+                self.zoom_in()
+            else:
+                self.zoom_out()
+
+    def canvas_to_image_coords(self, canvas_x, canvas_y):
+        """Converte coordinate canvas a coordinate immagine (RIPRISTINO ORIGINALE)."""
+        if self.current_image_on_canvas is None:
+            return 0, 0
+
+        # Applica offset e scala inversa
+        img_x = (canvas_x - self.canvas_offset_x) / self.canvas_scale
+        img_y = (canvas_y - self.canvas_offset_y) / self.canvas_scale
+
+        # Limita alle dimensioni dell'immagine
+        img_height, img_width = self.current_image_on_canvas.shape[:2]
+        img_x = max(0, min(img_width - 1, img_x))
+        img_y = max(0, min(img_height - 1, img_y))
+
+        return img_x, img_y
+
+    def update_cursor_info(self, info):
+        """Aggiorna le informazioni del cursore (RIPRISTINO ORIGINALE)."""
+        if hasattr(self, "status_bar"):
+            if info:
+                self.status_bar.config(text=f"Cursore: {info}")
+            else:
+                self.status_bar.config(text="Pronto")
+
+    def on_canvas_measurement_click_legacy(self, img_x, img_y):
+        """Callback per i click di misurazione sul canvas (RETROCOMPATIBILITÀ)."""
+        print(
+            f"📏 Click misurazione tool={self.current_canvas_tool}: ({img_x:.0f}, {img_y:.0f})"
+        )
+
+        # Converte coordinate immagine -> coordinate canvas per il disegno
+        canvas_x, canvas_y = self.image_to_canvas_coords(img_x, img_y)
+
+        if self.current_canvas_tool == "LINE":
+            self.handle_line_tool(canvas_x, canvas_y)
+        elif self.current_canvas_tool == "CIRCLE":
+            self.handle_circle_tool(canvas_x, canvas_y)
+        elif self.current_canvas_tool == "RECTANGLE":
+            self.handle_rectangle_tool(canvas_x, canvas_y)
+        elif self.current_canvas_tool == "MEASURE":
+            self.handle_measure_tool(canvas_x, canvas_y)
+        elif self.current_canvas_tool == "TEXT":
+            self.handle_text_tool(canvas_x, canvas_y)
+        elif self.current_canvas_tool == "SELECTION":
+            self.handle_selection_tool(canvas_x, canvas_y)
+        else:
+            print(f"⚠️ Strumento non riconosciuto: {self.current_canvas_tool}")
+
+    def handle_line_tool(self, canvas_x, canvas_y):
+        """Gestisce il tool LINE per disegnare linee."""
+        if not hasattr(self, "line_start_point"):
+            # Primo click - memorizza punto di partenza
+            self.line_start_point = (canvas_x, canvas_y)
+            print(f"📏 LINE: punto iniziale ({canvas_x:.1f}, {canvas_y:.1f})")
+            # Disegna un punto di partenza temporaneo
+            self.canvas.create_oval(
+                canvas_x - 3,
+                canvas_y - 3,
+                canvas_x + 3,
+                canvas_y + 3,
+                fill="red",
+                outline="red",
+                tags="temp_drawing",
+            )
+        else:
+            # Secondo click - disegna la linea
+            start_x, start_y = self.line_start_point
+            print(
+                f"📏 LINE: da ({start_x:.1f}, {start_y:.1f}) a ({canvas_x:.1f}, {canvas_y:.1f})"
+            )
+            # Rimuovi il punto temporaneo
+            self.canvas.delete("temp_drawing")
+            # Determina i tag per il layer
+            layer_tags = self.get_drawing_tags()
+            # Disegna la linea finale
+            line_id = self.canvas.create_line(
+                start_x,
+                start_y,
+                canvas_x,
+                canvas_y,
+                fill="blue",
+                width=2,
+                tags=layer_tags,
+            )
+
+            # Memorizza coordinate originali per scaling futuro (solo se non già memorizzate)
+            if line_id not in self.original_drawing_coords:
+                image_center_x, image_center_y = self.get_image_center()
+                print(
+                    f"🔍 CENTER DEBUG: Centro immagine al momento creazione linea: ({image_center_x:.1f}, {image_center_y:.1f})"
+                )
+                print(
+                    f"🔍 COORDS DEBUG: Coordinate linea: start=({start_x:.1f}, {start_y:.1f}), end=({canvas_x:.1f}, {canvas_y:.1f})"
+                )
+                self.store_original_coords(line_id, image_center_x, image_center_y)
+
+            # Reset per una nuova linea
+            del self.line_start_point
+
+    def handle_circle_tool(self, canvas_x, canvas_y):
+        """Gestisce il tool CIRCLE per disegnare cerchi."""
+        if not hasattr(self, "circle_center_point"):
+            # Primo click - memorizza centro
+            self.circle_center_point = (canvas_x, canvas_y)
+            print(f"⭕ CIRCLE: centro ({canvas_x:.1f}, {canvas_y:.1f})")
+            # Disegna un punto centrale temporaneo
+            self.canvas.create_oval(
+                canvas_x - 3,
+                canvas_y - 3,
+                canvas_x + 3,
+                canvas_y + 3,
+                fill="green",
+                outline="green",
+                tags="temp_drawing",
+            )
+        else:
+            # Secondo click - disegna il cerchio
+            center_x, center_y = self.circle_center_point
+            radius = ((canvas_x - center_x) ** 2 + (canvas_y - center_y) ** 2) ** 0.5
+            print(
+                f"⭕ CIRCLE: centro ({center_x:.1f}, {center_y:.1f}) raggio {radius:.1f}"
+            )
+            # Rimuovi il punto temporaneo
+            self.canvas.delete("temp_drawing")
+            # Determina i tag per il layer
+            layer_tags = self.get_drawing_tags()
+            # Disegna il cerchio finale
+            circle_id = self.canvas.create_oval(
+                center_x - radius,
+                center_y - radius,
+                center_x + radius,
+                center_y + radius,
+                outline="green",
+                width=2,
+                tags=layer_tags,
+            )
+
+            # Memorizza coordinate originali per scaling futuro (solo se non già memorizzate)
+            if circle_id not in self.original_drawing_coords:
+                image_center_x, image_center_y = self.get_image_center()
+                self.store_original_coords(circle_id, image_center_x, image_center_y)
+
+            # Reset per un nuovo cerchio
+            del self.circle_center_point
+
+    def handle_rectangle_tool(self, canvas_x, canvas_y):
+        """Gestisce il tool RECTANGLE per disegnare rettangoli."""
+        if not hasattr(self, "rect_start_point"):
+            # Primo click - memorizza primo angolo
+            self.rect_start_point = (canvas_x, canvas_y)
+            print(f"🔳 RECTANGLE: primo angolo ({canvas_x:.1f}, {canvas_y:.1f})")
+            # Disegna un punto di partenza temporaneo
+            self.canvas.create_oval(
+                canvas_x - 3,
+                canvas_y - 3,
+                canvas_x + 3,
+                canvas_y + 3,
+                fill="purple",
+                outline="purple",
+                tags="temp_drawing",
+            )
+        else:
+            # Secondo click - disegna il rettangolo
+            start_x, start_y = self.rect_start_point
+            print(
+                f"🔳 RECTANGLE: da ({start_x:.1f}, {start_y:.1f}) a ({canvas_x:.1f}, {canvas_y:.1f})"
+            )
+            # Rimuovi il punto temporaneo
+            self.canvas.delete("temp_drawing")
+            # Determina i tag per il layer
+            layer_tags = self.get_drawing_tags()
+            # Disegna il rettangolo finale
+            rect_id = self.canvas.create_rectangle(
+                start_x,
+                start_y,
+                canvas_x,
+                canvas_y,
+                outline="purple",
+                width=2,
+                tags=layer_tags,
+            )
+
+            # Memorizza coordinate originali per scaling futuro (solo se non già memorizzate)
+            if rect_id not in self.original_drawing_coords:
+                image_center_x, image_center_y = self.get_image_center()
+                self.store_original_coords(rect_id, image_center_x, image_center_y)
+
+            # Reset per un nuovo rettangolo
+            del self.rect_start_point
+
+    def handle_measure_tool(self, canvas_x, canvas_y):
+        """Gestisce il tool MEASURE per misurazioni con righello."""
+        if not hasattr(self, "measure_start_point"):
+            # Primo click - memorizza punto di partenza
+            self.measure_start_point = (canvas_x, canvas_y)
+            print(f"📐 MEASURE: punto iniziale ({canvas_x:.1f}, {canvas_y:.1f})")
+            # Disegna un punto di partenza temporaneo
+            self.canvas.create_oval(
+                canvas_x - 3,
+                canvas_y - 3,
+                canvas_x + 3,
+                canvas_y + 3,
+                fill="orange",
+                outline="orange",
+                tags="temp_drawing",
+            )
+        else:
+            # Secondo click - disegna la misurazione
+            start_x, start_y = self.measure_start_point
+            distance = ((canvas_x - start_x) ** 2 + (canvas_y - start_y) ** 2) ** 0.5
+            print(f"📐 MEASURE: distanza {distance:.1f} pixel")
+            # Rimuovi il punto temporaneo
+            self.canvas.delete("temp_drawing")
+            # Determina i tag per il layer
+            layer_tags = self.get_drawing_tags()
+            # Disegna la linea di misurazione con etichetta
+            measure_line_id = self.canvas.create_line(
+                start_x,
+                start_y,
+                canvas_x,
+                canvas_y,
+                fill="orange",
+                width=2,
+                tags=layer_tags,
+            )
+
+            # Aggiungi testo con la misurazione
+            mid_x = (start_x + canvas_x) / 2
+            mid_y = (start_y + canvas_y) / 2
+            measure_text_id = self.canvas.create_text(
+                mid_x,
+                mid_y - 10,
+                text=f"{distance:.1f}px",
+                fill="orange",
+                font=("Arial", 8),
+                tags=layer_tags,
+            )
+
+            # Memorizza coordinate originali per entrambi gli elementi (solo se non già memorizzate)
+            image_center_x, image_center_y = self.get_image_center()
+            if measure_line_id not in self.original_drawing_coords:
+                self.store_original_coords(
+                    measure_line_id, image_center_x, image_center_y
+                )
+            if measure_text_id not in self.original_drawing_coords:
+                self.store_original_coords(
+                    measure_text_id, image_center_x, image_center_y
+                )
+
+            # Reset per una nuova misurazione
+            del self.measure_start_point
+
+    def handle_text_tool(self, canvas_x, canvas_y):
+        """Gestisce il tool TEXT per inserire testo."""
+        import tkinter.simpledialog as simpledialog
+
+        # Richiedi il testo da inserire
+        text = simpledialog.askstring("Inserisci Testo", "Scrivi il testo da inserire:")
+        if text:
+            print(f"✏️ TEXT: '{text}' a ({canvas_x:.1f}, {canvas_y:.1f})")
+            # Determina i tag per il layer
+            layer_tags = self.get_drawing_tags()
+            # Disegna il testo sul canvas
+            text_id = self.canvas.create_text(
+                canvas_x,
+                canvas_y,
+                text=text,
+                fill="red",
+                font=("Arial", 12, "bold"),
+                tags=layer_tags,
+            )
+
+            # Memorizza coordinate originali per scaling futuro (solo se non già memorizzate)
+            if text_id not in self.original_drawing_coords:
+                image_center_x, image_center_y = self.get_image_center()
+                self.store_original_coords(text_id, image_center_x, image_center_y)
+
+            print(
+                f"✏️ Testo inserito con ID: {text_id} nel layer: {self.active_layer['name'] if self.active_layer else 'Default'}"
+            )
+
+    def get_drawing_tags(self):
+        """Restituisce i tag appropriati per i nuovi disegni basati sul layer attivo."""
+        tags = ["drawing"]
+        if self.active_layer:
+            tags.append(self.active_layer["tag"])
+            print(
+                f"🎨 Disegno nel layer: {self.active_layer['name']} (tag: {self.active_layer['tag']})"
+            )
+        else:
+            tags.append("default_layer")
+            print("🎨 Disegno nel layer: Default")
+        return tags
+
+    def handle_selection_tool(self, canvas_x, canvas_y):
+        """Gestisce il tool SELECTION per selezionare e modificare disegni."""
+        # Trova l'elemento più vicino al click
+        closest_item = self.canvas.find_closest(canvas_x, canvas_y)[0]
+
+        # Verifica se è un disegno (ha il tag 'drawing')
+        if "drawing" in self.canvas.gettags(closest_item):
+            # Evidenzia l'elemento selezionato
+            current_outline = self.canvas.itemcget(closest_item, "outline")
+            if current_outline == "yellow":
+                # Deseleziona se già selezionato
+                self.canvas.itemconfig(closest_item, outline="blue")
+                print(f"🎯 SELECTION: Deselezionato elemento ID {closest_item}")
+            else:
+                # Seleziona elemento
+                self.canvas.itemconfig(closest_item, outline="yellow", width=3)
+                print(
+                    f"🎯 SELECTION: Selezionato elemento ID {closest_item} per modifica"
+                )
+                print(
+                    "   💡 Suggerimento: Click destro per eliminare, doppio click per modificare"
+                )
+        else:
+            print(
+                f"🎯 SELECTION: Click su ({canvas_x:.1f}, {canvas_y:.1f}) - nessun disegno trovato"
+            )
+            print(
+                "   💡 Il tool SELECTION serve per selezionare e modificare i disegni esistenti"
+            )
+
+    def clear_all_drawings(self):
+        """Cancella tutti i disegni e le misurazioni dal canvas."""
+        # Rimuove tutti gli elementi con tag "drawing" e "temp_drawing"
+        self.canvas.delete("drawing")
+        self.canvas.delete("temp_drawing")
+
+        # Reset di eventuali operazioni in corso
+        if hasattr(self, "line_start_point"):
+            del self.line_start_point
+        if hasattr(self, "circle_center_point"):
+            del self.circle_center_point
+        if hasattr(self, "rect_start_point"):
+            del self.rect_start_point
+        if hasattr(self, "measure_start_point"):
+            del self.measure_start_point
+
+        print("🗑️ Tutti i disegni sono stati cancellati")
+
+    def move_all_drawings(self, dx, dy):
+        """Sposta tutti i disegni di dx, dy pixels per seguire l'immagine durante il PAN."""
+        moved_items = 0
+
+        # Sposta tutti gli elementi con tag "drawing" e "temp_drawing"
+        for tag in ["drawing", "temp_drawing"]:
+            items = self.canvas.find_withtag(tag)
+            for item_id in items:
+                self.canvas.move(item_id, dx, dy)
+                moved_items += 1
+
+        # Sposta anche gli elementi dei layer specifici
+        if hasattr(self, "layers_list") and self.layers_list:
+            for layer in self.layers_list:
+                items = self.canvas.find_withtag(layer["tag"])
+                for item_id in items:
+                    # Evita di spostare due volte lo stesso elemento
+                    if (
+                        "drawing" not in self.canvas.gettags(item_id)
+                        or moved_items == 0
+                    ):
+                        self.canvas.move(item_id, dx, dy)
+                        moved_items += 1
+
+        print(f"🔄 Spostati {moved_items} disegni di ({dx:.1f}, {dy:.1f})")
+
+    def scale_all_drawings(self, scale_factor, center_x, center_y):
+        """Scala tutti i disegni usando coordinate memorizzate per eliminare accumulo errori."""
+        # Inizializza il dizionario delle coordinate originali se non esiste
+        if not hasattr(self, "original_drawing_coords"):
+            self.original_drawing_coords = {}
+
+        # Calcola il centro dell'immagine corrente
+        image_center_x, image_center_y = self.get_image_center()
+        scaled_items = 0
+
+        print(
+            f"📏 Scaling COORDINATO: fattore={self.canvas_scale:.2f}, centro=({image_center_x:.1f}, {image_center_y:.1f})"
+        )
+
+        # Scala tutti gli elementi con tag "drawing" e "temp_drawing"
+        for tag in ["drawing", "temp_drawing"]:
+            items = self.canvas.find_withtag(tag)
+            for item_id in items:
+                scaled_items += self.scale_drawing_item_coordinated(
+                    item_id, image_center_x, image_center_y
+                )
+
+        # Scala anche gli elementi dei layer specifici
+        if hasattr(self, "layers_list") and self.layers_list:
+            for layer in self.layers_list:
+                items = self.canvas.find_withtag(layer["tag"])
+                for item_id in items:
+                    item_tags = self.canvas.gettags(item_id)
+                    if "drawing" not in item_tags:
+                        scaled_items += self.scale_drawing_item_coordinated(
+                            item_id, image_center_x, image_center_y
+                        )
+
+        if scaled_items > 0:
+            print(
+                f"📏 Scalati {scaled_items} disegni alla scala {self.canvas_scale:.2f}x"
+            )
+            print(f"🎯 Centro immagine: ({image_center_x:.1f}, {image_center_y:.1f})")
+        else:
+            print(
+                "⚠️ Nessun disegno scalato - verifica presence disegni e coordinate memorizzate"
+            )
+
+    def scale_drawing_item_coordinated(self, item_id, image_center_x, image_center_y):
+        """Scala un elemento usando le coordinate originali memorizzate per evitare accumulo errori."""
+        try:
+            # Se non abbiamo le coordinate originali, memorizzale ora
+            if item_id not in self.original_drawing_coords:
+                self.store_original_coords(item_id, image_center_x, image_center_y)
+
+            # Ottieni le coordinate originali
+            original_data = self.original_drawing_coords[item_id]
+            item_type = original_data["type"]
+            original_coords = original_data["coords"]
+            original_center = original_data["image_center"]
+            original_scale = original_data["canvas_scale"]
+
+            print(f"🔍 SCALE DEBUG item {item_id}: tipo={item_type}")
+            print(
+                f"🔍 SCALE DEBUG: orig_center=({original_center[0]:.1f}, {original_center[1]:.1f}), orig_scale={original_scale:.2f}"
+            )
+            print(
+                f"🔍 SCALE DEBUG: new_center=({image_center_x:.1f}, {image_center_y:.1f}), new_scale={self.canvas_scale:.2f}"
+            )
+
+            if item_type == "line":
+                # Calcola le nuove coordinate basate sulla posizione relativa originale
+                new_coords = []
+                for i in range(0, len(original_coords), 2):
+                    # Coordinate originali assolute
+                    orig_x, orig_y = original_coords[i], original_coords[i + 1]
+
+                    # Calcola posizione relativa al centro originale
+                    rel_x = (orig_x - original_center[0]) / original_scale
+                    rel_y = (orig_y - original_center[1]) / original_scale
+
+                    # Applica la nuova scala e posizione
+                    new_x = image_center_x + rel_x * self.canvas_scale
+                    new_y = image_center_y + rel_y * self.canvas_scale
+
+                    print(
+                        f"🔍 SCALE DEBUG punto {i//2}: orig=({orig_x:.1f}, {orig_y:.1f}) -> rel=({rel_x:.1f}, {rel_y:.1f}) -> new=({new_x:.1f}, {new_y:.1f})"
+                    )
+                    new_coords.extend([new_x, new_y])
+                self.canvas.coords(item_id, *new_coords)
+
+            elif item_type in ["oval", "rectangle"]:
+                # Calcola il nuovo bounding box
+                orig_x1, orig_y1, orig_x2, orig_y2 = original_coords
+
+                # Calcola posizioni relative al centro originale
+                rel_x1 = (orig_x1 - original_center[0]) / original_scale
+                rel_y1 = (orig_y1 - original_center[1]) / original_scale
+                rel_x2 = (orig_x2 - original_center[0]) / original_scale
+                rel_y2 = (orig_y2 - original_center[1]) / original_scale
+
+                # Applica la nuova scala e posizione
+                new_x1 = image_center_x + rel_x1 * self.canvas_scale
+                new_y1 = image_center_y + rel_y1 * self.canvas_scale
+                new_x2 = image_center_x + rel_x2 * self.canvas_scale
+                new_y2 = image_center_y + rel_y2 * self.canvas_scale
+                self.canvas.coords(item_id, new_x1, new_y1, new_x2, new_y2)
+
+            elif item_type == "text":
+                # Calcola la nuova posizione del testo
+                orig_x, orig_y = original_coords
+
+                # Calcola posizione relativa al centro originale
+                rel_x = (orig_x - original_center[0]) / original_scale
+                rel_y = (orig_y - original_center[1]) / original_scale
+                new_x = image_center_x + rel_x * self.canvas_scale
+                new_y = image_center_y + rel_y * self.canvas_scale
+                self.canvas.coords(item_id, new_x, new_y)
+
+                # Scala il font se memorizzato
+                if "font_size" in original_data:
+                    try:
+                        original_font_size = original_data["font_size"]
+                        new_font_size = max(
+                            8, int(original_font_size * self.canvas_scale)
+                        )
+                        font_info = original_data.get(
+                            "font_info", ("Arial", original_font_size)
+                        )
+                        if isinstance(font_info, tuple):
+                            new_font = (
+                                (font_info[0], new_font_size) + font_info[2:]
+                                if len(font_info) > 2
+                                else (font_info[0], new_font_size)
+                            )
+                            self.canvas.itemconfig(item_id, font=new_font)
+                    except Exception:
+                        pass
+
+            return 1
+
+        except Exception as e:
+            print(f"⚠️ Errore scaling coordinato item {item_id}: {e}")
+            return 0
+
+    def store_original_coords(self, item_id, image_center_x, image_center_y):
+        """Memorizza le coordinate originali assolute di un elemento e le info di scala."""
+        try:
+            item_type = self.canvas.type(item_id)
+            current_coords = self.canvas.coords(item_id)
+
+            if item_type == "line":
+                # Memorizza le coordinate assolute
+                self.original_drawing_coords[item_id] = {
+                    "type": item_type,
+                    "coords": current_coords.copy(),
+                    "image_center": [image_center_x, image_center_y],
+                    "canvas_scale": self.canvas_scale,
+                }
+
+            elif item_type in ["oval", "rectangle"]:
+                # Memorizza il bounding box assoluto
+                self.original_drawing_coords[item_id] = {
+                    "type": item_type,
+                    "coords": current_coords.copy(),
+                    "image_center": [image_center_x, image_center_y],
+                    "canvas_scale": self.canvas_scale,
+                }
+
+            elif item_type == "text":
+                # Memorizza la posizione assoluta del testo
+                font_info = None
+                font_size = 12  # default
+                try:
+                    font_info = self.canvas.itemcget(item_id, "font")
+                    if isinstance(font_info, tuple) and len(font_info) >= 2:
+                        font_size = font_info[1]
+                    elif isinstance(font_info, str):
+                        import re
+
+                        size_match = re.search(r"\s(\d+)(?:\s|$)", font_info)
+                        if size_match:
+                            font_size = int(size_match.group(1))
+                except Exception:
+                    pass
+
+                self.original_drawing_coords[item_id] = {
+                    "type": item_type,
+                    "coords": current_coords.copy(),
+                    "image_center": [image_center_x, image_center_y],
+                    "canvas_scale": self.canvas_scale,
+                    "font_size": font_size,
+                    "font_info": font_info,
+                }
+
+            print(f"✅ Memorizzate coordinate per item {item_id} (tipo: {item_type})")
+
+        except Exception as e:
+            print(f"⚠️ Errore memorizzazione coordinate item {item_id}: {e}")
+
+    def scale_drawing_item(self, item_id, scale_factor, center_x, center_y):
+        """Scala manualmente un singolo elemento del disegno rispetto al centro specificato."""
+        try:
+            # Ottieni il tipo di elemento
+            item_type = self.canvas.type(item_id)
+
+            if item_type == "line":
+                # Per le linee, scala tutti i punti
+                coords = self.canvas.coords(item_id)
+                new_coords = []
+                for i in range(0, len(coords), 2):
+                    x, y = coords[i], coords[i + 1]
+                    # Calcola la nuova posizione scalata rispetto al centro
+                    new_x = center_x + (x - center_x) * scale_factor
+                    new_y = center_y + (y - center_y) * scale_factor
+                    new_coords.extend([new_x, new_y])
+                self.canvas.coords(item_id, *new_coords)
+
+            elif item_type == "oval":
+                # Per i cerchi/ovali, scala le coordinate del bounding box
+                x1, y1, x2, y2 = self.canvas.coords(item_id)
+                # Scala ogni angolo del bounding box
+                new_x1 = center_x + (x1 - center_x) * scale_factor
+                new_y1 = center_y + (y1 - center_y) * scale_factor
+                new_x2 = center_x + (x2 - center_x) * scale_factor
+                new_y2 = center_y + (y2 - center_y) * scale_factor
+                self.canvas.coords(item_id, new_x1, new_y1, new_x2, new_y2)
+
+            elif item_type == "rectangle":
+                # Per i rettangoli, scala le coordinate del bounding box
+                x1, y1, x2, y2 = self.canvas.coords(item_id)
+                new_x1 = center_x + (x1 - center_x) * scale_factor
+                new_y1 = center_y + (y1 - center_y) * scale_factor
+                new_x2 = center_x + (x2 - center_x) * scale_factor
+                new_y2 = center_y + (y2 - center_y) * scale_factor
+                self.canvas.coords(item_id, new_x1, new_y1, new_x2, new_y2)
+
+            elif item_type == "text":
+                # Per il testo, scala solo la posizione del punto di ancoraggio
+                x, y = self.canvas.coords(item_id)
+                new_x = center_x + (x - center_x) * scale_factor
+                new_y = center_y + (y - center_y) * scale_factor
+                self.canvas.coords(item_id, new_x, new_y)
+
+                # Scala anche la dimensione del font se possibile
+                try:
+                    font_info = self.canvas.itemcget(item_id, "font")
+                    if font_info:
+                        # Estrai le informazioni del font se è una tupla
+                        if isinstance(font_info, tuple) and len(font_info) >= 2:
+                            font_family, font_size = font_info[0], font_info[1]
+                            new_font_size = max(8, int(font_size * scale_factor))
+                            new_font = (font_family, new_font_size)
+                            if len(font_info) > 2:
+                                new_font = (
+                                    font_info[:2] + (new_font_size,) + font_info[3:]
+                                )
+                            self.canvas.itemconfig(item_id, font=new_font)
+                        elif isinstance(font_info, str):
+                            # Se è una stringa, cerca di estrarre la dimensione
+                            import re
+
+                            size_match = re.search(r"\s(\d+)(?:\s|$)", font_info)
+                            if size_match:
+                                old_size = int(size_match.group(1))
+                                new_size = max(8, int(old_size * scale_factor))
+                                new_font_info = font_info.replace(
+                                    f" {old_size}", f" {new_size}"
+                                )
+                                self.canvas.itemconfig(item_id, font=new_font_info)
+                except Exception as font_e:
+                    # Se non riusciamo a scalare il font, continua comunque
+                    pass
+
+        except Exception as e:
+            print(f"⚠️ Errore scaling item {item_id} (tipo: {item_type}): {e}")
+
+    def get_image_center(self):
+        """Calcola il centro dell'immagine corrente per il punto di riferimento dello scaling."""
+        if self.current_image_on_canvas is not None:
+            # Ottieni le dimensioni del canvas
+            canvas_width = self.canvas.winfo_width()
+            canvas_height = self.canvas.winfo_height()
+
+            # Ottieni le dimensioni dell'immagine scalata
+            current_width = int(
+                self.current_image_on_canvas.shape[1] * self.canvas_scale
+            )
+            current_height = int(
+                self.current_image_on_canvas.shape[0] * self.canvas_scale
+            )
+
+            # Calcola la posizione dell'immagine esattamente come in update_canvas_display
+            x_pos = max(0, (canvas_width - current_width) // 2) + self.canvas_offset_x
+            y_pos = max(0, (canvas_height - current_height) // 2) + self.canvas_offset_y
+
+            # Il centro dell'immagine è la posizione + metà delle dimensioni
+            image_center_x = x_pos + current_width / 2
+            image_center_y = y_pos + current_height / 2
+
+            print(
+                f"🔍 GET_CENTER DEBUG: canvas={canvas_width}x{canvas_height}, img_scaled={current_width}x{current_height}"
+            )
+            print(
+                f"🔍 GET_CENTER DEBUG: offset=({self.canvas_offset_x:.1f}, {self.canvas_offset_y:.1f}), scale={self.canvas_scale:.2f}"
+            )
+            print(
+                f"🔍 GET_CENTER DEBUG: img_pos=({x_pos:.1f}, {y_pos:.1f}), center=({image_center_x:.1f}, {image_center_y:.1f})"
+            )
+
+            return image_center_x, image_center_y
+        else:
+            # Fallback al centro del canvas se non c'è immagine
+            return self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2
+
+    def setup_layers_panel(self, parent):
+        """Configura il pannello dei layer per il professional canvas."""
+        # Frame principale per i layer
+        main_frame = ttk.Frame(parent)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Toolbar layer
+        toolbar_frame = ttk.Frame(main_frame)
+        toolbar_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 5))
+
+        # Bottoni layer con tooltip
+        add_btn = ttk.Button(toolbar_frame, text="➕", width=3, command=self.add_layer)
+        add_btn.pack(side=tk.LEFT, padx=(0, 2))
+        ToolTip(add_btn, "Aggiungi nuovo layer\nCtrl+L per quick-add")
+
+        remove_btn = ttk.Button(
+            toolbar_frame, text="➖", width=3, command=self.remove_layer
+        )
+        remove_btn.pack(side=tk.LEFT, padx=(0, 2))
+        ToolTip(remove_btn, "Rimuovi layer selezionato\n⚠️ Operazione irreversibile")
+
+        visibility_btn = ttk.Button(
+            toolbar_frame, text="👁", width=3, command=self.toggle_layer_visibility
+        )
+        visibility_btn.pack(side=tk.LEFT, padx=(0, 2))
+        ToolTip(
+            visibility_btn,
+            "Toggle visibilità layer\nPuoi anche cliccare sull'icona occhio",
+        )
+
+        lock_btn = ttk.Button(
+            toolbar_frame, text="🔒", width=3, command=self.toggle_layer_lock
+        )
+        lock_btn.pack(side=tk.LEFT)
+        ToolTip(
+            lock_btn,
+            "Blocca/sblocca layer\nI layer bloccati non possono essere modificati",
+        )
+
+        # Treeview per i layer con tooltip
+        self.layers_tree = ttk.Treeview(
+            main_frame,
+            columns=("Status", "Visible", "Locked"),
+            show="tree headings",
+            height=8,
+        )
+
+        self.layers_tree.heading("#0", text="Layer")
+        self.layers_tree.heading("Status", text="🎯")
+        self.layers_tree.heading("Visible", text="👁")
+        self.layers_tree.heading("Locked", text="🔒")
+
+        self.layers_tree.column("#0", width=140)
+        self.layers_tree.column("Status", width=35)
+        self.layers_tree.column("Visible", width=35)
+        self.layers_tree.column("Locked", width=35)
+
+        # Tooltip per la treeview
+        ToolTip(
+            self.layers_tree,
+            "GESTIONE LAYERS:\n"
+            "• Click su nome: seleziona layer attivo\n"
+            "• Click su 👁: toggle visibilità\n"
+            "• Click su 🔒: toggle blocco\n"
+            "• Doppio click: rinomina layer\n"
+            "• 🎯 = layer attivo per nuovi disegni",
+        )
+
+        # Scrollbar per layer
+        layer_scrollbar = ttk.Scrollbar(
+            main_frame, orient="vertical", command=self.layers_tree.yview
+        )
+        self.layers_tree.configure(yscrollcommand=layer_scrollbar.set)
+
+        self.layers_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        layer_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Bind eventi per gestione layer
+        self.layers_tree.bind("<<TreeviewSelect>>", self.on_layer_select)
+        self.layers_tree.bind("<Button-1>", self.on_layer_click)
+        self.layers_tree.bind("<Double-Button-1>", self.on_layer_double_click)
+
+        # Bind keyboard shortcuts per layers
+        self.layers_tree.bind("<Delete>", self.on_delete_key)
+        self.root.bind(
+            "<Control-l>", self.quick_add_layer
+        )  # Ctrl+L per quick add layer
+
+        # Inizializza layer di default
+        self.update_layers_display()
+
+        # Layers tree ora collegato al canvas tkinter integrato
+        # self.layers_tree è collegato al canvas principale
+
+    def add_layer(self):
+        """Aggiunge un nuovo layer."""
+        import tkinter.simpledialog as simpledialog
+
+        # Inizializza la lista layers se non esiste
+        if not hasattr(self, "layers_list"):
+            self.layers_list = []
+
+        # Richiedi nome del layer
+        layer_count = len(self.layers_list) + 1
+        layer_name = simpledialog.askstring(
+            "Nuovo Layer", "Nome del layer:", initialvalue=f"Layer {layer_count}"
+        )
+        if layer_name:
+            # Crea un nuovo "layer" virtuale (gruppo di oggetti con tag comune)
+            layer_tag = f"layer_{layer_count}"
+            layer_info = {
+                "name": layer_name,
+                "tag": layer_tag,
+                "visible": True,
+                "locked": False,
+            }
+            self.layers_list.append(layer_info)
+
+            # Imposta come layer attivo
+            self.active_layer = layer_info
+            print(
+                f"➕ Layer '{layer_name}' creato con tag '{layer_tag}' e impostato come ATTIVO"
+            )
+
+            # Aggiorna la visualizzazione dei layers
+            self.update_layers_display()
+
+            # Feedback visivo
+            print(
+                f"✅ Layer aggiunto: {len(self.layers_list)} layers totali - Attivo: {layer_name}"
+            )
+        else:
+            print("➕ Creazione layer annullata")
+
+    def add_to_current_layer(self, canvas_item_id, item_type="generic"):
+        """Aggiunge un elemento del canvas al layer correntemente attivo."""
+        if hasattr(self, "active_layer") and self.active_layer and canvas_item_id:
+            layer_tag = self.active_layer.get("tag", "default")
+            # Assegna il tag del layer all'elemento del canvas
+            self.canvas.itemconfig(canvas_item_id, tags=layer_tag)
+            print(
+                f"📌 Elemento {canvas_item_id} ({item_type}) aggiunto al layer '{self.active_layer['name']}'"
+            )
+            return True
+        else:
+            # Se non c'è layer attivo, usa tag default
+            self.canvas.itemconfig(canvas_item_id, tags="default")
+            print(
+                f"📌 Elemento {canvas_item_id} ({item_type}) aggiunto al layer default"
+            )
+            return False
+
+    def get_active_layer_info(self):
+        """Restituisce informazioni sul layer attivo."""
+        if hasattr(self, "active_layer") and self.active_layer:
+            return {
+                "name": self.active_layer.get("name", "Unknown"),
+                "tag": self.active_layer.get("tag", "default"),
+                "visible": self.active_layer.get("visible", True),
+                "locked": self.active_layer.get("locked", False),
+            }
+        return {"name": "Default", "tag": "default", "visible": True, "locked": False}
+
+    def remove_layer(self):
+        """Rimuove il layer selezionato."""
+        if not hasattr(self, "layers_tree"):
+            return
+
+        selection = self.layers_tree.selection()
+        if not selection:
+            print("⚠️ Nessun layer selezionato per la rimozione")
+            return
+
+        # Trova il layer selezionato
+        selected_item = selection[0]
+        layer_display_name = self.layers_tree.item(selected_item)["text"]
+        layer_name = self._get_layer_base_name(layer_display_name)
+
+        # Conferma rimozione
+        import tkinter.messagebox as messagebox
+
+        if not messagebox.askyesno(
+            "Conferma Rimozione",
+            f"Sei sicuro di voler rimuovere il layer '{layer_name}'?\n\nTutti gli elementi del layer verranno cancellati permanentemente.",
+        ):
+            print(f"➖ Rimozione layer '{layer_name}' annullata")
+            return
+
+        # Rimuovi dal sistema layers_list
+        if hasattr(self, "layers_list") and self.layers_list:
+            for i, layer in enumerate(self.layers_list):
+                if layer["name"] == layer_name:
+                    # Rimuovi tutti gli elementi del layer dal canvas
+                    layer_tag = layer["tag"]
+                    items_to_remove = self.canvas.find_withtag(layer_tag)
+                    for item_id in items_to_remove:
+                        self.canvas.delete(item_id)
+
+                    # Se questo era il layer attivo, resetta il layer attivo
+                    if (
+                        hasattr(self, "active_layer")
+                        and self.active_layer
+                        and self.active_layer.get("name") == layer_name
+                    ):
+                        self.active_layer = None
+                        print(f"🎯 Layer attivo resettato (layer rimosso)")
+
+                    # Rimuovi dalla lista
+                    self.layers_list.pop(i)
+                    print(f"➖ Layer '{layer_name}' rimosso con successo")
+                    print(f"   • {len(items_to_remove)} elementi rimossi dal canvas")
+                    print(f"   • Layers rimanenti: {len(self.layers_list)}")
+
+                    # Aggiorna la visualizzazione
+                    self.update_layers_display()
+                    return
+
+        # Se non è un layer dell'utente, potrebbe essere un layer di esempio
+        print(
+            f"⚠️ Il layer '{layer_name}' non può essere rimosso (layer di sistema o non trovato)"
+        )
+        self.update_layers_display()
+
+    def toggle_layer_visibility(self):
+        """Toglie/mostra il layer selezionato."""
+        if not hasattr(self, "layers_tree"):
+            return
+
+        selection = self.layers_tree.selection()
+        if not selection:
+            print("⚠️ Nessun layer selezionato")
+            return
+
+        # Trova il layer selezionato
+        selected_item = selection[0]
+        layer_name = self.layers_tree.item(selected_item)["text"]
+
+        if not self._toggle_layer_visibility_by_name(layer_name):
+            print(f"⚠️ Layer '{self._get_layer_base_name(layer_name)}' non trovato")
+
+    def toggle_layer_lock(self):
+        """Blocca/sblocca il layer selezionato."""
+        if not hasattr(self, "layers_tree"):
+            return
+
+        selection = self.layers_tree.selection()
+        if not selection:
+            print("⚠️ Nessun layer selezionato")
+            return
+
+        # Trova il layer selezionato
+        selected_item = selection[0]
+        layer_name = self.layers_tree.item(selected_item)["text"]
+
+        if not self._toggle_layer_lock_by_name(layer_name):
+            print(f"⚠️ Layer '{self._get_layer_base_name(layer_name)}' non trovato")
+
+    def on_layer_click(self, event):
+        """Gestisce il click singolo su layer per azioni dirette sulle icone."""
+        # Identifica su cosa ha cliccato l'utente
+        item = self.layers_tree.identify("item", event.x, event.y)
+        column = self.layers_tree.identify("column", event.x, event.y)
+
+        if not item:
+            return
+
+        layer_name = self.layers_tree.item(item)["text"]
+
+        # Click sulla colonna "Visible" (👁)
+        if column == "#2":  # Colonna Visible
+            self._toggle_layer_visibility_by_name(layer_name)
+        # Click sulla colonna "Locked" (🔒)
+        elif column == "#3":  # Colonna Locked
+            self._toggle_layer_lock_by_name(layer_name)
+        # Click sulla colonna "Status" o nome layer - imposta come attivo
+        elif column == "#1" or column == "#0":  # Colonna Status o nome
+            self._set_active_layer_by_name(layer_name)
+
+    def on_layer_double_click(self, event):
+        """Gestisce il doppio click per rinominare layer."""
+        item = self.layers_tree.identify("item", event.x, event.y)
+        if not item:
+            return
+
+        layer_name = self.layers_tree.item(item)["text"]
+        self._rename_layer(layer_name)
+
+    def _get_layer_base_name(self, display_name):
+        """Estrae il nome base del layer dal nome visualizzato (che include il conteggio)."""
+        # Rimuove la parte " (N)" dal nome
+        import re
+
+        match = re.match(r"^(.*?)\s*\(\d+\)$", display_name)
+        return match.group(1) if match else display_name
+
+    def _toggle_layer_visibility_by_name(self, layer_name):
+        """Toggle visibilità layer per nome."""
+        base_name = self._get_layer_base_name(layer_name)
+
+        if hasattr(self, "layers_list") and self.layers_list:
+            for layer in self.layers_list:
+                if layer["name"] == base_name:
+                    # Toggle visibilità
+                    layer["visible"] = not layer["visible"]
+
+                    # Nasconde/mostra gli elementi del layer sul canvas
+                    if layer["visible"]:
+                        # Mostra elementi del layer
+                        for item_id in self.canvas.find_withtag(layer["tag"]):
+                            self.canvas.itemconfig(item_id, state="normal")
+                        print(f"👁 Layer '{base_name}' MOSTRATO")
+                    else:
+                        # Nasconde elementi del layer
+                        for item_id in self.canvas.find_withtag(layer["tag"]):
+                            self.canvas.itemconfig(item_id, state="hidden")
+                        print(f"👁‍🗨 Layer '{base_name}' NASCOSTO")
+
+                    self.update_layers_display()
+                    return True
+        return False
+
+    def _toggle_layer_lock_by_name(self, layer_name):
+        """Toggle lock layer per nome."""
+        base_name = self._get_layer_base_name(layer_name)
+
+        if hasattr(self, "layers_list") and self.layers_list:
+            for layer in self.layers_list:
+                if layer["name"] == base_name:
+                    # Toggle lock
+                    layer["locked"] = not layer["locked"]
+
+                    if layer["locked"]:
+                        print(f"🔒 Layer '{base_name}' BLOCCATO")
+                    else:
+                        print(f"🔓 Layer '{base_name}' SBLOCCATO")
+
+                    self.update_layers_display()
+                    return True
+        return False
+
+    def _set_active_layer_by_name(self, layer_name):
+        """Imposta layer attivo per nome."""
+        base_name = self._get_layer_base_name(layer_name)
+
+        if hasattr(self, "layers_list") and self.layers_list:
+            for layer in self.layers_list:
+                if layer["name"] == base_name:
+                    # Imposta come layer attivo
+                    self.active_layer = layer
+                    print(f"🎯 Layer ATTIVO impostato su: '{base_name}'")
+                    self.update_layers_display()
+                    return True
+
+        # Se non è un layer dell'utente, imposta None (layer di default)
+        self.active_layer = None
+        print(f"🎯 Layer ATTIVO impostato su: Default ('{base_name}')")
+        self.update_layers_display()
+        return False
+
+    def _rename_layer(self, old_name):
+        """Rinomina un layer."""
+        import tkinter.simpledialog as simpledialog
+
+        base_name = self._get_layer_base_name(old_name)
+
+        new_name = simpledialog.askstring(
+            "Rinomina Layer", "Nuovo nome del layer:", initialvalue=base_name
+        )
+
+        if new_name and new_name != base_name:
+            if hasattr(self, "layers_list") and self.layers_list:
+                for layer in self.layers_list:
+                    if layer["name"] == base_name:
+                        layer["name"] = new_name
+                        print(f"✏️ Layer rinominato da '{base_name}' a '{new_name}'")
+                        self.update_layers_display()
+                        return True
+        return False
+
+    def on_delete_key(self, event):
+        """Gestisce la pressione del tasto Delete per rimuovere layer."""
+        self.remove_layer()
+
+    def quick_add_layer(self, event=None):
+        """Aggiunge velocemente un nuovo layer con nome automatico."""
+        if not hasattr(self, "layers_list"):
+            self.layers_list = []
+
+        layer_count = len(self.layers_list) + 1
+        layer_name = f"Layer {layer_count}"
+
+        import uuid
+
+        layer_tag = f"layer_{layer_count}"
+        layer_info = {
+            "id": str(uuid.uuid4()),
+            "name": layer_name,
+            "tag": layer_tag,
+            "visible": True,
+            "locked": False,
+        }
+        self.layers_list.append(layer_info)
+
+        # Imposta come layer attivo
+        self.active_layer = layer_info
+        print(f"⚡ Quick-add: Layer '{layer_name}' creato e attivato")
+
+        # Aggiorna la visualizzazione dei layers
+        self.update_layers_display()
+        return "break"  # Previene ulteriore propagazione dell'evento
+
+    def on_layer_select(self, event):
+        """Gestisce la selezione di un layer nel tree per impostarlo come attivo."""
+        selection = self.layers_tree.selection()
+        if not selection:
+            return
+
+        selected_item = selection[0]
+        layer_name = self.layers_tree.item(selected_item)["text"]
+
+        # Non fare nulla qui - lascia che on_layer_click gestisca l'azione
+        # Questo evita conflitti tra selezione e click
+        pass
+
+    def update_layers_display(self):
+        """Aggiorna la visualizzazione dei layer."""
+        if not hasattr(self, "layers_tree"):
+            return
+
+        # Pulisci tree
+        for item in self.layers_tree.get_children():
+            self.layers_tree.delete(item)
+
+        # Visualizza i layer creati dall'utente e il layer base
+        if hasattr(self, "layers_list") and self.layers_list:
+            print(f"🔄 Visualizzazione {len(self.layers_list)} layers totali")
+            for layer in self.layers_list:
+                # Determina se questo è il layer attivo
+                is_active = (
+                    hasattr(self, "active_layer")
+                    and self.active_layer
+                    and self.active_layer.get("name") == layer["name"]
+                )
+
+                # Conta elementi nel layer
+                element_count = len(
+                    self.canvas.find_withtag(layer.get("tag", "default"))
+                )
+
+                # Prepara icone e testo
+                status_icon = "🎯" if is_active else ""
+                visible_icon = "👁" if layer["visible"] else "👁‍🗨"
+                locked_icon = "🔒" if layer.get("locked", False) else "🔓"
+
+                # Nome layer con conteggio elementi
+                layer_display_name = f"{layer['name']} ({element_count})"
+
+                item_id = self.layers_tree.insert(
+                    "",
+                    "end",
+                    text=layer_display_name,
+                    values=(status_icon, visible_icon, locked_icon),
+                )
+
+                # Evidenzia visivamente il layer attivo
+                if is_active:
+                    self.layers_tree.set(item_id, "Status", "🎯")
+                    # Opzionalmente, seleziona il layer attivo nella tree
+                    self.layers_tree.selection_set(item_id)
+        else:
+            # Crea layer base se non esiste
+            self.create_default_layer_unified()
 
     def setup_integrated_preview(self, parent):
         """Configura l'area anteprima integrata con layout scrollabile moderno."""
@@ -1098,9 +3065,10 @@ class CanvasApp:
         # Reset buffer frame per doppio click
         self.frame_buffer.clear()
 
-        # Reset canvas centrale
-        if hasattr(self, "professional_canvas"):
-            self.professional_canvas.clear_canvas()
+        # Reset canvas centrale tkinter
+        if hasattr(self, "canvas") and self.canvas:
+            self.canvas.delete("all")
+            print("🧽 Canvas tkinter cleared")
         self.current_image = None
         self.current_landmarks = None
 
@@ -1120,31 +3088,37 @@ class CanvasApp:
         print("Interfaccia resettata per nuova analisi")
 
     def setup_measurements_area(self, parent):
-        """Configura l'area delle misurazioni."""
-        # Treeview per le misurazioni esistenti (più compatta)
+        """Configura l'area delle misurazioni in modo compatto."""
+        # Frame principale per l'area misurazioni
+        main_frame = ttk.Frame(parent)
+        main_frame.grid(row=0, column=0, sticky="nsew")
+        main_frame.grid_columnconfigure(0, weight=1)
+        main_frame.grid_rowconfigure(0, weight=1)
+
+        # Treeview per le misurazioni esistenti (compatta)
         self.measurements_tree = ttk.Treeview(
-            parent,
+            main_frame,
             columns=("Type", "Value", "Unit"),
             show="headings",
-            height=6,  # Altezza ridotta
+            height=8,  # Altezza ottimizzata
         )
 
         self.measurements_tree.heading("Type", text="Tipo")
         self.measurements_tree.heading("Value", text="Valore")
         self.measurements_tree.heading("Unit", text="Unità")
 
-        self.measurements_tree.column("Type", width=150)
-        self.measurements_tree.column("Value", width=80)
-        self.measurements_tree.column("Unit", width=50)
+        self.measurements_tree.column("Type", width=200, minwidth=150)
+        self.measurements_tree.column("Value", width=100, minwidth=80)
+        self.measurements_tree.column("Unit", width=80, minwidth=60)
 
         # Scrollbar per la lista misurazioni
         tree_scroll = ttk.Scrollbar(
-            parent, orient=tk.VERTICAL, command=self.measurements_tree.yview
+            main_frame, orient=tk.VERTICAL, command=self.measurements_tree.yview
         )
         self.measurements_tree.configure(yscrollcommand=tree_scroll.set)
 
-        # Layout con grid
-        self.measurements_tree.grid(row=0, column=0, sticky="ew")
+        # Layout ottimizzato con grid
+        self.measurements_tree.grid(row=0, column=0, sticky="nsew")
         tree_scroll.grid(row=0, column=1, sticky="ns")
 
     def setup_status_bar(self):
@@ -1481,6 +3455,10 @@ class CanvasApp:
             # Usa il metodo esistente per impostare l'immagine corrente
             self.set_current_image(frame, landmarks)
 
+            # Forza il refresh del canvas unificato
+            self._force_canvas_refresh()
+            print("🔄 Canvas unified refreshed")
+
             # Aggiorna le informazioni
             self.best_frame_info.config(
                 text=f"Miglior frame: Score {score:.2f} (Auto-aggiornato)"
@@ -1489,10 +3467,23 @@ class CanvasApp:
                 text=f"Canvas aggiornato automaticamente - Score: {score:.2f}"
             )
 
-            print(f"Canvas aggiornato automaticamente con score: {score:.2f}")
+            print(
+                f"🖼️ Canvas aggiornato e refreshed automaticamente - Score: {score:.2f}"
+            )
 
         except Exception as e:
-            print(f"Errore nell'aggiornamento automatico del canvas: {e}")
+            print(f"❌ Errore nell'aggiornamento automatico del canvas: {e}")
+
+    def _force_canvas_refresh(self):
+        """Metodo di utilità per forzare il refresh del canvas unificato"""
+        try:
+            # Refresh del canvas tkinter unificato
+            if hasattr(self, "canvas") and self.canvas:
+                self.canvas.update()
+                self.canvas.update_idletasks()
+                print("✅ Canvas tkinter unified refreshed")
+        except Exception as e:
+            print(f"❌ Errore nel refresh del canvas: {e}")
 
     def on_analysis_completion(self):
         """Callback chiamato quando l'analisi video termina. SEMPLIFICATO."""
@@ -1747,32 +3738,259 @@ class CanvasApp:
 
     def set_current_image(
         self,
-        image: np.ndarray,
+        image,  # Può essere np.ndarray o PIL.Image
         landmarks: Optional[List[Tuple[float, float]]] = None,
         auto_resize: bool = True,
     ):
-        """Imposta l'immagine corrente nel canvas."""
-        self.current_image = image.copy()
+        """Imposta l'immagine corrente nel canvas tkinter (RIPRISTINO ORIGINALE + PIL)."""
+
+        # Gestisce sia np.ndarray che PIL.Image nel sistema unificato
+        if isinstance(image, Image.Image):
+            # È una PIL Image, converti in numpy array
+            image_array = np.array(image)
+            # PIL è già RGB, OpenCV è BGR, quindi potrebbe servire conversione
+            if len(image_array.shape) == 3 and image_array.shape[2] == 3:
+                # Se è RGB (PIL), converti in BGR per compatibilità con OpenCV
+                image_array = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+            print(
+                f"🖼️ Caricamento PIL Image nel canvas tkinter: {image.size} -> {image_array.shape}"
+            )
+        else:
+            # È già un numpy array (OpenCV format BGR)
+            image_array = image
+            print(f"🖼️ Caricamento numpy array nel canvas tkinter: {image_array.shape}")
+
+        # SALVA IMMAGINE CORRENTE
+        self.current_image = image_array.copy()
+        self.current_image_on_canvas = image_array.copy()
         self.current_landmarks = landmarks
 
-        if landmarks is None:
-            # Rileva automaticamente i landmark
-            self.detect_landmarks()
-
-        # Usa refresh_canvas_only() se non vogliamo ridimensionare automaticamente
+        # RIPRISTINA SCALA E OFFSET se auto_resize
         if auto_resize:
-            self.update_canvas_display()
+            self.canvas_scale = 1.0
+            self.canvas_offset_x = 0
+            self.canvas_offset_y = 0
+            print(f"Auto-resize attivato: scala={self.canvas_scale}")
+
+        # Se non ci sono landmarks, rileva automaticamente
+        if landmarks is None:
+            print("Rilevamento automatico landmarks...")
+            self.detect_landmarks()
+            # detect_landmarks chiama già update_canvas_display
         else:
-            self.refresh_canvas_only()
+            # Visualizza direttamente
+            print("Visualizzazione immagine con landmarks forniti...")
+            self.update_canvas_display()
+
+        print("✅ set_current_image completato")
+
+    def set_image_no_resize(self, image):
+        """Imposta l'immagine senza auto-resize nel sistema unificato."""
+        print("🖼️ set_image_no_resize chiamato - usa set_current_image")
+        self.set_current_image(
+            image, landmarks=self.current_landmarks, auto_resize=False
+        )
+
+    def update_canvas_display(self):
+        """Aggiorna la visualizzazione del canvas tkinter (RIPRISTINO ORIGINALE + OVERLAY)."""
+        if self.current_image_on_canvas is None:
+            return
+
+        # CREA IMMAGINE CON OVERLAY CONDIZIONALI (solo se abilitati nell'interfaccia)
+        display_image = self.current_image_on_canvas.copy()
+
+        # Disegna landmarks SOLO se abilitati nell'interfaccia
+        if (
+            hasattr(self, "all_landmarks_var")
+            and hasattr(self.all_landmarks_var, "get")
+            and self.all_landmarks_var.get()
+            and self.current_landmarks
+        ):
+
+            print("🎯 Disegno landmarks - abilitati nell'interfaccia")
+            display_image = self.face_detector.draw_landmarks(
+                display_image,
+                self.current_landmarks,
+                draw_all=True,
+                key_only=False,
+            )
+        elif self.current_landmarks:
+            print("⚪ Landmarks presenti ma NON abilitati nell'interfaccia")
+
+        # Disegna asse di simmetria SOLO se abilitato nell'interfaccia
+        if (
+            hasattr(self, "show_axis_var")
+            and hasattr(self.show_axis_var, "get")
+            and self.show_axis_var.get()
+            and self.current_landmarks
+        ):
+
+            print("🎯 Disegno asse di simmetria - abilitato nell'interfaccia")
+            display_image = self.face_detector.draw_symmetry_axis(
+                display_image, self.current_landmarks
+            )
+
+        # Disegna puntini verdi SOLO se abilitati nell'interfaccia
+        if (
+            hasattr(self, "green_dots_var")
+            and hasattr(self.green_dots_var, "get")
+            and self.green_dots_var.get()
+            and hasattr(self, "green_dots_overlay")
+            and self.green_dots_overlay is not None
+        ):
+
+            print("🎯 Disegno puntini verdi - abilitati nell'interfaccia")
+            # Applica overlay trasparente puntini verdi
+            try:
+                display_pil = Image.fromarray(
+                    cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
+                )
+                display_pil = Image.alpha_composite(
+                    display_pil.convert("RGBA"), self.green_dots_overlay.convert("RGBA")
+                )
+                display_image = cv2.cvtColor(
+                    np.array(display_pil.convert("RGB")), cv2.COLOR_RGB2BGR
+                )
+            except Exception as e:
+                print(f"Errore overlay puntini verdi: {e}")
+
+        # Disegna overlay misurazioni SOLO se abilitati nell'interfaccia
+        if (
+            hasattr(self, "overlay_var")
+            and hasattr(self.overlay_var, "get")
+            and self.overlay_var.get()
+            and hasattr(self, "draw_measurement_overlays")
+        ):
+
+            print("🎯 Disegno overlay misurazioni - abilitati nell'interfaccia")
+            display_image = self.draw_measurement_overlays(display_image)
+
+        # Disegna sempre le selezioni correnti (punti selezionati dall'utente)
+        if hasattr(self, "selected_points") and self.selected_points:
+            print(f"🎯 Disegno {len(self.selected_points)} punti selezionati")
+            for i, point in enumerate(self.selected_points):
+                cv2.circle(display_image, point, 5, (255, 0, 255), -1)
+
+        # ORA VISUALIZZA NEL CANVAS TKINTER
+        try:
+            # Attendi che il canvas sia renderizzato
+            canvas_width = self.canvas.winfo_width()
+            canvas_height = self.canvas.winfo_height()
+
+            if canvas_width <= 1 or canvas_height <= 1:
+                # Canvas non ancora renderizzato, riprova dopo
+                print("Canvas non ancora pronto, riprovo tra 100ms...")
+                self.canvas.after(100, self.update_canvas_display)
+                return
+
+            print(f"Canvas pronto: {canvas_width}x{canvas_height}")
+
+            # Converti l'immagine OpenCV (BGR) in PIL (RGB)
+            image_rgb = cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
+
+            # Ridimensiona secondo la scala
+            height, width = image_rgb.shape[:2]
+            new_width = int(width * self.canvas_scale)
+            new_height = int(height * self.canvas_scale)
+
+            print(
+                f"Immagine: {width}x{height} -> {new_width}x{new_height} (scala {self.canvas_scale})"
+            )
+
+            if new_width > 0 and new_height > 0:
+                # Ridimensiona l'immagine
+                image_resized = cv2.resize(image_rgb, (new_width, new_height))
+
+                # Converte in PIL per tkinter
+                pil_image = Image.fromarray(image_resized)
+                self.tk_image = ImageTk.PhotoImage(pil_image)
+
+                # Pulisce solo l'immagine, NON i disegni
+                for item in self.canvas.find_all():
+                    if not "drawing" in self.canvas.gettags(
+                        item
+                    ) and not "temp_drawing" in self.canvas.gettags(item):
+                        self.canvas.delete(item)
+
+                # Centra l'immagine nel canvas
+                x_pos = max(0, (canvas_width - new_width) // 2) + self.canvas_offset_x
+                y_pos = max(0, (canvas_height - new_height) // 2) + self.canvas_offset_y
+
+                # Posiziona l'immagine
+                self.canvas_image_id = self.canvas.create_image(
+                    x_pos, y_pos, anchor=tk.NW, image=self.tk_image
+                )
+
+                # IMPORTANTE: Mantieni riferimento per evitare garbage collection
+                self.canvas.image = self.tk_image
+
+                # CRITICO: Porta i disegni in primo piano sopra l'immagine
+                self.canvas.tag_raise("drawing")
+                self.canvas.tag_raise("temp_drawing")
+
+                # Porta in primo piano anche i disegni dei layer specifici
+                if hasattr(self, "layers_list") and self.layers_list:
+                    for layer in self.layers_list:
+                        self.canvas.tag_raise(layer["tag"])
+
+                print(
+                    f"✅ Immagine posizionata a ({x_pos}, {y_pos}) con ID {self.canvas_image_id} - Disegni portati in primo piano"
+                )
+
+                # DISEGNA LANDMARKS AGGIUNTIVI direttamente sul canvas SOLO se abilitati
+                if (
+                    self.current_landmarks
+                    and hasattr(self, "all_landmarks_var")
+                    and hasattr(self.all_landmarks_var, "get")
+                    and self.all_landmarks_var.get()
+                ):
+
+                    print("🔴 Disegno landmarks rossi aggiuntivi sul canvas")
+                    self.draw_landmarks_on_canvas(x_pos, y_pos, self.canvas_scale)
+                else:
+                    print("⚪ Landmarks presenti ma overlay rosso DISABILITATO")
+
+                # Forza l'aggiornamento visivo
+                self.canvas.update_idletasks()
+
+        except Exception as e:
+            print(f"❌ Errore aggiornamento canvas: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+    def draw_landmarks_on_canvas(self, img_x_offset, img_y_offset, scale):
+        """Disegna i landmarks sul canvas tkinter (RIPRISTINO ORIGINALE)."""
+        if not self.current_landmarks:
+            return
+
+        for x, y in self.current_landmarks:
+            # Applica scala e offset
+            canvas_x = img_x_offset + (x * scale)
+            canvas_y = img_y_offset + (y * scale)
+
+            # Disegna punto landmark
+            radius = max(1, int(2 * scale))
+            self.canvas.create_oval(
+                canvas_x - radius,
+                canvas_y - radius,
+                canvas_x + radius,
+                canvas_y + radius,
+                fill="red",
+                outline="darkred",
+                width=1,
+            )
+
+        print(f"✅ Disegnati {len(self.current_landmarks)} landmarks")
 
     def detect_landmarks(self):
-        """Rileva i landmark facciali nell'immagine corrente."""
+        """Rileva i landmark facciali nell'immagine corrente (RIPRISTINO ORIGINALE)."""
         if self.current_image is not None:
             landmarks = self.face_detector.detect_face_landmarks(self.current_image)
             self.current_landmarks = landmarks
-            # Non richiama update_canvas_display per mantenere la scala corrente
-            # Richiama solo il refresh del canvas senza ricalcolare la scala
-            self.refresh_canvas_only()
+
+            # Aggiorna la visualizzazione del canvas tkinter
+            self.update_canvas_display()
 
             if landmarks:
                 self.status_bar.config(text=f"Rilevati {len(landmarks)} landmark")
@@ -1804,8 +4022,8 @@ class CanvasApp:
                 self.show_green_dots_overlay = True
                 self.green_dots_var.set(True)
 
-                # Aggiorna la visualizzazione del canvas
-                self.refresh_canvas_only()
+                # Aggiorna la visualizzazione del canvas unificato
+                self.update_canvas_display()
 
                 # Aggiunge misurazioni alla tabella
                 left_stats = results["statistics"]["left"]
@@ -1884,102 +4102,11 @@ Aree calcolate:
             self.show_green_dots_overlay = False
             return
 
-        # Aggiorna la visualizzazione
-        self.refresh_canvas_only()
+        # Aggiorna la visualizzazione utilizzando il canvas unificato
+        self.update_canvas_display()
 
         status = "attivato" if self.show_green_dots_overlay else "disattivato"
         self.status_bar.config(text=f"Overlay puntini verdi {status}")
-
-    def refresh_canvas_only(self):
-        """Aggiorna solo il canvas senza ricalcolare la scala."""
-        if self.current_image is None:
-            return
-
-        # Usa la scala già esistente per mantenere lo zoom corrente
-        if not hasattr(self, "display_scale") or self.display_scale == 0:
-            self.update_canvas_display()  # Fallback se non c'è scala
-            return
-
-        # Crea una copia dell'immagine per la visualizzazione
-        display_image = self.current_image.copy()
-
-        # Disegna tutti i landmark se abilitati
-        if self.show_all_landmarks and self.current_landmarks:
-            display_image = self.face_detector.draw_landmarks(
-                display_image,
-                self.current_landmarks,
-                draw_all=True,
-                key_only=False,
-            )
-
-        # Disegna l'asse di simmetria se abilitato
-        if self.show_axis_var.get() and self.current_landmarks:
-            display_image = self.face_detector.draw_symmetry_axis(
-                display_image, self.current_landmarks
-            )
-
-        # Disegna le selezioni correnti
-        for i, point in enumerate(self.selected_points):
-            cv2.circle(display_image, point, 5, (255, 0, 255), -1)
-            cv2.putText(
-                display_image,
-                str(i + 1),
-                (point[0] + 10, point[1] - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (255, 0, 255),
-                1,
-            )
-
-        # Disegna i landmark selezionati in modalità landmark
-        if self.landmark_measurement_mode and self.current_landmarks:
-            for i, landmark_idx in enumerate(self.selected_landmarks):
-                if landmark_idx < len(self.current_landmarks):
-                    point = self.current_landmarks[landmark_idx]
-                    # Cerchio più grande per landmark selezionati
-                    cv2.circle(
-                        display_image,
-                        (int(point[0]), int(point[1])),
-                        8,
-                        (0, 255, 255),
-                        3,
-                    )
-
-        # Sovrappone l'overlay dei puntini verdi se abilitato
-        if self.show_green_dots_overlay and self.green_dots_overlay is not None:
-            # Converte l'immagine OpenCV in PIL per la composizione
-            display_pil = Image.fromarray(
-                cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
-            )
-
-            # Compone l'overlay trasparente con l'immagine
-            display_pil = Image.alpha_composite(
-                display_pil.convert("RGBA"), self.green_dots_overlay.convert("RGBA")
-            )
-
-            # Riconverte in formato OpenCV
-            display_image = cv2.cvtColor(
-                np.array(display_pil.convert("RGB")), cv2.COLOR_RGB2BGR
-            )
-
-        # Usa la scala esistente per ridimensionare
-        canvas_width = self.canvas.winfo_width()
-        canvas_height = self.canvas.winfo_height()
-
-        if canvas_width > 1 and canvas_height > 1:
-            # Ridimensiona usando la scala esistente
-            display_image = resize_image_keep_aspect(
-                display_image, canvas_width, canvas_height
-            )
-
-        # Converte per Tkinter
-        display_image_rgb = cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
-        pil_image = Image.fromarray(display_image_rgb)
-        self.canvas_image = ImageTk.PhotoImage(pil_image)
-
-        # Aggiorna canvas professionale
-        if hasattr(self, "professional_canvas"):
-            self.update_canvas_display()
 
     def canvas_to_image_coordinates(
         self, canvas_x: float, canvas_y: float
@@ -2202,46 +4329,7 @@ Aree calcolate:
         self.show_measurement_overlays = self.overlay_var.get()
         self.update_canvas_display()
 
-    def on_canvas_click(self, event):
-        """Gestisce i click sul canvas."""
-        if self.current_image is None:
-            return
-
-        # Converte coordinate canvas in coordinate immagine originale
-        canvas_x = self.canvas.canvasx(event.x)
-        canvas_y = self.canvas.canvasy(event.y)
-
-        # Usa il metodo di conversione corretto
-        image_x, image_y = self.canvas_to_image_coordinates(canvas_x, canvas_y)
-
-        if self.landmark_measurement_mode:
-            # Modalità landmark: trova il landmark più vicino
-            if self.current_landmarks:
-                closest_landmark_idx = self.find_closest_landmark(image_x, image_y)
-                if closest_landmark_idx is not None:
-                    self.add_landmark_selection(closest_landmark_idx)
-        else:
-            # Modalità manuale: aggiunge punto diretto
-            self.selected_points.append((image_x, image_y))
-
-            # Limita il numero di punti in base alla modalità
-            max_points = {"distance": 2, "angle": 3, "area": 4}
-            if len(self.selected_points) > max_points.get(self.measurement_mode, 2):
-                self.selected_points.pop(0)
-
-            self.status_bar.config(text=f"Punto selezionato: ({image_x}, {image_y})")
-
-        self.update_canvas_display()
-
-    def on_canvas_zoom(self, event):
-        """Gestisce lo zoom del canvas."""
-        # TODO: Implementare zoom
-        pass
-
-    def on_canvas_drag(self, event):
-        """Gestisce il trascinamento del canvas."""
-        # TODO: Implementare pan
-        pass
+    # NOTA: I metodi canvas zoom e drag sono gestiti dal sistema unificato
 
     def find_closest_landmark(
         self, x: int, y: int, max_distance: int = 20
@@ -3208,6 +5296,389 @@ Aree calcolate:
         except Exception as e:
             print(f"Errore nel salvare frame nel buffer: {e}")
 
+    def _save_layout_only(self):
+        """Salva solo la configurazione del layout senza chiudere l'applicazione."""
+        try:
+            print("\n💾 Salvataggio layout in corso...")
+
+            # Ottieni posizioni PanedWindow usando sashpos SENZA validazione per rispettare le scelte dell'utente
+            main_pos = (
+                self.main_horizontal_paned.sashpos(0)
+                if self.main_horizontal_paned.panes()
+                else layout_manager.config.main_paned_position
+            )
+
+            # NUOVO: Ottieni posizione divisore canvas | colonna destra
+            right_column_pos = None
+            if self.main_horizontal_paned.panes():
+                panes_count = len(self.main_horizontal_paned.panes())
+                if panes_count >= 3:
+                    right_column_pos = self.main_horizontal_paned.sashpos(1)
+                else:
+                    right_column_pos = layout_manager.config.right_column_position
+
+            # Divisore INTERNO layers/anteprima
+            layers_preview_pos = (
+                self.right_sidebar_paned.sashpos(0)
+                if self.right_sidebar_paned.panes()
+                else layout_manager.config.layers_preview_divider_position
+            )
+
+            vertical_pos = (
+                self.main_vertical_paned.sashpos(0)
+                if self.main_vertical_paned.panes()
+                else layout_manager.config.vertical_paned_position
+            )
+
+            # Salva le dimensioni aggiuntive per la colonna destra
+            try:
+                # Dimensioni del pannello destro
+                if hasattr(self, "right_sidebar_paned"):
+                    right_sidebar_width = self.right_sidebar_paned.winfo_width()
+                    layout_manager.config.right_sidebar_width = right_sidebar_width
+                    print(f"📐 Right sidebar width: {right_sidebar_width}")
+
+                # Dimensioni specifiche dei frame interni
+                if hasattr(self, "layers_tree"):
+                    layers_frame_height = self.layers_tree.winfo_height()
+                    layout_manager.config.layers_frame_height = layers_frame_height
+                    print(f"📐 Layers frame height: {layers_frame_height}")
+
+            except Exception as e:
+                print(f"⚠️ Errore lettura dimensioni colonna destra: {e}")
+
+            print(f"📏 Posizioni pannelli rilevate REALI dell'utente:")
+            print(f"   • Main paned (controlli|canvas): {main_pos}")
+            print(f"   • Right column (canvas|destra): {right_column_pos}")
+            print(f"   • Layers/Anteprima divisore: {layers_preview_pos}")
+            print(f"   • Vertical paned: {vertical_pos}")
+
+            # Aggiorna configurazione nell'istanza layout_manager SENZA correzioni
+            layout_manager.config.main_paned_position = main_pos
+            if right_column_pos is not None:
+                layout_manager.config.right_column_position = right_column_pos
+            layout_manager.config.layers_preview_divider_position = layers_preview_pos
+            layout_manager.config.vertical_paned_position = vertical_pos
+
+            # Salva immediatamente e verifica
+            layout_manager.save_config()
+
+            # Verifica salvataggio
+            status = layout_manager.get_config_status()
+            print(
+                f"📊 Status post-salvataggio: File={status['file_exists']}, Size={status['file_size']}B"
+            )
+
+            print(f"✅ Layout pannelli dell'utente salvato con successo")
+
+        except Exception as e:
+            print(f"❌ Errore nel salvataggio layout pannelli: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+    def _check_and_load_test_image_for_pan(self):
+        """Carica immagine di test solo se non c'è già un'immagine caricata."""
+        if self.current_image is None:
+            self._load_test_image_for_pan()
+        else:
+            print("📷 Immagine già presente, non carico immagine di test")
+
+    def _load_test_image_for_pan(self):
+        """Carica un'immagine di test per rendere il PAN visibile e funzionale."""
+        try:
+            from PIL import Image, ImageDraw
+            import numpy as np
+
+            # Crea un'immagine di test con griglia
+            test_img = Image.new("RGB", (800, 600), "lightgray")
+            draw = ImageDraw.Draw(test_img)
+
+            # Disegna griglia per visualizzare il PAN
+            for x in range(0, 800, 100):
+                draw.line([(x, 0), (x, 600)], fill="blue", width=2)
+                draw.text((x + 5, 5), str(x), fill="darkblue")
+
+            for y in range(0, 600, 100):
+                draw.line([(0, y), (800, y)], fill="red", width=2)
+                draw.text((5, y + 5), str(y), fill="darkred")
+
+            # Aggiungi testo di istruzioni
+            draw.text((50, 300), "IMMAGINE DI TEST - PROVA IL PAN!", fill="black")
+            draw.text(
+                (50, 320), "1. Clicca su PAN (✋) nella toolbar in alto", fill="black"
+            )
+            draw.text(
+                (50, 340),
+                "2. Trascina con il mouse per muovere l'immagine",
+                fill="black",
+            )
+            draw.text(
+                (50, 360), "3. Oppure usa Ctrl+click o pulsante centrale", fill="black"
+            )
+
+            # Imposta l'immagine nel canvas unificato
+            self.current_image = cv2.cvtColor(np.array(test_img), cv2.COLOR_RGB2BGR)
+            self.display_image(self.current_image)
+
+            print("🖼️ Immagine di test caricata per testare PAN")
+            print("📝 ISTRUZIONI PAN:")
+            print("   1. Clicca sul pulsante PAN (✋) nella toolbar")
+            print("   2. Trascina con il mouse per muovere l'immagine")
+            print("   3. Alternativamente: Ctrl+click o pulsante centrale mouse")
+
+        except Exception as e:
+            print(f"⚠️ Errore caricamento immagine test: {e}")
+
+    def on_closing_with_layout_save(self):
+        """Salva la configurazione del layout prima di chiudere l'applicazione."""
+        try:
+            # Ottieni dimensioni e posizione finestra
+            geometry_str = self.root.winfo_geometry()
+            # Parse geometry string: "widthxheight+x+y"
+            size_pos = geometry_str.split("+")
+            size_part = size_pos[0]
+            width, height = map(int, size_part.split("x"))
+            x = int(size_pos[1]) if len(size_pos) > 1 else 100
+            y = int(size_pos[2]) if len(size_pos) > 2 else 100
+
+            # Ottieni posizioni PanedWindow usando sashpos con validazione
+            main_pos = (
+                self.main_horizontal_paned.sashpos(0)
+                if self.main_horizontal_paned.panes()
+                else 400
+            )
+            # Non salvare valori troppo piccoli che renderebbero invisibili i pannelli
+            main_pos = max(main_pos, 300)
+
+            sidebar_pos = (
+                self.right_sidebar_paned.sashpos(0)
+                if self.right_sidebar_paned.panes()
+                else 250
+            )
+            sidebar_pos = max(sidebar_pos, 200)
+
+            vertical_pos = (
+                self.main_vertical_paned.sashpos(0)
+                if self.main_vertical_paned.panes()
+                else 600
+            )
+            vertical_pos = max(vertical_pos, 400)
+
+            # Aggiorna configurazione nell'istanza layout_manager
+            layout_manager.config.window_width = width
+            layout_manager.config.window_height = height
+            layout_manager.config.window_x = x
+            layout_manager.config.window_y = y
+            layout_manager.config.main_paned_position = main_pos
+            layout_manager.config.sidebar_paned_position = sidebar_pos
+            layout_manager.config.vertical_paned_position = vertical_pos
+            layout_manager.save_config()
+
+            print(
+                f"✅ Layout salvato: finestra={width}x{height}+{x}+{y}, main={main_pos}, sidebar={sidebar_pos}, vertical={vertical_pos}"
+            )
+
+        except Exception as e:
+            print(f"❌ Errore nel salvataggio layout: {e}")
+        finally:
+            # Chiudi l'applicazione
+            self.root.destroy()
+
+    def _simple_restore_layout(self):
+        """Ripristina semplicemente il layout salvato dall'utente senza correzioni."""
+        try:
+            config = layout_manager.config
+            print(
+                f"🔄 Ripristino layout utente: main={config.main_paned_position}, right_column={config.right_column_position}, vertical={config.vertical_paned_position}, layers_preview={config.layers_preview_divider_position}"
+            )
+
+            # Ripristina le posizioni ESATTE salvate dall'utente
+            if self.main_horizontal_paned.panes() and config.main_paned_position > 0:
+                # SASHPOS(0): Divisore controlli | canvas
+                self.main_horizontal_paned.sashpos(0, config.main_paned_position)
+                print(f"📍 Main paned (controlli|canvas): {config.main_paned_position}")
+
+                # SASHPOS(1): Divisore canvas | colonna destra
+                panes_count = len(self.main_horizontal_paned.panes())
+                if panes_count >= 3 and config.right_column_position > 0:
+                    self.main_horizontal_paned.sashpos(1, config.right_column_position)
+                    print(
+                        f"📍 Right column (canvas|destra): {config.right_column_position}"
+                    )
+
+            if self.main_vertical_paned.panes() and config.vertical_paned_position > 0:
+                self.main_vertical_paned.sashpos(0, config.vertical_paned_position)
+                print(f"📍 Vertical paned: {config.vertical_paned_position}")
+
+            # Ripristina posizione divisore layers/anteprima nella colonna destra
+            if (
+                self.right_sidebar_paned.panes()
+                and config.layers_preview_divider_position > 0
+            ):
+                self.right_sidebar_paned.sashpos(
+                    0, config.layers_preview_divider_position
+                )
+                print(
+                    f"📍 Layers/Anteprima divisore: {config.layers_preview_divider_position}"
+                )
+
+            print("✅ Layout utente ripristinato")
+
+        except Exception as e:
+            print(f"❌ Errore ripristino layout: {e}")
+
+    def _final_canvas_refresh(self):
+        """Refresh finale del canvas unificato."""
+        try:
+            if hasattr(self, "canvas") and self.canvas:
+                self.canvas.update()
+                self.canvas.update_idletasks()
+                print("🔄 Canvas unificato refreshed")
+        except Exception as e:
+            print(f"❌ Errore nel refresh canvas: {e}")
+
+    def _on_vertical_paned_resize(self, event):
+        """Callback per quando viene ridimensionato il pannello verticale."""
+        try:
+            if self.main_vertical_paned.panes():
+                position = self.main_vertical_paned.sashpos(0)
+                print(f"📏 VERTICAL PANED RESIZE: posizione {position}")
+                layout_manager.config.vertical_paned_position = position
+                layout_manager.save_config()
+        except Exception as e:
+            print(f"❌ Errore aggiornamento vertical paned: {e}")
+
+    def _on_main_paned_resize(self, event):
+        """Callback per quando viene ridimensionato il pannello principale."""
+        try:
+            if self.main_horizontal_paned.panes():
+                # SASHPOS(0): Divisore controlli | canvas
+                left_position = self.main_horizontal_paned.sashpos(0)
+                print(
+                    f"📏 MAIN PANED RESIZE (controlli|canvas): posizione {left_position}"
+                )
+                layout_manager.config.main_paned_position = left_position
+
+                # SASHPOS(1): Divisore canvas | colonna destra (SE ESISTE)
+                panes_count = len(self.main_horizontal_paned.panes())
+                if (
+                    panes_count >= 3
+                ):  # Abbiamo 3 pannelli: controlli, canvas, colonna destra
+                    right_position = self.main_horizontal_paned.sashpos(1)
+                    print(
+                        f"📏 RIGHT COLUMN RESIZE (canvas|destra): posizione {right_position}"
+                    )
+                    layout_manager.config.right_column_position = right_position
+
+                layout_manager.save_config()
+        except Exception as e:
+            print(f"❌ Errore aggiornamento main paned: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+    def _on_sidebar_paned_resize(self, event):
+        """Callback per quando viene ridimensionato il pannello sidebar destro."""
+        try:
+            print(f"🔍 SIDEBAR RESIZE EVENT: {event}")
+            print(f"🔍 Panes disponibili: {self.right_sidebar_paned.panes()}")
+
+            if self.right_sidebar_paned.panes():
+                position = self.right_sidebar_paned.sashpos(0)
+                print(f"📏 SIDEBAR PANED RESIZE: posizione {position}")
+                layout_manager.config.sidebar_paned_position = position
+                layout_manager.save_config()
+            else:
+                print("⚠️ Nessun pane disponibile per sidebar_paned!")
+        except Exception as e:
+            print(f"❌ Errore aggiornamento sidebar paned: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+    def _on_vertical_paned_drag(self, event):
+        """Callback durante il trascinamento del pannello verticale (senza salvataggio continuo)."""
+        try:
+            if self.main_vertical_paned.panes():
+                position = self.main_vertical_paned.sashpos(0)
+                print(f"📏 Vertical paned trascinato a: {position}")
+        except Exception as e:
+            print(f"❌ Errore drag vertical paned: {e}")
+
+    def _on_main_paned_drag(self, event):
+        """Callback durante il trascinamento del pannello principale (senza salvataggio continuo)."""
+        try:
+            if self.main_horizontal_paned.panes():
+                # Traccia entrambi i divisori durante il drag
+                left_position = self.main_horizontal_paned.sashpos(0)
+                print(f"📏 Main paned (controlli|canvas) trascinato a: {left_position}")
+
+                panes_count = len(self.main_horizontal_paned.panes())
+                if panes_count >= 3:
+                    right_position = self.main_horizontal_paned.sashpos(1)
+                    print(
+                        f"📏 Right column (canvas|destra) trascinato a: {right_position}"
+                    )
+        except Exception as e:
+            print(f"❌ Errore drag main paned: {e}")
+
+    def _on_sidebar_paned_drag(self, event):
+        """Callback durante il trascinamento del pannello sidebar (senza salvataggio continuo)."""
+        try:
+            print(f"🔍 SIDEBAR DRAG EVENT: {event}")
+            print(f"🔍 Panes disponibili: {self.right_sidebar_paned.panes()}")
+
+            if self.right_sidebar_paned.panes():
+                position = self.right_sidebar_paned.sashpos(0)
+                print(f"📏 Sidebar paned trascinato a: {position}")
+            else:
+                print("⚠️ Nessun pane disponibile per sidebar_paned!")
+        except Exception as e:
+            print(f"❌ Errore drag sidebar paned: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+    def _on_sidebar_paned_configure(self, event):
+        """Callback alternativo per eventi Configure sul sidebar paned."""
+        try:
+            print(f"🔄 SIDEBAR CONFIGURE EVENT: {event}")
+
+            if self.right_sidebar_paned.panes():
+                # Il right_sidebar_paned ha un SASH VERTICALE (sashpos(0)) che divide layers da anteprima
+                layers_preview_position = self.right_sidebar_paned.sashpos(0)
+                print(
+                    f"📐 Divisore layers/anteprima - posizione: {layers_preview_position}"
+                )
+
+                # Salva posizione divisore layers/anteprima
+                if hasattr(self, "_last_layers_preview_position"):
+                    if (
+                        abs(
+                            layers_preview_position - self._last_layers_preview_position
+                        )
+                        > 5
+                    ):
+                        print(
+                            f"📏 LAYERS/ANTEPRIMA POSIZIONE CAMBIATA: {self._last_layers_preview_position} → {layers_preview_position}"
+                        )
+                        layout_manager.config.layers_preview_divider_position = (
+                            layers_preview_position
+                        )
+                        layout_manager.save_config()
+                        self._last_layers_preview_position = layers_preview_position
+                else:
+                    self._last_layers_preview_position = layers_preview_position
+
+            else:
+                print("⚠️ Configure: Nessun pane disponibile per sidebar_paned!")
+        except Exception as e:
+            print(f"❌ Errore configure sidebar paned: {e}")
+            import traceback
+
+            traceback.print_exc()
+
     def on_closing(self):
         """Gestisce la chiusura dell'applicazione."""
         # Ferma l'analisi video se in corso
@@ -3340,39 +5811,39 @@ Aree calcolate:
 
     # === METODI INTEGRAZIONE CANVAS PROFESSIONALE ===
 
-    def on_professional_canvas_click(self, event):
-        """Gestisce i click sul canvas professionale per compatibilità con misurazione."""
-        if event.inaxes and hasattr(self, "measurement_tools"):
-            # Le coordinate matplotlib sono già nel sistema di coordinate dell'immagine
-            x, y = event.xdata, event.ydata
+    def on_canvas_measurement_click_old_professional(self, event):
+        """Gestisce i click del canvas professionale per le misurazioni (DEPRECATO - NON USARE)."""
+        if not event.inaxes or not hasattr(self, "measurement_tools"):
+            return
 
-            if x is None or y is None:
-                return
+        # Le coordinate matplotlib sono già nel sistema di coordinate dell'immagine
+        x, y = event.xdata, event.ydata
+        if x is None or y is None:
+            return
 
-            # Converte in coordinate intere per compatibilità
-            image_x, image_y = int(x), int(y)
+        # Converte in coordinate intere per compatibilità
+        image_x, image_y = int(x), int(y)
 
-            # Gestisce la selezione diretta senza conversione coordinate
-            if self.landmark_measurement_mode:
-                # Modalità landmark: trova il landmark più vicino
-                if self.current_landmarks:
-                    closest_landmark_idx = self.find_closest_landmark(image_x, image_y)
-                    if closest_landmark_idx is not None:
-                        self.add_landmark_selection(closest_landmark_idx)
-            else:
-                # Modalità manuale: aggiunge punto diretto
-                self.selected_points.append((image_x, image_y))
+        # Gestisce la selezione in base alla modalità corrente
+        if self.landmark_measurement_mode:
+            # Modalità landmark: trova il landmark più vicino
+            if self.current_landmarks:
+                closest_landmark_idx = self.find_closest_landmark(image_x, image_y)
+                if closest_landmark_idx is not None:
+                    self.add_landmark_selection(closest_landmark_idx)
+        else:
+            # Modalità manuale: aggiunge punto diretto
+            self.selected_points.append((image_x, image_y))
 
-                # Limita il numero di punti in base alla modalità
-                max_points = {"distance": 2, "angle": 3, "area": 4}
-                if len(self.selected_points) > max_points.get(self.measurement_mode, 2):
-                    self.selected_points.pop(0)
+            # Limita il numero di punti in base alla modalità
+            max_points = {"distance": 2, "angle": 3, "area": 4}
+            if len(self.selected_points) > max_points.get(self.measurement_mode, 2):
+                self.selected_points.pop(0)
 
-                self.status_bar.config(
-                    text=f"Punto selezionato: ({image_x}, {image_y})"
-                )
+            self.status_bar.config(text=f"Punto selezionato: ({image_x}, {image_y})")
 
-            self.update_canvas_display()
+        # Aggiorna la visualizzazione
+        self.update_canvas_display()
 
     def on_measurement_completed(self, measurement_data):
         """Callback quando una misurazione è completata nel canvas professionale."""
@@ -3384,230 +5855,21 @@ Aree calcolate:
                     text=f"Misurazione completata: {measurement_data}"
                 )
 
-    def update_canvas_display(self):
-        """Aggiorna la visualizzazione del canvas professionale con tutti gli overlay."""
-        if not hasattr(self, "professional_canvas") or self.current_image is None:
-            return
+    # Metodo rimosso: update_canvas_display_OLD_PROFESSIONAL - deprecato e non più necessario
 
-        # Crea una copia dell'immagine per la visualizzazione con tutti gli overlay
-        display_image = self.current_image.copy()
+    # Metodo rimosso: draw_landmarks_on_professional_canvas - non più necessario
 
-        # Disegna tutti i landmark se abilitati
-        if self.show_all_landmarks and self.current_landmarks:
-            display_image = self.face_detector.draw_landmarks(
-                display_image,
-                self.current_landmarks,
-                draw_all=True,
-                key_only=False,
-            )
-
-        # Disegna l'asse di simmetria se abilitato
-        if (
-            hasattr(self, "show_axis_var")
-            and self.show_axis_var.get()
-            and self.current_landmarks
-        ):
-            display_image = self.face_detector.draw_symmetry_axis(
-                display_image, self.current_landmarks
-            )
-
-        # Disegna le selezioni correnti
-        for i, point in enumerate(self.selected_points):
-            cv2.circle(display_image, point, 5, (255, 0, 255), -1)
-
-        # Disegna i landmark selezionati in modalità landmark
-        if (
-            hasattr(self, "landmark_measurement_mode")
-            and self.landmark_measurement_mode
-            and self.current_landmarks
-        ):
-            for i, landmark_idx in enumerate(self.selected_landmarks):
-                if landmark_idx < len(self.current_landmarks):
-                    point = self.current_landmarks[landmark_idx]
-                    # Cerchio più grande per landmark selezionati
-                    cv2.circle(
-                        display_image,
-                        (int(point[0]), int(point[1])),
-                        8,
-                        (0, 255, 255),
-                        3,
-                    )
-
-        # Sovrappone l'overlay dei puntini verdi se abilitato
-        if (
-            hasattr(self, "show_green_dots_overlay")
-            and self.show_green_dots_overlay
-            and hasattr(self, "green_dots_overlay")
-            and self.green_dots_overlay is not None
-        ):
-            # Converte l'immagine OpenCV in PIL per la composizione
-            display_pil = Image.fromarray(
-                cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
-            )
-
-            # Compone l'overlay trasparente con l'immagine
-            display_pil = Image.alpha_composite(
-                display_pil.convert("RGBA"), self.green_dots_overlay.convert("RGBA")
-            )
-
-            # Riconverte in formato OpenCV
-            display_image = cv2.cvtColor(
-                np.array(display_pil.convert("RGB")), cv2.COLOR_RGB2BGR
-            )
-
-        # Disegna gli overlay delle misurazioni
-        if (
-            hasattr(self, "show_measurement_overlays")
-            and self.show_measurement_overlays
-        ):
-            if hasattr(self, "draw_measurement_overlays"):
-                display_image = self.draw_measurement_overlays(display_image)
-
-        # Converte OpenCV image in PIL
-        if isinstance(display_image, np.ndarray):
-            # Converte BGR to RGB se necessario
-            if len(display_image.shape) == 3:
-                image_rgb = cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
-            else:
-                image_rgb = display_image
-            pil_image = Image.fromarray(image_rgb)
-        else:
-            pil_image = display_image
-
-        # Imposta l'immagine nel canvas professionale
-        self.professional_canvas.set_image(pil_image)
-
-        # Aggiunge i landmark aggiuntivi direttamente sul canvas matplotlib se presenti
-        if self.current_landmarks is not None:
-            self.draw_landmarks_on_professional_canvas()
-
-        # Aggiunge le misurazioni se presenti
-        if (
-            hasattr(self, "measurement_overlays")
-            and hasattr(self, "show_measurement_overlays")
-            and self.show_measurement_overlays
-        ):
-            self.draw_measurements_on_professional_canvas()
-
-    def draw_landmarks_on_professional_canvas(self):
-        """Disegna i landmark sul canvas professionale."""
-        if not self.current_landmarks or not hasattr(self, "professional_canvas"):
-            return
-
-        ax = self.professional_canvas.ax
-
-        # Disegna i landmark principali
-        if not self.show_all_landmarks:
-            # Solo landmark principali (come nel sistema originale)
-            important_landmarks = [
-                33,
-                7,
-                163,
-                144,
-                145,
-                153,
-                154,
-                155,
-                133,
-                173,
-                157,
-                158,
-                159,
-                160,
-                161,
-                246,
-                9,
-                10,
-                151,
-                337,
-                299,
-                333,
-                298,
-                301,
-                366,
-                389,
-                356,
-                454,
-                323,
-                361,
-                435,
-                103,
-                67,
-                109,
-                10,
-                151,
-                9,
-                175,
-                136,
-                150,
-                149,
-                176,
-                148,
-                152,
-                377,
-                400,
-                378,
-                379,
-                365,
-                397,
-                288,
-                361,
-                323,
-            ]
-
-            for idx in important_landmarks:
-                if idx < len(self.current_landmarks):
-                    landmark = self.current_landmarks[idx]
-                    # I landmark sono tuple (x, y), non oggetti con proprietà
-                    ax.plot(landmark[0], landmark[1], "ro", markersize=2)
-        else:
-            # Tutti i 468 landmark
-            for landmark in self.current_landmarks:
-                # I landmark sono tuple (x, y), non oggetti con proprietà
-                ax.plot(landmark[0], landmark[1], "bo", markersize=1)
-
-        self.professional_canvas.mpl_canvas.draw()
-
-    def draw_measurements_on_professional_canvas(self):
-        """Disegna le misurazioni sul canvas professionale."""
-        if not hasattr(self, "professional_canvas") or not hasattr(
-            self, "measurement_overlays"
-        ):
-            return
-
-        ax = self.professional_canvas.ax
-
-        # Disegna gli overlay delle misurazioni
-        for overlay in self.measurement_overlays:
-            if overlay.get("visible", True):
-                measurement_type = overlay.get("type", "line")
-                color = overlay.get("color", "red")
-
-                if measurement_type == "line":
-                    points = overlay.get("points", [])
-                    if len(points) >= 2:
-                        x_coords = [p[0] for p in points]
-                        y_coords = [p[1] for p in points]
-                        ax.plot(x_coords, y_coords, color=color, linewidth=2)
-
-                elif measurement_type == "circle":
-                    center = overlay.get("center", (0, 0))
-                    radius = overlay.get("radius", 10)
-                    circle = plt.Circle(
-                        center, radius, color=color, fill=False, linewidth=2
-                    )
-                    ax.add_patch(circle)
-
-        self.professional_canvas.mpl_canvas.draw()
+    # Metodo rimosso: draw_measurements_on_professional_canvas - non più necessario
 
     def clear_canvas(self):
-        """Pulisce il canvas professionale."""
-        if hasattr(self, "professional_canvas"):
-            self.professional_canvas.clear_canvas()
+        """Pulisce il canvas unificato."""
+        if hasattr(self, "canvas") and self.canvas:
+            self.canvas.delete("all")
+            print("✅ Canvas unificato pulito")
 
     def save_image(self):
         """Salva l'immagine corrente con le annotazioni."""
-        if not self.current_image is None:
+        if self.current_image is not None:
             file_path = filedialog.asksaveasfilename(
                 title="Salva Immagine",
                 defaultextension=".png",
@@ -3619,36 +5881,14 @@ Aree calcolate:
             )
 
             if file_path:
-                # Salva l'immagine dal canvas professionale
-                if hasattr(self, "professional_canvas"):
-                    self.professional_canvas.fig.savefig(
-                        file_path, dpi=300, bbox_inches="tight"
-                    )
-                    self.status_bar.config(text=f"Immagine salvata: {file_path}")
-                else:
-                    # Fallback al metodo originale
-                    cv2.imwrite(file_path, self.current_image)
+                # Salva l'immagine corrente
+                cv2.imwrite(file_path, self.current_image)
+                self.status_bar.config(text=f"Immagine salvata: {file_path}")
 
     def export_measurements(self):
         """Esporta le misurazioni in formato JSON."""
-        if hasattr(self, "professional_canvas"):
-            measurements = self.professional_canvas.export_measurements()
-
-            if measurements:
-                file_path = filedialog.asksaveasfilename(
-                    title="Esporta Misurazioni",
-                    defaultextension=".json",
-                    filetypes=[("JSON", "*.json"), ("Tutti i file", "*.*")],
-                )
-
-                if file_path:
-                    import json
-
-                    with open(file_path, "w") as f:
-                        json.dump(measurements, f, indent=2)
-                    self.status_bar.config(text=f"Misurazioni esportate: {file_path}")
-            else:
-                messagebox.showinfo("Info", "Nessuna misurazione da esportare")
+        # TODO: Implementare esportazione misurazioni dal sistema unificato
+        messagebox.showinfo("Info", "Funzionalità in sviluppo nel sistema unificato")
 
 
 def main():

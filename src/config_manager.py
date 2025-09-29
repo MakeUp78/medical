@@ -168,21 +168,21 @@ class ConfigManager:
         except Exception as e:
             print(f"Errore nel salvataggio configurazione: {e}")
 
-    def get_analysis_config(self):
-        """Restituisce configurazione per VideoAnalyzer."""
-        from src.video_analyzer_enhanced import AnalysisConfig
-
-        return AnalysisConfig(
-            min_face_size=self.config.analysis.min_face_size,
-            analysis_interval=self.config.analysis.analysis_interval,
-            preview_interval=self.config.analysis.preview_interval,
-            canvas_update_threshold=self.config.analysis.canvas_update_threshold,
-            canvas_update_improvement=self.config.analysis.canvas_update_improvement,
-            max_video_duration_warning=self.config.analysis.max_video_duration_warning,
-            progress_update_interval=self.config.analysis.progress_update_interval,
-            queue_maxsize=self.config.analysis.queue_maxsize,
-            timeout_queue_get=self.config.analysis.timeout_queue_get,
-        )
+    # def get_analysis_config(self):
+    #     """Restituisce configurazione per VideoAnalyzer."""
+    #     from src.video_analyzer import AnalysisConfig
+    #
+    #     return AnalysisConfig(
+    #         min_face_size=self.config.analysis.min_face_size,
+    #         analysis_interval=self.config.analysis.analysis_interval,
+    #         preview_interval=self.config.analysis.preview_interval,
+    #         canvas_update_threshold=self.config.analysis.canvas_update_threshold,
+    #         canvas_update_improvement=self.config.analysis.canvas_update_improvement,
+    #         max_video_duration_warning=self.config.analysis.max_video_duration_warning,
+    #         progress_update_interval=self.config.analysis.progress_update_interval,
+    #         queue_maxsize=self.config.analysis.queue_maxsize,
+    #         timeout_queue_get=self.config.analysis.timeout_queue_get,
+    #     )
 
     def update_setting(self, category: str, setting: str, value: Any):
         """Aggiorna una singola impostazione."""

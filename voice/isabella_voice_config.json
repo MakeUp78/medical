@@ -1,0 +1,101 @@
+{
+    "activation_keywords": [
+        "hey isabella",
+        "ciao isabella",
+        "ehi isabella",
+        "isabella"
+    ],
+    "language": "it-IT",
+    "tts_voice": "it-IT-IsabellaNeural",
+    "timeout": 5.0,
+    "phrase_timeout": 2.0,
+    "voice_settings": {
+        "rate": "+0%",
+        "volume": "+10%"
+    },
+    "stt_settings": {
+        "energy_threshold": 300,
+        "dynamic_energy_threshold": true,
+        "pause_threshold": 0.8
+    },
+    "messages": {
+        "startup": "Assistente vocale Isabella attivato. Dimmi 'Hey Isabella' quando hai bisogno di me.",
+        "activation": "Ti ascolto! Cosa posso fare per te?",
+        "deactivation": "Torno in modalità standby. Chiamami quando hai bisogno.",
+        "command_not_found": "Comando non riconosciuto. Puoi ripetere o dire 'aiuto' per la lista dei comandi?",
+        "listening_error": "Non ho sentito bene. Puoi ripetere più chiaramente?",
+        "processing": "Un momento, sto elaborando...",
+        "goodbye": "Assistente vocale disattivato. Arrivederci!",
+        "help": "Ecco i comandi disponibili. Dimmi cosa vuoi fare.",
+        "status": "Assistente attivo da {duration} secondi. Eseguiti {commands} comandi.",
+        "feature_activated": "Funzionalità '{feature}' attivata con successo.",
+        "operation_complete": "Operazione '{operation}' completata con successo.",
+        "error_occurred": "Si è verificato un errore: {error}. Controlla i dettagli."
+    },
+    "custom_messages": {
+        "app_start": "Applicazione avviata con successo. Sistema pronto per l'uso.",
+        "welcome_user": "Benvenuto in {app_name}! Sono Isabella, il tuo assistente vocale personale.",
+        "analysis_start": "Iniziando l'analisi. Mantieni la posizione e segui le istruzioni.",
+        "analysis_progress": "Analisi in corso al {progress}% di completamento.",
+        "analysis_complete": "Analisi completata con successo! Precisione: {accuracy}%.",
+        "save_complete": "Dati salvati correttamente. Operazione completata.",
+        "export_ready": "Esportazione completata. I file sono pronti per l'uso.",
+        "quality_changed": "Qualità modificata su {quality}. Impostazioni aggiornate.",
+        "settings_updated": "Le impostazioni sono state aggiornate correttamente.",
+        "process_started": "Processo '{process}' avviato con successo.",
+        "process_completed": "Processo '{process}' completato in {duration} secondi.",
+        "error_analysis": "Errore durante l'analisi: {error}. Controlla i parametri.",
+        "error_save": "Impossibile salvare i dati: {error}. Verifica il percorso.",
+        "camera_ready": "Telecamera attiva. Posizionati correttamente nell'inquadratura.",
+        "no_face_detected": "Nessun volto rilevato. Assicurati di essere ben posizionato.",
+        "multiple_faces": "Rilevati più volti. Per precisione, usa una persona alla volta.",
+        "low_quality": "Qualità immagine insufficiente. Migliora l'illuminazione.",
+        "calibration_complete": "Calibrazione completata. Sistema pronto per l'uso.",
+        "backup_started": "Backup dei dati avviato. Operazione in corso.",
+        "backup_complete": "Backup completato con successo. Dati al sicuro.",
+        "sync_started": "Sincronizzazione dati in corso. Attendere...",
+        "sync_complete": "Sincronizzazione completata. Tutti i dati sono aggiornati.",
+        "task_created": "Nuova attività creata: {task_name}. Aggiunta alla lista.",
+        "search_started": "Ricerca avviata per: {query}. Elaborazione in corso.",
+        "search_complete": "Ricerca completata. Trovati {results} risultati.",
+        "file_loaded": "File '{filename}' caricato con successo.",
+        "file_saved": "File '{filename}' salvato nella posizione specificata.",
+        "connection_established": "Connessione stabilita. Sistema online.",
+        "connection_lost": "Connessione persa. Tentativo di riconnessione...",
+        "update_available": "Aggiornamento disponibile. Vuoi procedere?",
+        "update_complete": "Aggiornamento completato. Riavvio consigliato.",
+        "maintenance_mode": "Modalità manutenzione attiva. Alcune funzioni potrebbero essere limitate.",
+        "performance_warning": "Prestazioni ridotte rilevate. Ottimizzazione consigliata."
+    },
+    "advanced_settings": {
+        "auto_deactivate_timeout": 30,
+        "confirmation_for_critical_actions": true,
+        "voice_feedback_level": "normal",
+        "background_listening": true,
+        "command_timeout": 10,
+        "max_retry_attempts": 3,
+        "enable_command_logging": true,
+        "enable_performance_monitoring": true,
+        "language_detection": false,
+        "noise_reduction": true,
+        "echo_cancellation": true
+    },
+    "app_specific": {
+        "app_name": "La Mia Applicazione",
+        "app_version": "1.0.0",
+        "voice_commands_enabled": true,
+        "startup_message_enabled": true,
+        "progress_notifications": true,
+        "error_notifications": true,
+        "success_notifications": true,
+        "custom_activation_sound": false,
+        "voice_personality": "professional"
+    },
+    "debug": {
+        "log_level": "INFO",
+        "log_voice_commands": true,
+        "log_tts_requests": false,
+        "log_stt_results": true,
+        "performance_metrics": false
+    }
+}
