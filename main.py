@@ -20,12 +20,12 @@ import tkinter as tk
 from tkinter import messagebox
 import logging
 
-# Configurazione logging
+# Configurazione logging con supporto UTF-8
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("facial_analysis.log"),
+        logging.FileHandler("facial_analysis.log", encoding="utf-8"),
         logging.StreamHandler(sys.stdout),
     ],
 )
@@ -43,6 +43,8 @@ class FacialAnalysisApp:
         self.root = None
         self.app = None
         self.running = False
+        self.voice_assistant = None
+        self.voice_enabled = False
 
     def setup_signal_handlers(self):
         """Configura i gestori per i segnali di interruzione."""
@@ -65,6 +67,13 @@ class FacialAnalysisApp:
             "scipy": "scipy",
         }
 
+        # Dipendenze opzionali per assistente vocale
+        voice_modules = {
+            "edge_tts": "edge-tts",
+            "pygame": "pygame",
+            "speech_recognition": "SpeechRecognition",
+        }
+
         missing_modules = []
 
         for module, package in required_modules.items():
@@ -74,6 +83,18 @@ class FacialAnalysisApp:
             except ImportError:
                 missing_modules.append(package)
                 logger.error(f"Modulo {module} non trovato")
+
+        # Verifica dipendenze vocali (opzionali)
+        missing_voice_modules = []
+        for module, package in voice_modules.items():
+            try:
+                __import__(module)
+                logger.debug(f"Modulo vocale {module} trovato")
+            except ImportError:
+                missing_voice_modules.append(package)
+                logger.warning(
+                    f"Modulo vocale {module} non trovato - assistente vocale disabilitato"
+                )
 
         if missing_modules:
             error_msg = f"""
@@ -104,6 +125,19 @@ SOLUZIONI:
 
             return False
 
+        # Informazioni sui moduli vocali opzionali
+        if missing_voice_modules:
+            logger.info(
+                f"Moduli vocali non disponibili: {', '.join(missing_voice_modules)}"
+            )
+            logger.info(
+                "Assistente vocale disabilitato. Installa: pip install edge-tts pygame SpeechRecognition pyaudio"
+            )
+        else:
+            logger.info(
+                "Tutti i moduli vocali sono disponibili - Assistente vocale abilitato"
+            )
+
         logger.info("Tutte le dipendenze sono installate correttamente")
         return True
 
@@ -114,6 +148,10 @@ SOLUZIONI:
 
             self.CanvasApp = CanvasApp
             logger.info("Moduli dell'applicazione importati con successo")
+
+            # Importa assistente vocale se disponibile
+            self.init_voice_assistant()
+
             return True
         except ImportError as e:
             error_msg = f"Errore nell'importazione dei moduli dell'applicazione: {e}"
@@ -128,6 +166,38 @@ SOLUZIONI:
                 pass
 
             return False
+
+    def init_voice_assistant(self):
+        """Inizializza l'assistente vocale se le dipendenze sono disponibili."""
+        try:
+            # Verifica se le dipendenze vocali sono disponibili
+            import edge_tts
+            import pygame
+            import speech_recognition as sr
+
+            # Importa l'assistente vocale
+            from voice.isabella_voice_assistant import IsabellaVoiceAssistant
+
+            # Inizializza l'assistente
+            self.voice_assistant = IsabellaVoiceAssistant()
+            self.voice_enabled = True
+            logger.info("Assistente vocale Isabella inizializzato con successo")
+
+        except ImportError as e:
+            logger.info(f"Assistente vocale non disponibile: {e}")
+            self.voice_enabled = False
+        except Exception as e:
+            logger.warning(f"Errore nell'inizializzazione dell'assistente vocale: {e}")
+            self.voice_enabled = False
+
+    async def play_welcome_message(self):
+        """Riproduce il messaggio di benvenuto vocale."""
+        if self.voice_assistant and self.voice_enabled:
+            try:
+                await self.voice_assistant.speak_startup("Kimerika 2.0")
+                logger.info("Messaggio di benvenuto vocale riprodotto")
+            except Exception as e:
+                logger.warning(f"Errore nella riproduzione messaggio vocale: {e}")
 
     def create_gui(self):
         """Crea e configura l'interfaccia grafica."""
@@ -262,6 +332,33 @@ SOLUZIONI:
         self.running = False
 
         try:
+            # Cleanup assistente vocale
+            if self.voice_assistant and self.voice_enabled:
+                try:
+                    # Messaggio di arrivederci vocale
+                    import asyncio
+
+                    def goodbye_message():
+                        try:
+                            asyncio.run(self.voice_assistant.speak("goodbye"))
+                        except:
+                            pass
+
+                    import threading
+
+                    goodbye_thread = threading.Thread(
+                        target=goodbye_message, daemon=True
+                    )
+                    goodbye_thread.start()
+                    goodbye_thread.join(timeout=2)  # Aspetta max 2 secondi
+
+                    # Cleanup assistente
+                    if hasattr(self.voice_assistant, "cleanup"):
+                        self.voice_assistant.cleanup()
+                    logger.info("Assistente vocale chiuso")
+                except Exception as e:
+                    logger.warning(f"Errore chiusura assistente vocale: {e}")
+
             if self.app:
                 # Se l'app ha metodi di cleanup, chiamali qui
                 if hasattr(self.app, "cleanup"):
@@ -333,6 +430,24 @@ Per supporto, controlla la documentazione nel README.md
 
             # Mostra messaggio di benvenuto
             self.print_welcome_message()
+
+            # Riproduce messaggio di benvenuto vocale se disponibile
+            if self.voice_enabled and self.voice_assistant:
+                try:
+                    import asyncio
+
+                    # Avvia il messaggio vocale in background
+                    def play_welcome():
+                        try:
+                            asyncio.run(self.play_welcome_message())
+                        except Exception as e:
+                            logger.warning(f"Errore messaggio vocale: {e}")
+
+                    import threading
+
+                    threading.Thread(target=play_welcome, daemon=True).start()
+                except Exception as e:
+                    logger.warning(f"Errore avvio messaggio vocale: {e}")
 
             # Avvia loop principale
             self.running = True

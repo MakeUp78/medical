@@ -890,7 +890,312 @@ class CanvasApp:
             preset_frame, text="Meno Simmetria", command=self.preset_less_symmetry
         ).grid(row=0, column=2, sticky="ew", padx=2)
 
+        # Sezione ASSISTENTE VOCALE
+        self.setup_voice_controls(parent)
 
+    def setup_voice_controls(self, parent):
+        """Configura il pannello di controllo per l'assistente vocale Isabella."""
+        voice_frame = ttk.LabelFrame(parent, text="ASSISTENTE VOCALE SYMMETRA", padding=10)
+        voice_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Variabili di controllo
+        self.voice_enabled_var = tk.BooleanVar(value=False)
+        self.voice_listening_var = tk.BooleanVar(value=False)
+        
+        # Stato assistente vocale
+        status_frame = ttk.Frame(voice_frame)
+        status_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # Indicatore stato
+        self.voice_status_label = ttk.Label(status_frame, text="Disattivato")
+        self.voice_status_label.pack(side=tk.LEFT)
+        
+        # Pulsante principale on/off
+        main_control_frame = ttk.Frame(voice_frame)
+        main_control_frame.pack(fill=tk.X, pady=5)
+        main_control_frame.columnconfigure(0, weight=1)
+        main_control_frame.columnconfigure(1, weight=1)
+        
+        self.voice_toggle_btn = ttk.Button(
+            main_control_frame, 
+            text="Attiva Assistente", 
+            command=self.toggle_voice_assistant
+        )
+        self.voice_toggle_btn.grid(row=0, column=0, columnspan=2, sticky="ew", padx=2)
+        
+        # Controlli secondari
+        controls_frame = ttk.Frame(voice_frame)
+        controls_frame.pack(fill=tk.X, pady=5)
+        controls_frame.columnconfigure(0, weight=1)
+        controls_frame.columnconfigure(1, weight=1)
+        
+        self.voice_test_btn = ttk.Button(
+            controls_frame, 
+            text="Test Audio", 
+            command=self.test_voice_output,
+            state="disabled"
+        )
+        self.voice_test_btn.grid(row=0, column=0, sticky="ew", padx=(2, 1))
+        
+        self.voice_config_btn = ttk.Button(
+            controls_frame, 
+            text="Comandi", 
+            command=self.show_voice_commands,
+            state="disabled"
+        )
+        self.voice_config_btn.grid(row=0, column=1, sticky="ew", padx=(1, 2))
+        
+        # Area comandi disponibili (miniaturizzata)
+        commands_frame = ttk.LabelFrame(voice_frame, text="Comandi Rapidi", padding=5)
+        commands_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        # Lista comandi base in formato compatto
+        commands_text = "- 'Hey Symmetra' - Attiva ascolto\n- 'Analizza volto' - Avvia analisi\n- 'Salva risultati' - Salva dati"
+        self.commands_info = ttk.Label(commands_frame, text=commands_text, font=("Arial", 8))
+        self.commands_info.pack(anchor="w")
+        
+        # Inizializza l'assistente vocale se disponibile
+        self.voice_assistant = None
+        self.init_voice_assistant()
+
+    def init_voice_assistant(self):
+        """Inizializza l'assistente vocale se disponibile."""
+        try:
+            # Prende il riferimento dall'app principale se disponibile
+            if hasattr(self.root, 'master') and hasattr(self.root.master, 'voice_assistant'):
+                self.voice_assistant = self.root.master.voice_assistant
+                self.voice_enabled = self.root.master.voice_enabled
+            else:
+                # Fallback: importa direttamente
+                from voice.isabella_voice_assistant import IsabellaVoiceAssistant
+                self.voice_assistant = IsabellaVoiceAssistant()
+                self.voice_enabled = True
+            
+            if self.voice_enabled and self.voice_assistant:
+                self.voice_status_label.config(text="Pronto")
+                self.setup_voice_commands()
+                
+        except Exception as e:
+            print(f"Assistente vocale non disponibile: {e}")
+            self.voice_enabled = False
+            self.voice_status_label.config(text="Non disponibile")
+            self.voice_toggle_btn.config(state="disabled", text="Assistente non disponibile")
+
+    def setup_voice_commands(self):
+        """Configura i comandi vocali personalizzati per l'app."""
+        if not self.voice_assistant:
+            return
+            
+        try:
+            # Comandi per analisi facciale
+            self.voice_assistant.add_command(
+                ["analizza volto", "avvia analisi", "inizia analisi"],
+                "face_analysis",
+                self.voice_start_analysis
+            )
+            
+            # Comandi per caricamento file
+            self.voice_assistant.add_command(
+                ["carica immagine", "apri immagine", "carica foto"],
+                "load_image", 
+                self.load_image
+            )
+            
+            self.voice_assistant.add_command(
+                ["avvia webcam", "avvia camera", "attiva webcam"],
+                "start_webcam",
+                self.start_webcam
+            )
+            
+            # Comandi per misurazione
+            self.voice_assistant.add_command(
+                ["calcola misura", "misura distanza", "calcola"],
+                "measure",
+                self.calculate_measurement
+            )
+            
+            # Comandi per salvataggio
+            self.voice_assistant.add_command(
+                ["salva risultati", "salva immagine", "esporta"],
+                "save_results",
+                self.voice_save_results
+            )
+            
+            print("✅ Comandi vocali configurati")
+            
+        except Exception as e:
+            print(f"Errore configurazione comandi vocali: {e}")
+
+    def toggle_voice_assistant(self):
+        """Attiva/disattiva l'assistente vocale."""
+        if not self.voice_assistant:
+            messagebox.showwarning("Assistente Vocale", "Assistente vocale non disponibile")
+            return
+            
+        try:
+            if self.voice_enabled_var.get():
+                # Disattiva
+                self.voice_assistant.stop_listening()
+                self.voice_enabled_var.set(False)
+                self.voice_listening_var.set(False)
+                self.voice_toggle_btn.config(text="Attiva Assistente")
+                self.voice_status_label.config(text="Pronto")
+                self.voice_test_btn.config(state="disabled")
+                self.voice_config_btn.config(state="disabled")
+                
+            else:
+                # Attiva
+                self.voice_assistant.start_listening()
+                self.voice_enabled_var.set(True)
+                self.voice_listening_var.set(True)
+                self.voice_toggle_btn.config(text="Disattiva Assistente")
+                self.voice_status_label.config(text="In Ascolto")
+                self.voice_test_btn.config(state="normal")
+                self.voice_config_btn.config(state="normal")
+                
+                # Messaggio di attivazione
+                import threading
+                def speak_activation():
+                    try:
+                        import asyncio
+                        asyncio.run(self.voice_assistant.speak("activation"))
+                    except:
+                        pass
+                threading.Thread(target=speak_activation, daemon=True).start()
+                
+        except Exception as e:
+            messagebox.showerror("Errore", f"Errore controllo assistente vocale: {e}")
+
+    def test_voice_output(self):
+        """Testa l'output vocale dell'assistente."""
+        if not self.voice_assistant:
+            return
+            
+        try:
+            import threading
+            def test_speak():
+                try:
+                    import asyncio
+                    asyncio.run(self.voice_assistant.speak("status", duration=30, commands=10))
+                except Exception as e:
+                    print(f"Errore test vocale: {e}")
+            
+            threading.Thread(target=test_speak, daemon=True).start()
+            
+        except Exception as e:
+            messagebox.showerror("Errore", f"Errore test vocale: {e}")
+
+    def show_voice_commands(self):
+        """Mostra la finestra con tutti i comandi vocali disponibili."""
+        commands_window = tk.Toplevel(self.root)
+        commands_window.title("Comandi Vocali Disponibili")
+        commands_window.geometry("600x500")
+        commands_window.resizable(True, True)
+        
+        # Frame principale con scrollbar
+        main_frame = ttk.Frame(commands_window)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Area scrollabile
+        canvas = tk.Canvas(main_frame)
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Contenuto
+        ttk.Label(scrollable_frame, text="Comandi Vocali Symmetra", 
+                 font=("Arial", 14, "bold")).pack(pady=10)
+        
+        commands_info = """
+        ATTIVAZIONE:
+        • "Hey Symmetra" - Attiva l'assistente per il prossimo comando
+        
+        ANALISI:
+        • "Analizza volto" / "Avvia analisi" / "Inizia analisi"
+        • "Ferma analisi" / "Interrompi"
+        
+        CARICAMENTO FILE:
+        • "Carica immagine" / "Apri immagine" / "Carica foto"
+        • "Avvia webcam" / "Avvia camera" / "Attiva webcam"
+        • "Carica video" / "Apri video"
+        
+        MISURAZIONE:
+        • "Calcola misura" / "Misura distanza" / "Calcola"
+        • "Cancella selezioni" / "Pulisci"
+        
+        SALVATAGGIO:
+        • "Salva risultati" / "Salva immagine" / "Esporta"
+        
+        CONTROLLI:
+        • "Aiuto" - Mostra lista comandi
+        • "Status" - Stato del sistema
+        • "Goodbye" / "Arrivederci" - Disattiva assistente
+        
+        SUGGERIMENTI:
+        • Parla chiaramente e attendi il segnale di conferma
+        • Usa frasi naturali, non solo le parole chiave esatte
+        • L'assistente si attiva automaticamente con "Hey Symmetra"
+        """
+        
+        ttk.Label(scrollable_frame, text=commands_info, 
+                 font=("Arial", 10), justify=tk.LEFT).pack(anchor="w", padx=10)
+        
+        # Pulsante chiudi
+        ttk.Button(scrollable_frame, text="Chiudi", 
+                  command=commands_window.destroy).pack(pady=20)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+    # Metodi di callback per i comandi vocali
+    def voice_start_analysis(self):
+        """Callback per comando vocale di avvio analisi."""
+        try:
+            if hasattr(self, 'current_image') and self.current_image is not None:
+                # Se c'è già un'immagine, avvia l'analisi
+                self.analyze_current_image()
+                self.voice_speak_feedback("analysis_start")
+            else:
+                # Se non c'è immagine, suggerisci di caricarla
+                self.voice_speak_feedback("no_image")
+        except Exception as e:
+            print(f"Errore comando vocale analisi: {e}")
+
+    def voice_save_results(self):
+        """Callback per comando vocale di salvataggio."""
+        try:
+            # Implementa il salvataggio dei risultati
+            self.save_current_results()
+            self.voice_speak_feedback("save_complete")
+        except Exception as e:
+            print(f"Errore comando vocale salvataggio: {e}")
+            self.voice_speak_feedback("error_save", error=str(e))
+
+    def voice_speak_feedback(self, message_key, **kwargs):
+        """Invia feedback vocale all'utente."""
+        if not self.voice_assistant:
+            return
+            
+        try:
+            import threading
+            def speak():
+                try:
+                    import asyncio
+                    asyncio.run(self.voice_assistant.speak(message_key, **kwargs))
+                except Exception as e:
+                    print(f"Errore feedback vocale: {e}")
+            
+            threading.Thread(target=speak, daemon=True).start()
+            
+        except Exception as e:
+            print(f"Errore invio feedback vocale: {e}")
 
     def setup_canvas(self, parent):
         """Configura il canvas principale per la visualizzazione (RIPRISTINO ORIGINALE)."""
@@ -1950,6 +2255,518 @@ class CanvasApp:
                 # Verifica immediata posizione
                 bbox = self.canvas.bbox(right_poly_id)
                 print(f"   BBox sul canvas: {bbox}")
+        
+        # 🏷️ NUOVO: Disegna le etichette per i puntini verdi
+        self.draw_green_dots_labels(results)
+
+    def draw_green_dots_labels(self, results):
+        """Disegna le etichette per i puntini verdi rilevati con nomi specifici e posizionamento esterno."""
+        print(f"🏷️ === DRAW_GREEN_DOTS_LABELS CHIAMATO ===")
+        
+        if not results or "groups" not in results:
+            print("⚠️ Nessun dato per le etichette green dots")
+            return
+            
+        groups = results["groups"]
+        
+        # Mappatura dei nomi per gruppo sinistro (SC1, SA0, SA, SC, SB) - SC1 e SC invertiti
+        left_labels = ["SC1", "SA0", "SA", "SC", "SB"]
+        
+        # Mappatura dei nomi per gruppo destro (DC1, DB, DC, DA, DA0)
+        right_labels = ["DC1", "DB", "DC", "DA", "DA0"]
+        
+        # Disegna etichette per gruppo sinistro
+        if "Sx" in groups and groups["Sx"]:
+            left_points = groups["Sx"]
+            
+            # Calcola il centroide del poligono sinistro per determinare la direzione esterna
+            if len(left_points) > 2:
+                centroid_x = sum(p["x"] for p in left_points) / len(left_points)
+                centroid_y = sum(p["y"] for p in left_points) / len(left_points)
+            else:
+                centroid_x = centroid_y = 0
+                
+            for i, point in enumerate(left_points):
+                if isinstance(point, dict) and "x" in point and "y" in point:
+                    # Usa il nome personalizzato se disponibile, altrimenti fallback
+                    label_text = left_labels[i] if i < len(left_labels) else f"Sx-{i+1}"
+                    
+                    # Calcola offset per posizionare l'etichetta esternamente al poligono
+                    # 🎯 SPECIALE: SC va sempre sotto il punto
+                    if label_text == "SC":
+                        offset_x = 0
+                        offset_y = 20  # Sotto il punto
+                    else:
+                        # Direzione dal centroide verso il punto, estesa ulteriormente
+                        if centroid_x != 0 or centroid_y != 0:
+                            dx = point["x"] - centroid_x
+                            dy = point["y"] - centroid_y
+                            distance = np.sqrt(dx*dx + dy*dy)
+                            if distance > 0:
+                                # Normalizza e scala per offset di 15 pixel (avvicinato)
+                                offset_x = (dx / distance) * 15
+                                offset_y = (dy / distance) * 15
+                            else:
+                                offset_x, offset_y = -15, -10  # Fallback
+                        else:
+                            offset_x, offset_y = -15, -10  # Fallback per sinistra
+                    
+                    # Coordinate immagine per l'etichetta
+                    label_img_x = point["x"] + offset_x
+                    label_img_y = point["y"] + offset_y
+                    
+                    # Converti coordinate immagine in coordinate canvas
+                    canvas_x, canvas_y = self.convert_image_to_canvas_coords(label_img_x, label_img_y)
+                    
+                    # Disegna SOLO il testo etichetta (nessun riquadro)
+                    text_id = self.canvas.create_text(
+                        canvas_x, canvas_y,
+                        text=label_text, fill="green", font=("Arial", 10, "bold"),
+                        tags="green_dots_labels"
+                    )
+                    
+                    # Registra nel graphics_registry
+                    self.register_graphic(
+                        text_id, "text",
+                        [label_img_x, label_img_y],
+                        {"text": label_text, "fill": "green", "font": ("Arial", 10, "bold")}, is_overlay=True
+                    )
+                    
+                    print(f"✅ Etichetta sinistra {i+1}: {label_text} a ({canvas_x}, {canvas_y}) [offset: {offset_x:.1f}, {offset_y:.1f}]")
+        
+        # Disegna etichette per gruppo destro
+        if "Dx" in groups and groups["Dx"]:
+            right_points = groups["Dx"]
+            
+            # Calcola il centroide del poligono destro per determinare la direzione esterna
+            if len(right_points) > 2:
+                centroid_x = sum(p["x"] for p in right_points) / len(right_points)
+                centroid_y = sum(p["y"] for p in right_points) / len(right_points)
+            else:
+                centroid_x = centroid_y = 0
+                
+            for i, point in enumerate(right_points):
+                if isinstance(point, dict) and "x" in point and "y" in point:
+                    # Usa il nome personalizzato se disponibile, altrimenti fallback
+                    label_text = right_labels[i] if i < len(right_labels) else f"Dx-{i+1}"
+                    
+                    # Calcola offset per posizionare l'etichetta esternamente al poligono
+                    # 🎯 SPECIALE: DC va sempre sotto il punto
+                    if label_text == "DC":
+                        offset_x = 0
+                        offset_y = 20  # Sotto il punto
+                    else:
+                        if centroid_x != 0 or centroid_y != 0:
+                            dx = point["x"] - centroid_x
+                            dy = point["y"] - centroid_y
+                            distance = np.sqrt(dx*dx + dy*dy)
+                            if distance > 0:
+                                # Normalizza e scala per offset di 15 pixel (avvicinato)
+                                offset_x = (dx / distance) * 15
+                                offset_y = (dy / distance) * 15
+                            else:
+                                offset_x, offset_y = 15, -10  # Fallback
+                        else:
+                            offset_x, offset_y = 15, -10  # Fallback per destra
+                    
+                    # Coordinate immagine per l'etichetta
+                    label_img_x = point["x"] + offset_x
+                    label_img_y = point["y"] + offset_y
+                    
+                    # Converti coordinate immagine in coordinate canvas
+                    canvas_x, canvas_y = self.convert_image_to_canvas_coords(label_img_x, label_img_y)
+                    
+                    # Disegna SOLO il testo etichetta (nessun riquadro)
+                    text_id = self.canvas.create_text(
+                        canvas_x, canvas_y,
+                        text=label_text, fill="darkgreen", font=("Arial", 10, "bold"),
+                        tags="green_dots_labels"
+                    )
+                    
+                    # Registra nel graphics_registry
+                    self.register_graphic(
+                        text_id, "text",
+                        [label_img_x, label_img_y],
+                        {"text": label_text, "fill": "darkgreen", "font": ("Arial", 10, "bold")}, is_overlay=True
+                    )
+                    
+                    print(f"✅ Etichetta destra {i+1}: {label_text} a ({canvas_x}, {canvas_y}) [offset: {offset_x:.1f}, {offset_y:.1f}]")
+
+    def calculate_green_dots_axis_distances(self, results):
+        """Calcola le distanze perpendicolari di ogni punto verde dall'asse di simmetria."""
+        print(f"📏 === CALCOLO DISTANZE DALL'ASSE DI SIMMETRIA ===")
+        
+        if not results or "groups" not in results:
+            print("⚠️ Nessun dato green dots per calcolo distanze")
+            return
+            
+        # Verifica che abbiamo i landmarks per l'asse di simmetria
+        if not self.current_landmarks or len(self.current_landmarks) <= 164:
+            print("⚠️ Landmarks non disponibili per calcolo asse di simmetria")
+            # Prova a rilevare i landmarks se non ci sono
+            self.detect_landmarks()
+            if not self.current_landmarks or len(self.current_landmarks) <= 164:
+                print("⚠️ Impossibile calcolare distanze senza landmarks")
+                return
+        
+        # Ottieni i punti dell'asse di simmetria (glabella e philtrum)
+        glabella = self.current_landmarks[9]   # Punto superiore
+        philtrum = self.current_landmarks[164] # Punto inferiore
+        
+        print(f"🎯 Asse di simmetria: Glabella{glabella} -> Philtrum{philtrum}")
+        
+        groups = results["groups"]
+        
+        # Mappatura dei nomi per gruppo sinistro (SC1, SA0, SA, SC, SB) - SC1 e SC invertiti
+        left_labels = ["SC1", "SA0", "SA", "SC", "SB"]
+        
+        # Mappatura dei nomi per gruppo destro (DC1, DB, DC, DA, DA0)
+        right_labels = ["DC1", "DB", "DC", "DA", "DA0"]
+        
+        # Calcola distanze per gruppo sinistro
+        if "Sx" in groups and groups["Sx"]:
+            left_points = groups["Sx"]
+            for i, point in enumerate(left_points):
+                if isinstance(point, dict) and "x" in point and "y" in point:
+                    label_name = left_labels[i] if i < len(left_labels) else f"Sx-{i+1}"
+                    distance = self.calculate_perpendicular_distance_to_line(
+                        (point["x"], point["y"]), glabella, philtrum
+                    )
+                    
+                    # Aggiungi alla tabella delle misurazioni
+                    self.add_measurement(
+                        f"Distanza {label_name} da Asse", f"{distance:.2f}", "px"
+                    )
+                    
+                    print(f"📏 {label_name}: distanza = {distance:.2f} px")
+        
+        # Calcola distanze per gruppo destro
+        if "Dx" in groups and groups["Dx"]:
+            right_points = groups["Dx"]
+            for i, point in enumerate(right_points):
+                if isinstance(point, dict) and "x" in point and "y" in point:
+                    label_name = right_labels[i] if i < len(right_labels) else f"Dx-{i+1}"
+                    distance = self.calculate_perpendicular_distance_to_line(
+                        (point["x"], point["y"]), glabella, philtrum
+                    )
+                    
+                    # Aggiungi alla tabella delle misurazioni
+                    self.add_measurement(
+                        f"Distanza {label_name} da Asse", f"{distance:.2f}", "px"
+                    )
+                    
+                    print(f"📏 {label_name}: distanza = {distance:.2f} px")
+        
+        # 📊 NUOVO: Calcola differenze tra coppie simmetriche
+        self.calculate_symmetric_pairs_differences(groups, glabella, philtrum, left_labels, right_labels)
+
+    def calculate_symmetric_pairs_differences(self, groups, glabella, philtrum, left_labels, right_labels):
+        """Calcola e riporta le differenze tra coppie simmetriche di punti green dots."""
+        print(f"📊 === CALCOLO DIFFERENZE COPPIE SIMMETRICHE ===")
+        
+        # Definisci le coppie simmetriche: (label_sinistro, label_destro)
+        pairs = [
+            ("SA", "DA"),     # SA/DA
+            ("SA0", "DA0"),   # SA0/DA0  
+            ("SC1", "DC1"),   # SC1/DC1
+            ("SC", "DC"),     # SC/DC
+            ("SB", "DB")      # SB/DB
+        ]
+        
+        # Calcola le distanze per entrambi i gruppi
+        left_distances = {}
+        right_distances = {}
+        
+        # Distanze gruppo sinistro
+        if "Sx" in groups and groups["Sx"]:
+            left_points = groups["Sx"]
+            for i, point in enumerate(left_points):
+                if isinstance(point, dict) and "x" in point and "y" in point:
+                    label_name = left_labels[i] if i < len(left_labels) else f"Sx-{i+1}"
+                    distance = self.calculate_perpendicular_distance_to_line(
+                        (point["x"], point["y"]), glabella, philtrum
+                    )
+                    left_distances[label_name] = distance
+        
+        # Distanze gruppo destro
+        if "Dx" in groups and groups["Dx"]:
+            right_points = groups["Dx"]
+            for i, point in enumerate(right_points):
+                if isinstance(point, dict) and "x" in point and "y" in point:
+                    label_name = right_labels[i] if i < len(right_labels) else f"Dx-{i+1}"
+                    distance = self.calculate_perpendicular_distance_to_line(
+                        (point["x"], point["y"]), glabella, philtrum
+                    )
+                    right_distances[label_name] = distance
+        
+        # Calcola e riporta differenze per ogni coppia
+        for left_label, right_label in pairs:
+            if left_label in left_distances and right_label in right_distances:
+                left_dist = left_distances[left_label]
+                right_dist = right_distances[right_label]
+                difference = abs(left_dist - right_dist)
+                
+                # Aggiungi differenza alla tabella
+                self.add_measurement(
+                    f"Differenza {left_label}-{right_label}", f"{difference:.2f}", "px"
+                )
+                
+                # Aggiungi descrizioni comparative
+                if left_dist > right_dist:
+                    # Il punto sinistro è più esterno
+                    self.add_measurement(
+                        f"{left_label} vs {right_label}", 
+                        f"{left_label}= più esterno di {difference:.1f} px rispetto a {right_label}", 
+                        ""
+                    )
+                    self.add_measurement(
+                        f"{right_label} vs {left_label}", 
+                        f"{right_label}= più interno di {difference:.1f} px rispetto a {left_label}", 
+                        ""
+                    )
+                elif right_dist > left_dist:
+                    # Il punto destro è più esterno
+                    self.add_measurement(
+                        f"{right_label} vs {left_label}", 
+                        f"{right_label}= più esterno di {difference:.1f} px rispetto a {left_label}", 
+                        ""
+                    )
+                    self.add_measurement(
+                        f"{left_label} vs {right_label}", 
+                        f"{left_label}= più interno di {difference:.1f} px rispetto a {right_label}", 
+                        ""
+                    )
+                else:
+                    # Distanze uguali
+                    self.add_measurement(
+                        f"{left_label}-{right_label} Simmetria", 
+                        f"{left_label} e {right_label}= equidistanti dall'asse", 
+                        ""
+                    )
+                
+                print(f"📊 Coppia {left_label}/{right_label}: {left_dist:.2f} vs {right_dist:.2f} px (diff: {difference:.2f})")
+        
+        # 📏 NUOVO: Calcola differenze in altezza tra coppie
+        self.calculate_height_differences(groups, glabella, philtrum, left_labels, right_labels, pairs)
+
+    def calculate_height_differences(self, groups, glabella, philtrum, left_labels, right_labels, pairs):
+        """Calcola le differenze in altezza tra coppie simmetriche su rette parallele all'asse."""
+        print(f"📏 === CALCOLO DIFFERENZE IN ALTEZZA ===")
+        
+        # Calcola il vettore direzione dell'asse di simmetria
+        axis_dx = philtrum[0] - glabella[0]
+        axis_dy = philtrum[1] - glabella[1]
+        
+        # 🔍 VERIFICA: Il sistema di coordinate ruotato
+        axis_length = np.sqrt(axis_dx * axis_dx + axis_dy * axis_dy)
+        if axis_length > 0:
+            # Vettore unitario dell'asse (direzione "altezza")
+            axis_unit_x = axis_dx / axis_length
+            axis_unit_y = axis_dy / axis_length
+            
+            # Vettore unitario perpendicolare all'asse (direzione "larghezza") 
+            perp_unit_x = -axis_unit_y  # Ruota di 90° in senso orario
+            perp_unit_y = axis_unit_x
+            
+            print(f"📐 SISTEMA COORDINATE RUOTATO:")
+            print(f"   Asse altezza (parallelo): ({axis_unit_x:.3f}, {axis_unit_y:.3f})")
+            print(f"   Asse larghezza (perpendicolare): ({perp_unit_x:.3f}, {perp_unit_y:.3f})")
+            print(f"   → Le misure di altezza seguono il vettore parallelo all'asse")
+        
+        # Ottieni le coordinate per entrambi i gruppi
+        left_points_coords = {}
+        right_points_coords = {}
+        
+        # Coordinate gruppo sinistro
+        if "Sx" in groups and groups["Sx"]:
+            left_points = groups["Sx"]
+            for i, point in enumerate(left_points):
+                if isinstance(point, dict) and "x" in point and "y" in point:
+                    label_name = left_labels[i] if i < len(left_labels) else f"Sx-{i+1}"
+                    left_points_coords[label_name] = (point["x"], point["y"])
+        
+        # Coordinate gruppo destro  
+        if "Dx" in groups and groups["Dx"]:
+            right_points = groups["Dx"]
+            for i, point in enumerate(right_points):
+                if isinstance(point, dict) and "x" in point and "y" in point:
+                    label_name = right_labels[i] if i < len(right_labels) else f"Dx-{i+1}"
+                    right_points_coords[label_name] = (point["x"], point["y"])
+        
+        # Calcola differenze in altezza per ogni coppia
+        for left_label, right_label in pairs:
+            if left_label in left_points_coords and right_label in right_points_coords:
+                left_point = left_points_coords[left_label]
+                right_point = right_points_coords[right_label]
+                
+                # Calcola l'altezza di ogni punto lungo la direzione dell'asse
+                left_height = self.calculate_height_along_axis(left_point, glabella, axis_dx, axis_dy)
+                right_height = self.calculate_height_along_axis(right_point, glabella, axis_dx, axis_dy)
+                
+                # 🔍 VERIFICA: Calcola anche la componente perpendicolare per debug
+                left_perp = self.calculate_perpendicular_component(left_point, glabella, axis_dx, axis_dy)
+                right_perp = self.calculate_perpendicular_component(right_point, glabella, axis_dx, axis_dy)
+                
+                print(f"🔍 Verifica coppia {left_label}/{right_label}:")
+                print(f"   {left_label}: altezza={left_height:.2f}, larghezza={left_perp:.2f}")
+                print(f"   {right_label}: altezza={right_height:.2f}, larghezza={right_perp:.2f}")
+                print(f"   → Differenza ALTEZZA (parallela all'asse): {abs(left_height - right_height):.2f}")
+                print(f"   → Differenza LARGHEZZA (perpendicolare): {abs(left_perp - right_perp):.2f}")
+                
+                # Differenza in altezza (valori positivi = più alto, negativi = più basso)
+                height_difference = left_height - right_height
+                abs_height_diff = abs(height_difference)
+                
+                # Aggiungi differenza numerica alla tabella
+                self.add_measurement(
+                    f"Differenza Altezza {left_label}-{right_label}", f"{abs_height_diff:.2f}", "px"
+                )
+                
+                # Aggiungi descrizioni comparative di altezza
+                if height_difference > 0:
+                    # Il punto sinistro è più alto
+                    self.add_measurement(
+                        f"Altezza {left_label} vs {right_label}",
+                        f"{left_label}= più alto di {abs_height_diff:.1f} px rispetto a {right_label}",
+                        ""
+                    )
+                    self.add_measurement(
+                        f"Altezza {right_label} vs {left_label}",
+                        f"{right_label}= più basso di {abs_height_diff:.1f} px rispetto a {left_label}",
+                        ""
+                    )
+                elif height_difference < 0:
+                    # Il punto destro è più alto
+                    self.add_measurement(
+                        f"Altezza {right_label} vs {left_label}",
+                        f"{right_label}= più alto di {abs_height_diff:.1f} px rispetto a {left_label}",
+                        ""
+                    )
+                    self.add_measurement(
+                        f"Altezza {left_label} vs {right_label}",
+                        f"{left_label}= più basso di {abs_height_diff:.1f} px rispetto a {right_label}",
+                        ""
+                    )
+                else:
+                    # Stessa altezza
+                    self.add_measurement(
+                        f"Altezza {left_label}-{right_label}",
+                        f"{left_label} e {right_label}= stessa altezza",
+                        ""
+                    )
+                
+                print(f"📏 Altezza coppia {left_label}/{right_label}: {left_height:.2f} vs {right_height:.2f} px (diff: {height_difference:.2f})")
+
+    def calculate_height_along_axis(self, point, axis_start, axis_dx, axis_dy):
+        """
+        Calcola l'altezza di un punto proiettata lungo la direzione dell'asse di simmetria.
+        IMPORTANTE: Questo calcolo è relativo alla rotazione dell'asse, NON a coordinate assolute.
+        
+        Args:
+            point: Tupla (x, y) del punto da misurare
+            axis_start: Tupla (x, y) del punto iniziale dell'asse (glabella)
+            axis_dx, axis_dy: Componenti del vettore direzione dell'asse
+            
+        Returns:
+            float: Altezza del punto lungo l'asse (positivo = verso philtrum)
+        """
+        # Vettore dal punto iniziale dell'asse al punto da misurare
+        point_dx = point[0] - axis_start[0]
+        point_dy = point[1] - axis_start[1]
+        
+        # Normalizza il vettore direzione dell'asse (QUESTO GESTISCE LA ROTAZIONE!)
+        axis_length = np.sqrt(axis_dx * axis_dx + axis_dy * axis_dy)
+        if axis_length == 0:
+            return 0.0
+            
+        axis_unit_x = axis_dx / axis_length
+        axis_unit_y = axis_dy / axis_length
+        
+        # 🔍 DEBUG: Calcolo dell'angolo dell'asse per verifica
+        axis_angle_rad = np.arctan2(axis_dy, axis_dx)
+        axis_angle_deg = np.degrees(axis_angle_rad)
+        
+        # Proiezione del punto sulla direzione dell'asse (prodotto scalare)
+        # QUESTA È LA COMPONENTE DEL PUNTO LUNGO L'ASSE ROTATO
+        projection = point_dx * axis_unit_x + point_dy * axis_unit_y
+        
+        # Debug per la prima chiamata (evita spam)
+        if not hasattr(self, '_axis_debug_shown'):
+            print(f"🔍 DEBUG ASSE DI SIMMETRIA:")
+            print(f"   Glabella: {axis_start}")
+            print(f"   Direzione: ({axis_dx:.1f}, {axis_dy:.1f})")
+            print(f"   Vettore unitario: ({axis_unit_x:.3f}, {axis_unit_y:.3f})")
+            print(f"   Angolo asse: {axis_angle_deg:.1f}°")
+            print(f"   → Le altezze sono calcolate LUNGO questo asse inclinato")
+            self._axis_debug_shown = True
+        
+        return projection
+
+    def calculate_perpendicular_component(self, point, axis_start, axis_dx, axis_dy):
+        """
+        Calcola la componente perpendicolare all'asse di simmetria (per verifica).
+        
+        Args:
+            point: Tupla (x, y) del punto da misurare
+            axis_start: Tupla (x, y) del punto iniziale dell'asse (glabella)
+            axis_dx, axis_dy: Componenti del vettore direzione dell'asse
+            
+        Returns:
+            float: Componente perpendicolare (larghezza nel sistema ruotato)
+        """
+        # Vettore dal punto iniziale dell'asse al punto da misurare
+        point_dx = point[0] - axis_start[0]
+        point_dy = point[1] - axis_start[1]
+        
+        # Normalizza il vettore direzione dell'asse
+        axis_length = np.sqrt(axis_dx * axis_dx + axis_dy * axis_dy)
+        if axis_length == 0:
+            return 0.0
+            
+        # Vettore perpendicolare unitario (ruotato 90° in senso orario)
+        perp_unit_x = -axis_dy / axis_length
+        perp_unit_y = axis_dx / axis_length
+        
+        # Proiezione del punto sulla direzione perpendicolare
+        perpendicular_component = point_dx * perp_unit_x + point_dy * perp_unit_y
+        
+        return perpendicular_component
+
+    def calculate_perpendicular_distance_to_line(self, point, line_point1, line_point2):
+        """
+        Calcola la distanza perpendicolare di un punto da una linea definita da due punti.
+        
+        Args:
+            point: Tupla (x, y) del punto
+            line_point1: Tupla (x, y) del primo punto della linea
+            line_point2: Tupla (x, y) del secondo punto della linea
+            
+        Returns:
+            float: Distanza perpendicolare in pixel
+        """
+        # Formula per calcolo distanza punto-linea
+        # d = |ax + by + c| / sqrt(a² + b²)
+        # dove la linea è ax + by + c = 0
+        
+        x0, y0 = point
+        x1, y1 = line_point1
+        x2, y2 = line_point2
+        
+        # Calcola coefficienti della linea ax + by + c = 0
+        # Partendo da due punti: (y2-y1)x - (x2-x1)y + (x2-x1)y1 - (y2-y1)x1 = 0
+        a = y2 - y1
+        b = x1 - x2
+        c = (x2 - x1) * y1 - (y2 - y1) * x1
+        
+        # Calcola distanza
+        numerator = abs(a * x0 + b * y0 + c)
+        denominator = np.sqrt(a * a + b * b)
+        
+        if denominator == 0:
+            return 0.0  # Linea degenere
+            
+        distance = numerator / denominator
+        return distance
 
     def reset_all_overlays(self):
         """Resetta tutti gli overlay alle posizioni originali."""
@@ -5906,6 +6723,9 @@ class CanvasApp:
                     "px²",
                 )
 
+                # 📏 NUOVO: Calcola distanze dall'asse di simmetria per ogni punto verde
+                self.calculate_green_dots_axis_distances(results)
+
                 # Mostra messaggio di successo
                 message = f"""Rilevamento completato con successo!
                 
@@ -5970,11 +6790,15 @@ Aree calcolate:
         self.status_bar.config(text=f"Overlay puntini verdi {status}")
     
     def clear_green_dots_from_canvas(self):
-        """Rimuove tutti i poligoni green dots dal canvas."""
+        """Rimuove tutti i poligoni green dots e le etichette dal canvas."""
         try:
             # Trova tutti gli elementi con tag green_dots_overlay
             green_items = self.canvas.find_withtag("green_dots_overlay")
             
+            # 🏷️ NUOVO: Trova anche le etichette dei green dots
+            label_items = self.canvas.find_withtag("green_dots_labels")
+            
+            # Rimuovi poligoni green dots
             for item in green_items:
                 # Rimuovi dal graphics_registry
                 if item in self.graphics_registry:
@@ -5982,8 +6806,17 @@ Aree calcolate:
                 # Rimuovi dal canvas
                 self.canvas.delete(item)
             
-            if green_items:
-                print(f"🧹 Rimossi {len(green_items)} poligoni green dots dal canvas")
+            # 🏷️ NUOVO: Rimuovi etichette green dots
+            for item in label_items:
+                # Rimuovi dal graphics_registry
+                if item in self.graphics_registry:
+                    del self.graphics_registry[item]
+                # Rimuovi dal canvas
+                self.canvas.delete(item)
+            
+            total_removed = len(green_items) + len(label_items)
+            if total_removed > 0:
+                print(f"🧹 Rimossi {len(green_items)} poligoni e {len(label_items)} etichette green dots dal canvas")
         except Exception as e:
             print(f"⚠️ Errore rimozione green dots: {e}")
 
@@ -8294,6 +9127,53 @@ Aree calcolate:
         """Esporta le misurazioni in formato JSON."""
         # TODO: Implementare esportazione misurazioni dal sistema unificato
         messagebox.showinfo("Info", "Funzionalità in sviluppo nel sistema unificato")
+    def analyze_current_image(self):
+        """Analizza l'immagine corrente con rilevamento volti."""
+        if not hasattr(self, 'current_image') or self.current_image is None:
+            messagebox.showwarning("Nessuna Immagine", "Carica prima un'immagine da analizzare")
+            return
+            
+        try:
+            # Usa il sistema esistente di analisi
+            if hasattr(self, 'face_detector'):
+                results = self.face_detector.detect_face_landmarks(self.current_image)
+                if results:
+                    self.current_landmarks = results
+                    self.update_canvas_display()
+                    print("✅ Analisi facciale completata")
+                else:
+                    print("⚠️ Nessun volto rilevato nell'immagine")
+        except Exception as e:
+            print(f"❌ Errore durante l'analisi: {e}")
+
+    def save_current_results(self):
+        """Salva i risultati correnti dell'analisi."""
+        try:
+            if hasattr(self, 'current_image') and self.current_image is not None:
+                from tkinter import filedialog
+                
+                # Chiedi dove salvare
+                filename = filedialog.asksaveasfilename(
+                    defaultextension=".png",
+                    filetypes=[("PNG files", "*.png"), ("JPEG files", "*.jpg"), ("All files", "*.*")]
+                )
+                
+                if filename:
+                    # Salva l'immagine con le annotazioni correnti
+                    if hasattr(self, 'canvas') and self.canvas:
+                        # Implementa il salvataggio dell'immagine corrente
+                        # Per ora, semplice salvataggio dell'immagine
+                        import cv2
+                        cv2.imwrite(filename, self.current_image)
+                        print(f"✅ Immagine salvata: {filename}")
+                        return True
+                        
+            print("⚠️ Nessuna immagine da salvare")
+            return False
+            
+        except Exception as e:
+            print(f"❌ Errore durante il salvataggio: {e}")
+            return False
 
 
 def main():
