@@ -1079,6 +1079,15 @@ class CanvasApp:
             command=self.clear_all_drawings,
         )
         clear_btn.pack(side=tk.LEFT, padx=1)
+        
+        # 🎯 NUOVO: Pulsante pulizia overlay generale (mantiene solo landmark, asse, green dots)
+        clear_overlays_btn = ttk.Button(
+            draw_frame,
+            text="🧹",
+            width=4,
+            command=self.clear_all_overlays_except_essentials,
+        )
+        clear_overlays_btn.pack(side=tk.LEFT, padx=1)
 
         # Inizializza stato visivo dei pulsanti
         self.update_button_states()
@@ -2075,30 +2084,37 @@ class CanvasApp:
                     transformed_coords.extend([rotated_x, rotated_y])
 
             elif graphic_type == "oval":
-                # I cerchi mantengono la forma ma la posizione si ruota
+                # 🎯 FIX OVALIZZAZIONE: Tratta il cerchio come 4 punti del bounding box
+                # che vengono ruotati indipendentemente per mantenere la forma corretta
                 x1, y1, x2, y2 = image_coords
-                center_x = (x1 + x2) / 2
-                center_y = (y1 + y2) / 2
-                radius_x = abs(x2 - x1) / 2
-                radius_y = abs(y2 - y1) / 2
-
-                # Ruota il centro del cerchio
-                rotated_center_x, rotated_center_y = (
-                    self.rotate_point_around_center_simple(
-                        center_x,
-                        center_y,
+                
+                # Definisci i 4 angoli del bounding box come punti separati
+                corners = [
+                    (x1, y1),  # top-left
+                    (x2, y1),  # top-right
+                    (x2, y2),  # bottom-right
+                    (x1, y2)   # bottom-left
+                ]
+                
+                # Ruota ogni angolo indipendentemente
+                rotated_corners = []
+                for corner_x, corner_y in corners:
+                    rotated_x, rotated_y = self.rotate_point_around_center_simple(
+                        corner_x,
+                        corner_y,
                         rotation_center[0],
                         rotation_center[1],
                         -self.current_rotation,
                     )
-                )
-
-                # Ricostruisci le coordinate del bounding box
+                    rotated_corners.extend([rotated_x, rotated_y])
+                
+                # Calcola nuovo bounding box dai punti ruotati
+                xs = [rotated_corners[i] for i in range(0, len(rotated_corners), 2)]
+                ys = [rotated_corners[i] for i in range(1, len(rotated_corners), 2)]
+                
                 transformed_coords = [
-                    rotated_center_x - radius_x,
-                    rotated_center_y - radius_y,
-                    rotated_center_x + radius_x,
-                    rotated_center_y + radius_y,
+                    min(xs), min(ys),  # nuovo top-left
+                    max(xs), max(ys)   # nuovo bottom-right
                 ]
             elif graphic_type == "polygon":
                 # Ruota tutti i punti del poligono
@@ -2112,6 +2128,13 @@ class CanvasApp:
                         -self.current_rotation,
                     )
                     transformed_coords.extend([rotated_x, rotated_y])
+            elif graphic_type == "circle_point":
+                # 🎯 NUOVO: Gestione punti circolari (puntini fucsia e blu)
+                center_x, center_y, radius = image_coords[0], image_coords[1], image_coords[2]
+                rotated_x, rotated_y = self.rotate_point_around_center_simple(
+                    center_x, center_y, rotation_center[0], rotation_center[1], -self.current_rotation
+                )
+                transformed_coords = [rotated_x, rotated_y, radius]
             elif graphic_type == "text":
                 # Il testo ha solo una coordinata (x, y)
                 x, y = image_coords[0], image_coords[1]
@@ -2126,11 +2149,21 @@ class CanvasApp:
 
         # Converti da coordinate immagine a coordinate canvas (scala + posizione)
         final_coords = []
-        for i in range(0, len(transformed_coords), 2):
-            canvas_x, canvas_y = self.convert_image_to_canvas_coords(
-                transformed_coords[i], transformed_coords[i + 1]
-            )
-            final_coords.extend([canvas_x, canvas_y])
+        
+        # 🎯 GESTIONE SPECIALE per circle_point
+        if graphic_type == "circle_point":
+            center_x, center_y, radius = transformed_coords[0], transformed_coords[1], transformed_coords[2]
+            canvas_x, canvas_y = self.image_to_canvas_coords(center_x, center_y)
+            # Scala il raggio con il fattore di zoom
+            scaled_radius = radius * getattr(self, 'canvas_scale', 1.0)
+            final_coords = [canvas_x - scaled_radius, canvas_y - scaled_radius, 
+                           canvas_x + scaled_radius, canvas_y + scaled_radius]
+        else:
+            for i in range(0, len(transformed_coords), 2):
+                canvas_x, canvas_y = self.image_to_canvas_coords(
+                    transformed_coords[i], transformed_coords[i + 1]
+                )
+                final_coords.extend([canvas_x, canvas_y])
 
         return final_coords
 
@@ -2174,27 +2207,46 @@ class CanvasApp:
             # Usa lo STESSO centro di rotazione dell'immagine
             rotation_center = self.get_rotation_center_from_landmarks()
             
-            # Applica rotazione a tutti i punti (stesso algoritmo dell'immagine)
-            for i in range(0, len(image_coords), 2):
-                x, y = image_coords[i], image_coords[i + 1]
-                
-                # IDENTICA rotazione applicata all'immagine (angolo invertito)
+            # 🎯 GESTIONE SPECIALE per circle_point (puntini fucsia)
+            if graphic_type == "circle_point":
+                # Per i punti circolari: ruota solo il centro, mantieni il raggio
+                center_x, center_y, radius = image_coords[0], image_coords[1], image_coords[2]
                 rotated_x, rotated_y = self.rotate_point_around_center_simple(
-                    x, y, rotation_center[0], rotation_center[1], -self.current_rotation
+                    center_x, center_y, rotation_center[0], rotation_center[1], -self.current_rotation
                 )
-                transformed_coords.extend([rotated_x, rotated_y])
+                transformed_coords = [rotated_x, rotated_y, radius]
+            else:
+                # Applica rotazione a tutti i punti (stesso algoritmo dell'immagine)
+                for i in range(0, len(image_coords), 2):
+                    x, y = image_coords[i], image_coords[i + 1]
+                    
+                    # IDENTICA rotazione applicata all'immagine (angolo invertito)
+                    rotated_x, rotated_y = self.rotate_point_around_center_simple(
+                        x, y, rotation_center[0], rotation_center[1], -self.current_rotation
+                    )
+                    transformed_coords.extend([rotated_x, rotated_y])
         else:
             # Nessuna rotazione - usa coordinate originali
             transformed_coords = image_coords.copy()
 
         # 🎯 STEP 2: Converti in coordinate canvas (scala + offset)
         final_canvas_coords = []
-        for i in range(0, len(transformed_coords), 2):
-            img_x, img_y = transformed_coords[i], transformed_coords[i + 1]
-            
-            # Usa lo STESSO metodo di conversione dell'immagine 
-            canvas_x, canvas_y = self.image_to_canvas_coords(img_x, img_y)
-            final_canvas_coords.extend([canvas_x, canvas_y])
+        
+        # 🎯 GESTIONE SPECIALE per circle_point
+        if graphic_type == "circle_point":
+            center_x, center_y, radius = transformed_coords[0], transformed_coords[1], transformed_coords[2]
+            canvas_x, canvas_y = self.image_to_canvas_coords(center_x, center_y)
+            # Scala il raggio con il fattore di zoom
+            scaled_radius = radius * getattr(self, 'canvas_scale', 1.0)
+            final_canvas_coords = [canvas_x - scaled_radius, canvas_y - scaled_radius, 
+                                  canvas_x + scaled_radius, canvas_y + scaled_radius]
+        else:
+            for i in range(0, len(transformed_coords), 2):
+                img_x, img_y = transformed_coords[i], transformed_coords[i + 1]
+                
+                # Usa lo STESSO metodo di conversione dell'immagine 
+                canvas_x, canvas_y = self.image_to_canvas_coords(img_x, img_y)
+                final_canvas_coords.extend([canvas_x, canvas_y])
 
         return final_canvas_coords
 
@@ -2796,44 +2848,60 @@ class CanvasApp:
     # RIMOSSO: on_canvas_measurement_click_new() - logica integrata in on_canvas_click_UNIFIED()
 
     def canvas_to_image_coords(self, canvas_x, canvas_y):
-        """Converte coordinate canvas a coordinate immagine (VERSIONE UNIFICATA)."""
+        """Converte coordinate canvas a coordinate immagine (VERSIONE CORRETTA SINCRONIZZATA)."""
         if self.current_image_on_canvas is None:
             return 0, 0
 
-        # Applica offset e scala inversa (metodo più semplice e accurato)
-        img_x = (canvas_x - self.canvas_offset_x) / self.canvas_scale
-        img_y = (canvas_y - self.canvas_offset_y) / self.canvas_scale
-
-        # Limita alle dimensioni dell'immagine
+        # 🎯 FIX CRITICO: Usa ESATTAMENTE la stessa logica di posizionamento di update_canvas_display
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+        
+        # Dimensioni immagine originale
         img_height, img_width = self.current_image_on_canvas.shape[:2]
+        
+        # Dimensioni immagine scalata (stesso calcolo di update_canvas_display)
+        scaled_width = int(img_width * self.canvas_scale)
+        scaled_height = int(img_height * self.canvas_scale)
+        
+        # Posizione immagine centrata (ESATTA copia da update_canvas_display)
+        image_x_pos = max(0, (canvas_width - scaled_width) // 2) + self.canvas_offset_x
+        image_y_pos = max(0, (canvas_height - scaled_height) // 2) + self.canvas_offset_y
+        
+        # Converte coordinate canvas -> coordinate immagine scalata -> coordinate immagine originale
+        scaled_x = canvas_x - image_x_pos  # Posizione relativa nell'immagine scalata
+        scaled_y = canvas_y - image_y_pos
+        
+        # Converte da coordinata scalata a coordinata originale
+        img_x = scaled_x / self.canvas_scale
+        img_y = scaled_y / self.canvas_scale
+
+        # Limita alle dimensioni dell'immagine (con margine di sicurezza)
         img_x = max(0, min(img_width - 1, img_x))
         img_y = max(0, min(img_height - 1, img_y))
 
         return img_x, img_y
 
     def image_to_canvas_coords(self, img_x, img_y):
-        """Converte coordinate immagine in coordinate canvas (VERSIONE UNIFICATA)."""
+        """Converte coordinate immagine in coordinate canvas (VERSIONE CORRETTA SINCRONIZZATA)."""
         if self.current_image_on_canvas is None:
             return img_x, img_y
 
-        # Calcola la posizione effettiva dell'immagine sul canvas (stessa logica di update_canvas_display)
+        # 🎯 FIX CRITICO: Usa ESATTAMENTE la stessa logica di posizionamento di update_canvas_display
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
         
-        # Dimensioni immagine scalata
-        if hasattr(self, 'canvas_scale') and hasattr(self, 'current_image_on_canvas'):
-            current_height, current_width = self.current_image_on_canvas.shape[:2]
-            scaled_width = int(current_width * self.canvas_scale)
-            scaled_height = int(current_height * self.canvas_scale)
-            
-            # Posizione immagine (stessa logica di centraggio)
-            image_x_pos = max(0, (canvas_width - scaled_width) // 2) + self.canvas_offset_x
-            image_y_pos = max(0, (canvas_height - scaled_height) // 2) + self.canvas_offset_y
-        else:
-            image_x_pos = self.canvas_offset_x
-            image_y_pos = self.canvas_offset_y
+        # Dimensioni immagine originale
+        img_height, img_width = self.current_image_on_canvas.shape[:2]
+        
+        # Dimensioni immagine scalata (stesso calcolo di update_canvas_display)  
+        scaled_width = int(img_width * self.canvas_scale)
+        scaled_height = int(img_height * self.canvas_scale)
+        
+        # Posizione immagine centrata (ESATTA copia da update_canvas_display)
+        image_x_pos = max(0, (canvas_width - scaled_width) // 2) + self.canvas_offset_x
+        image_y_pos = max(0, (canvas_height - scaled_height) // 2) + self.canvas_offset_y
 
-        # Converte coordinata immagine in coordinata canvas
+        # Converte coordinate immagine -> coordinate canvas
         canvas_x = img_x * self.canvas_scale + image_x_pos
         canvas_y = img_y * self.canvas_scale + image_y_pos
 
@@ -2989,10 +3057,10 @@ class CanvasApp:
             )
 
             # *** NUOVO SISTEMA: Converti coordinate canvas in coordinate immagine e registra
-            start_image_x, start_image_y = self.convert_canvas_to_image_coords(
+            start_image_x, start_image_y = self.canvas_to_image_coords(
                 start_x, start_y
             )
-            end_image_x, end_image_y = self.convert_canvas_to_image_coords(
+            end_image_x, end_image_y = self.canvas_to_image_coords(
                 canvas_x, canvas_y
             )
 
@@ -3046,10 +3114,10 @@ class CanvasApp:
             )
 
             # *** NUOVO SISTEMA: Converti coordinate canvas in coordinate immagine e registra
-            x1_img, y1_img = self.convert_canvas_to_image_coords(
+            x1_img, y1_img = self.canvas_to_image_coords(
                 center_x - radius, center_y - radius
             )
-            x2_img, y2_img = self.convert_canvas_to_image_coords(
+            x2_img, y2_img = self.canvas_to_image_coords(
                 center_x + radius, center_y + radius
             )
 
@@ -3181,10 +3249,10 @@ class CanvasApp:
 
             # *** NUOVO SISTEMA: Converti coordinate canvas in coordinate immagine e registra
             # Linea di misurazione
-            start_image_x, start_image_y = self.convert_canvas_to_image_coords(
+            start_image_x, start_image_y = self.canvas_to_image_coords(
                 start_x, start_y
             )
-            end_image_x, end_image_y = self.convert_canvas_to_image_coords(
+            end_image_x, end_image_y = self.canvas_to_image_coords(
                 canvas_x, canvas_y
             )
 
@@ -3383,22 +3451,58 @@ class CanvasApp:
                 self.canvas.delete(old_points[0])
             print(f"🗑️ Punto rimosso: {removed_point}")
             
-        # Aggiungi nuovo punto ESATTO dove hai cliccato (senza snap)
-        point = (img_x, img_y)
+        # 🎯 FIX COORDINATE ROTAZIONE: Converti coordinate correnti a coordinate originali
+        # Se l'immagine è ruotata, dobbiamo salvare le coordinate nel sistema originale
+        if (self.current_rotation != 0 and 
+            hasattr(self, "original_base_landmarks") and 
+            self.original_base_landmarks):
+            
+            # Ottieni centro di rotazione e converti coordinate
+            rotation_center = self.get_rotation_center_from_landmarks()
+            
+            # Ruota le coordinate nel sistema originale (rotazione opposta)
+            original_x, original_y = self.rotate_point_around_center_simple(
+                img_x, img_y, 
+                rotation_center[0], rotation_center[1], 
+                self.current_rotation  # Rotazione opposta per tornare al sistema originale
+            )
+            point = (original_x, original_y)
+            print(f"🔄 Coordinate corrette per rotazione: ({img_x:.1f},{img_y:.1f}) -> ({original_x:.1f},{original_y:.1f})")
+        else:
+            # Nessuna rotazione - usa coordinate normali
+            point = (img_x, img_y)
+            
         self.selected_points.append(point)
         
-        # Visualizza punto sul canvas con colore diverso per distinguere da landmarks
+        # 🎯 FIX: Registra puntini blu nel graphics_registry per seguire trasformazioni
+        radius = 4
         point_id = self.canvas.create_oval(
-            canvas_x - 4, canvas_y - 4, canvas_x + 4, canvas_y + 4,
+            canvas_x - radius, canvas_y - radius, canvas_x + radius, canvas_y + radius,
             fill="blue", outline="white", width=2, tags="selection_point"
         )
         
-        # Aggiungi numero del punto per chiarezza
-        self.canvas.create_text(
+        # 🎯 CRUCIALE: Registra punto blu come circle_point trasformabile
+        self.register_graphic(
+            point_id, "circle_point",
+            [img_x, img_y, radius],  # [center_x, center_y, radius]
+            {"fill": "blue", "outline": "white", "width": 2},
+            is_overlay=True
+        )
+        
+        # Aggiungi numero del punto per chiarezza - ANCHE questo deve seguire trasformazioni
+        text_id = self.canvas.create_text(
             canvas_x + 8, canvas_y - 8,
             text=str(len(self.selected_points)),
             fill="blue", font=("Arial", 10, "bold"),
             tags="selection_point"
+        )
+        
+        # 🎯 CRUCIALE: Registra anche il testo come trasformabile
+        self.register_graphic(
+            text_id, "text",
+            [img_x + 8/getattr(self, 'canvas_scale', 1.0), img_y - 8/getattr(self, 'canvas_scale', 1.0)],  # Coordinate immagine del testo
+            {"fill": "blue", "font": ("Arial", 10, "bold"), "text": str(len(self.selected_points))},
+            is_overlay=True
         )
         
         self.status_bar.config(
@@ -3522,6 +3626,53 @@ class CanvasApp:
             del self.measure_start_point
 
         print("🗑️ Tutti i disegni sono stati cancellati")
+
+    def clear_all_overlays_except_essentials(self):
+        """🧹 Pulisce TUTTI gli overlay eccetto landmark, asse di simmetria e green dots."""
+        print("🧹 PULIZIA OVERLAY GENERALE - Mantengo solo elementi essenziali...")
+        
+        # Lista tag da preservare (elementi essenziali)
+        essential_tags = ["landmark_point", "symmetry_axis", "green_dot"]
+        
+        # Pulisci graphics_registry mantenendo solo overlay essenziali
+        items_to_remove = []
+        for item_id, graphic_data in self.graphics_registry.items():
+            if graphic_data.get("is_overlay", False):
+                # Verifica se è un overlay non essenziale
+                canvas_tags = self.canvas.gettags(item_id) if item_id in self.canvas.find_all() else []
+                is_essential = any(tag in essential_tags for tag in canvas_tags)
+                
+                if not is_essential:
+                    items_to_remove.append(item_id)
+        
+        # Rimuovi overlay non essenziali
+        for item_id in items_to_remove:
+            try:
+                self.canvas.delete(item_id)
+                del self.graphics_registry[item_id]
+                print(f"🧹 Rimosso overlay: {item_id}")
+            except Exception as e:
+                print(f"⚠️ Errore rimozione overlay {item_id}: {e}")
+        
+        # Pulisci specificamente le liste overlay
+        self.clear_measurement_overlays()
+        self.clear_selection_overlays()
+        
+        # Pulisci punti selezionati
+        self.selected_points.clear()
+        self.selected_landmarks.clear()
+        
+        # Pulisci tag canvas specifici
+        self.canvas.delete("selection_overlay")
+        self.canvas.delete("selection_point") 
+        self.canvas.delete("measurement_overlay")
+        
+        # Aggiorna visualizzazione
+        self.update_canvas_display()
+        
+        removed_count = len(items_to_remove)
+        self.status_bar.config(text=f"🧹 Puliti {removed_count} overlay - mantenuti landmark, asse e green dots")
+        print(f"✅ PULIZIA COMPLETATA - Rimossi {removed_count} overlay non essenziali")
 
     # *** FUNZIONE OBSOLETA - RIMOSSA ***
     # def move_all_drawings() -> Sostituita da transform_all_graphics()
@@ -5521,13 +5672,12 @@ class CanvasApp:
         #     print("🎯 Disegno preset overlays (misurazioni predefinite)")
         #     display_image = self.draw_preset_overlays(display_image)
 
-        # Disegna sempre le selezioni correnti (punti selezionati dall'utente)
+        # 🎯 SOLUZIONE PROBLEMA 2: I punti selezionati sono ora gestiti come overlay rotanti
+        # NON disegnare più qui - sono gestiti dal sistema graphics_registry unificato
+        # I punti selezionati vengono convertiti automaticamente in overlay con linee
         if hasattr(self, "selected_points") and self.selected_points:
-            print(f"🎯 Disegno {len(self.selected_points)} punti selezionati")
-            for i, point in enumerate(self.selected_points):
-                # Converte a tuple di interi per OpenCV
-                point_int = (int(round(point[0])), int(round(point[1])))
-                cv2.circle(display_image, point_int, 5, (255, 0, 255), -1)
+            # I punti sono ora overlay registrati - niente da disegnare qui
+            pass  # Il disegno è gestito dal sistema unificato overlay
 
         # ORA VISUALIZZA NEL CANVAS TKINTER
         try:
@@ -6121,23 +6271,9 @@ Aree calcolate:
         if not self.current_landmarks:
             return None
 
-        # MIGLIORAMENTO: Tolleranza dinamica basata sul livello di zoom (più aggressiva)
-        # Quando l'immagine è piccola (zoom < 1), aumenta notevolmente la tolleranza
-        # Quando l'immagine è ingrandita (zoom > 1), usa tolleranza normale
-        zoom_factor = getattr(self, 'canvas_scale', 1.0)
-        
-        if zoom_factor < 0.3:  # Immagine estremamente piccola
-            adjusted_max_distance = max_distance * 5.0  # Tolleranza molto molto alta
-        elif zoom_factor < 0.5:  # Immagine molto piccola
-            adjusted_max_distance = max_distance * 4.0  # Tolleranza molto alta
-        elif zoom_factor < 0.8:  # Immagine piccola
-            adjusted_max_distance = max_distance * 3.0  # Tolleranza alta
-        elif zoom_factor < 1.2:  # Zoom normale
-            adjusted_max_distance = max_distance * 1.5  # Tolleranza leggermente aumentata
-        elif zoom_factor > 3.0:  # Immagine molto ingrandita
-            adjusted_max_distance = max_distance * 0.6  # Tolleranza ridotta per massima precisione
-        else:  # Zoom medio-alto
-            adjusted_max_distance = max_distance * 0.8  # Tolleranza leggermente ridotta
+        # 🎯 SOLUZIONE PROBLEMA 1: Tolleranza dinamica MIGLIORATA per selezione precisa senza zoom
+        # Usa il metodo dedicato per calcolo tolleranza adattiva
+        adjusted_max_distance = self.calculate_adaptive_tolerance(max_distance)
 
         min_distance = float("inf")
         closest_idx = None
@@ -6149,6 +6285,7 @@ Aree calcolate:
                 closest_idx = i
 
         # DEBUG per troubleshooting precisione con più dettagli
+        zoom_factor = getattr(self, 'canvas_scale', 1.0)
         if closest_idx is not None:
             print(f"🎯 Landmark {closest_idx} selezionato (distanza: {min_distance:.1f}px, "
                   f"tolleranza: {adjusted_max_distance:.1f}px, zoom: {zoom_factor:.2f}) "
@@ -6164,6 +6301,35 @@ Aree calcolate:
                   f"tolleranza necessaria: {adjusted_max_distance:.1f}px, zoom: {zoom_factor:.2f})")
 
         return closest_idx
+
+    def calculate_adaptive_tolerance(self, base_tolerance: int = 30) -> float:
+        """
+        Calcola la tolleranza adattiva per la selezione landmark basata sul zoom.
+        
+        Args:
+            base_tolerance: Tolleranza base in pixel (default 30)
+            
+        Returns:
+            Tolleranza adattiva in pixel
+        """
+        zoom_factor = getattr(self, 'canvas_scale', 1.0)
+        
+        if zoom_factor < 0.2:  # Immagine estremamente piccola
+            return base_tolerance * 8.0  # Tolleranza massima
+        elif zoom_factor < 0.4:  # Immagine molto piccola  
+            return base_tolerance * 6.0  # Tolleranza molto alta
+        elif zoom_factor < 0.6:  # Immagine piccola
+            return base_tolerance * 5.0  # Tolleranza alta
+        elif zoom_factor < 0.8:  # Immagine ridotta
+            return base_tolerance * 4.0  # Tolleranza elevata
+        elif zoom_factor < 1.0:  # Quasi normale
+            return base_tolerance * 2.5  # Tolleranza media-alta
+        elif zoom_factor < 1.5:  # Zoom normale
+            return base_tolerance * 1.2  # Tolleranza leggermente aumentata
+        elif zoom_factor > 3.0:  # Immagine molto ingrandita
+            return base_tolerance * 0.6  # Tolleranza ridotta per precisione
+        else:  # Zoom medio-alto
+            return base_tolerance * 0.8  # Tolleranza standard
 
     def find_closest_landmark_with_hysteresis(self, x: int, y: int) -> Optional[int]:
         """
@@ -6248,10 +6414,13 @@ Aree calcolate:
         max_points = {"distance": 2, "angle": 3, "area": 4}
         max_count = max_points.get(self.measurement_mode, 2)
 
+        # 🎯 SOLUZIONE PROBLEMA 2: Pulisci overlay precedenti se necessario
         if len(self.selected_points) >= max_count:
             # Rimuovi il primo punto se abbiamo raggiunto il limite
             removed_point = self.selected_points.pop(0)
             print(f"🗑️ Punto rimosso: {removed_point}")
+            # Pulisci anche gli overlay precedenti
+            self.clear_selection_overlays()
             
         # Aggiungi coordinate landmark ai punti selezionati per misurazione
         self.selected_points.append(landmark_point)
@@ -6260,6 +6429,9 @@ Aree calcolate:
         if landmark_idx in self.selected_landmarks:
             self.selected_landmarks.remove(landmark_idx)
         self.selected_landmarks.append(landmark_idx)
+        
+        # 🎯 NUOVO: Crea immediatamente overlay per i punti selezionati
+        self.create_selection_overlays()
         
         print(f"✅ Landmark {landmark_idx} aggiunto ai punti di misurazione: {landmark_point}")
         self.status_bar.config(text=f"✅ Landmark {landmark_idx} selezionato - Punti: {len(self.selected_points)}/{max_count}")
@@ -6271,6 +6443,98 @@ Aree calcolate:
         # Pulisci evidenziazione hover dopo selezione
         self.canvas.delete("landmark_hover")
         self.hovered_landmark = None
+
+    def create_selection_overlays(self):
+        """🎯 SOLUZIONE PROBLEMA 2: Crea overlay per punti selezionati che ruotano con l'immagine."""
+        if not hasattr(self, 'selection_overlay_ids'):
+            self.selection_overlay_ids = []
+        
+        # Pulisci overlay precedenti
+        self.clear_selection_overlays()
+        
+        if not self.selected_points:
+            return
+        
+        # Disegna i punti selezionati come cerchi
+        for i, point in enumerate(self.selected_points):
+            # Converti coordinate immagine in coordinate canvas
+            canvas_x, canvas_y = self.image_to_canvas_coords(point[0], point[1])
+            
+            # 🎯 FIX OVALIZZAZIONE: Usa coordinate canvas per disegno ma coordinate immagine per registro
+            radius = 6  # Raggio del cerchio
+            point_id = self.canvas.create_oval(
+                canvas_x - radius, canvas_y - radius,
+                canvas_x + radius, canvas_y + radius,
+                fill="magenta", outline="white", width=2,
+                tags="selection_overlay"
+            )
+            
+            # 🎯 CRUCIALE: Registra coordinate immagine SINGOLO PUNTO per evitare ovalizzazione
+            # Invece di bounding box [x1,y1,x2,y2], usa punto centrale [x,y] + raggio per gestione speciale
+            self.register_graphic(
+                point_id, "circle_point", 
+                [point[0], point[1], radius],  # [center_x, center_y, radius]
+                {"fill": "magenta", "outline": "white", "width": 2}, 
+                is_overlay=True
+            )
+            
+            self.selection_overlay_ids.append(point_id)
+            print(f"🎯 Punto {i+1} registrato come overlay rotante: {point_id}")
+        
+        # 🎯 NUOVO: Se abbiamo 2+ punti, disegna linea di collegamento
+        if len(self.selected_points) >= 2:
+            self.create_connection_line()
+    
+    def create_connection_line(self):
+        """Crea linea di collegamento tra punti selezionati."""
+        if len(self.selected_points) < 2:
+            return
+        
+        # Crea linea tra primo e secondo punto
+        point1 = self.selected_points[0]
+        point2 = self.selected_points[1]
+        
+        # Converti a coordinate canvas
+        canvas_x1, canvas_y1 = self.image_to_canvas_coords(point1[0], point1[1])
+        canvas_x2, canvas_y2 = self.image_to_canvas_coords(point2[0], point2[1])
+        
+        # Crea linea
+        line_id = self.canvas.create_line(
+            canvas_x1, canvas_y1, canvas_x2, canvas_y2,
+            fill="cyan", width=3, dash=(5, 3),
+            tags="selection_overlay"
+        )
+        
+        # 🎯 CRUCIALE: Registra nel graphics_registry per rotazione automatica
+        self.register_graphic(
+            line_id, "line",
+            [point1[0], point1[1], point2[0], point2[1]],
+            {"fill": "cyan", "width": 3}, 
+            is_overlay=True
+        )
+        
+        self.selection_overlay_ids.append(line_id)
+        print(f"🔗 Linea collegamento registrata come overlay rotante: {line_id}")
+        
+        # Porta in primo piano
+        self.canvas.tag_raise("selection_overlay")
+    
+    def clear_selection_overlays(self):
+        """Pulisce gli overlay dei punti selezionati."""
+        if not hasattr(self, 'selection_overlay_ids'):
+            return
+        
+        for overlay_id in self.selection_overlay_ids:
+            try:
+                self.canvas.delete(overlay_id)
+                # Rimuovi dal graphics_registry
+                if overlay_id in self.graphics_registry:
+                    del self.graphics_registry[overlay_id]
+                print(f"🧹 Rimosso overlay selezione: {overlay_id}")
+            except Exception as e:
+                print(f"⚠️ Errore rimozione overlay selezione: {e}")
+        
+        self.selection_overlay_ids.clear()
 
     def change_selection_mode(self):
         """Cambia la modalità di selezione tra manuale e landmark."""
@@ -6321,8 +6585,8 @@ Aree calcolate:
         self.selected_points.clear()
         self.selected_landmarks.clear()
         
-        # Rimuovi punti di selezione dal canvas
-        self.canvas.delete("selection_point")
+        # NUOVO: Rimuovi overlay di selezione dal graphics_registry
+        self.clear_selection_overlays()
         
         # Rimuovi evidenziazione hover se presente
         self.canvas.delete("landmark_hover")
@@ -6419,13 +6683,26 @@ Aree calcolate:
                     # Memorizza il risultato per eventuali overlay
                     self.measurement_result = f"{result:.2f}"
 
-                    # Aggiungi overlay per misurazioni manuali - CORREZIONE COORDINATE
+                    # Aggiungi overlay per misurazioni angolo - CORREZIONE COORDINATE CON ROTAZIONE
                     if not self.landmark_measurement_mode:
-                        # Le coordinate in selected_points sono già coordinate immagine corrette
-                        # Assicurati che siano nel formato intero per cv2
+                        # Per modalità manuale: applica stessa logica conversione punti singoli
                         corrected_coordinates = []
                         for point in points[:3]:
-                            corrected_coordinates.append((int(round(point[0])), int(round(point[1]))))
+                            # CORREZIONE: Converti coordinate se immagine è ruotata (come per punti singoli)
+                            if self.current_rotation != 0:
+                                center = self.get_rotation_center_from_landmarks()
+                                if center:
+                                    # Converti al sistema originale per consistenza con altri overlay
+                                    orig_x, orig_y = self.rotate_point_around_center_simple(
+                                        point[0], point[1], center[0], center[1], -self.current_rotation
+                                    )
+                                    corrected_coordinates.append((int(round(orig_x)), int(round(orig_y))))
+                                    print(f"🔄 Angolo punto {point} -> sistema originale ({orig_x:.1f},{orig_y:.1f})")
+                                else:
+                                    print("❌ Impossibile determinare centro rotazione per angolo")
+                                    corrected_coordinates.append((int(round(point[0])), int(round(point[1]))))
+                            else:
+                                corrected_coordinates.append((int(round(point[0])), int(round(point[1]))))
                         
                         print(f"🎯 Coordinate overlay angolo corrette: {corrected_coordinates}")
                         
@@ -6454,12 +6731,26 @@ Aree calcolate:
                     # Memorizza il risultato per eventuali overlay
                     self.measurement_result = f"{result:.2f}"
 
-                    # Aggiungi overlay per misurazioni di area - CORREZIONE COORDINATE
+                    # Aggiungi overlay per misurazioni di area - CORREZIONE COORDINATE CON ROTAZIONE
                     if not self.landmark_measurement_mode:
-                        # Per modalità manuale: correggi coordinate
+                        # Per modalità manuale: applica stessa logica conversione punti singoli
                         corrected_coordinates = []
                         for point in points:
-                            corrected_coordinates.append((int(round(point[0])), int(round(point[1]))))
+                            # CORREZIONE: Converti coordinate se immagine è ruotata (come per punti singoli)
+                            if self.current_rotation != 0:
+                                center = self.get_rotation_center_from_landmarks()
+                                if center:
+                                    # Converti al sistema originale per consistenza con altri overlay
+                                    orig_x, orig_y = self.rotate_point_around_center_simple(
+                                        point[0], point[1], center[0], center[1], -self.current_rotation
+                                    )
+                                    corrected_coordinates.append((int(round(orig_x)), int(round(orig_y))))
+                                    print(f"🔄 Area punto {point} -> sistema originale ({orig_x:.1f},{orig_y:.1f})")
+                                else:
+                                    print("❌ Impossibile determinare centro rotazione per area")
+                                    corrected_coordinates.append((int(round(point[0])), int(round(point[1]))))
+                            else:
+                                corrected_coordinates.append((int(round(point[0])), int(round(point[1]))))
                         print(f"🎯 Coordinate overlay area corrette: {corrected_coordinates}")
                     else:
                         # Per modalità landmark: usa coordinate originali (già corrette)
@@ -6932,8 +7223,12 @@ Aree calcolate:
             )
             self.add_measurement("Sopracciglio Più Grande", areas["larger_eyebrow"], "")
 
-            # Crea overlay per visualizzazione usando i landmarks UFFICIALI MediaPipe
-            if len(self.current_landmarks) >= 468:
+            # Crea overlay per visualizzazione usando i landmarks ORIGINALI (non trasformati)
+            # CORREZIONE: Usa original_base_landmarks per evitare doppia trasformazione
+            landmarks_to_use = self.original_base_landmarks if self.original_base_landmarks else self.current_landmarks
+            if len(landmarks_to_use) >= 468:
+                print(f"🔄 Creando overlay sopraccigli - usando landmarks {'originali' if self.original_base_landmarks else 'correnti'}")
+                
                 # Landmarks per sopracciglio SINISTRO
                 # Ordinati secondo NUOVA SEQUENZA PERIMETRALE PERSONALIZZATA
                 # RIMOSSO landmark 276 e DUPLICATO 285
@@ -6951,8 +7246,8 @@ Aree calcolate:
                 ]
                 left_eyebrow_points = [
                     (
-                        int(self.current_landmarks[idx][0]),
-                        int(self.current_landmarks[idx][1]),
+                        int(landmarks_to_use[idx][0]),
+                        int(landmarks_to_use[idx][1]),
                     )
                     for idx in left_eyebrow_indices
                 ]
@@ -6963,8 +7258,8 @@ Aree calcolate:
                 right_eyebrow_indices = [53, 52, 65, 55, 107, 66, 105, 63, 70, 53]
                 right_eyebrow_points = [
                     (
-                        int(self.current_landmarks[idx][0]),
-                        int(self.current_landmarks[idx][1]),
+                        int(landmarks_to_use[idx][0]),
+                        int(landmarks_to_use[idx][1]),
                     )
                     for idx in right_eyebrow_indices
                 ]
@@ -7019,8 +7314,12 @@ Aree calcolate:
             )
             self.add_measurement("Occhio Più Grande", areas["larger_eye"], "")
 
-            # Crea overlay per visualizzazione usando gli stessi landmarks del calcolo
-            if len(self.current_landmarks) >= 468:
+            # Crea overlay per visualizzazione usando landmarks ORIGINALI (non trasformati)  
+            # CORREZIONE: Usa original_base_landmarks per evitare doppia trasformazione
+            landmarks_to_use = self.original_base_landmarks if self.original_base_landmarks else self.current_landmarks
+            if len(landmarks_to_use) >= 468:
+                print(f"🔄 Creando overlay occhi - usando landmarks {'originali' if self.original_base_landmarks else 'correnti'}")
+                
                 # Landmarks per occhio sinistro (contorno completo degli occhi)
                 left_eye_indices = [
                     33,
@@ -7042,8 +7341,8 @@ Aree calcolate:
                 ]
                 left_eye_points = [
                     (
-                        int(self.current_landmarks[idx][0]),
-                        int(self.current_landmarks[idx][1]),
+                        int(landmarks_to_use[idx][0]),
+                        int(landmarks_to_use[idx][1]),
                     )
                     for idx in left_eye_indices
                 ]
@@ -7069,8 +7368,8 @@ Aree calcolate:
                 ]
                 right_eye_points = [
                     (
-                        int(self.current_landmarks[idx][0]),
-                        int(self.current_landmarks[idx][1]),
+                        int(landmarks_to_use[idx][0]),
+                        int(landmarks_to_use[idx][1]),
                     )
                     for idx in right_eye_indices
                 ]
