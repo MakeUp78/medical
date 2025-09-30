@@ -20,7 +20,7 @@ class FaceDetector:
         self.face_mesh = self.mp_face_mesh.FaceMesh(
             static_image_mode=True,  # FIX BUG: True per disabilitare tracking tra frame
             max_num_faces=1,
-            refine_landmarks=True,
+            refine_landmarks=True,  # AGGIORNATO: True per avere 478 landmarks (face mesh + iris)
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5,
         )
@@ -96,24 +96,78 @@ class FaceDetector:
         landmarks: List[Tuple[float, float]],
         draw_all: bool = False,
         key_only: bool = True,
+        zoom_factor: float = 1.0,
+        highlight_landmark: Optional[int] = None,
     ) -> np.ndarray:
         """
-        Disegna i landmark sull'immagine.
+        Disegna i landmark sull'immagine con dimensione adattiva al zoom e possibilità di evidenziazione.
 
         Args:
             image: Immagine su cui disegnare
             landmarks: Lista dei landmark
-            draw_all: Se True, disegna tutti i 468 landmark
+            draw_all: Se True, disegna tutti i 478 landmark
             key_only: Parametro mantenuto per compatibilità (non utilizzato)
+            zoom_factor: Fattore di zoom per adattare la dimensione dei landmark
+            highlight_landmark: Indice del landmark da evidenziare con colore diverso (per feedback mouse)
         """
         result_image = image.copy()
 
         if draw_all:
-            # Disegna tutti i landmark
-            for point in landmarks:
-                cv2.circle(
-                    result_image, (int(point[0]), int(point[1])), 1, (0, 255, 0), -1
-                )
+            # Calcola la dimensione del cerchio in base al zoom
+            # Quando zoom è basso (< 1.0), usa cerchi più grandi per visibilità
+            # Quando zoom è alto (> 1.0), usa cerchi normali o più piccoli
+            if zoom_factor < 0.5:
+                circle_radius = 4  # Cerchi molto grandi per immagini piccole
+                thickness = -1  # Riempito
+            elif zoom_factor < 1.0:
+                circle_radius = 3  # Cerchi grandi per immagini ridotte
+                thickness = -1  # Riempito
+            elif zoom_factor > 2.0:
+                circle_radius = 1  # Cerchi piccoli per immagini molto ingrandite
+                thickness = -1  # Riempito
+            else:
+                circle_radius = 2  # Dimensione normale
+                thickness = -1  # Riempito
+
+            # Disegna tutti i landmark con dimensione adattiva e possibile evidenziazione
+            for i, point in enumerate(landmarks):
+                # Colore e dimensioni speciali per il landmark evidenziato
+                if highlight_landmark is not None and i == highlight_landmark:
+                    # Landmark evidenziato: più grande e colore arancione
+                    highlight_radius = int(circle_radius * 1.8)  # 80% più grande
+                    cv2.circle(
+                        result_image,
+                        (int(point[0]), int(point[1])),
+                        highlight_radius,
+                        (0, 165, 255),  # Arancione (BGR format)
+                        thickness,
+                    )
+                    # Cerchio esterno per maggiore visibilità
+                    cv2.circle(
+                        result_image,
+                        (int(point[0]), int(point[1])),
+                        highlight_radius + 1,
+                        (0, 255, 255),  # Giallo (BGR format)
+                        1,  # Contorno sottile
+                    )
+                else:
+                    # Landmark normale: verde
+                    cv2.circle(
+                        result_image,
+                        (int(point[0]), int(point[1])),
+                        circle_radius,
+                        (0, 255, 0),  # Verde
+                        thickness,
+                    )
+
+            highlight_info = (
+                f" (evidenziato: {highlight_landmark})"
+                if highlight_landmark is not None
+                else ""
+            )
+            print(
+                f"🎯 Landmark disegnati: raggio {circle_radius}px per zoom {zoom_factor:.2f}{highlight_info}"
+            )
 
         return result_image
 
@@ -126,10 +180,8 @@ class FaceDetector:
         # Converte i landmark nel formato MediaPipe
         height, width = image.shape[:2]
 
-        # Crea un oggetto NormalizedLandmarkList per MediaPipe
-        face_landmarks = self.mp_face_mesh.FaceMesh().process(
-            cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        )
+        # USA SELF.FACE_MESH (configurazioni coerenti) invece di creare nuovo FaceMesh
+        face_landmarks = self.face_mesh.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
 
         if face_landmarks.multi_face_landmarks:
             for face_landmark in face_landmarks.multi_face_landmarks:

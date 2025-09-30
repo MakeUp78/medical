@@ -1,9 +1,9 @@
 {
     "activation_keywords": [
-        "hey isabella",
-        "ciao isabella",
-        "ehi isabella",
-        "isabella"
+        "hey symmetra",
+        "ciao symmetra",
+        "ehi symmetra",
+        "symmetra"
     ],
     "language": "it-IT",
     "tts_voice": "it-IT-IsabellaNeural",
@@ -19,7 +19,7 @@
         "pause_threshold": 0.8
     },
     "messages": {
-        "startup": "Assistente vocale Isabella attivato. Dimmi 'Hey Isabella' quando hai bisogno di me.",
+        "startup": "Assistente vocale Symmetra attivato. Dimmi 'Hey Symmetra' quando hai bisogno di me.",
         "activation": "Ti ascolto! Cosa posso fare per te?",
         "deactivation": "Torno in modalità standby. Chiamami quando hai bisogno.",
         "command_not_found": "Comando non riconosciuto. Puoi ripetere o dire 'aiuto' per la lista dei comandi?",
@@ -34,7 +34,7 @@
     },
     "custom_messages": {
         "app_start": "Applicazione avviata con successo. Sistema pronto per l'uso.",
-        "welcome_user": "Benvenuto in {app_name}! Sono Isabella, il tuo assistente vocale personale.",
+        "welcome_user": "Benvenuto in Kimerika 2.0! Io sono Symmetra e ti aiuterò nella fase di progettazione della tua dermopigmentazione sopraccigliare.",
         "analysis_start": "Iniziando l'analisi. Mantieni la posizione e segui le istruzioni.",
         "analysis_progress": "Analisi in corso al {progress}% di completamento.",
         "analysis_complete": "Analisi completata con successo! Precisione: {accuracy}%.",
@@ -81,7 +81,7 @@
         "echo_cancellation": true
     },
     "app_specific": {
-        "app_name": "La Mia Applicazione",
+        "app_name": "Kimerika 2.0",
         "app_version": "1.0.0",
         "voice_commands_enabled": true,
         "startup_message_enabled": true,

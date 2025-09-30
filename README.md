@@ -44,7 +44,7 @@ python main.py
 - **Progress Tracking**: Monitoraggio avanzamento con statistiche real-time
 
 ### Rilevamento Landmark
-- **468 Punti**: Rilevamento preciso MediaPipe Face Mesh
+- **478 Punti**: Rilevamento preciso MediaPipe Face Mesh con iris landmarks
 - **Landmark Chiave**: Visualizzazione punti caratteristici principali
 - **Tempo Reale**: Aggiornamento continuo durante l'analisi video
 
