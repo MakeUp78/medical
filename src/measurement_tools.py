@@ -69,14 +69,14 @@ class MeasurementTools:
         Calcola le misurazioni facciali standard.
 
         Args:
-            landmarks: Lista completa dei landmark facciali (468 punti)
+            landmarks: Lista completa dei landmark facciali (478 punti)
 
         Returns:
             Dizionario con le misurazioni calcolate
         """
         measurements = {}
 
-        if len(landmarks) < 468:
+        if len(landmarks) < 478:
             return measurements
 
         try:
@@ -165,7 +165,7 @@ class MeasurementTools:
         Returns:
             Valore tra 0 e 1, dove 1 indica perfetta simmetria
         """
-        if len(landmarks) < 468:
+        if len(landmarks) < 478:
             return 0.0
 
         try:
@@ -346,7 +346,7 @@ class MeasurementTools:
         Returns:
             Dict con aree individuali, differenza e quale è più grande
         """
-        if len(landmarks) < 468:
+        if len(landmarks) < 478:
             return {}
 
         # Landmarks per sopracciglio SINISTRO
@@ -405,7 +405,7 @@ class MeasurementTools:
         Returns:
             Dict con aree individuali, differenza e quale è più grande
         """
-        if len(landmarks) < 468:
+        if len(landmarks) < 478:
             return {}
 
         # Landmark per occhio sinistro (contorno completo con più punti)

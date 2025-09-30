@@ -58,7 +58,7 @@ def calculate_pure_frontal_score(
     Returns:
         float: Score frontalità (0-1, dove 1 = perfettamente frontale come l'esempio)
     """
-    if not landmarks or len(landmarks) < 468:
+    if not landmarks or len(landmarks) < 478:
         return 0.0
 
     try:
@@ -273,7 +273,7 @@ def get_advanced_orientation_score(
         debug_info = getattr(calculate_pure_frontal_score, "_debug_info", {})
 
         # Calcola approssimazioni di orientamento per compatibilità UI
-        if len(landmarks) >= 468:
+        if len(landmarks) >= 478:
             nose_tip = landmarks[1]
             left_eye = landmarks[33]
             right_eye = landmarks[362]
