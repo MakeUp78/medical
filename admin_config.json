@@ -1,0 +1,28 @@
+{
+  "admin_password_hash": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
+  "admin_users": [
+    "admin",
+    "administrator",
+    "superuser"
+  ],
+  "max_login_attempts": 3,
+  "session_timeout": 3600,
+  "backup_configs": true,
+  "last_access": "2025-10-06T19:56:02.856823",
+  "security_settings": {
+    "require_password_change": false,
+    "log_access_attempts": true,
+    "auto_lock_timeout": 1800
+  },
+  "ui_settings": {
+    "theme": "cosmo",
+    "auto_scan_on_startup": true,
+    "show_advanced_features": true
+  },
+  "voice_integration": {
+    "test_mode": false,
+    "backup_before_changes": true,
+    "validate_before_save": true
+  },
+  "version": "1.0.0"
+}

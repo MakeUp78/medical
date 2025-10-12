@@ -1,0 +1,28 @@
+{
+  "activation_keywords": [
+    "hey isabella",
+    "ciao isabella",
+    "isabella"
+  ],
+  "language": "it-IT",
+  "tts_voice": "it-IT-IsabellaNeural",
+  "timeout": 5.0,
+  "phrase_timeout": 2.0,
+  "voice_settings": {
+    "rate": "+0%",
+    "volume": "+0%"
+  },
+  "stt_settings": {
+    "energy_threshold": 300,
+    "dynamic_energy_threshold": true,
+    "pause_threshold": 0.8
+  },
+  "messages": {},
+  "custom_messages": {},
+  "advanced_settings": {
+    "auto_deactivate_timeout": 30,
+    "confirmation_for_critical_actions": true,
+    "background_listening": true,
+    "voice_feedback_level": "normal"
+  }
+}
