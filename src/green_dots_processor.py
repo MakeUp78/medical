@@ -283,6 +283,67 @@ class GreenDotsProcessor:
 
         return sorted_points
 
+    def calculate_eyebrow_bounding_box(self, dots: List[Dict], expand_factor: float = 0.5) -> Tuple[int, int, int, int]:
+        """
+        Calcola il bounding box dei punti del sopracciglio e lo allarga del fattore specificato.
+        
+        Args:
+            dots: Lista dei punti verdi del sopracciglio
+            expand_factor: Fattore di allargamento del bounding box (0.5 = 50%)
+            
+        Returns:
+            Tuple[int, int, int, int]: (x_min, y_min, x_max, y_max) del bounding box allargato
+        """
+        if not dots:
+            return (0, 0, 0, 0)
+            
+        # Trova coordinate minime e massime
+        x_coords = [dot["x"] for dot in dots]
+        y_coords = [dot["y"] for dot in dots]
+        
+        x_min, x_max = min(x_coords), max(x_coords)
+        y_min, y_max = min(y_coords), max(y_coords)
+        
+        # Calcola dimensioni originali
+        width = x_max - x_min
+        height = y_max - y_min
+        
+        # Calcola l'espansione
+        expand_width = int(width * expand_factor / 2)
+        expand_height = int(height * expand_factor / 2)
+        
+        # Applica l'espansione
+        x_min_expanded = max(0, x_min - expand_width)
+        y_min_expanded = max(0, y_min - expand_height)
+        x_max_expanded = x_max + expand_width
+        y_max_expanded = y_max + expand_height
+        
+        return (x_min_expanded, y_min_expanded, x_max_expanded, y_max_expanded)
+
+    def get_left_eyebrow_bbox(self, expand_factor: float = 0.5) -> Tuple[int, int, int, int]:
+        """
+        Restituisce il bounding box del sopracciglio sinistro.
+        
+        Args:
+            expand_factor: Fattore di allargamento del bounding box
+            
+        Returns:
+            Tuple[int, int, int, int]: Bounding box del sopracciglio sinistro
+        """
+        return self.calculate_eyebrow_bounding_box(self.left_dots, expand_factor)
+        
+    def get_right_eyebrow_bbox(self, expand_factor: float = 0.5) -> Tuple[int, int, int, int]:
+        """
+        Restituisce il bounding box del sopracciglio destro.
+        
+        Args:
+            expand_factor: Fattore di allargamento del bounding box
+            
+        Returns:
+            Tuple[int, int, int, int]: Bounding box del sopracciglio destro
+        """
+        return self.calculate_eyebrow_bounding_box(self.right_dots, expand_factor)
+
     def sort_points_convex_hull(self, points: List[Dict]) -> List[Dict]:
         """
         Ordina i punti usando algoritmo Convex Hull (Graham Scan).

@@ -16,7 +16,7 @@ Data: 2025-09-23
 import sys
 import os
 import signal
-import tkinter as tk
+import ttkbootstrap as ttk
 from tkinter import messagebox
 import logging
 
@@ -65,6 +65,7 @@ class FacialAnalysisApp:
             "PIL": "Pillow",
             "matplotlib": "matplotlib",
             "scipy": "scipy",
+            "ttkbootstrap": "ttkbootstrap",
         }
 
         # Dipendenze opzionali per assistente vocale
@@ -116,7 +117,7 @@ SOLUZIONI:
 
             # Mostra messaggio GUI se possibile
             try:
-                temp_root = tk.Tk()
+                temp_root = ttk.Window()
                 temp_root.withdraw()
                 messagebox.showerror("Dipendenze Mancanti", error_msg)
                 temp_root.destroy()
@@ -158,7 +159,7 @@ SOLUZIONI:
             logger.error(error_msg)
 
             try:
-                temp_root = tk.Tk()
+                temp_root = ttk.Window()
                 temp_root.withdraw()
                 messagebox.showerror("Errore di Importazione", error_msg)
                 temp_root.destroy()
@@ -178,10 +179,15 @@ SOLUZIONI:
             # Importa l'assistente vocale
             from voice.isabella_voice_assistant import IsabellaVoiceAssistant
 
-            # Inizializza l'assistente
-            self.voice_assistant = IsabellaVoiceAssistant()
+            # Inizializza l'assistente con il file di configurazione corretto
+            self.voice_assistant = IsabellaVoiceAssistant("voice/isabella_voice_config.json")
             self.voice_enabled = True
-            logger.info("Assistente vocale Isabella inizializzato con successo")
+            
+            logger.info("✅ Assistente vocale Isabella inizializzato con successo")
+            logger.info("🎤 Microfono si attiverà tra 6 secondi dopo il benvenuto")
+            
+            # AVVIA MICROFONO CON DELAY per evitare auto-attivazione durante benvenuto
+            self.start_microphone_delayed()
 
         except ImportError as e:
             logger.info(f"Assistente vocale non disponibile: {e}")
@@ -190,14 +196,31 @@ SOLUZIONI:
             logger.warning(f"Errore nell'inizializzazione dell'assistente vocale: {e}")
             self.voice_enabled = False
 
+    def start_microphone_delayed(self):
+        """Avvia il microfono dopo 6 secondi per evitare auto-attivazione durante benvenuto"""
+        import threading
+        
+        def delayed_start():
+            import time
+            time.sleep(6)  # Aspetta 6 secondi
+            if self.voice_assistant:
+                logger.info("🎤 Attivazione microfono dopo delay - SEMPRE ATTIVO")
+                self.voice_assistant.start_listening(activate_immediately=False)
+                logger.info("🎤 MICROFONO SEMPRE ATTIVO - Usa 'Hey Symmetra' per comandi")
+        
+        # Avvia in thread separato per non bloccare l'UI
+        threading.Thread(target=delayed_start, daemon=True).start()
+
     async def play_welcome_message(self):
-        """Riproduce il messaggio di benvenuto vocale."""
-        if self.voice_assistant and self.voice_enabled:
-            try:
-                await self.voice_assistant.speak_startup("Kimerika 2.0")
-                logger.info("Messaggio di benvenuto vocale riprodotto")
-            except Exception as e:
-                logger.warning(f"Errore nella riproduzione messaggio vocale: {e}")
+        """Messaggio di benvenuto semplice - microfono si attiva con delay"""
+        try:
+            # Usa speak_complete per impostare correttamente la flag TTS
+            message = self.voice_assistant.get_message("welcome_user")
+            await self.voice_assistant.speak_complete(message)
+            logger.info("Messaggio di benvenuto vocale riprodotto")
+            
+        except Exception as e:
+            logger.warning(f"Errore messaggio benvenuto: {e}")
 
     def create_gui(self):
         """Crea e configura l'interfaccia grafica."""
@@ -205,9 +228,9 @@ SOLUZIONI:
             # Importa layout manager per geometria finestra
             from src.layout_manager import layout_manager
 
-            # Crea la finestra principale
-            self.root = tk.Tk()
-            self.root.title("Facial Analysis Application v2.0")
+            # Crea la finestra principale con ttkbootstrap
+            self.root = ttk.Window(themename="cosmo")  # Tema chiaro e moderno
+            self.root.title("🏥 Facial Analysis Application v2.0")
 
             # Ripristina geometria salvata PRIMA di creare l'app
             try:
@@ -257,8 +280,12 @@ SOLUZIONI:
             except Exception as e:
                 logger.debug(f"Icona non disponibile: {e}")
 
-            # Crea l'applicazione principale
-            self.app = self.CanvasApp(self.root)
+            # Crea l'applicazione principale e passa voice_assistant al costruttore
+            voice_assistant_to_pass = self.voice_assistant if hasattr(self, 'voice_assistant') else None
+            self.app = self.CanvasApp(self.root, voice_assistant=voice_assistant_to_pass)
+            
+            if voice_assistant_to_pass:
+                logger.info("✅ Assistente vocale collegato a CanvasApp")
 
             logger.info("Interfaccia grafica creata con successo")
             return True
@@ -332,41 +359,46 @@ SOLUZIONI:
         self.running = False
 
         try:
-            # Cleanup assistente vocale
+            # MESSAGGIO GOODBYE IMMEDIATO - PRIMA della chiusura GUI
             if self.voice_assistant and self.voice_enabled:
                 try:
-                    # Messaggio di arrivederci vocale
+                    logger.info("👋 Riproduzione GOODBYE immediato...")
+                    
+                    # Uso diretto del metodo speak_complete per massima semplicità
                     import asyncio
-
-                    def goodbye_message():
-                        try:
-                            asyncio.run(self.voice_assistant.speak("goodbye"))
-                        except:
-                            pass
-
-                    import threading
-
-                    goodbye_thread = threading.Thread(
-                        target=goodbye_message, daemon=True
-                    )
-                    goodbye_thread.start()
-                    goodbye_thread.join(timeout=2)  # Aspetta max 2 secondi
-
-                    # Cleanup assistente
-                    if hasattr(self.voice_assistant, "cleanup"):
-                        self.voice_assistant.cleanup()
-                    logger.info("Assistente vocale chiuso")
+                    asyncio.run(self.voice_assistant.speak_complete("GOODBYE!"))
+                    
+                    logger.info("✅ GOODBYE completato - procedo con chiusura")
+                    
                 except Exception as e:
-                    logger.warning(f"Errore chiusura assistente vocale: {e}")
+                    logger.warning(f"❌ Errore GOODBYE: {e}")
+                    # Fallback se speak_complete non esiste
+                    try:
+                        asyncio.run(self.voice_assistant.speak("GOODBYE!", wait_for_completion=True))
+                        logger.info("✅ GOODBYE fallback completato")
+                    except:
+                        logger.debug("❌ Impossibile pronunciare GOODBYE")
 
+            # Cleanup GUI DOPO il TTS
             if self.app:
-                # Se l'app ha metodi di cleanup, chiamali qui
                 if hasattr(self.app, "cleanup"):
                     self.app.cleanup()
 
             if self.root:
                 self.root.quit()
                 self.root.destroy()
+                
+            # Cleanup assistente ALLA FINE
+            if self.voice_assistant and self.voice_enabled:
+                try:
+                    if hasattr(self.voice_assistant, "cleanup"):
+                        self.voice_assistant.cleanup()
+                    elif hasattr(self.voice_assistant, "stop_listening"):
+                        self.voice_assistant.stop_listening()
+                        
+                    logger.info("✅ Assistente vocale chiuso correttamente")
+                except Exception as e:
+                    logger.warning(f"❌ Errore chiusura assistente vocale: {e}")
 
         except Exception as e:
             logger.error(f"Errore durante la chiusura: {e}")

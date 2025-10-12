@@ -2,6 +2,19 @@
 
 Un'applicazione Python per l'analisi facciale avanzata che utilizza OpenCV e MediaPipe per rilevare volti in video streams, selezionare il frame migliore con volto frontale e fornire strumenti di misurazione facciale interattivi.
 
+## 🆕 Novità v2.2 - Interfaccia Moderna ttkbootstrap
+
+### 🎨 Nuova Veste Grafica
+- **Tema Cyborg**: Interfaccia scura moderna ideale per applicazioni mediche
+- **Widget Avanzati**: Utilizzo di ttkbootstrap per componenti più eleganti
+- **Stili Colorati**: Pulsanti e frame con colori semantici (success, warning, danger, info)
+- **Icone Emoji**: Interfaccia più intuitiva con simboli visivi
+
+### 🌈 Temi Personalizzabili
+- **15 Temi Disponibili**: Dalla palette scura (cyborg, darkly, superhero) a quella chiara (cosmo, flatly)
+- **Cambio Tema Facile**: Modifica una riga in `main.py` per personalizzare l'aspetto
+- **Demo Integrata**: Script `theme_selector.py` per provare tutti i temi
+
 ## 🆕 Novità v2.1 - Ottimizzazioni Principali
 
 ### ⚡ Performance Migliorate
@@ -191,6 +204,60 @@ pip install -r requirements.txt
 - Risoluzione immagine sufficiente (minimo 640x480)
 
 ## 🎨 Personalizzazione
+
+### Cambiare Tema Interfaccia
+
+Per personalizzare l'aspetto dell'applicazione, modifica il tema in `main.py`:
+
+```python
+# Linea 211 in main.py
+self.root = ttk.Window(themename="NOME_TEMA")
+```
+
+**Temi Scuri** (consigliati per uso medico):
+- `cyborg` - Tema scuro cyberpunk (ATTUALE)
+- `darkly` - Tema scuro elegante
+- `superhero` - Tema scuro con accenti blu
+- `vapor` - Tema scuro con viola
+- `solar` - Tema scuro con arancione
+
+**Temi Chiari**:
+- `cosmo` - Tema chiaro moderno
+- `flatly` - Tema chiaro minimalista
+- `journal` - Tema chiaro professionale
+- `litera` - Tema chiaro elegante
+- `pulse` - Tema chiaro con viola
+
+### Test Temi Interattivo
+```bash
+python theme_selector.py
+```
+Avvia una demo interattiva per provare tutti i temi disponibili.
+
+### Elementi Bootstrap Implementati
+
+**Tabelle Moderne (Treeview)**:
+- 📊 **Lista Misurazioni**: Tabella con colonne Tipo, Valore, Unità, Stato
+- 🎯 **Landmarks Rilevati**: Tabella con ID, Nome, Coordinate X/Y, Visibilità
+- Stili: `info`, `success` con scrollbar e intestazioni con emoji
+
+**Pulsanti Colorati**:
+- `primary` - Azioni principali (Carica Immagine)
+- `success-outline` - Azioni positive (Avvia Webcam)  
+- `info-outline` - Informazioni (Carica Video)
+- `danger` - Azioni critiche (Ferma Analisi)
+- `warning-outline` - Rotazione immagine
+- `secondary` - Controlli vista
+
+**Indicatori di Progresso**:
+- `success-striped` - Progressbar per operazioni lunghe
+- Badge informativi con colori semantici per stato sistema
+- Status bar con informazioni in tempo reale
+
+**Layout Card-Style**:
+- Frame organizzati con padding maggiore (10px)
+- Colori semantici per sezioni (primary, success, info, warning)
+- Emoji nelle intestazioni per miglior UX
 
 ### Modifica Parametri di Rilevamento
 Edita `src/video_analyzer.py`:

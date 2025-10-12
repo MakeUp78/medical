@@ -3,8 +3,10 @@ Interactive canvas application for facial analysis with measurement tools.
 VERSIONE UNIFICATA - Include funzionalità professional canvas integrate
 """
 
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, colorchooser
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
+import tkinter as tk  # Manteniamo per compatibilità con alcuni widget
+from tkinter import filedialog, messagebox, colorchooser
 import cv2
 import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
@@ -21,6 +23,7 @@ from src.green_dots_processor import GreenDotsProcessor
 from src.scoring_config import ScoringConfig
 from src.utils import resize_image_keep_aspect
 from src.layout_manager import layout_manager
+from src.layout_fix import LayoutRestorer, ImprovedLayoutSaver
 
 # Canvas system unificato - sistema integrato senza professional_canvas
 import matplotlib.pyplot as plt
@@ -140,8 +143,13 @@ class ToolTip:
 
 
 class CanvasApp:
-    def __init__(self, root):
-        """Inizializza l'applicazione canvas."""
+    def __init__(self, root, voice_assistant=None):
+        """Inizializza l'applicazione canvas.
+        
+        Args:
+            root: Finestra principale tkinter
+            voice_assistant: Istanza IsabellaVoiceAssistant (opzionale)
+        """
         self.root = root
         self.root.title("Facial Analysis Canvas")
         # Geometria gestita da main.py - non sovrascrivere
@@ -276,6 +284,11 @@ class CanvasApp:
             None  # Immagine originale non ruotata (base per tutte le rotazioni)
         )
         self.original_base_landmarks = None  # Landmarks originali non ruotati
+        
+        # Assistente vocale - SOLO riferimenti esterni
+        self.voice_assistant = voice_assistant  # Ricevuto dal costruttore
+        self.voice_gui = None
+        self.voice_commands = None
 
         # Controlli player video
         self.is_playing = False
@@ -349,9 +362,10 @@ class CanvasApp:
         )
         self.main_vertical_paned.add(self.main_horizontal_paned, weight=1)
 
-        # PANNELLO CONTROLLI (sinistra)
+        # PANNELLO CONTROLLI (sinistra) - Con stile ttkbootstrap
         control_main_frame = ttk.LabelFrame(
-            self.main_horizontal_paned, text="Controlli", padding=2, width=400
+            self.main_horizontal_paned, text="🎛️ Controlli", padding=10, width=400, 
+            bootstyle="primary"
         )
         control_main_frame.grid_columnconfigure(0, weight=1)
         control_main_frame.grid_rowconfigure(0, weight=1)
@@ -382,9 +396,10 @@ class CanvasApp:
         # AREA CANVAS UNIFICATO (centro) - Sistema professionale integrato
         canvas_frame = ttk.LabelFrame(
             self.main_horizontal_paned,
-            text="Canvas Professionale Unificato",
-            padding=2,
+            text="🎨 Canvas Professionale Unificato",
+            padding=5,
             width=800,
+            bootstyle="success"
         )
         canvas_frame.grid_columnconfigure(0, weight=1)
         canvas_frame.grid_rowconfigure(0, weight=1)
@@ -399,7 +414,8 @@ class CanvasApp:
 
         # Area Layers (sopra)
         layers_frame = ttk.LabelFrame(
-            self.right_sidebar_paned, text="Layers", padding=2, width=350
+            self.right_sidebar_paned, text="📋 Layers", padding=5, width=350,
+            bootstyle="info"
         )
         layers_frame.grid_columnconfigure(0, weight=1)
         layers_frame.grid_rowconfigure(0, weight=1)
@@ -407,7 +423,8 @@ class CanvasApp:
 
         # Setup area anteprima integrata (sotto)
         preview_main_frame = ttk.LabelFrame(
-            self.right_sidebar_paned, text="Anteprima Video", padding=2
+            self.right_sidebar_paned, text="📺 Anteprima Video", padding=5,
+            bootstyle="warning"
         )
         preview_main_frame.grid_columnconfigure(0, weight=1)
         preview_main_frame.grid_rowconfigure(0, weight=1)
@@ -472,9 +489,10 @@ class CanvasApp:
         bind_mousewheel_to_frame(self.scrollable_control_frame)
         bind_preview_mousewheel(self.scrollable_preview_frame)
 
-        # Setup area misurazioni (in basso) ridimensionabile
+        # Setup area misurazioni (in basso) ridimensionabile con stile card
         measurements_frame = ttk.LabelFrame(
-            self.main_vertical_paned, text="Lista Misurazioni", padding=2
+            self.main_vertical_paned, text="📊 Lista Misurazioni", padding=10,
+            bootstyle="warning"
         )
         measurements_frame.grid_columnconfigure(0, weight=1)
         measurements_frame.grid_rowconfigure(0, weight=1)
@@ -484,21 +502,26 @@ class CanvasApp:
         # Setup status bar
         self.setup_status_bar()
 
-        # Ripristina posizioni dei pannelli dalla configurazione dell'utente
-        self.root.after(200, self._simple_restore_layout)
+        # *** NUOVO SISTEMA RIPRISTINO LAYOUT ROBUSTO ***
+        print("🔧 Inizializzazione sistema layout robusto...")
+        self.layout_restorer = LayoutRestorer(self)
+        self.layout_saver = ImprovedLayoutSaver(self)
+        
+        # Avvia ripristino layout con timing migliorato
+        self.layout_restorer.start_layout_restore()
 
-        # Bind eventi per salvare layout
+        # Bind eventi per salvare layout - configurati DOPO il ripristino
         print("🔧 Configurazione bind eventi per ridimensionamento pannelli...")
         self.main_vertical_paned.bind(
-            "<ButtonRelease-1>", self._on_vertical_paned_resize
+            "<ButtonRelease-1>", self._on_vertical_paned_resize_improved
         )
         print("   ✅ Vertical paned bind configurato")
 
-        self.main_horizontal_paned.bind("<ButtonRelease-1>", self._on_main_paned_resize)
+        self.main_horizontal_paned.bind("<ButtonRelease-1>", self._on_main_paned_resize_improved)
         print("   ✅ Main horizontal paned bind configurato")
 
         self.right_sidebar_paned.bind(
-            "<ButtonRelease-1>", self._on_sidebar_paned_resize
+            "<ButtonRelease-1>", self._on_sidebar_paned_resize_improved
         )
         print("   ✅ Right sidebar paned bind configurato")
 
@@ -554,7 +577,8 @@ class CanvasApp:
     def setup_controls(self, parent):
         """Configura il pannello dei controlli con layout migliorato."""
         # Sezione SORGENTE con layout migliorato
-        video_frame = ttk.LabelFrame(parent, text="🎯 SORGENTE", padding=10)
+        video_frame = ttk.LabelFrame(parent, text="🎯 SORGENTE", padding=10, 
+                                   bootstyle="primary")
         video_frame.pack(fill=tk.X, pady=(0, 10))
 
         # Configura griglia per layout ottimizzato
@@ -563,20 +587,24 @@ class CanvasApp:
 
         # Prima riga: Carica Immagine (pulsante principale, spanning)
         ttk.Button(
-            video_frame, text="📁 Carica Immagine", command=self.load_image
+            video_frame, text="📁 Carica Immagine", command=self.load_image,
+            bootstyle="primary"
         ).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 5), padx=2)
         
         # Seconda riga: Webcam e Video
-        ttk.Button(video_frame, text="📹 Avvia Webcam", command=self.start_webcam).grid(
+        ttk.Button(video_frame, text="📹 Avvia Webcam", command=self.start_webcam,
+                  bootstyle="success-outline").grid(
             row=1, column=0, sticky="ew", pady=2, padx=(2, 1)
         )
-        ttk.Button(video_frame, text="🎬 Carica Video", command=self.load_video).grid(
+        ttk.Button(video_frame, text="🎬 Carica Video", command=self.load_video,
+                  bootstyle="info-outline").grid(
             row=1, column=1, sticky="ew", pady=2, padx=(1, 2)
         )
         
         # Terza riga: Controllo stop
         ttk.Button(
-            video_frame, text="⏹️ Ferma Analisi", command=self.stop_video_analysis
+            video_frame, text="⏹️ Ferma Analisi", command=self.stop_video_analysis,
+            bootstyle="danger"
         ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(5, 0), padx=2)
 
         # Info frame migliore con larghezza fissa
@@ -587,16 +615,62 @@ class CanvasApp:
             row=3, column=0, columnspan=2, sticky="ew", pady=5, padx=2
         )
 
+        # === PANNELLO STATUS CON BADGE INFORMATIVI ===
+        status_info_frame = ttk.LabelFrame(
+            parent, text="📊 Stato Sistema", padding=10, bootstyle="secondary"
+        )
+        status_info_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Frame per i badge orizzontali
+        badges_frame = ttk.Frame(status_info_frame)
+        badges_frame.pack(fill=tk.X)
+        
+        # Badge per stato webcam
+        self.webcam_badge = ttk.Label(
+            badges_frame, text="📷 Webcam: Disconnessa", 
+            bootstyle="danger", padding=5
+        )
+        self.webcam_badge.grid(row=0, column=0, padx=(0, 5), pady=2, sticky="w")
+        
+        # Badge per landmarks
+        self.landmarks_badge = ttk.Label(
+            badges_frame, text="🎯 Landmarks: 0 rilevati", 
+            bootstyle="warning", padding=5
+        )
+        self.landmarks_badge.grid(row=0, column=1, padx=5, pady=2, sticky="w")
+        
+        # Badge per qualità immagine
+        self.quality_badge = ttk.Label(
+            badges_frame, text="✨ Qualità: N/A", 
+            bootstyle="info", padding=5
+        )
+        self.quality_badge.grid(row=0, column=2, padx=5, pady=2, sticky="w")
+        
+        # Badge per misurazioni attive
+        self.measurements_badge = ttk.Label(
+            badges_frame, text="📏 Misurazioni: 0 attive", 
+            bootstyle="secondary", padding=5
+        )
+        self.measurements_badge.grid(row=1, column=0, padx=(0, 5), pady=2, sticky="w")
+        
+        # Badge per modalità corrente
+        self.mode_badge = ttk.Label(
+            badges_frame, text="🔧 Modalità: Selezione", 
+            bootstyle="primary", padding=5
+        )
+        self.mode_badge.grid(row=1, column=1, padx=5, pady=2, sticky="w")
+
         # Sezione MISURAZIONI con layout migliorato
         measure_frame = ttk.LabelFrame(
-            parent, text="� MISURAZIONI", padding=10
+            parent, text="📏 MISURAZIONI", padding=10, bootstyle="success"
         )
         measure_frame.pack(fill=tk.X, pady=(0, 8))
 
 
 
         # Sezione RILEVAMENTI
-        detections_frame = ttk.LabelFrame(parent, text="🔍 RILEVAMENTI", padding=10)
+        detections_frame = ttk.LabelFrame(parent, text="🔍 RILEVAMENTI", padding=10,
+                                        bootstyle="warning")
         detections_frame.pack(fill=tk.X, pady=(0, 10))
 
         # Inizializza le variabili di controllo
@@ -689,6 +763,97 @@ class CanvasApp:
         self.predefined_frame.columnconfigure(0, weight=1)
         self.predefined_frame.columnconfigure(1, weight=1)
 
+        # === NUOVO: TABELLA LANDMARKS RILEVATI ===
+        landmarks_table_frame = ttk.LabelFrame(
+            parent, text="🎯 Landmarks Rilevati", padding=10, bootstyle="info"
+        )
+        landmarks_table_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Treeview per landmarks con stile bootstrap
+        self.landmarks_tree = ttk.Treeview(
+            landmarks_table_frame,
+            columns=("ID", "Nome", "X", "Y", "Visibilità"),
+            show="headings",
+            height=6,
+            bootstyle="success"
+        )
+        
+        # Intestazioni con emoji
+        self.landmarks_tree.heading("ID", text="🆔 ID")
+        self.landmarks_tree.heading("Nome", text="🏷️ Nome Landmark")
+        self.landmarks_tree.heading("X", text="📍 Coord X")
+        self.landmarks_tree.heading("Y", text="📍 Coord Y")
+        self.landmarks_tree.heading("Visibilità", text="👁️ Visibile")
+        
+        # Configurazione colonne
+        self.landmarks_tree.column("ID", width=40, minwidth=30)
+        self.landmarks_tree.column("Nome", width=150, minwidth=100)
+        self.landmarks_tree.column("X", width=80, minwidth=60)
+        self.landmarks_tree.column("Y", width=80, minwidth=60)
+        self.landmarks_tree.column("Visibilità", width=80, minwidth=60)
+        
+        # Scrollbar per landmarks
+        landmarks_scroll = ttk.Scrollbar(
+            landmarks_table_frame, orient=tk.VERTICAL, command=self.landmarks_tree.yview
+        )
+        self.landmarks_tree.configure(yscrollcommand=landmarks_scroll.set)
+        
+        # Layout
+        self.landmarks_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        landmarks_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Eventi per interazione con la tabella
+        self.landmarks_tree.bind('<Double-1>', self.on_landmark_double_click)
+        
+        # Dizionario per mappare ID landmarks a nomi anatomici
+        self.landmark_names = {
+            # Contorno viso
+            10: "Fronte Centro",
+            152: "Mento Centro", 
+            127: "Tempia Sinistra",
+            356: "Tempia Destra",
+            
+            # Occhi
+            33: "Occhio Sinistro - Angolo Interno",
+            133: "Occhio Sinistro - Angolo Esterno", 
+            362: "Occhio Destro - Angolo Interno",
+            263: "Occhio Destro - Angolo Esterno",
+            159: "Occhio Sinistro - Centro Pupilla",
+            145: "Occhio Destro - Centro Pupilla",
+            
+            # Sopracciglia
+            70: "Sopracciglio Sinistro - Centro",
+            107: "Sopracciglio Sinistro - Interno",
+            55: "Sopracciglio Sinistro - Esterno",
+            296: "Sopracciglio Destro - Centro", 
+            334: "Sopracciglio Destro - Interno",
+            285: "Sopracciglio Destro - Esterno",
+            
+            # Naso  
+            1: "Ponte Nasale",
+            2: "Punta Naso",
+            19: "Narice Sinistra",
+            20: "Narice Destra",
+            131: "Ala Nasale Sinistra",
+            360: "Ala Nasale Destra",
+            
+            # Bocca
+            13: "Labbro Superiore Centro",
+            14: "Labbro Inferiore Centro",
+            78: "Angolo Bocca Sinistro",
+            308: "Angolo Bocca Destro",
+            61: "Labbro Superiore Sinistro",
+            291: "Labbro Superiore Destro",
+            17: "Labbro Inferiore Sinistro", 
+            18: "Labbro Inferiore Destro",
+            
+            # Punti di riferimento chiave
+            9: "Glabella (Centro Fronte)",
+            168: "Centro Viso",
+            6: "Ponte Naso Alto",
+            151: "Mento Inferiore"
+        }
+
         # === NUOVO: PANNELLO MISURAZIONI INTERATTIVE (SPOSTATO SOTTO RILEVAMENTI) ===
         self.interactive_measurements_frame = ttk.LabelFrame(
             detections_frame, text="📐 Misurazioni Interattive", padding=10
@@ -780,6 +945,9 @@ class CanvasApp:
         ttk.Button(
             action_subframe, text="🗑️ Cancella", command=self.clear_selections
         ).grid(row=0, column=1, sticky="ew", padx=(2, 0))
+
+        # === SEZIONE CORREZIONE SOPRACCIGLIO ===
+        self.setup_eyebrow_correction_controls(detections_frame)
 
         # Sezione Controlli Score Frontalità
         self.setup_scoring_controls(parent)
@@ -890,312 +1058,87 @@ class CanvasApp:
             preset_frame, text="Meno Simmetria", command=self.preset_less_symmetry
         ).grid(row=0, column=2, sticky="ew", padx=2)
 
-        # Sezione ASSISTENTE VOCALE
-        self.setup_voice_controls(parent)
-
-    def setup_voice_controls(self, parent):
-        """Configura il pannello di controllo per l'assistente vocale Isabella."""
-        voice_frame = ttk.LabelFrame(parent, text="ASSISTENTE VOCALE SYMMETRA", padding=10)
-        voice_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # Variabili di controllo
-        self.voice_enabled_var = tk.BooleanVar(value=False)
-        self.voice_listening_var = tk.BooleanVar(value=False)
-        
-        # Stato assistente vocale
-        status_frame = ttk.Frame(voice_frame)
-        status_frame.pack(fill=tk.X, pady=(0, 5))
-        
-        # Indicatore stato
-        self.voice_status_label = ttk.Label(status_frame, text="Disattivato")
-        self.voice_status_label.pack(side=tk.LEFT)
-        
-        # Pulsante principale on/off
-        main_control_frame = ttk.Frame(voice_frame)
-        main_control_frame.pack(fill=tk.X, pady=5)
-        main_control_frame.columnconfigure(0, weight=1)
-        main_control_frame.columnconfigure(1, weight=1)
-        
-        self.voice_toggle_btn = ttk.Button(
-            main_control_frame, 
-            text="Attiva Assistente", 
-            command=self.toggle_voice_assistant
-        )
-        self.voice_toggle_btn.grid(row=0, column=0, columnspan=2, sticky="ew", padx=2)
-        
-        # Controlli secondari
-        controls_frame = ttk.Frame(voice_frame)
-        controls_frame.pack(fill=tk.X, pady=5)
-        controls_frame.columnconfigure(0, weight=1)
-        controls_frame.columnconfigure(1, weight=1)
-        
-        self.voice_test_btn = ttk.Button(
-            controls_frame, 
-            text="Test Audio", 
-            command=self.test_voice_output,
-            state="disabled"
-        )
-        self.voice_test_btn.grid(row=0, column=0, sticky="ew", padx=(2, 1))
-        
-        self.voice_config_btn = ttk.Button(
-            controls_frame, 
-            text="Comandi", 
-            command=self.show_voice_commands,
-            state="disabled"
-        )
-        self.voice_config_btn.grid(row=0, column=1, sticky="ew", padx=(1, 2))
-        
-        # Area comandi disponibili (miniaturizzata)
-        commands_frame = ttk.LabelFrame(voice_frame, text="Comandi Rapidi", padding=5)
-        commands_frame.pack(fill=tk.X, pady=(5, 0))
-        
-        # Lista comandi base in formato compatto
-        commands_text = "- 'Hey Symmetra' - Attiva ascolto\n- 'Analizza volto' - Avvia analisi\n- 'Salva risultati' - Salva dati"
-        self.commands_info = ttk.Label(commands_frame, text=commands_text, font=("Arial", 8))
-        self.commands_info.pack(anchor="w")
-        
-        # Inizializza l'assistente vocale se disponibile
-        self.voice_assistant = None
-        self.init_voice_assistant()
-
-    def init_voice_assistant(self):
-        """Inizializza l'assistente vocale se disponibile."""
-        try:
-            # Prende il riferimento dall'app principale se disponibile
-            if hasattr(self.root, 'master') and hasattr(self.root.master, 'voice_assistant'):
-                self.voice_assistant = self.root.master.voice_assistant
-                self.voice_enabled = self.root.master.voice_enabled
-            else:
-                # Fallback: importa direttamente
-                from voice.isabella_voice_assistant import IsabellaVoiceAssistant
-                self.voice_assistant = IsabellaVoiceAssistant()
-                self.voice_enabled = True
-            
-            if self.voice_enabled and self.voice_assistant:
-                self.voice_status_label.config(text="Pronto")
-                self.setup_voice_commands()
+        # === INTEGRAZIONE ASSISTENTE VOCALE MODULARE ===
+        if self.voice_assistant:
+            try:
+                from voice.voice_gui_integration import VoiceAssistantGUI, VoiceCommandsIntegration
                 
-        except Exception as e:
-            print(f"Assistente vocale non disponibile: {e}")
-            self.voice_enabled = False
-            self.voice_status_label.config(text="Non disponibile")
-            self.voice_toggle_btn.config(state="disabled", text="Assistente non disponibile")
-
-    def setup_voice_commands(self):
-        """Configura i comandi vocali personalizzati per l'app."""
-        if not self.voice_assistant:
-            return
-            
-        try:
-            # Comandi per analisi facciale
-            self.voice_assistant.add_command(
-                ["analizza volto", "avvia analisi", "inizia analisi"],
-                "face_analysis",
-                self.voice_start_analysis
-            )
-            
-            # Comandi per caricamento file
-            self.voice_assistant.add_command(
-                ["carica immagine", "apri immagine", "carica foto"],
-                "load_image", 
-                self.load_image
-            )
-            
-            self.voice_assistant.add_command(
-                ["avvia webcam", "avvia camera", "attiva webcam"],
-                "start_webcam",
-                self.start_webcam
-            )
-            
-            # Comandi per misurazione
-            self.voice_assistant.add_command(
-                ["calcola misura", "misura distanza", "calcola"],
-                "measure",
-                self.calculate_measurement
-            )
-            
-            # Comandi per salvataggio
-            self.voice_assistant.add_command(
-                ["salva risultati", "salva immagine", "esporta"],
-                "save_results",
-                self.voice_save_results
-            )
-            
-            print("✅ Comandi vocali configurati")
-            
-        except Exception as e:
-            print(f"Errore configurazione comandi vocali: {e}")
-
-    def toggle_voice_assistant(self):
-        """Attiva/disattiva l'assistente vocale."""
-        if not self.voice_assistant:
-            messagebox.showwarning("Assistente Vocale", "Assistente vocale non disponibile")
-            return
-            
-        try:
-            if self.voice_enabled_var.get():
-                # Disattiva
-                self.voice_assistant.stop_listening()
-                self.voice_enabled_var.set(False)
-                self.voice_listening_var.set(False)
-                self.voice_toggle_btn.config(text="Attiva Assistente")
-                self.voice_status_label.config(text="Pronto")
-                self.voice_test_btn.config(state="disabled")
-                self.voice_config_btn.config(state="disabled")
+                # Setup GUI (interfaccia identica)
+                self.voice_gui = VoiceAssistantGUI(parent, self.voice_assistant)
                 
-            else:
-                # Attiva
-                self.voice_assistant.start_listening()
-                self.voice_enabled_var.set(True)
-                self.voice_listening_var.set(True)
-                self.voice_toggle_btn.config(text="Disattiva Assistente")
-                self.voice_status_label.config(text="In Ascolto")
-                self.voice_test_btn.config(state="normal")
-                self.voice_config_btn.config(state="normal")
+                # Integrazione vocale SENZA callback hardcoded
+                # Tutte le callback vengono risolte automaticamente dal JSON
+                self.voice_commands = VoiceCommandsIntegration(
+                    self.voice_assistant,
+                    canvas_app_instance=self  # Passa l'istanza per risoluzione dinamica
+                )
                 
-                # Messaggio di attivazione
-                import threading
-                def speak_activation():
-                    try:
-                        import asyncio
-                        asyncio.run(self.voice_assistant.speak("activation"))
-                    except:
-                        pass
-                threading.Thread(target=speak_activation, daemon=True).start()
-                
-        except Exception as e:
-            messagebox.showerror("Errore", f"Errore controllo assistente vocale: {e}")
+                print("✅ Assistente vocale integrato con successo")
+            except ImportError as e:
+                print(f"⚠️ Modulo voice_gui_integration non disponibile: {e}")
+            except Exception as e:
+                print(f"⚠️ Errore integrazione assistente vocale: {e}")
 
-    def test_voice_output(self):
-        """Testa l'output vocale dell'assistente."""
-        if not self.voice_assistant:
-            return
-            
-        try:
-            import threading
-            def test_speak():
-                try:
-                    import asyncio
-                    asyncio.run(self.voice_assistant.speak("status", duration=30, commands=10))
-                except Exception as e:
-                    print(f"Errore test vocale: {e}")
-            
-            threading.Thread(target=test_speak, daemon=True).start()
-            
-        except Exception as e:
-            messagebox.showerror("Errore", f"Errore test vocale: {e}")
-
-    def show_voice_commands(self):
-        """Mostra la finestra con tutti i comandi vocali disponibili."""
-        commands_window = tk.Toplevel(self.root)
-        commands_window.title("Comandi Vocali Disponibili")
-        commands_window.geometry("600x500")
-        commands_window.resizable(True, True)
-        
-        # Frame principale con scrollbar
-        main_frame = ttk.Frame(commands_window)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Area scrollabile
-        canvas = tk.Canvas(main_frame)
-        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    def setup_eyebrow_correction_controls(self, parent):
+        """Configura il pannello dei controlli per la correzione dei sopracciglio."""
+        eyebrow_frame = ttk.LabelFrame(
+            parent, text="✂️ CORREZIONE SOPRACCIGLIO", padding=10
         )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Contenuto
-        ttk.Label(scrollable_frame, text="Comandi Vocali Symmetra", 
-                 font=("Arial", 14, "bold")).pack(pady=10)
-        
-        commands_info = """
-        ATTIVAZIONE:
-        • "Hey Symmetra" - Attiva l'assistente per il prossimo comando
-        
-        ANALISI:
-        • "Analizza volto" / "Avvia analisi" / "Inizia analisi"
-        • "Ferma analisi" / "Interrompi"
-        
-        CARICAMENTO FILE:
-        • "Carica immagine" / "Apri immagine" / "Carica foto"
-        • "Avvia webcam" / "Avvia camera" / "Attiva webcam"
-        • "Carica video" / "Apri video"
-        
-        MISURAZIONE:
-        • "Calcola misura" / "Misura distanza" / "Calcola"
-        • "Cancella selezioni" / "Pulisci"
-        
-        SALVATAGGIO:
-        • "Salva risultati" / "Salva immagine" / "Esporta"
-        
-        CONTROLLI:
-        • "Aiuto" - Mostra lista comandi
-        • "Status" - Stato del sistema
-        • "Goodbye" / "Arrivederci" - Disattiva assistente
-        
-        SUGGERIMENTI:
-        • Parla chiaramente e attendi il segnale di conferma
-        • Usa frasi naturali, non solo le parole chiave esatte
-        • L'assistente si attiva automaticamente con "Hey Symmetra"
-        """
-        
-        ttk.Label(scrollable_frame, text=commands_info, 
-                 font=("Arial", 10), justify=tk.LEFT).pack(anchor="w", padx=10)
-        
-        # Pulsante chiudi
-        ttk.Button(scrollable_frame, text="Chiudi", 
-                  command=commands_window.destroy).pack(pady=20)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        eyebrow_frame.pack(fill=tk.X, pady=(10, 0))
 
-    # Metodi di callback per i comandi vocali
-    def voice_start_analysis(self):
-        """Callback per comando vocale di avvio analisi."""
-        try:
-            if hasattr(self, 'current_image') and self.current_image is not None:
-                # Se c'è già un'immagine, avvia l'analisi
-                self.analyze_current_image()
-                self.voice_speak_feedback("analysis_start")
-            else:
-                # Se non c'è immagine, suggerisci di caricarla
-                self.voice_speak_feedback("no_image")
-        except Exception as e:
-            print(f"Errore comando vocale analisi: {e}")
+        # Info sulla funzionalità
+        info_label = ttk.Label(
+            eyebrow_frame,
+            text="Visualizza sopracciglio ritagliato con overlay dei punti verdi",
+            font=("Arial", 9),
+            foreground="gray"
+        )
+        info_label.pack(pady=(0, 10))
 
-    def voice_save_results(self):
-        """Callback per comando vocale di salvataggio."""
-        try:
-            # Implementa il salvataggio dei risultati
-            self.save_current_results()
-            self.voice_speak_feedback("save_complete")
-        except Exception as e:
-            print(f"Errore comando vocale salvataggio: {e}")
-            self.voice_speak_feedback("error_save", error=str(e))
+        # Frame per i pulsanti
+        buttons_frame = ttk.Frame(eyebrow_frame)
+        buttons_frame.pack(fill=tk.X)
+        buttons_frame.columnconfigure(0, weight=1)
+        buttons_frame.columnconfigure(1, weight=1)
 
-    def voice_speak_feedback(self, message_key, **kwargs):
-        """Invia feedback vocale all'utente."""
-        if not self.voice_assistant:
-            return
-            
-        try:
-            import threading
-            def speak():
-                try:
-                    import asyncio
-                    asyncio.run(self.voice_assistant.speak(message_key, **kwargs))
-                except Exception as e:
-                    print(f"Errore feedback vocale: {e}")
-            
-            threading.Thread(target=speak, daemon=True).start()
-            
-        except Exception as e:
-            print(f"Errore invio feedback vocale: {e}")
+        # Pulsante Correzione Sx
+        self.correction_left_button = ttk.Button(
+            buttons_frame,
+            text="✂️ Correzione Sx",
+            command=self.show_left_eyebrow_correction,
+            state=tk.DISABLED  # Inizialmente disabilitato
+        )
+        self.correction_left_button.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+
+        # Pulsante Correzione Dx  
+        self.correction_right_button = ttk.Button(
+            buttons_frame,
+            text="✂️ Correzione Dx", 
+            command=self.show_right_eyebrow_correction,
+            state=tk.DISABLED  # Inizialmente disabilitato
+        )
+        self.correction_right_button.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+        # Salva riferimenti per controllo stato
+        self.eyebrow_correction_buttons = [
+            self.correction_left_button,
+            self.correction_right_button
+        ]
+
+    # === METODI VOCALI RIMOSSI ===
+    # Tutti i metodi relativi all'assistente vocale sono stati spostati in:
+    # voice/voice_gui_integration.py
+    # 
+    # Metodi rimossi:
+    # - setup_voice_controls()
+    # - init_voice_assistant()
+    # - setup_voice_commands()
+    # - toggle_voice_assistant()
+    # - test_voice_output()
+    # - show_voice_commands()
+    # - voice_start_analysis()
+    # - voice_save_results()
+    # - voice_speak_feedback()
 
     def setup_canvas(self, parent):
         """Configura il canvas principale per la visualizzazione (RIPRISTINO ORIGINALE)."""
@@ -1301,7 +1244,8 @@ class CanvasApp:
         ]
 
         for icon, command, tooltip in view_buttons:
-            btn = ttk.Button(view_frame, text=icon, width=4, command=command)
+            btn = ttk.Button(view_frame, text=icon, width=4, command=command, 
+                           bootstyle="secondary")
             btn.pack(side=tk.LEFT, padx=1)
             # TODO: Aggiungere tooltip se necessario
 
@@ -1318,7 +1262,8 @@ class CanvasApp:
         ]
 
         for icon, command, tooltip in rotation_buttons:
-            btn = ttk.Button(rotation_frame, text=icon, width=4, command=command)
+            btn = ttk.Button(rotation_frame, text=icon, width=4, command=command,
+                           bootstyle="warning-outline")
             btn.pack(side=tk.LEFT, padx=1)
             ToolTip(btn, tooltip)  # Aggiungi tooltip per i pulsanti di rotazione
 
@@ -4182,7 +4127,16 @@ class CanvasApp:
             return
         
         # COMPORTAMENTO NORMALE: Selezione e modifica disegni
-        closest_item = self.canvas.find_closest(canvas_x, canvas_y)[0]
+        try:
+            closest_items = self.canvas.find_closest(canvas_x, canvas_y)
+            if not closest_items:
+                print("🎯 SELECTION: Nessun elemento nel canvas")
+                return
+            
+            closest_item = closest_items[0]
+        except (IndexError, tk.TclError) as e:
+            print(f"🎯 SELECTION: Impossibile trovare elementi nel canvas: {e}")
+            return
 
         # Verifica se è un disegno (ha il tag 'drawing')
         if "drawing" in self.canvas.gettags(closest_item):
@@ -5695,6 +5649,130 @@ class CanvasApp:
 
         print("Interfaccia resettata per nuova analisi")
 
+    def update_landmarks_table(self):
+        """Aggiorna la tabella dei landmarks rilevati."""
+        # Pulisce la tabella
+        for item in self.landmarks_tree.get_children():
+            self.landmarks_tree.delete(item)
+        
+        if not hasattr(self, 'current_landmarks') or self.current_landmarks is None:
+            # Mostra esempi di landmarks che verranno rilevati
+            example_landmarks = [
+                ("9", "🎯 Glabella (Centro Fronte)", "Richiede", "rilevamento", "⏳"),
+                ("10", "🏠 Fronte Centro", "landmarks", "facciali", "⏳"),
+                ("152", "🎭 Mento Centro", "Carica", "immagine", "⏳"),
+                ("1", "👃 Ponte Nasale", "o avvia", "webcam", "⏳"),
+                ("33", "👁️ Occhio Sinistro", "per", "rilevare", "⏳")
+            ]
+            
+            for landmark_data in example_landmarks:
+                self.landmarks_tree.insert('', 'end', values=landmark_data, tags=("example",))
+            
+            # Stile per gli esempi
+            self.landmarks_tree.tag_configure("example", background="#f8f9fa", foreground="#6c757d")
+            return
+            
+        # Popola con landmarks importanti
+        important_landmarks = [9, 10, 152, 1, 2, 33, 133, 362, 263, 13, 14, 78, 308]
+        
+        for idx in important_landmarks:
+            if idx < len(self.current_landmarks):
+                landmark = self.current_landmarks[idx]
+                
+                # Gestisce diversi formati di landmark (oggetto vs tuple)
+                try:
+                    if hasattr(landmark, 'x') and hasattr(landmark, 'y'):
+                        # Formato oggetto MediaPipe (coordinate normalizzate 0-1)
+                        lm_x = landmark.x
+                        lm_y = landmark.y
+                        visibility = getattr(landmark, 'visibility', 1.0)
+                        
+                        # Calcola coordinate pixel
+                        img_width = self.original_image_for_rotations.shape[1] if hasattr(self, 'original_image_for_rotations') and self.original_image_for_rotations is not None else 640
+                        img_height = self.original_image_for_rotations.shape[0] if hasattr(self, 'original_image_for_rotations') and self.original_image_for_rotations is not None else 480
+                        
+                        x = int(lm_x * img_width)
+                        y = int(lm_y * img_height)
+                        
+                    elif isinstance(landmark, (tuple, list)) and len(landmark) >= 2:
+                        # Formato tuple/lista (coordinate già in pixel)
+                        x = int(landmark[0])
+                        y = int(landmark[1])
+                        visibility = 1.0  # Assume visibile se non specificato
+                    else:
+                        continue  # Salta landmarks in formato non riconosciuto
+                        
+                except Exception as e:
+                    print(f"⚠️ Errore nel processare landmark {idx}: {e}")
+                    continue
+                
+                # Nome del landmark
+                name = self.landmark_names.get(idx, f"Landmark {idx}")
+                
+                # Visibilità (usando la variabile visibility già calcolata)
+                visibility_icon = "✅" if visibility > 0.5 else "⚠️" if visibility > 0.3 else "❌"
+                
+                # Colore riga basato su visibilità
+                tags = ()
+                if visibility > 0.7:
+                    tags = ("high_vis",)
+                elif visibility > 0.4:  
+                    tags = ("med_vis",)
+                else:
+                    tags = ("low_vis",)
+                
+                self.landmarks_tree.insert('', 'end', values=(
+                    str(idx), name, str(x), str(y), visibility_icon
+                ), tags=tags)
+        
+        # Configurazione colori per le righe
+        self.landmarks_tree.tag_configure("high_vis", background="#d4edda")  # Verde chiaro
+        self.landmarks_tree.tag_configure("med_vis", background="#fff3cd")   # Giallo chiaro  
+        self.landmarks_tree.tag_configure("low_vis", background="#f8d7da")   # Rosso chiaro
+
+    def on_landmark_double_click(self, event):
+        """Gestisce il doppio click su un landmark nella tabella per centrarlo sul canvas."""
+        selection = self.landmarks_tree.selection()
+        if not selection:
+            return
+            
+        # Ottieni i dati del landmark selezionato
+        item_values = self.landmarks_tree.item(selection[0], 'values')
+        if len(item_values) < 4 or item_values[0] == "N/A":
+            return
+            
+        try:
+            landmark_id = int(item_values[0])
+            x = int(item_values[2])
+            y = int(item_values[3])
+            
+            # Centra il canvas su questo punto
+            if hasattr(self, 'canvas') and self.canvas:
+                # Converti coordinate immagine in coordinate canvas
+                canvas_x = x * self.canvas_scale + self.canvas_offset_x
+                canvas_y = y * self.canvas_scale + self.canvas_offset_y
+                
+                # Calcola offset per centrare
+                canvas_width = self.canvas.winfo_width()
+                canvas_height = self.canvas.winfo_height()
+                
+                target_offset_x = (canvas_width // 2) - canvas_x
+                target_offset_y = (canvas_height // 2) - canvas_y
+                
+                # Aggiorna offset
+                self.canvas_offset_x = target_offset_x
+                self.canvas_offset_y = target_offset_y
+                
+                # Aggiorna la visualizzazione
+                self.update_canvas_display()
+                
+                # Feedback all'utente
+                landmark_name = item_values[1]
+                self.status_bar.config(text=f"🎯 Centrato su: {landmark_name} (ID: {landmark_id})")
+                
+        except (ValueError, IndexError) as e:
+            print(f"Errore nel centrare landmark: {e}")
+
     def setup_measurements_area(self, parent):
         """Configura l'area delle misurazioni in modo compatto."""
         # Frame principale per l'area misurazioni
@@ -5703,21 +5781,26 @@ class CanvasApp:
         main_frame.grid_columnconfigure(0, weight=1)
         main_frame.grid_rowconfigure(0, weight=1)
 
-        # Treeview per le misurazioni esistenti (compatta)
+        # Treeview per le misurazioni esistenti con stile bootstrap
         self.measurements_tree = ttk.Treeview(
             main_frame,
-            columns=("Type", "Value", "Unit"),
+            columns=("Type", "Value", "Unit", "Status"),
             show="headings",
-            height=8,  # Altezza ottimizzata
+            height=8,
+            bootstyle="info"  # Stile bootstrap azzurro
         )
 
-        self.measurements_tree.heading("Type", text="Tipo")
-        self.measurements_tree.heading("Value", text="Valore")
-        self.measurements_tree.heading("Unit", text="Unità")
+        # Intestazioni con emoji per miglior UX
+        self.measurements_tree.heading("Type", text="📏 Tipo Misurazione")
+        self.measurements_tree.heading("Value", text="📊 Valore")
+        self.measurements_tree.heading("Unit", text="📐 Unità")
+        self.measurements_tree.heading("Status", text="✅ Stato")
 
+        # Configurazione colonne ottimizzata
         self.measurements_tree.column("Type", width=200, minwidth=150)
         self.measurements_tree.column("Value", width=100, minwidth=80)
         self.measurements_tree.column("Unit", width=80, minwidth=60)
+        self.measurements_tree.column("Status", width=100, minwidth=80)
 
         # Scrollbar per la lista misurazioni
         tree_scroll = ttk.Scrollbar(
@@ -5730,9 +5813,112 @@ class CanvasApp:
         tree_scroll.grid(row=0, column=1, sticky="ns")
 
     def setup_status_bar(self):
-        """Configura la status bar."""
-        self.status_bar = ttk.Label(self.root, text="Pronto", relief="sunken")
-        self.status_bar.grid(row=2, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        """Configura la status bar con progressbar moderna."""
+        # Frame per la status bar con layout orizzontale
+        status_frame = ttk.Frame(self.root)
+        status_frame.grid(row=2, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        status_frame.grid_columnconfigure(0, weight=1)
+        
+        # Label di stato principale con stile info
+        self.status_bar = ttk.Label(status_frame, text="✅ Pronto", bootstyle="info")
+        self.status_bar.grid(row=0, column=0, sticky="w", padx=(0, 10))
+        
+        # Progressbar per operazioni lunghe con stile success
+        self.progress_bar = ttk.Progressbar(
+            status_frame, 
+            mode="determinate", 
+            length=200,
+            bootstyle="success-striped"
+        )
+        self.progress_bar.grid(row=0, column=1, padx=(0, 10))
+        self.progress_bar.grid_remove()  # Nascosta inizialmente
+        
+        # Label per percentuale progresso
+        self.progress_label = ttk.Label(status_frame, text="", bootstyle="secondary")
+        self.progress_label.grid(row=0, column=2, padx=(0, 10))
+        self.progress_label.grid_remove()  # Nascosta inizialmente
+    
+    def show_progress(self, message="Elaborazione in corso...", max_value=100):
+        """Mostra la progressbar con un messaggio."""
+        self.status_bar.config(text=f"⏳ {message}")
+        self.progress_bar.config(maximum=max_value, value=0)
+        self.progress_bar.grid()
+        self.progress_label.grid()
+        self.progress_label.config(text="0%")
+        self.root.update_idletasks()
+    
+    def update_progress(self, value, percentage_text=""):
+        """Aggiorna il valore della progressbar."""
+        if hasattr(self, 'progress_bar'):
+            self.progress_bar.config(value=value)
+            if percentage_text:
+                self.progress_label.config(text=percentage_text)
+            else:
+                max_val = self.progress_bar.cget('maximum')
+                percent = int((value / max_val) * 100) if max_val > 0 else 0
+                self.progress_label.config(text=f"{percent}%")
+            self.root.update_idletasks()
+    
+    def hide_progress(self, success_message="✅ Completato"):
+        """Nasconde la progressbar e mostra messaggio finale."""
+        if hasattr(self, 'progress_bar'):
+            self.progress_bar.grid_remove()
+            self.progress_label.grid_remove()
+        self.status_bar.config(text=success_message)
+    
+    def update_webcam_badge(self, connected=False):
+        """Aggiorna il badge dello stato webcam."""
+        if hasattr(self, 'webcam_badge'):
+            if connected:
+                self.webcam_badge.config(text="📷 Webcam: Attiva", bootstyle="success")
+            else:
+                self.webcam_badge.config(text="📷 Webcam: Disconnessa", bootstyle="danger")
+    
+    def update_landmarks_badge(self, count=0):
+        """Aggiorna il badge dei landmarks rilevati."""
+        if hasattr(self, 'landmarks_badge'):
+            if count > 0:
+                self.landmarks_badge.config(
+                    text=f"🎯 Landmarks: {count} rilevati", 
+                    bootstyle="success"
+                )
+            else:
+                self.landmarks_badge.config(text="🎯 Landmarks: 0 rilevati", bootstyle="warning")
+    
+    def update_quality_badge(self, score=None):
+        """Aggiorna il badge della qualità immagine."""
+        if hasattr(self, 'quality_badge'):
+            if score is not None:
+                if score > 0.8:
+                    style = "success"
+                    quality = "Ottima"
+                elif score > 0.6:
+                    style = "info"
+                    quality = "Buona"
+                elif score > 0.4:
+                    style = "warning"
+                    quality = "Media"
+                else:
+                    style = "danger"
+                    quality = "Bassa"
+                self.quality_badge.config(
+                    text=f"✨ Qualità: {quality} ({score:.2f})", 
+                    bootstyle=style
+                )
+            else:
+                self.quality_badge.config(text="✨ Qualità: N/A", bootstyle="secondary")
+    
+    def update_mode_badge(self, mode="Selezione"):
+        """Aggiorna il badge della modalità corrente."""
+        if hasattr(self, 'mode_badge'):
+            mode_styles = {
+                "Selezione": "primary",
+                "Pan": "info", 
+                "Misurazione": "success",
+                "Rotazione": "warning"
+            }
+            style = mode_styles.get(mode, "secondary")
+            self.mode_badge.config(text=f"🔧 Modalità: {mode}", bootstyle=style)
 
     def load_image(self):
         """Carica un'immagine dal file system."""
@@ -5811,6 +5997,9 @@ class CanvasApp:
         if self.video_analyzer.start_camera_capture():
             print("Webcam avviata con successo, iniziando analisi...")
 
+            # Cattura il primo frame per impostare la scala appropriata
+            self._setup_webcam_scale()
+
             # Aggiorna controlli video per webcam
             self.update_video_controls_state()
 
@@ -5829,6 +6018,29 @@ class CanvasApp:
             error_msg += "3. Che i driver siano installati"
             messagebox.showerror("Errore Webcam", error_msg)
             print("Errore nell'avvio della webcam")
+
+    def _setup_webcam_scale(self):
+        """Imposta una scala appropriata per la webcam basata sulle dimensioni del primo frame."""
+        try:
+            # Cattura un frame di test per determinare le dimensioni
+            if self.video_analyzer.capture and self.video_analyzer.capture.isOpened():
+                ret, frame = self.video_analyzer.capture.read()
+                if ret and frame is not None:
+                    # Calcola scala ottimale basata sulle dimensioni del frame
+                    optimal_scale = self._calculate_optimal_scale(frame.shape)
+                    self.canvas_scale = optimal_scale
+                    
+                    print(f"🎥 Scala webcam impostata: {self.canvas_scale:.3f} per frame {frame.shape[1]}x{frame.shape[0]}")
+                    
+                    # Reset offset per centrare
+                    self.canvas_offset_x = 0
+                    self.canvas_offset_y = 0
+                else:
+                    print("⚠️ Impossibile catturare frame per calcolare scala webcam")
+            else:
+                print("⚠️ Capture webcam non disponibile per calcolo scala")
+        except Exception as e:
+            print(f"❌ Errore setup scala webcam: {e}")
 
     def update_integrated_preview_status(self, text):
         """Aggiorna il testo di status dell'anteprima integrata."""
@@ -5852,7 +6064,7 @@ class CanvasApp:
         )
 
         if best_frame is not None:
-            self.set_current_image(best_frame, best_landmarks, auto_resize=False)
+            self.set_current_image(best_frame, best_landmarks, auto_resize=True)
             self.best_frame_info.config(text=f"Miglior frame: Score {best_score:.2f}")
             self.status_bar.config(text="Analisi completata - Frame migliore caricato")
         else:
@@ -6376,10 +6588,11 @@ class CanvasApp:
 
         # RIPRISTINA SCALA E OFFSET se auto_resize
         if auto_resize:
-            self.canvas_scale = 1.0
+            # Calcola scala ottimale per adattare l'immagine al canvas
+            self.canvas_scale = self._calculate_optimal_scale(image_array.shape)
             self.canvas_offset_x = 0
             self.canvas_offset_y = 0
-            print(f"Auto-resize attivato: scala={self.canvas_scale}")
+            print(f"Auto-resize attivato: scala={self.canvas_scale:.3f}")
 
         # Se non ci sono landmarks, rileva automaticamente
         if landmarks is None:
@@ -6391,7 +6604,50 @@ class CanvasApp:
             print("Visualizzazione immagine con landmarks forniti...")
             self.update_canvas_display()
 
+        # Aggiorna la tabella landmarks se esiste
+        if hasattr(self, 'landmarks_tree'):
+            self.update_landmarks_table()
+
         print("✅ set_current_image completato")
+
+    def _calculate_optimal_scale(self, image_shape):
+        """Calcola la scala ottimale per adattare l'immagine al canvas."""
+        try:
+            # Attendi che il canvas sia renderizzato per ottenere dimensioni reali
+            canvas_width = self.canvas.winfo_width()
+            canvas_height = self.canvas.winfo_height()
+            
+            # Se il canvas non è ancora pronto, usa dimensioni di default
+            if canvas_width <= 1 or canvas_height <= 1:
+                canvas_width = 800  # Larghezza di default
+                canvas_height = 600  # Altezza di default
+                print(f"Canvas non pronto, usando dimensioni default: {canvas_width}x{canvas_height}")
+            
+            # Ottieni dimensioni immagine
+            img_height, img_width = image_shape[:2]
+            
+            # Calcola fattori di scala per adattare al canvas (con margine del 10%)
+            margin_factor = 0.9  # Lascia un 10% di margine
+            scale_x = (canvas_width * margin_factor) / img_width
+            scale_y = (canvas_height * margin_factor) / img_height
+            
+            # Usa la scala minore per mantenere proporzioni
+            optimal_scale = min(scale_x, scale_y)
+            
+            # Limita la scala tra 0.1 e 2.0 per evitare estremi
+            optimal_scale = max(0.1, min(2.0, optimal_scale))
+            
+            print(f"📐 Calcolo scala ottimale:")
+            print(f"   Canvas: {canvas_width}x{canvas_height}")
+            print(f"   Immagine: {img_width}x{img_height}")
+            print(f"   Scala X: {scale_x:.3f}, Scala Y: {scale_y:.3f}")
+            print(f"   Scala ottimale: {optimal_scale:.3f}")
+            
+            return optimal_scale
+            
+        except Exception as e:
+            print(f"❌ Errore calcolo scala ottimale: {e}")
+            return 1.0  # Fallback alla scala 1:1
 
     def set_image_no_resize(self, image):
         """Imposta l'immagine senza auto-resize nel sistema unificato."""
@@ -6623,7 +6879,7 @@ class CanvasApp:
         print(f"✅ Disegnati {len(self.current_landmarks)} landmarks con conversione unificata")
 
     def detect_landmarks(self):
-        """Rileva i landmark facciali nell'immagine corrente (RIPRISTINO ORIGINALE)."""
+        """Rileva i landmark facciali nell'immagine corrente."""
         if self.current_image is not None:
             landmarks = self.face_detector.detect_face_landmarks(self.current_image)
             self.current_landmarks = landmarks
@@ -6640,11 +6896,167 @@ class CanvasApp:
 
             # Aggiorna la visualizzazione del canvas tkinter
             self.update_canvas_display()
+            
+            # Aggiorna la tabella landmarks se esiste
+            if hasattr(self, 'landmarks_tree'):
+                self.update_landmarks_table()
 
             if landmarks:
                 self.status_bar.config(text=f"Rilevati {len(landmarks)} landmark")
             else:
                 self.status_bar.config(text="Nessun volto rilevato")
+
+    def voice_landmarks_command(self):
+        """Comando vocale per landmarks: rileva e attiva overlay come il pulsante."""
+        if self.current_image is None:
+            self.status_bar.config(text="❌ Carica prima un'immagine")
+            return
+        
+        # Se non ci sono landmarks, rileva prima
+        if self.current_landmarks is None:
+            self.detect_landmarks()
+        
+        # Attiva l'overlay dei landmarks (comportamento identico al pulsante)
+        if hasattr(self, 'all_landmarks_var'):
+            if not self.all_landmarks_var.get():
+                self.all_landmarks_var.set(True)
+                # Aggiorna il pulsante landmarks
+                if hasattr(self, 'landmarks_button'):
+                    self.update_button_style(self.landmarks_button, True)
+                print("🔵 Overlay landmarks attivato tramite comando vocale")
+                self.update_canvas_display()
+                
+                if self.current_landmarks:
+                    self.status_bar.config(text=f"✅ Overlay landmarks attivato - {len(self.current_landmarks)} punti visibili")
+                else:
+                    self.status_bar.config(text="❌ Nessun landmark da visualizzare")
+            else:
+                # Se già attivo, ririleva i landmarks
+                self.detect_landmarks()
+                self.status_bar.config(text="🔄 Landmarks aggiornati")
+        else:
+            self.status_bar.config(text="❌ Sistema landmarks non disponibile")
+
+    def voice_which_eyebrow_bigger(self):
+        """Comando vocale: analizza quale sopracciglio è più grande."""
+        if self.current_image is None:
+            self.status_bar.config(text="❌ Carica prima un'immagine")
+            return
+        
+        # FASE 1: Simula click sul pulsante "Mostra Aree Sopraccigli"
+        print("🎯 Fase 1: Attivazione misurazione aree sopraccigli...")
+        
+        # Verifica che i landmarks siano disponibili
+        if not self.current_landmarks:
+            self.detect_landmarks()
+            if not self.current_landmarks:
+                self.status_bar.config(text="❌ Impossibile rilevare landmarks per l'analisi")
+                return
+        
+        # Attiva la misurazione delle aree sopraccigli (simula click pulsante)
+        if self.preset_overlays["eyebrow_areas"] is None:
+            self.measure_eyebrow_areas()
+            print("✅ Misurazione aree sopraccigli completata")
+        
+        # FASE 2: Legge i valori dalla tabella misurazioni
+        print("🎯 Fase 2: Lettura valori dalla tabella misurazioni...")
+        
+        if not hasattr(self, 'measurements_tree') or not self.measurements_tree:
+            self.status_bar.config(text="❌ Tabella misurazioni non disponibile")
+            return
+        
+        # Cerca le misurazioni delle aree sopraccigli nella tabella
+        left_area_value = None
+        right_area_value = None
+        
+        for item in self.measurements_tree.get_children():
+            values = self.measurements_tree.item(item, 'values')
+            if len(values) >= 2:
+                measurement_type = values[0]  # Colonna "Tipo Misurazione"
+                measurement_value = values[1]  # Colonna "Valore"
+                
+                if "Area Sopracciglio Sinistro" in measurement_type:
+                    try:
+                        left_area_value = float(measurement_value)
+                        print(f"📊 Area sopracciglio sinistro: {left_area_value} px²")
+                    except ValueError:
+                        print(f"⚠️ Errore conversione valore sinistro: {measurement_value}")
+                
+                elif "Area Sopracciglio Destro" in measurement_type:
+                    try:
+                        right_area_value = float(measurement_value)
+                        print(f"📊 Area sopracciglio destro: {right_area_value} px²")
+                    except ValueError:
+                        print(f"⚠️ Errore conversione valore destro: {measurement_value}")
+        
+        # Analisi e risposta vocale
+        if left_area_value is not None and right_area_value is not None:
+            difference = abs(left_area_value - right_area_value)
+            
+            if left_area_value > right_area_value:
+                bigger_eyebrow = "sinistro"
+                bigger_value = left_area_value
+                smaller_value = right_area_value
+            elif right_area_value > left_area_value:
+                bigger_eyebrow = "destro"
+                bigger_value = right_area_value
+                smaller_value = left_area_value
+            else:
+                # Caso molto raro: aree identiche
+                response_text = f"Le aree dei sopraccigli sono identiche: {left_area_value:.1f} pixel quadrati ciascuno"
+                self.status_bar.config(text=f"⚖️ Sopraccigli identici: {left_area_value:.1f} px²")
+                print(f"🔊 Risposta vocale: {response_text}")
+                return
+            
+            # Calcola percentuale di differenza
+            percentage_diff = (difference / smaller_value) * 100
+            
+            # Prepara risposta dettagliata
+            if percentage_diff < 5:
+                comparison = "leggermente più grande"
+            elif percentage_diff < 15:
+                comparison = "moderatamente più grande"  
+            else:
+                comparison = "significativamente più grande"
+            
+            # Nome del sopracciglio opposto
+            opposite_eyebrow = "destro" if bigger_eyebrow == "sinistro" else "sinistro"
+            
+            response_text = f"Il sopracciglio {bigger_eyebrow} è {comparison} con {bigger_value:.1f} pixel quadrati, rispetto ai {smaller_value:.1f} del {opposite_eyebrow}. Differenza: {difference:.1f} pixel quadrati, pari al {percentage_diff:.1f} percento."
+            
+            # Aggiorna status bar
+            status_text = f"🏆 Sopracciglio {bigger_eyebrow} più grande: {bigger_value:.1f} px² (+{percentage_diff:.1f}%)"
+            self.status_bar.config(text=status_text)
+            
+            print(f"🔊 Risposta vocale completa: {response_text}")
+            
+            # Pronuncia la risposta tramite assistente vocale  
+            try:
+                # Risposta completa che include l'analisi
+                full_response = f"Analisi completata. Il sopracciglio {bigger_eyebrow} è più grande con {bigger_value:.1f} pixel quadrati, contro i {smaller_value:.1f} del {opposite_eyebrow}. Differenza del {percentage_diff:.1f} percento."
+                
+                # Usa l'assistente vocale se disponibile
+                if hasattr(self, 'voice_commands') and self.voice_commands:
+                    # Pronuncia usando l'integrazione vocale esistente
+                    self.voice_commands.speak_feedback(full_response)
+                    print(f"🔊 Pronunciato: {full_response}")
+                else:
+                    print(f"📢 Risposta (TTS non disponibile): {full_response}")
+                        
+            except Exception as e:
+                print(f"⚠️ Errore TTS: {e}")
+                print(f"📢 Risposta (solo testo): {full_response}")
+            
+        else:
+            error_msg = "❌ Non riesco a trovare le misurazioni delle aree sopraccigli nella tabella"
+            self.status_bar.config(text=error_msg)
+            print(f"⚠️ Valori non trovati - Sinistro: {left_area_value}, Destro: {right_area_value}")
+            
+            # Debug: mostra contenuto tabella
+            print("🔍 Debug - Contenuto tabella misurazioni:")
+            for i, item in enumerate(self.measurements_tree.get_children()):
+                values = self.measurements_tree.item(item, 'values')
+                print(f"  Riga {i+1}: {values}")
 
     def calculate_axis(self):
         """Calcola e mostra l'asse di simmetria facciale."""
@@ -6725,6 +7137,8 @@ class CanvasApp:
 
                 # 📏 NUOVO: Calcola distanze dall'asse di simmetria per ogni punto verde
                 self.calculate_green_dots_axis_distances(results)
+                
+                # Aggiornamento dati punti verdi completato
 
                 # Mostra messaggio di successo
                 message = f"""Rilevamento completato con successo!
@@ -6738,7 +7152,14 @@ Aree calcolate:
 • Destra: {right_stats['area']:.1f} px²
 • Differenza: {abs(left_stats['area'] - right_stats['area']):.1f} px²"""
 
-                messagebox.showinfo("Rilevamento Puntini Verdi", message)
+                # Imposta flag di successo per il rilevamento
+                self.green_dots_detected = True
+                
+                # Aggiorna lo stato dei pulsanti di correzione sopracciglio
+                self.update_eyebrow_correction_buttons_state()
+                
+                # Popup di successo rimosso come richiesto dall'utente
+                # messagebox.showinfo("Rilevamento Puntini Verdi", message)
                 self.status_bar.config(
                     text=f"Puntini verdi rilevati: {results['detection_results']['total_dots']}"
                 )
@@ -6754,6 +7175,10 @@ Aree calcolate:
                 self.green_dots_overlay = None
                 self.show_green_dots_overlay = False
                 self.green_dots_var.set(False)
+                self.green_dots_detected = False
+                
+                # Aggiorna lo stato dei pulsanti
+                self.update_eyebrow_correction_buttons_state()
 
         except Exception as e:
             error_msg = f"Errore durante il rilevamento dei puntini verdi: {str(e)}"
@@ -6765,6 +7190,10 @@ Aree calcolate:
             self.green_dots_overlay = None
             self.show_green_dots_overlay = False
             self.green_dots_var.set(False)
+            self.green_dots_detected = False
+            
+            # Aggiorna lo stato dei pulsanti
+            self.update_eyebrow_correction_buttons_state()
 
     def toggle_green_dots_overlay(self):
         """Attiva/disattiva la visualizzazione dell'overlay dei puntini verdi."""
@@ -8260,14 +8689,54 @@ Aree calcolate:
             else:
                 print(f"⚠️ measurements_tree non disponibile, misurazione: {measurement_type} = {value} {unit}")
                 
+            # Aggiornamento misurazione completato
+                
             self.status_bar.config(
                 text=f"✅ {measurement_type}: {value} {unit}"
             )
+            
+            # Aggiorna lo stato dei pulsanti di correzione sopracciglio
+            self.update_eyebrow_correction_buttons_state()
         except Exception as e:
             print(f"❌ Errore aggiunta misurazione: {e}")
             self.status_bar.config(
                 text=f"Misurazione calcolata: {measurement_type} = {value} {unit}"
             )
+
+
+
+    def get_measurement_value_from_table(self, measurement_type: str) -> Optional[str]:
+        """Legge un valore dalla tabella delle misurazioni basato sul tipo di misurazione.
+        
+        Args:
+            measurement_type: Il tipo di misurazione da cercare nella colonna 'Tipo Misurazione'
+            
+        Returns:
+            Tuple (value, unit) se trovato, altrimenti None
+        """
+        try:
+            if not (hasattr(self, 'measurements_tree') and self.measurements_tree):
+                return None
+                
+            # Scorre tutte le righe della tabella
+            for item in self.measurements_tree.get_children():
+                values = self.measurements_tree.item(item, 'values')
+                if len(values) >= 3:  # Tipo, Valore, Unità
+                    table_type = values[0]  # Colonna 'Tipo Misurazione'
+                    table_value = values[1]  # Colonna 'Valore'
+                    table_unit = values[2] if len(values) > 2 else ""  # Colonna 'Unità'
+                    
+                    # Confronto case-insensitive
+                    if table_type.lower() == measurement_type.lower():
+                        return (table_value, table_unit)
+            
+            return None
+            
+        except Exception as e:
+            print(f"❌ Errore lettura valore dalla tabella: {e}")
+            return None
+
+
 
     def toggle_all_landmarks(self):
         """Attiva/disattiva la visualizzazione di tutti i landmark."""
@@ -9174,6 +9643,442 @@ Aree calcolate:
         except Exception as e:
             print(f"❌ Errore durante il salvataggio: {e}")
             return False
+
+    # *** NUOVI METODI CALLBACK MIGLIORATI PER LAYOUT ***
+    
+    def _on_vertical_paned_resize_improved(self, event):
+        """Callback migliorato per ridimensionamento pannello verticale."""
+        try:
+            # Non salvare se siamo in fase di ripristino
+            if hasattr(self, 'layout_restorer') and self.layout_restorer.is_restoring:
+                return
+                
+            if self.main_vertical_paned.panes():
+                position = self.main_vertical_paned.sashpos(0)
+                print(f"📏 VERTICAL PANED RESIZE: posizione {position}")
+                layout_manager.config.vertical_paned_position = position
+                
+                # Usa il nuovo sistema di salvataggio con debounce
+                if hasattr(self, 'layout_saver'):
+                    self.layout_saver.schedule_save()
+                else:
+                    layout_manager.save_config()
+                    
+        except Exception as e:
+            print(f"❌ Errore aggiornamento vertical paned: {e}")
+
+    def _on_main_paned_resize_improved(self, event):
+        """Callback migliorato per ridimensionamento pannello principale."""
+        try:
+            # Non salvare se siamo in fase di ripristino
+            if hasattr(self, 'layout_restorer') and self.layout_restorer.is_restoring:
+                return
+                
+            if self.main_horizontal_paned.panes():
+                # SASHPOS(0): Divisore controlli | canvas
+                left_position = self.main_horizontal_paned.sashpos(0)
+                print(f"📏 MAIN PANED RESIZE (controlli|canvas): posizione {left_position}")
+                layout_manager.config.main_paned_position = left_position
+
+                # SASHPOS(1): Divisore canvas | colonna destra (SE ESISTE)
+                panes_count = len(self.main_horizontal_paned.panes())
+                if panes_count >= 3:
+                    right_position = self.main_horizontal_paned.sashpos(1)
+                    print(f"📏 RIGHT COLUMN RESIZE (canvas|destra): posizione {right_position}")
+                    layout_manager.config.right_column_position = right_position
+
+                # Usa il nuovo sistema di salvataggio con debounce
+                if hasattr(self, 'layout_saver'):
+                    self.layout_saver.schedule_save()
+                else:
+                    layout_manager.save_config()
+                    
+        except Exception as e:
+            print(f"❌ Errore aggiornamento main paned: {e}")
+
+    def _on_sidebar_paned_resize_improved(self, event):
+        """Callback migliorato per ridimensionamento sidebar destro."""
+        try:
+            # Non salvare se siamo in fase di ripristino
+            if hasattr(self, 'layout_restorer') and self.layout_restorer.is_restoring:
+                return
+                
+            if self.right_sidebar_paned.panes():
+                position = self.right_sidebar_paned.sashpos(0)
+                print(f"📏 SIDEBAR PANED RESIZE: posizione {position}")
+                layout_manager.config.layers_preview_divider_position = position
+                
+                # Usa il nuovo sistema di salvataggio con debounce
+                if hasattr(self, 'layout_saver'):
+                    self.layout_saver.schedule_save()
+                else:
+                    layout_manager.save_config()
+                    
+        except Exception as e:
+            print(f"❌ Errore aggiornamento sidebar paned: {e}")
+
+    # === FUNZIONI PER CORREZIONE SOPRACCIGLIO ===
+    
+    def has_green_dots_and_measurements(self) -> bool:
+        """
+        Verifica se sono disponibili i punti verdi rilevati e le misurazioni nella tabella.
+        
+        Returns:
+            bool: True se entrambi sono disponibili
+        """
+        # Verifica se ci sono punti verdi rilevati
+        has_green_dots = (
+            hasattr(self, 'green_dots_detected') and 
+            self.green_dots_detected and
+            hasattr(self, 'green_dots_processor') and
+            (len(self.green_dots_processor.left_dots) > 0 or len(self.green_dots_processor.right_dots) > 0)
+        )
+        
+        # Verifica se ci sono misurazioni nella tabella
+        has_measurements = (
+            hasattr(self, 'measurements_tree') and
+            len(self.measurements_tree.get_children()) > 0
+        )
+        
+        return has_green_dots and has_measurements
+
+    def crop_eyebrow_image(self, side: str) -> Optional[np.ndarray]:
+        """
+        Ritaglia l'immagine del sopracciglio dal canvas principale.
+        
+        Args:
+            side: 'left' per sopracciglio sinistro, 'right' per quello destro
+            
+        Returns:
+            Optional[np.ndarray]: Immagine ritagliata o None se errore
+        """
+        try:
+            if not hasattr(self, 'current_image') or self.current_image is None:
+                self.status_bar.config(text="❌ Nessuna immagine caricata")
+                return None
+                
+            if not self.has_green_dots_and_measurements():
+                self.status_bar.config(text="❌ Punti verdi non rilevati o misurazioni mancanti")
+                return None
+                
+            # Ottieni il bounding box del sopracciglio
+            if side == 'left':
+                bbox = self.green_dots_processor.get_left_eyebrow_bbox(expand_factor=0.5)
+            elif side == 'right':
+                bbox = self.green_dots_processor.get_right_eyebrow_bbox(expand_factor=0.5)
+            else:
+                raise ValueError(f"Lato non valido: {side}")
+                
+            x_min, y_min, x_max, y_max = bbox
+            
+            # Verifica che il bounding box sia valido
+            if x_max <= x_min or y_max <= y_min:
+                self.status_bar.config(text=f"❌ Bounding box non valido per sopracciglio {side}")
+                return None
+            
+            # Converti l'immagine PIL in array numpy se necessario
+            if isinstance(self.current_image, Image.Image):
+                image_array = np.array(self.current_image)
+            else:
+                image_array = self.current_image
+                
+            # Assicurati che le coordinate siano nell'immagine
+            height, width = image_array.shape[:2]
+            x_min = max(0, min(x_min, width-1))
+            y_min = max(0, min(y_min, height-1))
+            x_max = max(x_min+1, min(x_max, width))
+            y_max = max(y_min+1, min(y_max, height))
+            
+            # Ritaglia l'immagine
+            cropped = image_array[y_min:y_max, x_min:x_max]
+            
+            return cropped, (x_min, y_min, x_max, y_max)
+            
+        except Exception as e:
+            print(f"❌ Errore nel ritaglio sopracciglio {side}: {e}")
+            self.status_bar.config(text=f"❌ Errore nel ritaglio sopracciglio {side}")
+            return None
+
+    def create_eyebrow_overlay(self, cropped_image: np.ndarray, side: str, bbox: Tuple[int, int, int, int]) -> np.ndarray:
+        """
+        Crea gli overlay dei punti verdi per il sopracciglio ritagliato.
+        
+        Args:
+            cropped_image: Immagine ritagliata del sopracciglio
+            side: 'left' o 'right'
+            bbox: Bounding box utilizzato per il ritaglio (x_min, y_min, x_max, y_max)
+            
+        Returns:
+            np.ndarray: Immagine con overlay applicati
+        """
+        try:
+            x_min, y_min, x_max, y_max = bbox
+            
+            # Crea una copia dell'immagine ritagliata
+            result_image = cropped_image.copy()
+            
+            # Colori per gli overlay
+            current_color = (0, 255, 0)  # Verde per il sopracciglio corrente
+            opposite_color = (255, 0, 0)  # Rosso per quello controlaterale
+            
+            # Calcola la dimensione dei cerchi basata sulla dimensione dell'immagine
+            # Per immagini più grandi, cerchi più grandi
+            image_area = result_image.shape[0] * result_image.shape[1]
+            base_radius = max(2, int((image_area / 10000) ** 0.5))  # Radius adattivo
+            circle_thickness = max(1, base_radius // 2)
+            
+            # Aggiungi overlay del sopracciglio corrente
+            if side == 'left':
+                current_dots = self.green_dots_processor.left_dots
+                opposite_dots = self.green_dots_processor.right_dots
+            else:
+                current_dots = self.green_dots_processor.right_dots  
+                opposite_dots = self.green_dots_processor.left_dots
+                
+            # Disegna i punti del sopracciglio corrente
+            for dot in current_dots:
+                # Converte coordinate globali in coordinate relative al ritaglio
+                x_rel = dot["x"] - x_min
+                y_rel = dot["y"] - y_min
+                
+                if 0 <= x_rel < result_image.shape[1] and 0 <= y_rel < result_image.shape[0]:
+                    # Usa cerchi di dimensione adattiva
+                    cv2.circle(result_image, (int(x_rel), int(y_rel)), base_radius, current_color, -1)
+                    cv2.circle(result_image, (int(x_rel), int(y_rel)), base_radius + circle_thickness, current_color, circle_thickness)
+            
+            # Disegna i punti del sopracciglio controlaterale (riflessi)
+            if opposite_dots:
+                # Calcola l'asse di simmetria (centro dell'immagine originale)
+                if hasattr(self, 'current_image'):
+                    if isinstance(self.current_image, Image.Image):
+                        image_width = self.current_image.width
+                    else:
+                        image_width = self.current_image.shape[1]
+                    symmetry_axis = image_width // 2
+                    
+                    for dot in opposite_dots:
+                        # Rifletti il punto rispetto all'asse di simmetria
+                        x_reflected = 2 * symmetry_axis - dot["x"]
+                        y_reflected = dot["y"]
+                        
+                        # Converte in coordinate relative al ritaglio
+                        x_rel = x_reflected - x_min
+                        y_rel = y_reflected - y_min
+                        
+                        if 0 <= x_rel < result_image.shape[1] and 0 <= y_rel < result_image.shape[0]:
+                            # Usa cerchi di dimensione adattiva anche per i punti controlaterali
+                            cv2.circle(result_image, (int(x_rel), int(y_rel)), base_radius, opposite_color, -1)
+                            cv2.circle(result_image, (int(x_rel), int(y_rel)), base_radius + circle_thickness, opposite_color, circle_thickness)
+                            
+            return result_image
+            
+        except Exception as e:
+            print(f"❌ Errore nella creazione overlay: {e}")
+            return cropped_image
+
+    def show_eyebrow_correction_window(self, side: str):
+        """
+        Mostra una finestra con l'immagine del sopracciglio ritagliata e gli overlay.
+        
+        Args:
+            side: 'left' per sopracciglio sinistro, 'right' per quello destro
+        """
+        try:
+            # Verifica prerequisiti
+            if not self.has_green_dots_and_measurements():
+                messagebox.showwarning(
+                    "Prerequisiti mancanti",
+                    "Per utilizzare la correzione sopracciglio è necessario:\n"
+                    "1. Rilevare i punti verdi (GREEN DOTS)\n"
+                    "2. Avere almeno una misurazione nella tabella"
+                )
+                return
+            
+            # Ritaglia l'immagine del sopracciglio
+            crop_result = self.crop_eyebrow_image(side)
+            if crop_result is None:
+                return
+                
+            cropped_image, bbox = crop_result
+            
+            # Crea gli overlay
+            image_with_overlay = self.create_eyebrow_overlay(cropped_image, side, bbox)
+            
+            # Crea una nuova finestra
+            side_name = "Sinistro" if side == 'left' else "Destro"
+            window_title = f"Correzione Sopracciglio {side_name}"
+            
+            correction_window = tk.Toplevel(self.root)
+            correction_window.title(window_title)
+            # Le dimensioni verranno calcolate automaticamente dopo aver preparato l'immagine
+            
+            # Frame principale
+            main_frame = ttk.Frame(correction_window, padding=10)
+            main_frame.pack(fill=tk.BOTH, expand=True)
+            
+            # Titolo
+            title_label = ttk.Label(
+                main_frame, 
+                text=f"🔍 {window_title}",
+                font=("Arial", 14, "bold")
+            )
+            title_label.pack(pady=(0, 10))
+            
+            # Legenda
+            legend_frame = ttk.Frame(main_frame)
+            legend_frame.pack(fill=tk.X, pady=(0, 10))
+            
+            ttk.Label(
+                legend_frame,
+                text="🟢 Verde: Punti del sopracciglio corrente",
+                foreground="green"
+            ).pack(side=tk.LEFT, padx=(0, 20))
+            
+            ttk.Label(
+                legend_frame,
+                text="🔴 Rosso: Punti del sopracciglio controlaterale (riflesso)",
+                foreground="red"
+            ).pack(side=tk.LEFT)
+            
+            # Converte l'immagine per Tkinter
+            if len(image_with_overlay.shape) == 3:
+                # BGR -> RGB per la visualizzazione
+                display_image = cv2.cvtColor(image_with_overlay, cv2.COLOR_BGR2RGB)
+            else:
+                display_image = image_with_overlay
+                
+            pil_image = Image.fromarray(display_image)
+            
+            # Calcola le dimensioni dello schermo per adattare l'immagine
+            screen_width = correction_window.winfo_screenwidth()
+            screen_height = correction_window.winfo_screenheight()
+            
+            # Riserva spazio per la barra del titolo, legenda e pulsanti (circa 200px)
+            available_width = screen_width - 100  # Margini laterali
+            available_height = screen_height - 200  # Spazio per UI elements
+            
+            # Calcola il fattore di scala per utilizzare quasi tutto lo schermo disponibile
+            width_ratio = available_width / pil_image.width
+            height_ratio = available_height / pil_image.height
+            
+            # Usa il rapporto minore per mantenere le proporzioni
+            scale_factor = min(width_ratio, height_ratio)
+            # Assicurati che l'immagine sia ingrandita significativamente (minimo 3x)
+            scale_factor = max(scale_factor, 3.0)
+            
+            # Applica il fattore di scala
+            new_width = int(pil_image.width * scale_factor)
+            new_height = int(pil_image.height * scale_factor)
+            
+            # Usa LANCZOS per un ingrandimento di alta qualità
+            pil_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            photo = ImageTk.PhotoImage(pil_image)
+            
+            # Calcola le dimensioni della finestra in base all'immagine + spazio per UI
+            ui_height = 120  # Spazio per titolo, legenda e pulsanti
+            window_width = pil_image.width + 40  # Margini laterali
+            window_height = pil_image.height + ui_height
+            
+            # Imposta le dimensioni della finestra
+            correction_window.geometry(f"{window_width}x{window_height}")
+            
+            # Centra la finestra sullo schermo
+            x = (screen_width - window_width) // 2
+            y = (screen_height - window_height) // 2
+            correction_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
+            
+            # Canvas semplice senza scrollbar - l'immagine si adatta perfettamente
+            image_canvas = tk.Canvas(
+                main_frame,
+                width=pil_image.width,
+                height=pil_image.height,
+                bg="white",
+                highlightthickness=1,
+                highlightbackground="gray"
+            )
+            image_canvas.pack(pady=10)
+            
+            # Aggiungi l'immagine al centro del canvas
+            image_canvas.create_image(
+                pil_image.width // 2,
+                pil_image.height // 2,
+                image=photo
+            )
+            
+            # Mantieni riferimento all'immagine
+            image_canvas.image = photo
+            
+            # Frame per i pulsanti
+            buttons_frame = ttk.Frame(main_frame)
+            buttons_frame.pack(fill=tk.X, pady=(10, 0))
+            
+            # Pulsante per salvare l'immagine
+            def save_image():
+                from tkinter import filedialog
+                file_path = filedialog.asksaveasfilename(
+                    title="Salva immagine sopracciglio",
+                    defaultextension=".png",
+                    filetypes=[("PNG files", "*.png"), ("JPEG files", "*.jpg"), ("All files", "*.*")]
+                )
+                if file_path:
+                    try:
+                        save_image = Image.fromarray(display_image)
+                        save_image.save(file_path)
+                        self.status_bar.config(text=f"✅ Immagine salvata: {file_path}")
+                    except Exception as e:
+                        messagebox.showerror("Errore", f"Impossibile salvare l'immagine:\n{e}")
+            
+            ttk.Button(
+                buttons_frame,
+                text="💾 Salva Immagine",
+                command=save_image
+            ).pack(side=tk.LEFT, padx=(0, 10))
+            
+            # Pulsante per chiudere
+            ttk.Button(
+                buttons_frame,
+                text="❌ Chiudi",
+                command=correction_window.destroy
+            ).pack(side=tk.RIGHT)
+            
+            self.status_bar.config(text=f"✅ Finestra correzione sopracciglio {side_name.lower()} aperta")
+            
+        except Exception as e:
+            print(f"❌ Errore nell'apertura finestra correzione: {e}")
+            messagebox.showerror(
+                "Errore",
+                f"Errore nell'apertura finestra correzione:\n{e}"
+            )
+
+    def show_left_eyebrow_correction(self):
+        """Mostra la finestra di correzione per il sopracciglio sinistro."""
+        self.show_eyebrow_correction_window('left')
+
+    def show_right_eyebrow_correction(self):
+        """Mostra la finestra di correzione per il sopracciglio destro."""  
+        self.show_eyebrow_correction_window('right')
+
+    def update_eyebrow_correction_buttons_state(self):
+        """Aggiorna lo stato (abilitato/disabilitato) dei pulsanti di correzione sopracciglio."""
+        try:
+            if hasattr(self, 'eyebrow_correction_buttons'):
+                # Verifica se la funzionalità può essere utilizzata
+                can_use_correction = self.has_green_dots_and_measurements()
+                
+                # Aggiorna lo stato di tutti i pulsanti di correzione
+                for button in self.eyebrow_correction_buttons:
+                    if can_use_correction:
+                        button.configure(state=tk.NORMAL)
+                    else:
+                        button.configure(state=tk.DISABLED)
+                        
+                # Log per debug
+                status = "abilitati" if can_use_correction else "disabilitati"
+                print(f"🔧 Pulsanti correzione sopracciglio {status}")
+                
+        except Exception as e:
+            print(f"❌ Errore aggiornamento stato pulsanti correzione: {e}")
 
 
 def main():

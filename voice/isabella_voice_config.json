@@ -1,22 +1,21 @@
 {
     "activation_keywords": [
-        "hey symmetra",
-        "ciao symmetra",
-        "ehi symmetra",
-        "symmetra"
+        "simmètra"
     ],
     "language": "it-IT",
     "tts_voice": "it-IT-IsabellaNeural",
-    "timeout": 5.0,
-    "phrase_timeout": 2.0,
+    "timeout": 10.0,
+    "phrase_timeout": 4.0,
     "voice_settings": {
         "rate": "+0%",
         "volume": "+10%"
     },
     "stt_settings": {
-        "energy_threshold": 300,
+        "energy_threshold": 200,
         "dynamic_energy_threshold": true,
-        "pause_threshold": 0.8
+        "pause_threshold": 1.2,
+        "timeout": 5.0,
+        "phrase_timeout": 3.0
     },
     "messages": {
         "startup": "Assistente vocale Symmetra attivato. Dimmi 'Hey Symmetra' quando hai bisogno di me.",
@@ -34,7 +33,7 @@
     },
     "custom_messages": {
         "app_start": "Sistema di analisi facciale Kimerika 2.0 avviato con successo. Sistema pronto per l'uso.",
-        "welcome_user": "Benvenuto in Kimerika 2.0! Io sono Symmetra, il tuo assistente per l'analisi facciale e la progettazione della dermopigmentazione sopraccigliare. Sono qui per guidarti attraverso ogni fase dell'analisi.",
+        "welcome_user": "Benvenuto in Kimerika 2.0! Io sono Simmètra, il tuo assistente per l'analisi facciale e la progettazione della dermopigmentazione sopraccigliare. Sono qui per guidarti attraverso ogni fase dell'analisi.",
         "analysis_start": "Iniziando l'analisi facciale. Assicurati di essere ben posizionato nell'inquadratura e mantieni il volto fermo per ottenere risultati ottimali.",
         "analysis_progress": "Analisi dei landmark facciali in corso. Completamento: {progress} percento.",
         "analysis_complete": "Analisi facciale completata con successo! Rilevati tutti i punti landmark principali con precisione elevata.",
@@ -105,6 +104,513 @@
         "custom_activation_sound": false,
         "voice_personality": "professional"
     },
+    "commands": [
+        {
+            "name": "Analizza Volto",
+            "patterns": [
+                "analizza volto",
+                "avvia analisi",
+                "inizia analisi",
+                "inizia scansione",
+                "analizza faccia"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "detect_landmarks"
+            },
+            "confirmation": "Avvio analisi facciale",
+            "enabled": true
+        },
+        {
+            "name": "Carica Immagine",
+            "patterns": [
+                "carica immagine",
+                "apri immagine",
+                "carica foto",
+                "importa immagine"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "load_image"
+            },
+            "confirmation": "Apertura caricamento immagine",
+            "enabled": true
+        },
+        {
+            "name": "Avvia Webcam",
+            "patterns": [
+                "avvia webcam",
+                "avvia camera",
+                "attiva webcam",
+                "accendi camera"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "start_webcam"
+            },
+            "confirmation": "Attivazione webcam",
+            "enabled": true
+        },
+        {
+            "name": "Carica Video",
+            "patterns": [
+                "carica video",
+                "apri video",
+                "importa video"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "load_video"
+            },
+            "confirmation": "Apertura caricamento video",
+            "enabled": true
+        },
+        {
+            "name": "Calcola Misura",
+            "patterns": [
+                "calcola misura",
+                "misura distanza",
+                "calcola",
+                "effettua misurazione"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "calculate_measurement"
+            },
+            "confirmation": "Calcolo misurazione",
+            "enabled": true
+        },
+        {
+            "name": "Cancella Selezioni",
+            "patterns": [
+                "cancella selezioni",
+                "pulisci selezioni",
+                "resetta selezioni"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "clear_measurement_overlays"
+            },
+            "confirmation": "Selezioni cancellate",
+            "enabled": true
+        },
+        {
+            "name": "Salva Risultati",
+            "patterns": [
+                "salva risultati",
+                "salva",
+                "esporta",
+                "salva immagine",
+                "esporta risultati"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "save_image"
+            },
+            "confirmation": "Salvataggio risultati",
+            "enabled": true
+        },
+        {
+            "name": "Asse di Simmetria",
+            "patterns": [
+                "asse di simmetria",
+                "mostra asse",
+                "simmetria",
+                "calcola asse",
+                "linea simmetria",
+                "asse",
+                "asse centrale",
+                "linea centrale",
+                "centro faccia",
+                "equilibrio",
+                "asse verticale"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "calculate_axis"
+            },
+            "confirmation": "Calcolo asse di simmetria",
+            "enabled": true
+        },
+        {
+            "name": "Rilevamento Landmarks",
+            "patterns": [
+                "rileva landmarks",
+                "trova punti",
+                "landmark",
+                "landmarks",
+                "punti facciali",
+                "analizza landmarks",
+                "mostra landmarks",
+                "attiva landmarks",
+                "points"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "voice_landmarks_command"
+            },
+            "confirmation": "Attivazione overlay landmarks",
+            "enabled": true
+        },
+        {
+            "name": "Punti Verdi",
+            "patterns": [
+                "punti verdi",
+                "green dots",
+                "rileva punti verdi",
+                "trova sopracciglia"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "detect_green_dots"
+            },
+            "confirmation": "Rilevamento punti verdi sopraccigliare",
+            "enabled": true
+        },
+        {
+            "name": "Cancella Disegni",
+            "patterns": [
+                "cancella disegni",
+                "pulisci canvas",
+                "cancella tutto",
+                "reset canvas"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "clear_all_drawings"
+            },
+            "confirmation": "Canvas pulito",
+            "enabled": true
+        },
+        {
+            "name": "Zoom Immagine",
+            "patterns": [
+                "zoom",
+                "ingrandisci",
+                "zoom in",
+                "aumenta zoom"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "zoom_in"
+            },
+            "confirmation": "Zoom aumentato",
+            "enabled": true
+        },
+        {
+            "name": "Zoom Indietro",
+            "patterns": [
+                "zoom out",
+                "riduci zoom",
+                "diminuisci",
+                "zoom indietro"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "zoom_out"
+            },
+            "confirmation": "Zoom ridotto",
+            "enabled": true
+        },
+        {
+            "name": "Aiuto Vocale",
+            "patterns": [
+                "aiuto",
+                "help",
+                "comandi disponibili",
+                "cosa posso dire"
+            ],
+            "action": {
+                "type": "system",
+                "function": "show_help"
+            },
+            "confirmation": "Ecco i comandi disponibili",
+            "enabled": true
+        },
+        {
+            "name": "Aiuto Sistema",
+            "patterns": [
+                "aiuto",
+                "help",
+                "cosa puoi fare"
+            ],
+            "action": {
+                "type": "system",
+                "function": "show_system_help"
+            },
+            "confirmation": "Comandi disponibili: aiuto, stato, esci, analizza volto, carica immagine, etc.",
+            "enabled": true
+        },
+        {
+            "name": "Stato Sistema",
+            "patterns": [
+                "stato",
+                "status",
+                "come va"
+            ],
+            "action": {
+                "type": "system",
+                "function": "show_system_status"
+            },
+            "confirmation": "Sistema attivo e funzionante",
+            "enabled": true
+        },
+        {
+            "name": "Chiudi Assistente",
+            "patterns": [
+                "esci",
+                "chiudi",
+                "termina",
+                "bye",
+                "spegni"
+            ],
+            "action": {
+                "type": "system",
+                "function": "exit_assistant"
+            },
+            "confirmation": "Assistente vocale disattivato",
+            "enabled": false
+        },
+        {
+            "name": "Silenzia Voce",
+            "patterns": [
+                "zitto",
+                "silenzio",
+                "basta parlare",
+                "muto"
+            ],
+            "action": {
+                "type": "system",
+                "function": "mute_voice"
+            },
+            "confirmation": "",
+            "enabled": true
+        },
+        {
+            "name": "Riattiva Voce",
+            "patterns": [
+                "riattiva voce",
+                "torna a parlare",
+                "parla di nuovo"
+            ],
+            "action": {
+                "type": "system",
+                "function": "unmute_voice"
+            },
+            "confirmation": "Voce riattivata",
+            "enabled": true
+        },
+        {
+            "name": "Quale Sopracciglio Più Grande",
+            "patterns": [
+                "quale è il sopracciglio più grande",
+                "quale sopracciglio è più grande",
+                "qual è il sopracciglio maggiore",
+                "dimmi quale sopracciglio è più ampio",
+                "confronta le aree dei sopraccigli",
+                "area sopraccigli confronto",
+                "sopracciglio più grande"
+            ],
+            "action": {
+                "type": "gui",
+                "function": "voice_which_eyebrow_bigger"
+            },
+            "confirmation": "",
+            "enabled": true
+        },
+        {
+            "name": "Query Intelligenti Generiche",
+            "patterns": [
+                "qual è",
+                "quanto è",
+                "quanto sono",
+                "il mio viso è",
+                "sono",
+                "quale",
+                "il punto",
+                "dimmi",
+                "cosa dice",
+                "ho un viso",
+                "distanza",
+                "simmetrico",
+                "simmetria",
+                "altezza",
+                "larghezza",
+                "punteggio",
+                "dati",
+                "analisi",
+                "risultati",
+                "differenza",
+                "differenza di",
+                "punto SA",
+                "punto DA",
+                "punto SB",
+                "punto DB",
+                "punto SC",
+                "punto DC",
+                "punto SD",
+                "punto DD",
+                "punto SE",
+                "punto DE",
+                "punto SF",
+                "punto DF"
+            ],
+            "action": {
+                "type": "intelligent",
+                "function": "handle_intelligent_query"
+            },
+            "confirmation": "",
+            "enabled": true
+        }
+    ],
+    "measurement_table_patterns": [
+        {
+            "pattern_id": "sa_vs_da",
+            "keywords": [
+                "differenza di A sinistro",
+                "differenza di SA",
+                "punto SA contro DA",
+                "SA versus DA"
+            ],
+            "table_row_match": "SA vs DA",
+            "response_template": "La differenza SA versus DA è di {value} {unit}."
+        },
+        {
+            "pattern_id": "da_vs_sa",
+            "keywords": [
+                "differenza di a destro",
+                "differenza di da",
+                "punto da contro sa",
+                "da versus sa"
+            ],
+            "table_row_match": "DA vs SA",
+            "response_template": "La differenza DA versus SA è di {value} {unit}."
+        },
+        {
+            "pattern_id": "sb_vs_db",
+            "keywords": [
+                "differenza di b sinistro",
+                "differenza di sb",
+                "punto sb contro db",
+                "sb versus db"
+            ],
+            "table_row_match": "SB vs DB",
+            "response_template": "La differenza SB versus DB è di {value} {unit}."
+        },
+        {
+            "pattern_id": "db_vs_sb",
+            "keywords": [
+                "differenza di b destro",
+                "differenza di db",
+                "punto db contro sb",
+                "db versus sb"
+            ],
+            "table_row_match": "DB vs SB",
+            "response_template": "La differenza DB versus SB è di {value} {unit}."
+        },
+        {
+            "pattern_id": "sc_vs_dc",
+            "keywords": [
+                "differenza di c sinistro",
+                "differenza di sc",
+                "punto sc contro dc",
+                "sc versus dc"
+            ],
+            "table_row_match": "SC vs DC",
+            "response_template": "La differenza SC versus DC è di {value} {unit}."
+        },
+        {
+            "pattern_id": "dc_vs_sc",
+            "keywords": [
+                "differenza di c destro",
+                "differenza di dc",
+                "punto dc contro sc",
+                "dc versus sc"
+            ],
+            "table_row_match": "DC vs SC",
+            "response_template": "La differenza DC versus SC è di {value} {unit}."
+        },
+        {
+            "pattern_id": "sd_vs_dd",
+            "keywords": [
+                "differenza di d sinistro",
+                "differenza di sd",
+                "punto sd contro dd",
+                "sd versus dd"
+            ],
+            "table_row_match": "SD vs DD",
+            "response_template": "La differenza SD versus DD è di {value} {unit}."
+        },
+        {
+            "pattern_id": "dd_vs_sd",
+            "keywords": [
+                "differenza di d destro",
+                "differenza di dd",
+                "punto dd contro sd",
+                "dd versus sd"
+            ],
+            "table_row_match": "DD vs SD",
+            "response_template": "La differenza DD versus SD è di {value} {unit}."
+        },
+        {
+            "pattern_id": "se_vs_de",
+            "keywords": [
+                "differenza di e sinistro",
+                "differenza di se",
+                "punto se contro de",
+                "se versus de"
+            ],
+            "table_row_match": "SE vs DE",
+            "response_template": "La differenza SE versus DE è di {value} {unit}."
+        },
+        {
+            "pattern_id": "de_vs_se",
+            "keywords": [
+                "differenza di e destro",
+                "differenza di de",
+                "punto de contro se",
+                "de versus se"
+            ],
+            "table_row_match": "DE vs SE",
+            "response_template": "La differenza DE versus SE è di {value} {unit}."
+        },
+        {
+            "pattern_id": "sf_vs_df",
+            "keywords": [
+                "differenza di f sinistro",
+                "differenza di sf",
+                "punto sf contro df",
+                "sf versus df"
+            ],
+            "table_row_match": "SF vs DF",
+            "response_template": "La differenza SF versus DF è di {value} {unit}."
+        },
+        {
+            "pattern_id": "df_vs_sf",
+            "keywords": [
+                "differenza di f destro",
+                "differenza di df",
+                "punto df contro sf",
+                "df versus sf"
+            ],
+            "table_row_match": "DF vs SF",
+            "response_template": "La differenza DF versus SF è di {value} {unit}."
+        }
+    ],
+    "intelligent_query_patterns": [
+        {
+            "pattern_id": "general_measurements",
+            "keywords": [
+                "dimmi le misurazioni",
+                "mostra tutte le misurazioni",
+                "riassunto misure",
+                "tutti i valori"
+            ],
+            "data_field": "table_summary",
+            "response_template": "Ho trovato {total_measurements} misurazioni nella tabella. Puoi chiedermi la differenza di qualsiasi punto specifico.",
+            "condition": "exists"
+        }
+    ],
     "debug": {
         "log_level": "INFO",
         "log_voice_commands": true,
