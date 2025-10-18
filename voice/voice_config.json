@@ -1,0 +1,217 @@
+{
+    "activation_keywords": [
+        "simmètra",
+        "simmetra",
+        "symmetra",
+        "simetra"
+    ],
+    "language": "it-IT",
+    "tts_voice": "it-IT-IsabellaNeural",
+    "commands": [
+        {
+            "name": "Analizza Volto",
+            "patterns": [
+                "analizza volto",
+                "avvia analisi",
+                "inizia analisi",
+                "analizza faccia",
+                "analisi facciale",
+                "analizza"
+            ],
+            "action": {
+                "function": "perform_face_analysis_with_voice"
+            },
+            "confirmation": "Avvio analisi facciale professionale completa",
+            "enabled": true
+        },
+        {
+            "name": "Carica Immagine",
+            "patterns": [
+                "carica immagine",
+                "apri immagine",
+                "carica foto"
+            ],
+            "action": {
+                "function": "load_image"
+            },
+            "confirmation": "Apertura caricamento immagine",
+            "enabled": true
+        },
+        {
+            "name": "Avvia Webcam",
+            "patterns": [
+                "avvia webcam",
+                "avvia camera",
+                "attiva webcam"
+            ],
+            "action": {
+                "function": "start_webcam"
+            },
+            "confirmation": "Attivazione webcam",
+            "enabled": true
+        },
+        {
+            "name": "Calcola Misura",
+            "patterns": [
+                "calcola misura",
+                "misura distanza",
+                "calcola",
+                "effettua misurazione"
+            ],
+            "action": {
+                "function": "calculate_measurement"
+            },
+            "confirmation": "Calcolo misurazione",
+            "enabled": true
+        },
+        {
+            "name": "Salva Risultati",
+            "patterns": [
+                "salva risultati",
+                "salva",
+                "esporta"
+            ],
+            "action": {
+                "function": "save_image"
+            },
+            "confirmation": "Salvataggio risultati",
+            "enabled": true
+        },
+        {
+            "name": "Asse di Simmetria",
+            "patterns": [
+                "asse di simmetria",
+                "mostra asse",
+                "simmetria",
+                "asse centrale",
+                "asse"
+            ],
+            "action": {
+                "function": "calculate_axis"
+            },
+            "confirmation": "Calcolo asse di simmetria",
+            "enabled": true
+        },
+        {
+            "name": "Punti Landmarks",
+            "patterns": [
+                "rileva landmarks",
+                "trova punti",
+                "landmark",
+                "punti facciali",
+                "landmarks"
+            ],
+            "action": {
+                "function": "voice_landmarks_command"
+            },
+            "confirmation": "Attivazione overlay landmarks",
+            "enabled": true
+        },
+        {
+            "name": "Punti Verdi",
+            "patterns": [
+                "punti verdi",
+                "green dots",
+                "trova sopracciglia",
+                "verdi"
+            ],
+            "action": {
+                "function": "detect_green_dots"
+            },
+            "confirmation": "Rilevamento punti verdi sopraccigliare",
+            "enabled": true
+        },
+        {
+            "name": "Cancella Tutto",
+            "patterns": [
+                "cancella tutto",
+                "pulisci canvas",
+                "reset",
+                "cancella",
+                "pulisci"
+            ],
+            "action": {
+                "function": "clear_all_drawings"
+            },
+            "confirmation": "Canvas pulito",
+            "enabled": true
+        },
+        {
+            "name": "Correzione Sinistra",
+            "patterns": [
+                "correzione sinistra",
+                "correzione sx",
+                "correggi sinistro"
+            ],
+            "action": {
+                "function": "show_left_eyebrow_correction"
+            },
+            "confirmation": "Correzione sinistra",
+            "enabled": true
+        },
+        {
+            "name": "Correzione Destra",
+            "patterns": [
+                "correzione destra",
+                "correzione dx",
+                "correggi destro"
+            ],
+            "action": {
+                "function": "show_right_eyebrow_correction"
+            },
+            "confirmation": "Correzione destra",
+            "enabled": true
+        },
+        {
+            "name": "Zoom Indietro",
+            "patterns": [
+                "zoom out",
+                "riduci zoom",
+                "zoom indietro"
+            ],
+            "action": {
+                "function": "zoom_out"
+            },
+            "confirmation": "Zoom ridotto",
+            "enabled": true
+        },
+        {
+            "name": "Zoom Avanti",
+            "patterns": [
+                "zoom",
+                "ingrandisci",
+                "zoom in"
+            ],
+            "action": {
+                "function": "zoom_in"
+            },
+            "confirmation": "Zoom aumentato",
+            "enabled": true
+        },
+        {
+            "name": "Aiuto",
+            "patterns": [
+                "aiuto",
+                "comandi disponibili"
+            ],
+            "action": {
+                "function": "show_help"
+            },
+            "confirmation": "Comandi disponibili: analizza volto, carica immagine, avvia webcam, calcola misura, salva risultati, asse simmetria, landmarks, punti verdi, cancella tutto, zoom",
+            "enabled": true
+        },
+        {
+            "name": "Stato Sistema",
+            "patterns": [
+                "stato",
+                "status",
+                "come va"
+            ],
+            "action": {
+                "function": "show_status"
+            },
+            "confirmation": "Sistema attivo e funzionante",
+            "enabled": true
+        }
+    ]
+}

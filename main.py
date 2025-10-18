@@ -176,11 +176,11 @@ SOLUZIONI:
             import pygame
             import speech_recognition as sr
 
-            # Importa l'assistente vocale
-            from voice.isabella_voice_assistant import IsabellaVoiceAssistant
+            # Importa il nuovo assistente vocale semplificato
+            from voice.voice_assistant import IsabellaVoiceAssistant
 
-            # Inizializza l'assistente con il file di configurazione corretto
-            self.voice_assistant = IsabellaVoiceAssistant("voice/isabella_voice_config.json")
+            # Inizializza l'assistente con il file di configurazione semplificato
+            self.voice_assistant = IsabellaVoiceAssistant("voice/voice_config.json")
             self.voice_enabled = True
             
             logger.info("✅ Assistente vocale Isabella inizializzato con successo")

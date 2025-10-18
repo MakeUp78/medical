@@ -12,6 +12,9 @@ import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 from typing import List, Tuple, Optional, Dict, Any
 import uuid
+import os
+import tempfile
+import shutil
 from dataclasses import dataclass
 from enum import Enum
 
@@ -24,6 +27,7 @@ from src.scoring_config import ScoringConfig
 from src.utils import resize_image_keep_aspect
 from src.layout_manager import layout_manager
 from src.layout_fix import LayoutRestorer, ImprovedLayoutSaver
+from src.face_analysis_module import FaceVisagismAnalyzer
 
 # Canvas system unificato - sistema integrato senza professional_canvas
 import matplotlib.pyplot as plt
@@ -161,6 +165,7 @@ class CanvasApp:
         self.video_analyzer = VideoAnalyzer()
         self.measurement_tools = MeasurementTools()
         self.green_dots_processor = GreenDotsProcessor()
+        self.face_analyzer = FaceVisagismAnalyzer()  # Analizzatore facciale professionale
 
         # Variabili di stato per canvas tkinter (RIPRISTINATE)
         self.current_image = None
@@ -273,6 +278,11 @@ class CanvasApp:
         self.preview_enabled = None  # Inizializzato nel setup GUI
         self.preview_label = None
         self.preview_window = None  # Per compatibilità con close_preview_window
+        
+        # NUOVO: Gestione finestra separata
+        self.detached_preview_window = None
+        self.detached_preview_label = None
+        self.is_preview_detached = False
 
         # Sistema di rotazione immagini
         self.current_rotation = 0.0  # Angolo di rotazione corrente in gradi
@@ -285,10 +295,9 @@ class CanvasApp:
         )
         self.original_base_landmarks = None  # Landmarks originali non ruotati
         
-        # Assistente vocale - SOLO riferimenti esterni
-        self.voice_assistant = voice_assistant  # Ricevuto dal costruttore
+        # Assistente vocale - riferimenti semplici
+        self.voice_assistant = voice_assistant
         self.voice_gui = None
-        self.voice_commands = None
 
         # Controlli player video
         self.is_playing = False
@@ -317,6 +326,16 @@ class CanvasApp:
         # Imposta la configurazione nel video analyzer
         self.video_analyzer.set_scoring_config(self.scoring_config)
 
+        # NUOVO: Inizializza le variabili degli overlay (prima del setup GUI)
+        self.show_landmarks_var = tk.BooleanVar(value=True)  # Abilitato di default
+        self.show_symmetry_var = tk.BooleanVar(value=True)   # Abilitato di default
+        self.show_green_polygon_var = tk.BooleanVar(value=False)
+
+        # Stato finestra separata anteprima
+        self.is_preview_detached = False
+        self.detached_preview_window = None
+        self.detached_preview_label = None
+
         self.setup_gui()
 
         # CALLBACK ESSENZIALI
@@ -326,6 +345,9 @@ class CanvasApp:
         self.video_analyzer.set_debug_callback(
             self.on_debug_update
         )  # *** NUOVO PER TABELLA ***
+
+        # INIZIALIZZA OVERLAY DEFAULT (landmarks e simmetria attivi)
+        self.update_overlay_settings()
 
     def create_default_layer_unified(self):
         """Crea il layer di default per il sistema unificato."""
@@ -705,12 +727,21 @@ class CanvasApp:
             text="🟢 GREEN DOTS", 
             command=self.toggle_green_dots_section
         )
-        self.green_dots_button.grid(row=0, column=2, padx=(2, 0), sticky="ew")
+        self.green_dots_button.grid(row=0, column=2, padx=2, sticky="ew")
+
+        # Pulsante ANALISI FACCIALE
+        self.face_analysis_button = ttk.Button(
+            main_buttons_frame, 
+            text="🔍 ANALISI FACCIALE", 
+            command=self.perform_face_analysis
+        )
+        self.face_analysis_button.grid(row=0, column=3, padx=(2, 0), sticky="ew")
 
         # Configura colonne con peso uguale
         main_buttons_frame.columnconfigure(0, weight=1)
         main_buttons_frame.columnconfigure(1, weight=1)
         main_buttons_frame.columnconfigure(2, weight=1)
+        main_buttons_frame.columnconfigure(3, weight=1)
 
         # Misurazioni predefinite (sotto i pulsanti principali)
         self.predefined_frame = ttk.LabelFrame(
@@ -1058,24 +1089,17 @@ class CanvasApp:
             preset_frame, text="Meno Simmetria", command=self.preset_less_symmetry
         ).grid(row=0, column=2, sticky="ew", padx=2)
 
-        # === INTEGRAZIONE ASSISTENTE VOCALE MODULARE ===
+        # === INTEGRAZIONE ASSISTENTE VOCALE SEMPLICE ===
         if self.voice_assistant:
             try:
-                from voice.voice_gui_integration import VoiceAssistantGUI, VoiceCommandsIntegration
+                # Setup riferimento app per comandi vocali
+                self.voice_assistant.set_canvas_app(self)
                 
-                # Setup GUI (interfaccia identica)
-                self.voice_gui = VoiceAssistantGUI(parent, self.voice_assistant)
-                
-                # Integrazione vocale SENZA callback hardcoded
-                # Tutte le callback vengono risolte automaticamente dal JSON
-                self.voice_commands = VoiceCommandsIntegration(
-                    self.voice_assistant,
-                    canvas_app_instance=self  # Passa l'istanza per risoluzione dinamica
-                )
+                # Crea GUI semplice per controllo on/off
+                self.voice_gui = self.voice_assistant.create_gui(parent)
+                self.voice_gui.pack(fill=tk.X, pady=(10, 0))  # AGGIUNTO PACK!
                 
                 print("✅ Assistente vocale integrato con successo")
-            except ImportError as e:
-                print(f"⚠️ Modulo voice_gui_integration non disponibile: {e}")
             except Exception as e:
                 print(f"⚠️ Errore integrazione assistente vocale: {e}")
 
@@ -5207,27 +5231,70 @@ class CanvasApp:
             command=self.toggle_video_preview,
         ).grid(row=0, column=0, padx=(0, 5), sticky="w")
 
+        # NUOVO: Pulsanti overlay anteprima
+        overlay_frame = ttk.LabelFrame(control_row1, text="Overlay", padding=2)
+        overlay_frame.grid(row=0, column=1, padx=5, sticky="w")
+        
+        ttk.Checkbutton(
+            overlay_frame, text="Landmarks", variable=self.show_landmarks_var,
+            command=self.update_overlay_settings
+        ).grid(row=0, column=0, padx=2)
+        
+        ttk.Checkbutton(
+            overlay_frame, text="Simmetria", variable=self.show_symmetry_var,
+            command=self.update_overlay_settings
+        ).grid(row=0, column=1, padx=2)
+        
+        ttk.Checkbutton(
+            overlay_frame, text="Poligono", variable=self.show_green_polygon_var,
+            command=self.update_overlay_settings
+        ).grid(row=0, column=2, padx=2)
+
         # Controlli playback
         playback_frame = ttk.Frame(control_row1)
-        playback_frame.grid(row=0, column=1, padx=5)
+        playback_frame.grid(row=0, column=2, padx=5)
 
-        # Pulsanti controllo
-        self.play_pause_btn = ttk.Button(
-            playback_frame, text="▶️", width=3, command=self.toggle_play_pause
+        # Pulsanti controllo webcam/video
+        self.start_btn = ttk.Button(
+            playback_frame, text="▶️", width=3, command=self.start_webcam_analysis
         )
-        self.play_pause_btn.pack(side=tk.LEFT, padx=1)
+        self.start_btn.pack(side=tk.LEFT, padx=1)
 
-        ttk.Button(playback_frame, text="⏹️", width=3, command=self.stop_video).pack(
-            side=tk.LEFT, padx=1
+        self.pause_btn = ttk.Button(
+            playback_frame, text="⏸️", width=3, command=self.pause_webcam_analysis
         )
+        self.pause_btn.pack(side=tk.LEFT, padx=1)
 
-        # Pulsante cattura
+        self.stop_btn = ttk.Button(
+            playback_frame, text="⏹️", width=3, command=self.stop_webcam_analysis
+        )
+        self.stop_btn.pack(side=tk.LEFT, padx=1)
+
+        self.restart_btn = ttk.Button(
+            playback_frame, text="🔄", width=3, command=self.restart_webcam_analysis
+        )
+        self.restart_btn.pack(side=tk.LEFT, padx=1)
+
+        # Pulsante cattura e finestra separata
+        capture_frame = ttk.Frame(control_row1)
+        capture_frame.grid(row=0, column=3, padx=(5, 0), sticky="e")
+
         ttk.Button(
-            control_row1,
+            capture_frame,
             text="📸",
             width=3,
             command=self.capture_current_frame,
-        ).grid(row=0, column=3, padx=(5, 0), sticky="e")
+        ).pack(side=tk.LEFT, padx=1)
+
+        # NUOVO: Pulsante finestra separata
+        self.detach_btn = ttk.Button(
+            capture_frame,
+            text="🗗",
+            width=3,
+            command=self.detach_preview_window,
+        )
+        self.detach_btn.pack(side=tk.LEFT, padx=1)
+        ToolTip(self.detach_btn, "Scorpora anteprima in finestra separata")
 
         # Seconda riga: seek bar e indicatori tempo (solo per file video)
         self.seek_frame = ttk.Frame(controls_frame)
@@ -5404,14 +5471,16 @@ class CanvasApp:
 
             # Aggiorna icona pulsante
             if is_playing:
-                self.play_pause_btn.config(text="⏸️")
+                if hasattr(self, 'start_btn'):
+                    self.start_btn.config(text="⏸️")
                 # Se il video è ripartito dall'inizio, aggiorna anche i controlli
                 if not self.video_analyzer.is_capturing:
                     self.update_video_controls_state()
                     if hasattr(self, "update_seek_position"):
                         self.update_seek_position()
             else:
-                self.play_pause_btn.config(text="▶️")
+                if hasattr(self, 'start_btn'):
+                    self.start_btn.config(text="▶️")
 
             print(f"🎬 Video {'riprodotto' if is_playing else 'in pausa'}")
 
@@ -5419,7 +5488,8 @@ class CanvasApp:
         """Ferma il video/webcam."""
         self.video_analyzer.stop()
         self.is_playing = False
-        self.play_pause_btn.config(text="▶️")
+        if hasattr(self, 'start_btn'):
+            self.start_btn.config(text="▶️")
 
         if self.video_analyzer.is_video_file:
             # Per file video - Reset seek bar
@@ -5468,8 +5538,328 @@ class CanvasApp:
         except ValueError:
             pass
 
+    def update_overlay_settings(self):
+        """Aggiorna le impostazioni degli overlay per l'anteprima."""
+        self.video_analyzer.set_overlay_options(
+            landmarks=self.show_landmarks_var.get(),
+            symmetry=self.show_symmetry_var.get(),
+            green_polygon=self.show_green_polygon_var.get()
+        )
+        print(f"🎨 Overlay aggiornati: Landmarks={self.show_landmarks_var.get()}, "
+              f"Simmetria={self.show_symmetry_var.get()}, Poligono={self.show_green_polygon_var.get()}")
+
+    def start_webcam_analysis(self):
+        """Avvia l'analisi webcam."""
+        if self.video_analyzer.start_webcam():
+            print("📹 Webcam avviata")
+            self.update_preview_controls_state(True)
+        else:
+            print("❌ Impossibile avviare webcam")
+
+    def pause_webcam_analysis(self):
+        """Pausa l'analisi webcam."""
+        self.video_analyzer.pause_webcam()
+
+    def stop_webcam_analysis(self):
+        """Ferma l'analisi webcam."""
+        self.video_analyzer.stop_webcam()
+        self.update_preview_controls_state(False)
+
+    def restart_webcam_analysis(self):
+        """Riavvia l'analisi webcam."""
+        if self.video_analyzer.restart_webcam():
+            print("🔄 Webcam riavviata")
+            self.update_preview_controls_state(True)
+        else:
+            print("❌ Impossibile riavviare webcam")
+
+    def update_preview_controls_state(self, active):
+        """Aggiorna lo stato dei controlli dell'anteprima."""
+        if hasattr(self, 'pause_btn'):
+            state = "normal" if active else "disabled"
+            self.pause_btn.config(state=state)
+            self.stop_btn.config(state=state)
+            self.restart_btn.config(state=state)
+
+    def detach_preview_window(self):
+        """Scorpora l'anteprima in una finestra separata con rilevamento automatico secondo monitor."""
+        if self.is_preview_detached:
+            # Reincorpora l'anteprima nell'interfaccia principale
+            self.reattach_preview_window()
+            return
+
+        # Crea finestra separata
+        self.detached_preview_window = tk.Toplevel(self.root)
+        self.detached_preview_window.title("Anteprima Video - Monitor Secondario")
+        self.detached_preview_window.configure(bg='black')
+        
+        # Rilevamento avanzato multi-monitor
+        monitor_info = self.detect_multiple_monitors()
+        
+        if monitor_info['has_secondary']:
+            print(f"🖥️ Rilevati {monitor_info['monitor_count']} monitor")
+            print(f"📺 Monitor primario: {monitor_info['primary']['width']}x{monitor_info['primary']['height']}")
+            print(f"📺 Monitor secondario: {monitor_info['secondary']['width']}x{monitor_info['secondary']['height']}")
+            
+            # Posiziona a schermo intero sul secondo monitor
+            secondary = monitor_info['secondary']
+            geometry = f"{secondary['width']}x{secondary['height']}+{secondary['x']}+{secondary['y']}"
+            
+            self.detached_preview_window.geometry(geometry)
+            self.detached_preview_window.overrideredirect(True)  # Rimuove bordi finestra
+            self.detached_preview_window.attributes('-fullscreen', True)  # Schermo intero
+            self.detached_preview_window.attributes('-topmost', True)  # Sempre in primo piano
+            
+            print(f"🎯 Finestra anteprima aperta a schermo intero sul monitor 2")
+        else:
+            print("🖥️ Rilevato solo monitor primario")
+            # Monitor singolo - finestra centrata ma grande
+            primary_width = monitor_info['primary']['width']
+            primary_height = monitor_info['primary']['height']
+            
+            # Finestra grande ma non a schermo intero su monitor singolo
+            window_width = min(1200, int(primary_width * 0.8))
+            window_height = min(900, int(primary_height * 0.8))
+            pos_x = (primary_width - window_width) // 2
+            pos_y = (primary_height - window_height) // 2
+            
+            self.detached_preview_window.geometry(f"{window_width}x{window_height}+{pos_x}+{pos_y}")
+            print(f"🎯 Finestra anteprima aperta centrata ({window_width}x{window_height})")
+
+        # Label per l'anteprima separata
+        self.detached_preview_label = tk.Label(
+            self.detached_preview_window,
+            bg="black",
+            text="Anteprima Video Separata\n\nIn attesa del segnale...",
+            fg="white",
+            font=("Arial", 14),
+            justify=tk.CENTER,
+        )
+        self.detached_preview_label.pack(expand=True, fill=tk.BOTH)
+
+        # Frame controlli per finestra separata
+        if monitor_info['has_secondary']:
+            # Per schermo intero su secondo monitor: controlli minimali overlay
+            control_frame = tk.Frame(self.detached_preview_window, bg='black', height=50)
+            control_frame.pack(side=tk.BOTTOM, fill=tk.X)
+            control_frame.pack_propagate(False)
+            
+            # Pulsanti con stile adatto per overlay su schermo nero
+            btn_frame = tk.Frame(control_frame, bg='black')
+            btn_frame.pack(expand=True)
+            
+            ttk.Button(
+                btn_frame,
+                text="↩️ Chiudi Fullscreen",
+                command=self.reattach_preview_window
+            ).pack(side=tk.LEFT, padx=10, pady=10)
+            
+            ttk.Button(
+                btn_frame,
+                text="🔄 Esci da Schermo Intero",
+                command=lambda: self.toggle_fullscreen_preview(False)
+            ).pack(side=tk.LEFT, padx=10, pady=10)
+            
+        else:
+            # Per monitor singolo: controlli normali
+            control_frame = ttk.Frame(self.detached_preview_window)
+            control_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
+            
+            ttk.Button(
+                control_frame,
+                text="↩️ Reincorpora nell'interfaccia",
+                command=self.reattach_preview_window
+            ).pack(side=tk.LEFT)
+
+        # Aggiorna stato
+        self.is_preview_detached = True
+        self.detach_btn.config(text="↩️")
+        if hasattr(self, 'detach_btn'):
+            ToolTip(self.detach_btn, "Reincorpora anteprima nell'interfaccia")
+
+        # Nascondi anteprima principale
+        if hasattr(self, 'integrated_preview_frame'):
+            self.integrated_preview_frame.grid_remove()
+
+        # Gestisci eventi finestra
+        self.detached_preview_window.protocol("WM_DELETE_WINDOW", self.reattach_preview_window)
+        
+        # Scorciatoie da tastiera per finestra fullscreen
+        if monitor_info['has_secondary']:
+            self.detached_preview_window.bind('<Escape>', lambda e: self.toggle_fullscreen_preview(False))
+            self.detached_preview_window.bind('<F11>', lambda e: self.toggle_fullscreen_preview())
+            self.detached_preview_window.bind('<Alt-Return>', lambda e: self.reattach_preview_window())
+            self.detached_preview_window.focus_set()  # Abilita ricezione eventi tastiera
+            
+            print("🗗 Anteprima aperta a SCHERMO INTERO su monitor 2")
+            print("⌨️  Tasti: ESC=Esci fullscreen, F11=Toggle, Alt+Enter=Chiudi")
+        else:
+            print("🗗 Anteprima scorporata in finestra separata")
+
+    def reattach_preview_window(self):
+        """Reincorpora l'anteprima nell'interfaccia principale."""
+        if self.detached_preview_window:
+            self.detached_preview_window.destroy()
+            self.detached_preview_window = None
+            self.detached_preview_label = None
+
+        self.is_preview_detached = False
+        self.detach_btn.config(text="🗗")
+        if hasattr(self, 'detach_btn'):
+            ToolTip(self.detach_btn, "Scorpora anteprima in finestra separata")
+
+        # Ripristina anteprima principale
+        if hasattr(self, 'integrated_preview_frame'):
+            self.integrated_preview_frame.grid()
+
+        print("↩️ Anteprima reincorporata nell'interfaccia principale")
+
+    def toggle_fullscreen_preview(self, fullscreen=None):
+        """Toggle modalità fullscreen per finestra anteprima."""
+        if not self.detached_preview_window:
+            return
+            
+        try:
+            if fullscreen is None:
+                # Toggle automatico
+                current_fullscreen = self.detached_preview_window.attributes('-fullscreen')
+                new_fullscreen = not current_fullscreen
+            else:
+                new_fullscreen = fullscreen
+                
+            if new_fullscreen:
+                # Attiva fullscreen
+                self.detached_preview_window.attributes('-fullscreen', True)
+                self.detached_preview_window.attributes('-topmost', True)
+                print("🔲 Finestra anteprima: Schermo intero ON")
+            else:
+                # Disattiva fullscreen
+                self.detached_preview_window.attributes('-fullscreen', False)
+                self.detached_preview_window.attributes('-topmost', False)
+                self.detached_preview_window.overrideredirect(False)
+                
+                # Ridimensiona a finestra normale
+                self.detached_preview_window.geometry("1200x900+100+100")
+                print("🔳 Finestra anteprima: Schermo intero OFF")
+                
+        except Exception as e:
+            print(f"❌ Errore toggle fullscreen: {e}")
+
+    def detect_multiple_monitors(self):
+        """Rileva la presenza e configurazione di monitor multipli."""
+        try:
+            import subprocess
+            import json
+            
+            # Metodo 1: Usa wmic per Windows (più affidabile)
+            try:
+                result = subprocess.run(
+                    ['wmic', 'desktopmonitor', 'get', 'screenwidth,screenheight', '/format:csv'],
+                    capture_output=True, text=True, timeout=5
+                )
+                
+                if result.returncode == 0:
+                    lines = [line.strip() for line in result.stdout.split('\n') if line.strip() and 'Node' not in line and 'ScreenHeight' not in line]
+                    monitors = []
+                    for line in lines:
+                        parts = line.split(',')
+                        if len(parts) >= 3:
+                            try:
+                                height = int(parts[1]) if parts[1] else 0
+                                width = int(parts[2]) if parts[2] else 0
+                                if width > 0 and height > 0:
+                                    monitors.append({'width': width, 'height': height})
+                            except (ValueError, IndexError):
+                                continue
+                    
+                    if len(monitors) >= 2:
+                        # Configura monitor primario e secondario
+                        primary = monitors[0]
+                        secondary = monitors[1]
+                        
+                        return {
+                            'has_secondary': True,
+                            'monitor_count': len(monitors),
+                            'primary': {
+                                'width': primary['width'],
+                                'height': primary['height'],
+                                'x': 0,
+                                'y': 0
+                            },
+                            'secondary': {
+                                'width': secondary['width'],
+                                'height': secondary['height'],
+                                'x': primary['width'],  # Posiziona a destra del primario
+                                'y': 0
+                            }
+                        }
+            except Exception as e:
+                print(f"⚠️ Errore rilevamento wmic: {e}")
+            
+            # Metodo 2: Fallback con tkinter
+            try:
+                # Ottieni dimensioni schermo totali
+                total_width = self.root.winfo_screenwidth()
+                total_height = self.root.winfo_screenheight()
+                
+                # Ottieni dimensioni finestra root per stimare monitor primario
+                self.root.update_idletasks()
+                root_width = self.root.winfo_width()
+                
+                # Euristica: se larghezza totale > 1.5 * altezza, probabilmente dual monitor
+                aspect_ratio = total_width / total_height
+                if aspect_ratio > 2.5:  # Tipico di configurazione dual monitor 16:9
+                    estimated_primary_width = total_width // 2
+                    
+                    return {
+                        'has_secondary': True,
+                        'monitor_count': 2,
+                        'primary': {
+                            'width': estimated_primary_width,
+                            'height': total_height,
+                            'x': 0,
+                            'y': 0
+                        },
+                        'secondary': {
+                            'width': estimated_primary_width,
+                            'height': total_height,
+                            'x': estimated_primary_width,
+                            'y': 0
+                        }
+                    }
+                
+            except Exception as e:
+                print(f"⚠️ Errore rilevamento tkinter: {e}")
+            
+            # Fallback: solo monitor primario
+            return {
+                'has_secondary': False,
+                'monitor_count': 1,
+                'primary': {
+                    'width': self.root.winfo_screenwidth(),
+                    'height': self.root.winfo_screenheight(),
+                    'x': 0,
+                    'y': 0
+                },
+                'secondary': None
+            }
+            
+        except Exception as e:
+            print(f"❌ Errore generale rilevamento monitor: {e}")
+            # Fallback sicuro
+            return {
+                'has_secondary': False,
+                'monitor_count': 1,
+                'primary': {
+                    'width': 1920,
+                    'height': 1080,
+                    'x': 0,
+                    'y': 0
+                },
+                'secondary': None
+            }
+
     def update_video_controls_state(self):
-        """Aggiorna lo stato dei controlli video in base alla sorgente."""
         if hasattr(self, "seek_frame") and hasattr(self, "play_button"):
             if self.video_analyzer.is_video_file:
                 # Abilita controlli per file video
@@ -6203,15 +6593,23 @@ class CanvasApp:
 
     def on_video_preview_update(self, frame: np.ndarray):
         """Callback per aggiornamento anteprima video in tempo reale."""
-        if self.preview_enabled and self.preview_enabled.get() and self.preview_label:
+        if self.preview_enabled and self.preview_enabled.get():
             try:
                 # Calcola dimensioni proporzionate mantenendo aspect ratio
                 frame_height, frame_width = frame.shape[:2]
                 aspect_ratio = frame_width / frame_height
 
                 # Area disponibile nell'anteprima
-                max_width = 390  # Leggermente meno del frame per bordi
-                max_height = 290
+                if self.is_preview_detached and self.detached_preview_label:
+                    # Per finestra separata: dimensioni più grandi
+                    max_width = 1200
+                    max_height = 900
+                    target_label = self.detached_preview_label
+                else:
+                    # Per anteprima integrata
+                    max_width = 390
+                    max_height = 290
+                    target_label = self.preview_label
 
                 # Calcola dimensioni finali mantenendo aspect ratio
                 if aspect_ratio > max_width / max_height:
@@ -6233,19 +6631,19 @@ class CanvasApp:
 
                 # Aggiorna la label dell'anteprima nel thread principale
                 self.root.after(
-                    0, lambda: self.update_integrated_preview_display(photo)
+                    0, lambda: self.update_preview_display(photo, target_label)
                 )
             except Exception as e:
                 print(f"Errore nell'aggiornamento anteprima: {e}")
 
-    def update_integrated_preview_display(self, photo):
-        """Aggiorna il display dell'anteprima integrata."""
+    def update_preview_display(self, photo, target_label):
+        """Aggiorna il display dell'anteprima (integrata o separata)."""
         try:
-            if self.preview_label:
-                self.preview_label.configure(image=photo, text="")
-                self.preview_label.image = photo  # Mantiene riferimento
+            if target_label:
+                target_label.configure(image=photo, text="")
+                target_label.image = photo  # Mantiene riferimento
         except Exception as e:
-            print(f"Errore nell'aggiornamento display anteprima integrata: {e}")
+            print(f"Errore nell'aggiornamento display anteprima: {e}")
 
     def update_canvas_with_new_frame(self, frame: np.ndarray, landmarks, score: float):
         """Aggiorna il canvas con un nuovo frame migliore."""
@@ -6289,7 +6687,8 @@ class CanvasApp:
         def handle_completion():
             # Aggiorna stato interfaccia
             self.is_playing = False
-            self.play_pause_btn.config(text="▶️")
+            if hasattr(self, 'start_btn'):
+                self.start_btn.config(text="▶️")
 
             # Carica direttamente il frame migliore
             best_frame, best_landmarks, best_score = (
@@ -6516,19 +6915,14 @@ class CanvasApp:
             print(f"❌ Errore caricamento frame da tabella: {e}")
             self.status_bar.config(text="Errore nel caricamento del frame")
 
-    def update_preview_display(self, photo):
-        """Aggiorna il display dell'anteprima nel thread principale."""
+    def update_integrated_preview_display(self, photo):
+        """Aggiorna il display dell'anteprima integrata."""
         try:
-            if (
-                self.preview_label
-                and self.preview_window
-                and self.preview_window.winfo_exists()
-            ):
-                self.preview_label.configure(image=photo)
-                self.preview_label.image = (
-                    photo  # Mantiene riferimento per evitare garbage collection
-                )
-        except tk.TclError:
+            if self.preview_label:
+                self.preview_label.configure(image=photo, text="")
+                self.preview_label.image = photo  # Mantiene riferimento
+        except Exception as e:
+            print(f"Errore nell'aggiornamento display anteprima integrata: {e}")
             # Finestra chiusa, ignora l'errore
             pass
         except Exception as e:
@@ -9742,143 +10136,13 @@ Aree calcolate:
         
         return has_green_dots and has_measurements
 
-    def crop_eyebrow_image(self, side: str) -> Optional[np.ndarray]:
-        """
-        Ritaglia l'immagine del sopracciglio dal canvas principale.
-        
-        Args:
-            side: 'left' per sopracciglio sinistro, 'right' per quello destro
-            
-        Returns:
-            Optional[np.ndarray]: Immagine ritagliata o None se errore
-        """
-        try:
-            if not hasattr(self, 'current_image') or self.current_image is None:
-                self.status_bar.config(text="❌ Nessuna immagine caricata")
-                return None
-                
-            if not self.has_green_dots_and_measurements():
-                self.status_bar.config(text="❌ Punti verdi non rilevati o misurazioni mancanti")
-                return None
-                
-            # Ottieni il bounding box del sopracciglio
-            if side == 'left':
-                bbox = self.green_dots_processor.get_left_eyebrow_bbox(expand_factor=0.5)
-            elif side == 'right':
-                bbox = self.green_dots_processor.get_right_eyebrow_bbox(expand_factor=0.5)
-            else:
-                raise ValueError(f"Lato non valido: {side}")
-                
-            x_min, y_min, x_max, y_max = bbox
-            
-            # Verifica che il bounding box sia valido
-            if x_max <= x_min or y_max <= y_min:
-                self.status_bar.config(text=f"❌ Bounding box non valido per sopracciglio {side}")
-                return None
-            
-            # Converti l'immagine PIL in array numpy se necessario
-            if isinstance(self.current_image, Image.Image):
-                image_array = np.array(self.current_image)
-            else:
-                image_array = self.current_image
-                
-            # Assicurati che le coordinate siano nell'immagine
-            height, width = image_array.shape[:2]
-            x_min = max(0, min(x_min, width-1))
-            y_min = max(0, min(y_min, height-1))
-            x_max = max(x_min+1, min(x_max, width))
-            y_max = max(y_min+1, min(y_max, height))
-            
-            # Ritaglia l'immagine
-            cropped = image_array[y_min:y_max, x_min:x_max]
-            
-            return cropped, (x_min, y_min, x_max, y_max)
-            
-        except Exception as e:
-            print(f"❌ Errore nel ritaglio sopracciglio {side}: {e}")
-            self.status_bar.config(text=f"❌ Errore nel ritaglio sopracciglio {side}")
-            return None
-
-    def create_eyebrow_overlay(self, cropped_image: np.ndarray, side: str, bbox: Tuple[int, int, int, int]) -> np.ndarray:
-        """
-        Crea gli overlay dei punti verdi per il sopracciglio ritagliato.
-        
-        Args:
-            cropped_image: Immagine ritagliata del sopracciglio
-            side: 'left' o 'right'
-            bbox: Bounding box utilizzato per il ritaglio (x_min, y_min, x_max, y_max)
-            
-        Returns:
-            np.ndarray: Immagine con overlay applicati
-        """
-        try:
-            x_min, y_min, x_max, y_max = bbox
-            
-            # Crea una copia dell'immagine ritagliata
-            result_image = cropped_image.copy()
-            
-            # Colori per gli overlay
-            current_color = (0, 255, 0)  # Verde per il sopracciglio corrente
-            opposite_color = (255, 0, 0)  # Rosso per quello controlaterale
-            
-            # Calcola la dimensione dei cerchi basata sulla dimensione dell'immagine
-            # Per immagini più grandi, cerchi più grandi
-            image_area = result_image.shape[0] * result_image.shape[1]
-            base_radius = max(2, int((image_area / 10000) ** 0.5))  # Radius adattivo
-            circle_thickness = max(1, base_radius // 2)
-            
-            # Aggiungi overlay del sopracciglio corrente
-            if side == 'left':
-                current_dots = self.green_dots_processor.left_dots
-                opposite_dots = self.green_dots_processor.right_dots
-            else:
-                current_dots = self.green_dots_processor.right_dots  
-                opposite_dots = self.green_dots_processor.left_dots
-                
-            # Disegna i punti del sopracciglio corrente
-            for dot in current_dots:
-                # Converte coordinate globali in coordinate relative al ritaglio
-                x_rel = dot["x"] - x_min
-                y_rel = dot["y"] - y_min
-                
-                if 0 <= x_rel < result_image.shape[1] and 0 <= y_rel < result_image.shape[0]:
-                    # Usa cerchi di dimensione adattiva
-                    cv2.circle(result_image, (int(x_rel), int(y_rel)), base_radius, current_color, -1)
-                    cv2.circle(result_image, (int(x_rel), int(y_rel)), base_radius + circle_thickness, current_color, circle_thickness)
-            
-            # Disegna i punti del sopracciglio controlaterale (riflessi)
-            if opposite_dots:
-                # Calcola l'asse di simmetria (centro dell'immagine originale)
-                if hasattr(self, 'current_image'):
-                    if isinstance(self.current_image, Image.Image):
-                        image_width = self.current_image.width
-                    else:
-                        image_width = self.current_image.shape[1]
-                    symmetry_axis = image_width // 2
-                    
-                    for dot in opposite_dots:
-                        # Rifletti il punto rispetto all'asse di simmetria
-                        x_reflected = 2 * symmetry_axis - dot["x"]
-                        y_reflected = dot["y"]
-                        
-                        # Converte in coordinate relative al ritaglio
-                        x_rel = x_reflected - x_min
-                        y_rel = y_reflected - y_min
-                        
-                        if 0 <= x_rel < result_image.shape[1] and 0 <= y_rel < result_image.shape[0]:
-                            # Usa cerchi di dimensione adattiva anche per i punti controlaterali
-                            cv2.circle(result_image, (int(x_rel), int(y_rel)), base_radius, opposite_color, -1)
-                            cv2.circle(result_image, (int(x_rel), int(y_rel)), base_radius + circle_thickness, opposite_color, circle_thickness)
-                            
-            return result_image
-            
-        except Exception as e:
-            print(f"❌ Errore nella creazione overlay: {e}")
-            return cropped_image
+# FUNZIONI RIMOSSE: crop_eyebrow_image e create_eyebrow_overlay
+# Nel nuovo flusso, l'overlay viene creato sull'intera immagine prima del ritaglio
 
     def show_eyebrow_correction_window(self, side: str):
         """
         Mostra una finestra con l'immagine del sopracciglio ritagliata e gli overlay.
+        NUOVO FLUSSO: Prima crea overlay sull'intera immagine, poi ritaglia.
         
         Args:
             side: 'left' per sopracciglio sinistro, 'right' per quello destro
@@ -9890,19 +10154,229 @@ Aree calcolate:
                     "Prerequisiti mancanti",
                     "Per utilizzare la correzione sopracciglio è necessario:\n"
                     "1. Rilevare i punti verdi (GREEN DOTS)\n"
-                    "2. Avere almeno una misurazione nella tabella"
+                    "2. Avere almeno una misurazione nella tabella\n"
+                    "3. Calcolare l'asse di simmetria (pulsante ASSE)"
                 )
                 return
             
-            # Ritaglia l'immagine del sopracciglio
-            crop_result = self.crop_eyebrow_image(side)
-            if crop_result is None:
-                return
-                
-            cropped_image, bbox = crop_result
+            print(f"🚀 NUOVO FLUSSO: Correzione sopracciglio {side}")
             
-            # Crea gli overlay
-            image_with_overlay = self.create_eyebrow_overlay(cropped_image, side, bbox)
+            # STEP 1: Crea overlay sull'intera immagine con punti verdi originali + rossi riflessi
+            full_image_with_overlay = self.create_full_canvas_eyebrow_overlay(side)
+            if full_image_with_overlay is None:
+                messagebox.showerror("Errore", "Impossibile creare overlay completo dell'immagine")
+                return
+            
+            print(f"✅ Overlay completo creato per {side}")
+            
+            # STEP 2: Ritaglia il sopracciglio dall'immagine con overlay
+            bbox = None
+            if side == 'left':
+                bbox = self.green_dots_processor.get_left_eyebrow_bbox(expand_factor=0.5)
+            else:  # side == 'right'
+                bbox = self.green_dots_processor.get_right_eyebrow_bbox(expand_factor=0.5)
+            
+            if bbox == (0, 0, 0, 0):
+                messagebox.showerror("Errore", f"Bounding box non valido per sopracciglio {side}")
+                return
+            
+            x_min, y_min, x_max, y_max = bbox
+            
+            # Verifica che il bounding box sia valido
+            if x_max <= x_min or y_max <= y_min:
+                messagebox.showerror("Errore", f"Bounding box non valido: {bbox}")
+                return
+            
+            # Assicurati che le coordinate siano nell'immagine
+            height, width = full_image_with_overlay.shape[:2]
+            x_min = max(0, min(x_min, width-1))
+            y_min = max(0, min(y_min, height-1))
+            x_max = max(x_min+1, min(x_max, width))
+            y_max = max(y_min+1, min(y_max, height))
+            
+            # Ritaglia l'immagine con overlay
+            cropped_image_with_overlay = full_image_with_overlay[y_min:y_max, x_min:x_max]
+            
+            print(f"✅ Ritaglio completato: {cropped_image_with_overlay.shape}")
+            
+            # SEMPRE: Mostra temporaneamente l'overlay completo sul canvas principale per verifica
+            self.status_bar.config(text="🎨 Mostra overlay completo per 3 secondi, poi finestra ritaglio...")
+            
+            # Programma la continuazione dopo l'overlay temporaneo
+            self._continue_function = self._show_cropped_window_after_overlay
+            self._continue_params = {
+                'cropped_image': cropped_image_with_overlay,
+                'side': side
+            }
+            
+            self.show_temp_overlay_on_canvas(full_image_with_overlay)
+            return  # Esce qui, continuerà dopo l'overlay
+            
+        except Exception as e:
+            print(f"❌ Errore nell'apertura finestra correzione: {e}")
+            messagebox.showerror(
+                "Errore",
+                f"Errore nell'apertura finestra correzione:\n{e}"
+            )
+
+    def _show_cropped_window_after_overlay(self, cropped_image: np.ndarray, side: str):
+        """
+        Continua mostrando la finestra di correzione dopo l'overlay temporaneo.
+        
+        Args:
+            cropped_image: Immagine ritagliata con overlay
+            side: Lato del sopracciglio ('left' o 'right')
+        """
+        try:
+            image_with_overlay = cropped_image
+            
+            # Crea una nuova finestra
+            side_name = "Sinistro" if side == 'left' else "Destro"
+            window_title = f"Correzione Sopracciglio {side_name} - NUOVO FLUSSO"
+            
+            correction_window = tk.Toplevel(self.root)
+            correction_window.title(window_title)
+            
+            # Frame principale
+            main_frame = ttk.Frame(correction_window, padding=10)
+            main_frame.pack(fill=tk.BOTH, expand=True)
+            
+            # Titolo
+            title_label = ttk.Label(
+                main_frame, 
+                text=f"🔍 {window_title}",
+                font=("Arial", 14, "bold")
+            )
+            title_label.pack(pady=(0, 10))
+            
+            # Legenda aggiornata per il nuovo flusso
+            legend_frame = ttk.Frame(main_frame)
+            legend_frame.pack(fill=tk.X, pady=(0, 10))
+            
+            ttk.Label(
+                legend_frame,
+                text="🟢 Verde: Punti originali del lato selezionato (SA, SA0, SC, SC1, SB)",
+                foreground="green",
+                font=("Arial", 9)
+            ).pack(side=tk.LEFT, padx=(0, 20))
+            
+            ttk.Label(
+                legend_frame,
+                text="🔴 Rosso: Punti riflessi dal lato opposto rispetto all'asse di simmetria",
+                foreground="red",
+                font=("Arial", 9)
+            ).pack(side=tk.LEFT)
+            
+            # Converte l'immagine per Tkinter
+            if len(image_with_overlay.shape) == 3:
+                # BGR -> RGB per la visualizzazione
+                display_image = cv2.cvtColor(image_with_overlay, cv2.COLOR_BGR2RGB)
+            else:
+                display_image = image_with_overlay
+                
+            pil_image = Image.fromarray(display_image)
+            
+            # Calcola le dimensioni dello schermo per adattare l'immagine
+            screen_width = correction_window.winfo_screenwidth()
+            screen_height = correction_window.winfo_screenheight()
+            
+            # Riserva spazio per la barra del titolo, legenda e pulsanti (circa 200px)
+            available_width = screen_width - 100  # Margini laterali
+            available_height = screen_height - 200  # Spazio per UI elements
+            
+            # Calcola il fattore di scala per utilizzare quasi tutto lo schermo disponibile
+            width_ratio = available_width / pil_image.width
+            height_ratio = available_height / pil_image.height
+            
+            # Usa il rapporto minore per mantenere le proporzioni
+            scale_factor = min(width_ratio, height_ratio)
+            # Assicurati che l'immagine sia ingrandita significativamente (minimo 4x per il nuovo flusso)
+            scale_factor = max(scale_factor, 4.0)
+            
+            # Applica il fattore di scala
+            new_width = int(pil_image.width * scale_factor)
+            new_height = int(pil_image.height * scale_factor)
+            
+            # Usa LANCZOS per un ingrandimento di alta qualità
+            pil_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            photo = ImageTk.PhotoImage(pil_image)
+            
+            # Calcola le dimensioni della finestra in base all'immagine + spazio per UI
+            ui_height = 180  # Aumentato spazio per titolo, legenda e pulsanti (evita taglio)
+            window_width = pil_image.width + 40  # Margini laterali
+            window_height = pil_image.height + ui_height
+            
+            # Imposta le dimensioni della finestra
+            correction_window.geometry(f"{window_width}x{window_height}")
+            
+            # Centra la finestra sullo schermo
+            x = (screen_width - window_width) // 2
+            y = (screen_height - window_height) // 2
+            correction_window.geometry(f"{window_width}x{window_height}+{x}+{y}")
+            
+            # Canvas semplice senza scrollbar - l'immagine si adatta perfettamente
+            image_canvas = tk.Canvas(
+                main_frame,
+                width=pil_image.width,
+                height=pil_image.height,
+                bg="white",
+                highlightthickness=1,
+                highlightbackground="gray"
+            )
+            image_canvas.pack(pady=10)
+            
+            # Aggiungi l'immagine al centro del canvas
+            image_canvas.create_image(
+                pil_image.width // 2,
+                pil_image.height // 2,
+                image=photo
+            )
+            
+            # Mantieni riferimento all'immagine
+            image_canvas.image = photo
+            
+            # Frame per i pulsanti
+            buttons_frame = ttk.Frame(main_frame)
+            buttons_frame.pack(fill=tk.X, pady=(10, 0))
+            
+            # Pulsante per salvare l'immagine
+            def save_image():
+                from tkinter import filedialog
+                file_path = filedialog.asksaveasfilename(
+                    title="Salva immagine sopracciglio",
+                    defaultextension=".png",
+                    filetypes=[("PNG files", "*.png"), ("JPEG files", "*.jpg"), ("All files", "*.*")]
+                )
+                if file_path:
+                    try:
+                        save_image = Image.fromarray(display_image)
+                        save_image.save(file_path)
+                        self.status_bar.config(text=f"✅ Immagine salvata: {file_path}")
+                    except Exception as e:
+                        messagebox.showerror("Errore", f"Impossibile salvare l'immagine:\n{e}")
+            
+            ttk.Button(
+                buttons_frame,
+                text="💾 Salva Immagine",
+                command=save_image
+            ).pack(side=tk.LEFT, padx=(0, 10))
+            
+            # Pulsante per chiudere
+            ttk.Button(
+                buttons_frame,
+                text="❌ Chiudi",
+                command=correction_window.destroy
+            ).pack(side=tk.RIGHT)
+            
+            self.status_bar.config(text=f"✅ Finestra correzione sopracciglio {side_name.lower()} aperta - NUOVO FLUSSO")
+            
+        except Exception as e:
+            print(f"❌ Errore apertura finestra ritagliata: {e}")
+            messagebox.showerror(
+                "Errore",
+                f"Errore nell'apertura finestra ritagliata:\n{e}"
+            )
             
             # Crea una nuova finestra
             side_name = "Sinistro" if side == 'left' else "Destro"
@@ -9976,7 +10450,7 @@ Aree calcolate:
             photo = ImageTk.PhotoImage(pil_image)
             
             # Calcola le dimensioni della finestra in base all'immagine + spazio per UI
-            ui_height = 120  # Spazio per titolo, legenda e pulsanti
+            ui_height = 180  # Aumentato spazio per titolo, legenda e pulsanti (evita taglio)
             window_width = pil_image.width + 40  # Margini laterali
             window_height = pil_image.height + ui_height
             
@@ -10059,6 +10533,371 @@ Aree calcolate:
         """Mostra la finestra di correzione per il sopracciglio destro."""  
         self.show_eyebrow_correction_window('right')
 
+    def get_facial_symmetry_axis(self) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+        """
+        Calcola l'asse di simmetria facciale basato sui landmarks.
+        
+        Returns:
+            Optional[Tuple]: ((x1, y1), (x2, y2)) punti dell'asse di simmetria, None se non disponibile
+        """
+        try:
+            if not self.current_landmarks or len(self.current_landmarks) < 10:
+                print("❌ Landmarks non disponibili per calcolo asse")
+                return None
+            
+            # MediaPipe landmark indices per asse di simmetria
+            # 9: glabella (centro fronte), 151: mento
+            glabella_idx = 9
+            chin_idx = 151
+            
+            if len(self.current_landmarks) <= max(glabella_idx, chin_idx):
+                print("❌ Landmarks insufficienti per asse di simmetria")
+                return None
+            
+            # Ottieni i landmarks
+            glabella = self.current_landmarks[glabella_idx]
+            chin = self.current_landmarks[chin_idx]
+            
+            # Gestisce diversi formati di landmark (oggetto vs tuple)
+            if hasattr(glabella, 'x') and hasattr(glabella, 'y'):
+                # Formato MediaPipe (coordinate normalizzate 0-1)
+                img_width = self.current_image.shape[1] if hasattr(self.current_image, 'shape') else 640
+                img_height = self.current_image.shape[0] if hasattr(self.current_image, 'shape') else 480
+                
+                glabella_point = (glabella.x * img_width, glabella.y * img_height)
+                chin_point = (chin.x * img_width, chin.y * img_height)
+            elif isinstance(glabella, (tuple, list)) and len(glabella) >= 2:
+                # Formato tuple/lista (coordinate già in pixel)
+                glabella_point = (float(glabella[0]), float(glabella[1]))
+                chin_point = (float(chin[0]), float(chin[1]))
+            else:
+                print("❌ Formato landmark non riconosciuto")
+                return None
+            
+            print(f"🎯 Asse di simmetria calcolato: Glabella{glabella_point} -> Mento{chin_point}")
+            return (glabella_point, chin_point)
+            
+        except Exception as e:
+            print(f"❌ Errore calcolo asse di simmetria: {e}")
+            return None
+
+    def reflect_point_across_axis(self, point: Tuple[float, float], axis: Tuple[Tuple[float, float], Tuple[float, float]]) -> Tuple[float, float]:
+        """
+        Riflette un punto rispetto all'asse di simmetria.
+        
+        Args:
+            point: (x, y) coordinate del punto da riflettere
+            axis: ((x1, y1), (x2, y2)) punti dell'asse di simmetria
+            
+        Returns:
+            Tuple[float, float]: Coordinate del punto riflesso
+        """
+        try:
+            px, py = point
+            (x1, y1), (x2, y2) = axis
+            
+            # Vettore direzione dell'asse
+            dx = x2 - x1
+            dy = y2 - y1
+            
+            # Normalizza il vettore
+            length = np.sqrt(dx*dx + dy*dy)
+            if length == 0:
+                return point  # Asse degenere, restituisci punto originale
+            
+            dx_norm = dx / length
+            dy_norm = dy / length
+            
+            # Vettore dal punto di partenza dell'asse al punto da riflettere
+            px_rel = px - x1
+            py_rel = py - y1
+            
+            # Proiezione del punto sull'asse
+            dot_product = px_rel * dx_norm + py_rel * dy_norm
+            proj_x = x1 + dot_product * dx_norm
+            proj_y = y1 + dot_product * dy_norm
+            
+            # Punto riflesso (simmetrico rispetto all'asse)
+            reflected_x = 2 * proj_x - px
+            reflected_y = 2 * proj_y - py
+            
+            return (reflected_x, reflected_y)
+            
+        except Exception as e:
+            print(f"❌ Errore riflessione punto: {e}")
+            return point
+
+    def create_full_canvas_eyebrow_overlay(self, side: str) -> Optional[np.ndarray]:
+        """
+        Crea un overlay sull'intera immagine canvas con:
+        - Punti verdi originali del lato richiesto (SOLO SA, SA0, SC, SC1, SB)
+        - Punti rossi riflessi dal lato opposto
+        
+        Args:
+            side: 'left' o 'right' - il lato per cui creare la correzione
+            
+        Returns:
+            Optional[np.ndarray]: Immagine con overlay completo o None se errore
+        """
+        try:
+            print(f"🎨 Creazione overlay canvas completo per lato {side}")
+            
+            # Verifica prerequisiti
+            if not self.has_green_dots_and_measurements():
+                print("❌ Prerequisiti non soddisfatti per overlay")
+                return None
+            
+            # Calcola l'asse di simmetria
+            axis = self.get_facial_symmetry_axis()
+            if axis is None:
+                print("❌ Impossibile calcolare asse di simmetria")
+                return None
+            
+            # Crea una copia dell'immagine originale
+            if isinstance(self.current_image, Image.Image):
+                base_image = np.array(self.current_image)
+            else:
+                base_image = self.current_image.copy()
+            
+            # Assicurati che sia in formato BGR per OpenCV
+            if len(base_image.shape) == 3 and base_image.shape[2] == 3:
+                # Se è RGB, convertilo in BGR
+                base_image = cv2.cvtColor(base_image, cv2.COLOR_RGB2BGR)
+            
+            # Parametri per il disegno
+            green_color = (0, 255, 0)  # Verde per punti originali del lato richiesto
+            red_color = (0, 0, 255)    # Rosso per punti riflessi dal lato opposto
+            circle_radius = 0  # Ridotto a 0 per puntini piccolissimi (punti minimi)
+            circle_thickness = -1  # Riempiti
+            
+            # Ottieni i punti per il lato richiesto e quello opposto
+            # FILTRO: Usa solo i punti specifici richiesti (SA, SA0, SC, SC1, SB)
+            if side == 'left':
+                target_dots = self.green_dots_processor.left_dots   # Punti verdi originali (sinistra)
+                source_dots = self.green_dots_processor.right_dots  # Punti da riflettere (destra->sinistra)
+                target_labels = ["SC1", "SA0", "SA", "SC", "SB"]  # Ordine punti sinistri
+                print(f"🔍 Lato sinistro: {len(target_dots)} punti verdi originali, {len(source_dots)} punti da riflettere")
+            else:  # side == 'right'
+                target_dots = self.green_dots_processor.right_dots  # Punti verdi originali (destra)
+                source_dots = self.green_dots_processor.left_dots   # Punti da riflettere (sinistra->destra)
+                target_labels = ["DC1", "DB", "DC", "DA", "DA0"]  # Ordine punti destri
+                print(f"🔍 Lato destro: {len(target_dots)} punti verdi originali, {len(source_dots)} punti da riflettere")
+            
+            # Disegna i punti verdi originali del lato richiesto (SOLO i 5 principali)
+            points_drawn = 0
+            for i, dot in enumerate(target_dots):
+                # Limita ai primi 5 punti (SA, SA0, SC, SC1, SB o equivalenti destri)
+                if i >= 5:  # Prendi solo i primi 5 punti
+                    break
+                    
+                x, y = int(dot["x"]), int(dot["y"])
+                cv2.circle(base_image, (x, y), circle_radius, green_color, circle_thickness)
+                points_drawn += 1
+                
+                label = target_labels[i] if i < len(target_labels) else f"{side[0].upper()}{i+1}"
+                print(f"  ✅ Punto verde {label}: ({x}, {y})")
+            
+            # Rifletti e disegna i punti rossi dal lato opposto (SOLO i 5 principali)
+            # Salva anche le coordinate per disegnare le frecce
+            green_points_coords = []  # Coordinate punti verdi originali
+            red_points_coords = []    # Coordinate punti rossi riflessi
+            
+            # Prima salva le coordinate dei punti verdi già disegnati
+            for i, dot in enumerate(target_dots):
+                if i >= 5:
+                    break
+                green_points_coords.append((int(dot["x"]), int(dot["y"])))
+            
+            reflected_points = 0
+            for i, dot in enumerate(source_dots):
+                # Limita ai primi 5 punti
+                if i >= 5:
+                    break
+                    
+                original_point = (dot["x"], dot["y"])
+                reflected_point = self.reflect_point_across_axis(original_point, axis)
+                
+                x, y = int(reflected_point[0]), int(reflected_point[1])
+                
+                # Verifica che il punto riflesso sia dentro i confini dell'immagine
+                if 0 <= x < base_image.shape[1] and 0 <= y < base_image.shape[0]:
+                    cv2.circle(base_image, (x, y), circle_radius, red_color, circle_thickness)
+                    red_points_coords.append((x, y))
+                    reflected_points += 1
+                    print(f"  ✅ Punto rosso riflesso {i+1}: ({original_point[0]:.1f}, {original_point[1]:.1f}) -> ({x}, {y})")
+                else:
+                    red_points_coords.append(None)  # Segna punto fuori confini
+                    print(f"  ⚠️ Punto riflesso fuori confini: ({x}, {y})")
+            
+            # NUOVA FUNZIONALITÀ: Disegna frecce verdi tra coppie SPECIFICHE (A-A, A0-A0, C-C, C1-C1, B-B)
+            arrows_drawn = 0
+            arrow_color = (0, 180, 0)  # Verde per le frecce
+            
+            # Funzione per trovare un punto specifico per nome in una lista di punti
+            def find_point_by_name(dots_list, point_name):
+                """Trova un punto specifico per nome nella lista dei punti."""
+                for dot in dots_list:
+                    if 'name' in dot and dot['name'] == point_name:
+                        return (int(dot['x']), int(dot['y']))
+                return None
+            
+            # SOLUZIONE CORRETTA: Usa gli indici per associare punti verdi alle coordinate riflesse
+            # I punti riflessi sono già calcolati e salvati in red_points_coords
+            
+            # CORREZIONE MAPPATURA: I punti riflessi seguono l'ordine dei source_dots, non target_dots!
+            # Devo mappare correttamente gli indici per le coppie anatomiche
+            if side == 'left':
+                # Lato sinistro: punti verdi = left_dots, punti da riflettere = right_dots  
+                # Ma devo trovare quale indice di right_dots corrisponde a quale anatomico
+                target_anatomic = ["SC1", "SA0", "SA", "SC", "SB"]  # Quello che voglio (sinistro)
+                source_anatomic = ["DC1", "DA0", "DA", "DC", "DB"]  # Quello che rifletto (destro)
+            else:  # side == 'right'
+                # Lato destro: punti verdi = right_dots, punti da riflettere = left_dots
+                target_anatomic = ["DC1", "DA0", "DA", "DC", "DB"]  # Quello che voglio (destro) 
+                source_anatomic = ["SC1", "SA0", "SA", "SC", "SB"]  # Quello che rifletto (sinistro)
+            
+            # Mappatura delle coppie anatomiche corrette (indipendentemente dall'ordine nell'array)
+            anatomic_pairs = [
+                ("C1", "C1"),  # SC1 ↔ DC1
+                ("A0", "A0"),  # SA0 ↔ DA0  
+                ("A", "A"),    # SA ↔ DA
+                ("C", "C"),    # SC ↔ DC
+                ("B", "B")     # SB ↔ DB
+            ]
+            
+            # MAPPATURA CORRETTA BASATA SUL LOG OSSERVATO:
+            # Dal log: Lato destro verdi = DC1, DB, DC, DA, DA0 (indici 0,1,2,3,4)  
+            # Dal log: Punti riflessi = da SC1, SA0, SA, SC, SB (indici 0,1,2,3,4)
+            # DEVO MAPPARE: DC1→SC1, DB→SB, DC→SC, DA→SA, DA0→SA0
+            
+            if side == 'left':
+                # Lato sinistro: punti verdi sinistri → riflessi destri
+                # Ordine punti verdi sinistri: SC1, SA0, SA, SC, SB
+                # Devono collegarsi a: DC1, DA0, DA, DC, DB (riflessi)
+                correct_mapping = [0, 1, 2, 3, 4]  # Mappatura diretta per lato sinistro
+                point_names = [
+                    ("SC1", "DC1"), ("SA0", "DA0"), ("SA", "DA"), 
+                    ("SC", "DC"), ("SB", "DB")
+                ]
+            else:  # side == 'right'
+                # Lato destro: punti verdi destri → riflessi sinistri  
+                # Ordine punti verdi destri: DC1, DB, DC, DA, DA0 (dal log)
+                # Devono collegarsi a: SC1, SB, SC, SA, SA0 (corrispondenti anatomici)
+                # Ma i punti riflessi sono nell'ordine: SC1, SA0, SA, SC, SB
+                # MAPPATURA CORRETTA:
+                # DC1(0) → SC1(0) ✓
+                # DB(1) → SB(4) ✓  
+                # DC(2) → SC(3) ✓
+                # DA(3) → SA(2) ✓
+                # DA0(4) → SA0(1) ✓
+                correct_mapping = [0, 4, 3, 2, 1]  # Mappatura corretta per destro!
+                point_names = [
+                    ("DC1", "SC1"), ("DB", "SB"), ("DC", "SC"),
+                    ("DA", "SA"), ("DA0", "SA0")
+                ]
+            
+            # FRECCE COMPLETAMENTE DISABILITATE
+            arrows_drawn = 0
+            print(f"🚫 Frecce disabilitate - overlay solo con puntini verdi e rossi")
+            
+            print(f"🎨 Overlay creato: {points_drawn} punti verdi, {reflected_points} punti rossi, {arrows_drawn} piccole frecce verdi")
+            return base_image
+            
+        except Exception as e:
+            print(f"❌ Errore creazione overlay canvas: {e}")
+            return None
+
+    def show_temp_overlay_on_canvas(self, overlay_image: np.ndarray):
+        """
+        Mostra temporaneamente l'overlay completo sul canvas principale per debug.
+        
+        Args:
+            overlay_image: Immagine con overlay da mostrare temporaneamente
+        """
+        try:
+            # Salva l'immagine corrente
+            original_image = self.current_image
+            
+            # Converte overlay in formato PIL
+            if len(overlay_image.shape) == 3:
+                # BGR -> RGB per PIL
+                rgb_image = cv2.cvtColor(overlay_image, cv2.COLOR_BGR2RGB)
+            else:
+                rgb_image = overlay_image
+                
+            overlay_pil = Image.fromarray(rgb_image)
+            
+            # Mostra temporaneamente sul canvas
+            self.current_image = overlay_pil
+            self.update_canvas_display()
+            
+            # Programma il ripristino dell'immagine originale dopo 3 secondi
+            # e salva i parametri per continuare dopo il ripristino
+            self._temp_overlay_params = {
+                'original_image': original_image,
+                'continue_function': getattr(self, '_continue_after_overlay', None),
+                'continue_params': getattr(self, '_continue_params', None)
+            }
+            self.root.after(3000, lambda: self.restore_and_continue())
+            
+            print("🎨 Overlay temporaneo mostrato sul canvas (3 secondi)")
+            
+        except Exception as e:
+            print(f"❌ Errore visualizzazione overlay temporaneo: {e}")
+    
+    def restore_and_continue(self):
+        """Ripristina l'immagine originale e continua con la funzione programmata."""
+        try:
+            # Ripristina immagine originale dai parametri temporanei
+            if hasattr(self, '_temp_overlay_params'):
+                params = self._temp_overlay_params
+                self.current_image = params['original_image']
+                self.update_canvas_display()
+                print("🔄 Immagine originale ripristinata")
+                
+                # Pulisci parametri temporanei
+                delattr(self, '_temp_overlay_params')
+            
+            # Continua con la funzione programmata se presente
+            if hasattr(self, '_continue_function') and hasattr(self, '_continue_params'):
+                continue_func = self._continue_function
+                continue_params = self._continue_params
+                
+                print(f"🔄 Continuando con: {continue_func.__name__} con parametri {list(continue_params.keys())}")
+                
+                # Pulisci i riferimenti PRIMA di chiamare la funzione
+                delattr(self, '_continue_function')
+                delattr(self, '_continue_params')
+                
+                # Chiama la funzione di continuazione
+                continue_func(**continue_params)
+            else:
+                print("⚠️ Nessuna funzione di continuazione programmata")
+                    
+        except Exception as e:
+            print(f"❌ Errore ripristino e continuazione: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def restore_original_image(self, original_image):
+        """Ripristina l'immagine originale sul canvas (metodo legacy)."""
+        try:
+            self.current_image = original_image
+            self.update_canvas_display()
+            print("🔄 Immagine originale ripristinata")
+        except Exception as e:
+            print(f"❌ Errore ripristino immagine: {e}")
+            
+    def toggle_debug_overlay_mode(self):
+        """Attiva/disattiva la modalità debug per mostrare overlay completo."""
+        if not hasattr(self, 'debug_show_full_overlay'):
+            self.debug_show_full_overlay = False
+        
+        self.debug_show_full_overlay = not self.debug_show_full_overlay
+        status = "attivata" if self.debug_show_full_overlay else "disattivata"
+        print(f"🐛 Modalità debug overlay {status}")
+        self.status_bar.config(text=f"Debug overlay: {status}")
+
     def update_eyebrow_correction_buttons_state(self):
         """Aggiorna lo stato (abilitato/disabilitato) dei pulsanti di correzione sopracciglio."""
         try:
@@ -10079,6 +10918,465 @@ Aree calcolate:
                 
         except Exception as e:
             print(f"❌ Errore aggiornamento stato pulsanti correzione: {e}")
+
+
+    # === ANALISI FACCIALE PROFESSIONALE ===
+    def perform_face_analysis(self):
+        """
+        Esegue l'analisi facciale completa utilizzando il modulo professionale.
+        Mostra i risultati nella tabella misurazioni e genera nuove finestre per le immagini.
+        """
+        try:
+            # Verifica se c'è un'immagine nel canvas
+            if self.current_image is None:
+                messagebox.showwarning("Nessuna Immagine", 
+                                     "Carica prima un'immagine nel canvas per procedere con l'analisi facciale.")
+                return
+
+            # Aggiorna status bar
+            self.status_bar.config(text="🔍 Esecuzione analisi facciale professionale...")
+            self.root.update()
+
+            # Salva temporaneamente l'immagine corrente
+            import tempfile
+            import os
+            temp_dir = tempfile.mkdtemp(prefix="face_analysis_")
+            temp_image_path = os.path.join(temp_dir, "current_image.jpg")
+            
+            # Converti l'immagine PIL in formato OpenCV e salva
+            if isinstance(self.current_image, Image.Image):
+                # Converti PIL Image in array numpy
+                img_array = np.array(self.current_image)
+                if len(img_array.shape) == 3:
+                    # Converti RGB a BGR per OpenCV
+                    img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(temp_image_path, img_array)
+            else:
+                # Se è già un array numpy
+                cv2.imwrite(temp_image_path, self.current_image)
+
+            # Esegui l'analisi facciale
+            print("🔍 Avvio analisi facciale professionale...")
+            result = self.face_analyzer.analyze_face(temp_image_path, output_dir=temp_dir)
+            
+            # Genera il report testuale
+            report_path = os.path.join(temp_dir, "report_completo.txt")
+            report_text = self.face_analyzer.generate_text_report(result, output_path=report_path)
+            
+            # Aggiorna la tabella misurazioni con i risultati dell'analisi
+            self._update_measurements_table_with_analysis(result)
+            
+            # Mostra le immagini generate dall'analisi
+            self._display_analysis_images(result)
+            
+            # Mostra finestra con il report completo
+            self._show_analysis_report_window(report_text, result)
+            
+            # Aggiorna status bar
+            self.status_bar.config(text="✅ Analisi facciale completata con successo")
+            
+            # Log dei risultati
+            print(f"✅ Analisi facciale completata")
+            print(f"📊 Forma viso rilevata: {result['forma_viso']}")
+            print(f"🎯 Sopracciglio consigliato: {result['analisi_visagistica']['forma_sopracciglio']}")
+            print(f"📁 Risultati salvati in: {temp_dir}")
+            
+            # Cleanup temporaneo dopo qualche secondo (opzionale)
+            # self.root.after(30000, lambda: self._cleanup_temp_dir(temp_dir))
+            
+        except Exception as e:
+            error_msg = f"❌ Errore durante l'analisi facciale: {str(e)}"
+            print(error_msg)
+            self.status_bar.config(text="❌ Errore nell'analisi facciale")
+            messagebox.showerror("Errore Analisi Facciale", error_msg)
+
+    def _update_measurements_table_with_analysis(self, result: dict):
+        """
+        Aggiorna la tabella misurazioni con i risultati dell'analisi facciale.
+        """
+        try:
+            # Aggiungi voce per la forma del viso
+            self.measurements_tree.insert(
+                "", "end", 
+                values=("Forma Viso", result['forma_viso'], "", "✅ Rilevata")
+            )
+            
+            # Aggiungi raccomandazione sopracciglio
+            eyebrow_rec = result['analisi_visagistica']['forma_sopracciglio']
+            self.measurements_tree.insert(
+                "", "end",
+                values=("Sopracciglio Consigliato", eyebrow_rec, "", "✅ Raccomandato")  
+            )
+            
+            # Aggiungi metriche facciali principali
+            metrics = result['metriche_facciali']
+            key_metrics = [
+                ("Rapporto L/W", f"{metrics['rapporto_lunghezza_larghezza']:.2f}", "ratio"),
+                ("Larghezza Fronte", f"{metrics['larghezza_fronte']:.1f}", "px"),
+                ("Larghezza Zigomi", f"{metrics['larghezza_zigomi']:.1f}", "px"),
+                ("Larghezza Mascella", f"{metrics['larghezza_mascella']:.1f}", "px"),
+                ("Distanza Occhi", f"{metrics['distanza_occhi']:.1f}", "px"),
+                ("Larghezza Naso", f"{metrics['larghezza_naso']:.1f}", "px"),
+                ("Larghezza Bocca", f"{metrics['larghezza_bocca']:.1f}", "px")
+            ]
+            
+            for metric_name, value, unit in key_metrics:
+                self.measurements_tree.insert(
+                    "", "end",
+                    values=(metric_name, value, unit, "📊 Calcolata")
+                )
+                
+        except Exception as e:
+            print(f"❌ Errore aggiornamento tabella misurazioni: {e}")
+
+    def _display_analysis_images(self, result: dict):
+        """
+        Mostra le immagini generate dall'analisi in nuove finestre.
+        """
+        try:
+            images_info = result.get('immagini_debug', {})
+            
+            for image_name, image_path in images_info.items():
+                if os.path.exists(image_path):
+                    self._create_image_window(image_name, image_path)
+                    
+        except Exception as e:
+            print(f"❌ Errore visualizzazione immagini analisi: {e}")
+
+    def _create_image_window(self, title: str, image_path: str):
+        """
+        Crea una nuova finestra per visualizzare un'immagine dell'analisi.
+        """
+        try:
+            # Crea una nuova finestra
+            window = tk.Toplevel(self.root)
+            window.title(f"Analisi Facciale - {title}")
+            window.geometry("600x500")
+            
+            # Carica e ridimensiona l'immagine
+            img = Image.open(image_path)
+            img.thumbnail((580, 450), Image.Resampling.LANCZOS)
+            photo = ImageTk.PhotoImage(img)
+            
+            # Frame per l'immagine
+            frame = ttk.Frame(window)
+            frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            # Label per l'immagine
+            label = ttk.Label(frame, image=photo)
+            label.pack(pady=5)
+            
+            # Mantieni riferimento all'immagine
+            label.image = photo
+            
+            # Pulsante per salvare l'immagine
+            save_btn = ttk.Button(
+                frame, 
+                text="💾 Salva Immagine",
+                command=lambda: self._save_analysis_image(image_path)
+            )
+            save_btn.pack(pady=5)
+            
+        except Exception as e:
+            print(f"❌ Errore creazione finestra immagine: {e}")
+
+    def _save_analysis_image(self, source_path: str):
+        """
+        Salva un'immagine dell'analisi in una posizione scelta dall'utente.
+        """
+        try:
+            file_path = filedialog.asksaveasfilename(
+                title="Salva Immagine Analisi",
+                defaultextension=".png",
+                filetypes=[
+                    ("PNG", "*.png"),
+                    ("JPEG", "*.jpg"),
+                    ("Tutti i file", "*.*")
+                ]
+            )
+            
+            if file_path:
+                # Copia il file
+                import shutil
+                shutil.copy2(source_path, file_path)
+                print(f"💾 Immagine salvata in: {file_path}")
+                messagebox.showinfo("Salvataggio", f"Immagine salvata con successo in:\n{file_path}")
+                
+        except Exception as e:
+            error_msg = f"Errore nel salvataggio: {e}"
+            print(f"❌ {error_msg}")
+            messagebox.showerror("Errore", error_msg)
+
+    def _show_analysis_report_window(self, report_text: str, result: dict):
+        """
+        Mostra una finestra con il report completo dell'analisi facciale.
+        """
+        try:
+            # Crea finestra per il report
+            report_window = tk.Toplevel(self.root)
+            report_window.title("📋 Report Analisi Facciale Completa")
+            report_window.geometry("800x600")
+            
+            # Frame principale
+            main_frame = ttk.Frame(report_window)
+            main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            # Area di testo con scrollbar
+            text_frame = ttk.Frame(main_frame)
+            text_frame.pack(fill=tk.BOTH, expand=True)
+            
+            text_area = tk.Text(
+                text_frame,
+                wrap=tk.WORD,
+                font=("Consolas", 10),
+                bg="#f8f9fa",
+                fg="#212529"
+            )
+            
+            scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=text_area.yview)
+            text_area.configure(yscrollcommand=scrollbar.set)
+            
+            text_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            # Inserisci il testo del report
+            text_area.insert(tk.END, report_text)
+            text_area.config(state=tk.DISABLED)  # Read-only
+            
+            # Frame per i pulsanti
+            buttons_frame = ttk.Frame(main_frame)
+            buttons_frame.pack(fill=tk.X, pady=(10, 0))
+            
+            # Pulsante per salvare il report
+            save_report_btn = ttk.Button(
+                buttons_frame,
+                text="💾 Salva Report",
+                command=lambda: self._save_analysis_report(report_text)
+            )
+            save_report_btn.pack(side=tk.LEFT, padx=(0, 5))
+            
+            # Pulsante per copiare negli appunti
+            copy_btn = ttk.Button(
+                buttons_frame,
+                text="📋 Copia negli Appunti",
+                command=lambda: self._copy_to_clipboard(report_text)
+            )
+            copy_btn.pack(side=tk.LEFT, padx=5)
+            
+            # Pulsante chiudi
+            close_btn = ttk.Button(
+                buttons_frame,
+                text="❌ Chiudi",
+                command=report_window.destroy
+            )
+            close_btn.pack(side=tk.RIGHT)
+            
+        except Exception as e:
+            print(f"❌ Errore creazione finestra report: {e}")
+
+    def _save_analysis_report(self, report_text: str):
+        """Salva il report dell'analisi in un file."""
+        try:
+            file_path = filedialog.asksaveasfilename(
+                title="Salva Report Analisi",
+                defaultextension=".txt",
+                filetypes=[
+                    ("File di testo", "*.txt"),
+                    ("Tutti i file", "*.*")
+                ]
+            )
+            
+            if file_path:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(report_text)
+                print(f"💾 Report salvato in: {file_path}")
+                messagebox.showinfo("Salvataggio", f"Report salvato con successo in:\n{file_path}")
+                
+        except Exception as e:
+            error_msg = f"Errore nel salvataggio del report: {e}"
+            print(f"❌ {error_msg}")
+            messagebox.showerror("Errore", error_msg)
+
+    def _copy_to_clipboard(self, text: str):
+        """Copia il testo negli appunti."""
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            messagebox.showinfo("Copia", "Report copiato negli appunti!")
+            
+        except Exception as e:
+            print(f"❌ Errore copia negli appunti: {e}")
+
+    def perform_face_analysis_with_voice(self):
+        """
+        Esegue l'analisi facciale completa e legge il report ad alta voce.
+        Versione specifica per comandi vocali.
+        """
+        try:
+            # Verifica se c'è un'immagine nel canvas
+            if self.current_image is None:
+                error_msg = "Nessuna immagine caricata. Carica prima un'immagine per procedere con l'analisi facciale."
+                print(f"❌ {error_msg}")
+                
+                # Usa l'assistente vocale per comunicare l'errore
+                if hasattr(self, 'voice_assistant') and self.voice_assistant:
+                    self.voice_assistant.speak(error_msg)
+                
+                messagebox.showwarning("Nessuna Immagine", error_msg)
+                return
+
+            # Informa l'utente che l'analisi sta iniziando
+            if hasattr(self, 'voice_assistant') and self.voice_assistant:
+                self.voice_assistant.speak("Analisi facciale in corso, attendere...")
+
+            # Aggiorna status bar
+            self.status_bar.config(text="🔍 Esecuzione analisi facciale professionale via comando vocale...")
+            self.root.update()
+
+            # Salva temporaneamente l'immagine corrente
+            import tempfile
+            import os
+            temp_dir = tempfile.mkdtemp(prefix="face_analysis_voice_")
+            temp_image_path = os.path.join(temp_dir, "current_image.jpg")
+            
+            # Converti l'immagine PIL in formato OpenCV e salva
+            if isinstance(self.current_image, Image.Image):
+                # Converti PIL Image in array numpy
+                img_array = np.array(self.current_image)
+                if len(img_array.shape) == 3:
+                    # Converti RGB a BGR per OpenCV
+                    img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(temp_image_path, img_array)
+            else:
+                # Se è già un array numpy
+                cv2.imwrite(temp_image_path, self.current_image)
+
+            # Esegui l'analisi facciale
+            print("🎤 Avvio analisi facciale professionale da comando vocale...")
+            result = self.face_analyzer.analyze_face(temp_image_path, output_dir=temp_dir)
+            
+            # Genera il report testuale
+            report_path = os.path.join(temp_dir, "report_completo.txt")
+            report_text = self.face_analyzer.generate_text_report(result, output_path=report_path)
+            
+            # Aggiorna la tabella misurazioni con i risultati dell'analisi
+            self._update_measurements_table_with_analysis(result)
+            
+            # Mostra le immagini generate dall'analisi (opzionale per comando vocale)
+            self._display_analysis_images(result)
+            
+            # **NUOVA FUNZIONALITÀ**: Leggi il report ad alta voce
+            self._read_analysis_report_aloud(result, report_text)
+            
+            # Aggiorna status bar
+            self.status_bar.config(text="✅ Analisi facciale completata e report letto")
+            
+            # Log dei risultati
+            print(f"✅ Analisi facciale vocale completata")
+            print(f"📊 Forma viso rilevata: {result['forma_viso']}")
+            print(f"🎯 Sopracciglio consigliato: {result['analisi_visagistica']['forma_sopracciglio']}")
+            print(f"📁 Risultati salvati in: {temp_dir}")
+            
+        except Exception as e:
+            error_msg = f"❌ Errore durante l'analisi facciale: {str(e)}"
+            print(error_msg)
+            self.status_bar.config(text="❌ Errore nell'analisi facciale")
+            
+            # Comunica l'errore vocalmente
+            if hasattr(self, 'voice_assistant') and self.voice_assistant:
+                self.voice_assistant.speak("Si è verificato un errore durante l'analisi facciale.")
+            
+            messagebox.showerror("Errore Analisi Facciale", error_msg)
+
+    def _read_analysis_report_aloud(self, result: dict, full_report_text: str):
+        """
+        Legge ad alta voce un riassunto del report di analisi facciale.
+        
+        Args:
+            result: Risultati dell'analisi facciale
+            full_report_text: Testo completo del report (per riferimento)
+        """
+        try:
+            if not hasattr(self, 'voice_assistant') or not self.voice_assistant:
+                print("❌ Assistente vocale non disponibile per lettura report")
+                return
+
+            print("🔊 Preparazione lettura report ad alta voce...")
+
+            # Crea un riassunto vocale dei risultati principali
+            forma_viso = result['forma_viso']
+            analisi_visagistica = result['analisi_visagistica']
+            metriche = result['metriche_facciali']
+            
+            # Costruisci il report vocale
+            report_vocale = []
+            
+            # Introduzione
+            report_vocale.append("Analisi facciale completata.")
+            
+            # Forma del viso
+            report_vocale.append(f"La forma del viso rilevata è: {forma_viso}.")
+            
+            # Raccomandazione sopracciglio
+            forma_sopracciglio = analisi_visagistica['forma_sopracciglio']
+            # Converte l'enum in stringa se necessario
+            if hasattr(forma_sopracciglio, 'value'):
+                forma_sopracciglio_str = forma_sopracciglio.value
+            else:
+                forma_sopracciglio_str = str(forma_sopracciglio)
+            
+            report_vocale.append(f"Il tipo di sopracciglio consigliato è: {forma_sopracciglio_str}.")
+            
+            # Metriche principali
+            rapporto_lw = metriche['rapporto_lunghezza_larghezza']
+            report_vocale.append(f"Il rapporto lunghezza larghezza del viso è {rapporto_lw:.2f}.")
+            
+            # Raccomandazione principale
+            motivazione = analisi_visagistica['motivazione_scientifica']
+            # Prendi solo la prima frase della motivazione per non essere troppo lungo
+            prima_frase = motivazione.split('.')[0] + '.'
+            report_vocale.append(f"Motivazione: {prima_frase}")
+            
+            # Metriche aggiuntive interessanti
+            larghezza_fronte = metriche['larghezza_fronte']
+            larghezza_zigomi = metriche['larghezza_zigomi']  
+            larghezza_mascella = metriche['larghezza_mascella']
+            
+            report_vocale.append(f"Misure facciali: fronte {larghezza_fronte:.0f} pixel, zigomi {larghezza_zigomi:.0f} pixel, mascella {larghezza_mascella:.0f} pixel.")
+            
+            # Conclusione
+            report_vocale.append("Report completo disponibile nella finestra di dettaglio. Analisi completata.")
+            
+            # Unisci tutto il testo
+            testo_completo = " ".join(report_vocale)
+            
+            print(f"🔊 Lettura report: {len(testo_completo)} caratteri")
+            
+            # Leggi il report ad alta voce
+            self.voice_assistant.speak(testo_completo)
+            
+            print("✅ Lettura report completata")
+            
+        except Exception as e:
+            print(f"❌ Errore durante lettura report vocale: {e}")
+            # Fallback: lettura di base
+            if hasattr(self, 'voice_assistant') and self.voice_assistant:
+                self.voice_assistant.speak("Analisi facciale completata. Controlla i risultati nella tabella misurazioni.")
+
+    # === FUNZIONI PER COMANDI VOCALI ===
+    def show_help(self):
+        """Mostra aiuto per comandi vocali"""
+        print("Comandi vocali disponibili:")
+        print("- Analizza volto, Carica immagine, Avvia webcam")
+        print("- Calcola misura, Salva risultati, Asse simmetria") 
+        print("- Landmarks, Punti verdi, Cancella tutto")
+        print("- Zoom in/out, Aiuto, Stato")
+    
+    def show_status(self):
+        """Mostra stato del sistema"""
+        has_image = self.image is not None
+        has_landmarks = len(self.landmarks) > 0
+        print(f"Sistema: Attivo | Immagine: {'Sì' if has_image else 'No'} | Landmarks: {'Sì' if has_landmarks else 'No'}")
 
 
 def main():

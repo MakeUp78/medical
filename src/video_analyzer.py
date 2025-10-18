@@ -27,6 +27,11 @@ class VideoAnalyzer:
         self.preview_callback = None  # RIPRISTINATO: Per anteprima video
         self.frame_callback = None  # NUOVO: Per aggiornare canvas principale
         self.debug_callback = None  # NUOVO: Per inviare dati alla tabella debug GUI
+        
+        # OVERLAY PREVIEW SETTINGS - Defaults attivi per landmarks e simmetria
+        self.show_landmarks = True   # Abilitato di default
+        self.show_symmetry = True    # Abilitato di default 
+        self.show_green_polygon = False
 
         # Tracciamento sorgente video per timestamp
         self.is_video_file = False  # True per file video, False per webcam
@@ -64,11 +69,76 @@ class VideoAnalyzer:
         """Imposta la callback per inviare dati debug alla tabella GUI."""
         self.debug_callback = callback
 
+    def set_overlay_options(self, landmarks=False, symmetry=False, green_polygon=False):
+        """Imposta le opzioni di overlay per l'anteprima."""
+        self.show_landmarks = landmarks
+        self.show_symmetry = symmetry
+        self.show_green_polygon = green_polygon
+
     def set_scoring_config(self, scoring_config):
         """Imposta la configurazione dei pesi per lo scoring."""
         self.scoring_config = scoring_config
 
-    # =============== CONTROLLI PLAYER VIDEO ===============
+    def analyze_frame(
+        self, frame: np.ndarray
+    ) -> Tuple[Optional[List[Tuple[float, float]]], float]:
+        """
+        Analizza un singolo frame per rilevare volti e calcolare il punteggio di frontalità.
+        SEMPLIFICATO per massima efficacia nel trovare frame frontali.
+        """
+        # Rileva landmark 2D standard
+        landmarks = self.face_detector.detect_face_landmarks(frame)
+
+        if landmarks is None:
+            return None, 0.0
+
+        # Verifica dimensione minima del volto
+        if len(landmarks) > 362:
+            left_eye_outer = landmarks[33]
+            right_eye_outer = landmarks[362]
+            face_width = abs(left_eye_outer[0] - right_eye_outer[0])
+            if face_width < self.min_face_size:
+                return None, 0.0
+
+        # Calcola punteggio di frontalità usando l'algoritmo puro
+        frontal_score = self.face_detector.calculate_frontal_score(
+            landmarks, config=self.scoring_config
+        )
+
+        # Solo frame con un minimo di qualità frontale
+        if frontal_score < self.min_score_threshold:
+            return None, 0.0
+
+        return landmarks, frontal_score
+
+    def start_webcam(self, camera_index: int = 0) -> bool:
+        """Avvia la webcam."""
+        if self.start_camera_capture(camera_index):
+            self.is_paused = False
+            return self.start_live_analysis()
+        return False
+        
+    def pause_webcam(self):
+        """Mette in pausa la webcam."""
+        if not self.is_video_file and self.is_capturing:
+            self.is_paused = True
+            print("📹 Webcam in pausa")
+            
+    def resume_webcam(self):
+        """Riprende la webcam dalla pausa."""
+        if not self.is_video_file and self.is_capturing:
+            self.is_paused = False
+            print("📹 Webcam ripresa")
+            
+    def stop_webcam(self):
+        """Ferma completamente la webcam."""
+        if not self.is_video_file:
+            self.stop()
+            
+    def restart_webcam(self, camera_index: int = 0) -> bool:
+        """Riavvia la webcam da zero."""
+        self.stop_webcam()
+        return self.start_webcam(camera_index)
 
     def play_pause(self) -> bool:
         """
@@ -266,9 +336,76 @@ class VideoAnalyzer:
             print(f"❌ VIDEO_ANALYZER: Errore nel caricamento del video: {e}")
             return False
 
-    def analyze_frame(
-        self, frame: np.ndarray
-    ) -> Tuple[Optional[List[Tuple[float, float]]], float]:
+    def apply_preview_overlays(self, frame: np.ndarray) -> np.ndarray:
+        """Applica overlay estetici al frame per l'anteprima (non influenza calcoli)."""
+        overlay_frame = frame.copy()
+        
+        # Solo se ci sono overlay attivi
+        if not (self.show_landmarks or self.show_symmetry or self.show_green_polygon):
+            return overlay_frame
+            
+        # Rileva landmarks per gli overlay
+        landmarks = self.face_detector.detect_face_landmarks(frame)
+        if landmarks is None:
+            return overlay_frame
+            
+        # Overlay landmarks
+        if self.show_landmarks and landmarks:
+            overlay_frame = self.face_detector.draw_landmarks(
+                overlay_frame, landmarks, draw_all=True
+            )
+            
+        # Overlay asse di simmetria
+        if self.show_symmetry and landmarks:
+            overlay_frame = self.face_detector.draw_symmetry_axis(
+                overlay_frame, landmarks
+            )
+            
+        # Overlay poligono punti verdi
+        if self.show_green_polygon and landmarks:
+            overlay_frame = self._draw_green_polygon_overlay(overlay_frame)
+            
+        return overlay_frame
+        
+    def _draw_green_polygon_overlay(self, frame: np.ndarray) -> np.ndarray:
+        """Disegna overlay poligono punti verdi se presenti."""
+        try:
+            from src.green_dots_processor import GreenDotsProcessor
+            
+            # Crea processor temporaneo per rilevamento
+            processor = GreenDotsProcessor()
+            
+            # Converte frame in formato PIL per il rilevamento
+            from PIL import Image
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_image = Image.fromarray(frame_rgb)
+            
+            # Rileva punti verdi
+            detection_results = processor.detect_green_dots(pil_image)
+            if detection_results["total_dots"] < 3:
+                return frame
+                
+            # Dividi punti in sinistro/destro
+            image_width = frame.shape[1]
+            left_dots, right_dots = processor.divide_dots_by_vertical_center(
+                detection_results["dots"], image_width
+            )
+            
+            # Disegna poligoni se ci sono abbastanza punti
+            if len(left_dots) >= 3:
+                points_left = [(int(p["x"]), int(p["y"])) for p in left_dots]
+                cv2.polylines(frame, [np.array(points_left)], True, (0, 255, 0), 2)
+                cv2.fillPoly(frame, [np.array(points_left)], (0, 255, 0, 50))
+                
+            if len(right_dots) >= 3:
+                points_right = [(int(p["x"]), int(p["y"])) for p in right_dots]
+                cv2.polylines(frame, [np.array(points_right)], True, (255, 0, 0), 2)
+                cv2.fillPoly(frame, [np.array(points_right)], (255, 0, 0, 50))
+                
+        except Exception as e:
+            print(f"Errore overlay poligono verde: {e}")
+            
+        return frame
         """
         Analizza un singolo frame per rilevare volti e calcolare il punteggio di frontalità.
         SEMPLIFICATO per massima efficacia nel trovare frame frontali.
@@ -356,12 +493,12 @@ class VideoAnalyzer:
             if self.is_video_file:
                 self.current_position_ms = self.get_current_time_ms()
 
-            # AGGIORNA ANTEPRIMA ogni 100ms
+            # AGGIORNA ANTEPRIMA ogni 100ms con overlay
             if (
                 self.preview_callback
                 and (current_time - last_preview) >= preview_interval
             ):
-                preview_frame = frame.copy()
+                preview_frame = self.apply_preview_overlays(frame.copy())
                 self.preview_callback(preview_frame)
                 last_preview = current_time
 
