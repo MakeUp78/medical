@@ -1,4 +1,4 @@
-"""
+﻿"""
 Interactive canvas application for facial analysis with measurement tools.
 VERSIONE UNIFICATA - Include funzionalità professional canvas integrate
 """
@@ -15,6 +15,7 @@ import uuid
 import os
 import tempfile
 import shutil
+import datetime
 from dataclasses import dataclass
 from enum import Enum
 
@@ -23,7 +24,7 @@ from src.face_detector import FaceDetector
 from src.video_analyzer import VideoAnalyzer
 from src.measurement_tools import MeasurementTools
 from src.green_dots_processor import GreenDotsProcessor
-from src.scoring_config import ScoringConfig
+from src.scoring_config import ScoringConfig, scoring_config
 from src.utils import resize_image_keep_aspect
 from src.layout_manager import layout_manager
 from src.layout_fix import LayoutRestorer, ImprovedLayoutSaver
@@ -192,6 +193,10 @@ class CanvasApp:
         self.display_scale = 1.0
         self.display_size = (800, 600)  # Default size
 
+        # Gestione finestre analisi facciale in griglia
+        self.analysis_windows = []  # Lista delle finestre aperte per l'analisi
+        self.analysis_window_counter = 0  # Contatore per posizionamento in griglia
+
         self.selected_points = []
         self.selected_landmarks = []  # Landmark selezionati per misurazione
         self.measurement_mode = "distance"
@@ -309,8 +314,8 @@ class CanvasApp:
             False  # Flag per evitare loop durante aggiornamento seek bar
         )
 
-        # Configurazione pesi per scoring
-        self.scoring_config = ScoringConfig()
+        # Configurazione pesi per scoring - USA ISTANZA GLOBALE per coesistenza
+        self.scoring_config = scoring_config  # Usa l'istanza globale condivisa
         self.scoring_config.set_callback(self.on_scoring_config_change)
 
         # Variabili di controllo per la sezione RILEVAMENTI
@@ -384,21 +389,21 @@ class CanvasApp:
         )
         self.main_vertical_paned.add(self.main_horizontal_paned, weight=1)
 
-        # PANNELLO CONTROLLI (sinistra) - Con stile ttkbootstrap
+        # PANNELLO CONTROLLI (sinistra) - Ottimizzato per larghezza ridotta
         control_main_frame = ttk.LabelFrame(
-            self.main_horizontal_paned, text="🎛️ Controlli", padding=10, width=400, 
+            self.main_horizontal_paned, text="🎛️ Controlli", padding=8, width=320, 
             bootstyle="primary"
         )
         control_main_frame.grid_columnconfigure(0, weight=1)
         control_main_frame.grid_rowconfigure(0, weight=1)
         self.main_horizontal_paned.add(control_main_frame, weight=1)
 
-        # Canvas scrollabile per i controlli
-        control_canvas = tk.Canvas(control_main_frame, highlightthickness=0, width=400)
+        # Canvas scrollabile per i controlli con larghezza ridotta
+        control_canvas = tk.Canvas(control_main_frame, highlightthickness=0, width=300)
         control_scrollbar = ttk.Scrollbar(
             control_main_frame, orient="vertical", command=control_canvas.yview
         )
-        self.scrollable_control_frame = ttk.Frame(control_canvas, padding=10)
+        self.scrollable_control_frame = ttk.Frame(control_canvas, padding=6)
 
         self.scrollable_control_frame.bind(
             "<Configure>",
@@ -415,7 +420,7 @@ class CanvasApp:
         control_main_frame.grid_rowconfigure(0, weight=1)
         control_main_frame.grid_columnconfigure(0, weight=1)
 
-        # AREA CANVAS UNIFICATO (centro) - Sistema professionale integrato
+        # AREA CANVAS UNIFICATO (centro) - Sistema professionale integrato con TAB
         canvas_frame = ttk.LabelFrame(
             self.main_horizontal_paned,
             text="🎨 Canvas Professionale Unificato",
@@ -427,40 +432,75 @@ class CanvasApp:
         canvas_frame.grid_rowconfigure(0, weight=1)
         self.main_horizontal_paned.add(canvas_frame, weight=3)
 
-        # PANNELLO DESTRO: Layers + Anteprima
-        # PanedWindow verticale per layers | anteprima
+        # NOTEBOOK per TAB multiple (Canvas principale + Debug specifiche)
+        self.canvas_notebook = ttk.Notebook(canvas_frame, bootstyle="info")
+        self.canvas_notebook.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+        
+        # TAB 1: Canvas principale
+        self.main_canvas_frame = ttk.Frame(self.canvas_notebook)
+        self.canvas_notebook.add(self.main_canvas_frame, text="🎯 Canvas Principale")
+        
+        # TAB 2:FACE_MESH_PLACEHOLDER (Landmarks completi)
+        self.debug_landmarks_frame = ttk.Frame(self.canvas_notebook)
+        self.canvas_notebook.add(self.debug_landmarks_frame, text="🎭 Face Mesh")
+        
+        # TAB 3: Analisi Geometrica (Forma viso)
+        self.debug_geometry_frame = ttk.Frame(self.canvas_notebook)
+        self.canvas_notebook.add(self.debug_geometry_frame, text="📐 Geometria")
+        
+        # TAB 4: Analisi Sopracciglia
+        self.debug_eyebrows_frame = ttk.Frame(self.canvas_notebook)
+        self.canvas_notebook.add(self.debug_eyebrows_frame, text="✂️ Sopracciglia")
+        
+        # TAB 5: Forma Ideale Sopracciglio
+        self.debug_ideal_frame = ttk.Frame(self.canvas_notebook)
+        self.canvas_notebook.add(self.debug_ideal_frame, text="🎨 Forma Ideale")
+        
+        # TAB 6:MAPPA_COMPLETA_PLACEHOLDER
+        self.debug_complete_frame = ttk.Frame(self.canvas_notebook)
+        self.canvas_notebook.add(self.debug_complete_frame, text="🗺️ Mappa Completa")
+        
+        # TAB 7: Report Testuale
+        self.debug_report_frame = ttk.Frame(self.canvas_notebook)
+        self.canvas_notebook.add(self.debug_report_frame, text="📄 Report")
+        
+        # Setup canvas in ogni tab
+        self.setup_canvas_tabs()
+
+        # PANNELLO DESTRO: Layers + Anteprima ottimizzato
+        # PanedWindow verticale per layers | anteprima con larghezza ridotta
         self.right_sidebar_paned = ttk.PanedWindow(
-            self.main_horizontal_paned, orient=tk.VERTICAL, width=350
+            self.main_horizontal_paned, orient=tk.VERTICAL, width=280
         )
         self.main_horizontal_paned.add(self.right_sidebar_paned, weight=1)
 
-        # Area Layers (sopra)
+        # Area Layers compatta (sopra)
         layers_frame = ttk.LabelFrame(
-            self.right_sidebar_paned, text="📋 Layers", padding=5, width=350,
+            self.right_sidebar_paned, text="📋 Layers", padding=5, width=280,
             bootstyle="info"
         )
         layers_frame.grid_columnconfigure(0, weight=1)
         layers_frame.grid_rowconfigure(0, weight=1)
         self.right_sidebar_paned.add(layers_frame, weight=1)
 
-        # Setup area anteprima integrata (sotto)
+        # Setup area anteprima integrata compatta (sotto)
         preview_main_frame = ttk.LabelFrame(
-            self.right_sidebar_paned, text="📺 Anteprima Video", padding=5,
+            self.right_sidebar_paned, text="📺 Anteprima", padding=5,
             bootstyle="warning"
         )
         preview_main_frame.grid_columnconfigure(0, weight=1)
         preview_main_frame.grid_rowconfigure(0, weight=1)
         self.right_sidebar_paned.add(preview_main_frame, weight=1)
 
-        # Canvas scrollabile per l'area anteprima
-        preview_canvas = tk.Canvas(preview_main_frame, highlightthickness=0, width=330)
+        # Canvas scrollabile per l'area anteprima con larghezza ridotta
+        preview_canvas = tk.Canvas(preview_main_frame, highlightthickness=0, width=260)
         preview_scrollbar = ttk.Scrollbar(
             preview_main_frame, orient="vertical", command=preview_canvas.yview
         )
 
-        # Frame scrollabile per il contenuto anteprima
+        # Frame scrollabile per il contenuto anteprima compatto
         self.scrollable_preview_frame = ttk.LabelFrame(
-            preview_canvas, text="Anteprima Video", padding=10
+            preview_canvas, text="Anteprima", padding=6
         )
 
         self.scrollable_preview_frame.bind(
@@ -503,7 +543,7 @@ class CanvasApp:
 
         # Setup dei contenuti
         self.setup_controls(self.scrollable_control_frame)
-        self.setup_canvas(canvas_frame)
+        # self.setup_canvas(canvas_frame)  # Sostituito dal sistema tab
         self.setup_layers_panel(layers_frame)
         self.setup_integrated_preview(self.scrollable_preview_frame)
 
@@ -597,103 +637,246 @@ class CanvasApp:
         )
 
     def setup_controls(self, parent):
-        """Configura il pannello dei controlli con layout migliorato."""
-        # Sezione SORGENTE con layout migliorato
-        video_frame = ttk.LabelFrame(parent, text="🎯 SORGENTE", padding=10, 
-                                   bootstyle="primary")
-        video_frame.pack(fill=tk.X, pady=(0, 10))
-
-        # Configura griglia per layout ottimizzato
-        video_frame.columnconfigure(0, weight=1)
-        video_frame.columnconfigure(1, weight=1)
-
-        # Prima riga: Carica Immagine (pulsante principale, spanning)
-        ttk.Button(
-            video_frame, text="📁 Carica Immagine", command=self.load_image,
-            bootstyle="primary"
-        ).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 5), padx=2)
+        """Configura il pannello dei controlli con layout professionale e compatto."""
         
-        # Seconda riga: Webcam e Video
-        ttk.Button(video_frame, text="📹 Avvia Webcam", command=self.start_webcam,
-                  bootstyle="success-outline").grid(
-            row=1, column=0, sticky="ew", pady=2, padx=(2, 1)
-        )
-        ttk.Button(video_frame, text="🎬 Carica Video", command=self.load_video,
-                  bootstyle="info-outline").grid(
-            row=1, column=1, sticky="ew", pady=2, padx=(1, 2)
-        )
+        # === SEZIONE SORGENTE - Layout compatto professionale ===
+        source_card = ttk.Frame(parent, bootstyle="light")
+        source_card.pack(fill=tk.X, pady=(0, 4), padx=2)
         
-        # Terza riga: Controllo stop
+        # Header della card con stile professionale
+        source_header = ttk.Frame(source_card, bootstyle="primary")
+        source_header.pack(fill=tk.X)
+        
+        source_title = ttk.Label(
+            source_header, text="🎯 SORGENTE", 
+            font=("Segoe UI", 9, "bold"),
+            bootstyle="inverse-primary"
+        )
+        source_title.pack(pady=4)
+        
+        # Content della card
+        source_content = ttk.Frame(source_card)
+        source_content.pack(fill=tk.X, padx=6, pady=6)
+        
+        # Griglia 2x2 per pulsanti più spaziosi
+        source_content.columnconfigure(0, weight=1)
+        source_content.columnconfigure(1, weight=1)
+        
+        # Pulsanti sorgente con icone e stile professionale
         ttk.Button(
-            video_frame, text="⏹️ Ferma Analisi", command=self.stop_video_analysis,
-            bootstyle="danger"
-        ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(5, 0), padx=2)
+            source_content, text="📁 Carica Immagine", 
+            command=self.load_image,
+            bootstyle="primary-outline",
+            width=18
+        ).grid(row=0, column=0, sticky="ew", pady=2, padx=(0, 2))
+        
+        ttk.Button(
+            source_content, text="📹 Avvia Webcam", 
+            command=self.start_webcam,
+            bootstyle="success-outline",
+            width=18
+        ).grid(row=0, column=1, sticky="ew", pady=2, padx=(2, 0))
+        
+        ttk.Button(
+            source_content, text="🎬 Carica Video", 
+            command=self.load_video,
+            bootstyle="info-outline",
+            width=18
+        ).grid(row=1, column=0, sticky="ew", pady=2, padx=(0, 2))
+        
+        ttk.Button(
+            source_content, text="⏹️ Ferma Analisi", 
+            command=self.stop_video_analysis,
+            bootstyle="danger-outline",
+            width=18
+        ).grid(row=1, column=1, sticky="ew", pady=2, padx=(2, 0))
 
-        # Info frame migliore con larghezza fissa
+        # Status info compatto con bordo
+        status_info_frame = ttk.Frame(source_card)
+        status_info_frame.pack(fill=tk.X, padx=6, pady=(0, 6))
+        
         self.best_frame_info = ttk.Label(
-            video_frame, text="Nessun frame analizzato", width=60
+            status_info_frame, 
+            text="Nessun frame analizzato",
+            font=("Segoe UI", 8),
+            bootstyle="info",
+            relief="solid",
+            borderwidth=1
         )
-        self.best_frame_info.grid(
-            row=3, column=0, columnspan=2, sticky="ew", pady=5, padx=2
-        )
+        self.best_frame_info.pack(fill=tk.X, pady=2)
 
-        # === PANNELLO STATUS CON BADGE INFORMATIVI ===
-        status_info_frame = ttk.LabelFrame(
-            parent, text="📊 Stato Sistema", padding=10, bootstyle="secondary"
+        # === SEZIONE STATUS - Dashboard professionale ===
+        status_card = ttk.Frame(parent, bootstyle="light")
+        status_card.pack(fill=tk.X, pady=(0, 4), padx=2)
+        
+        # Header della card status
+        status_header = ttk.Frame(status_card, bootstyle="secondary")
+        status_header.pack(fill=tk.X)
+        
+        status_title = ttk.Label(
+            status_header, text="📊 STATUS SISTEMA", 
+            font=("Segoe UI", 9, "bold"),
+            bootstyle="inverse-secondary"
         )
-        status_info_frame.pack(fill=tk.X, pady=(0, 10))
+        status_title.pack(pady=4)
         
-        # Frame per i badge orizzontali
-        badges_frame = ttk.Frame(status_info_frame)
-        badges_frame.pack(fill=tk.X)
+        # Dashboard badges organizzati in griglia
+        badges_container = ttk.Frame(status_card)
+        badges_container.pack(fill=tk.X, padx=6, pady=6)
+        badges_container.columnconfigure(0, weight=1)
+        badges_container.columnconfigure(1, weight=1)
         
-        # Badge per stato webcam
+        # Badge webcam
         self.webcam_badge = ttk.Label(
-            badges_frame, text="📷 Webcam: Disconnessa", 
-            bootstyle="danger", padding=5
+            badges_container, 
+            text="📷 Webcam OFF", 
+            bootstyle="danger",
+            font=("Segoe UI", 8, "bold"),
+            relief="solid",
+            borderwidth=1
         )
-        self.webcam_badge.grid(row=0, column=0, padx=(0, 5), pady=2, sticky="w")
+        self.webcam_badge.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
         
-        # Badge per landmarks
+        # Badge landmarks
         self.landmarks_badge = ttk.Label(
-            badges_frame, text="🎯 Landmarks: 0 rilevati", 
-            bootstyle="warning", padding=5
+            badges_container, 
+            text="🎯 Landmarks: 0", 
+            bootstyle="warning",
+            font=("Segoe UI", 8, "bold"),
+            relief="solid",
+            borderwidth=1
         )
-        self.landmarks_badge.grid(row=0, column=1, padx=5, pady=2, sticky="w")
+        self.landmarks_badge.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
         
-        # Badge per qualità immagine
+        # Badge qualità
         self.quality_badge = ttk.Label(
-            badges_frame, text="✨ Qualità: N/A", 
-            bootstyle="info", padding=5
+            badges_container, 
+            text="✨ Qualità: N/A", 
+            bootstyle="info",
+            font=("Segoe UI", 8, "bold"),
+            relief="solid",
+            borderwidth=1
         )
-        self.quality_badge.grid(row=0, column=2, padx=5, pady=2, sticky="w")
+        self.quality_badge.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
         
-        # Badge per misurazioni attive
+        # Badge misurazioni
         self.measurements_badge = ttk.Label(
-            badges_frame, text="📏 Misurazioni: 0 attive", 
-            bootstyle="secondary", padding=5
+            badges_container, 
+            text="📏 Misure: 0", 
+            bootstyle="secondary",
+            font=("Segoe UI", 8, "bold"),
+            relief="solid",
+            borderwidth=1
         )
-        self.measurements_badge.grid(row=1, column=0, padx=(0, 5), pady=2, sticky="w")
+        self.measurements_badge.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
+
+        # === SEZIONE MISURAZIONI PREDEFINITE - SEMPRE VISIBILI ===
+        predef_card = ttk.Frame(parent, bootstyle="light")
+        predef_card.pack(fill=tk.X, pady=(0, 4), padx=2)
         
-        # Badge per modalità corrente
-        self.mode_badge = ttk.Label(
-            badges_frame, text="🔧 Modalità: Selezione", 
-            bootstyle="primary", padding=5
+        # Header della card misurazioni predefinite
+        predef_header = ttk.Frame(predef_card, bootstyle="success")
+        predef_header.pack(fill=tk.X)
+        
+        predef_title = ttk.Label(
+            predef_header, text="📏 MISURAZIONI PREDEFINITE", 
+            font=("Segoe UI", 9, "bold"),
+            bootstyle="inverse-success"
         )
-        self.mode_badge.grid(row=1, column=1, padx=5, pady=2, sticky="w")
+        predef_title.pack(pady=4)
+        
+        # Container per pulsanti misurazioni predefinite
+        predef_container = ttk.Frame(predef_card)
+        predef_container.pack(fill=tk.X, padx=6, pady=6)
+        
+        # Configura griglia 4 colonne per compattezza
+        for i in range(4):
+            predef_container.columnconfigure(i, weight=1)
+        
+        # Pulsanti misurazioni predefinite organizzati per categoria - SEMPRE VISIBILI
+        predefined_buttons = [
+            # Prima riga - Misurazioni base del volto
+            ("Volto L", self.toggle_face_width, "primary"),
+            ("Volto H", self.toggle_face_height, "primary"),
+            ("Occhi D", self.toggle_eye_distance, "info"),
+            ("Naso L", self.toggle_nose_width, "warning"),
+            
+            # Seconda riga - Bocca e aree principali
+            ("Bocca L", self.toggle_mouth_width, "danger"),
+            ("Sopracc.", self.toggle_eyebrow_areas, "secondary"),
+            ("Occhi A", self.toggle_eye_areas, "info"),
+            ("Simmetria", self.toggle_facial_symmetry, "dark"),
+            
+            # Terza riga - Aree aggiuntive (prima solo in modalità manuale)
+            ("Guance", self.toggle_cheek_width, "success"),
+            ("Fronte", self.toggle_forehead_width, "warning"),
+            ("Mento", self.toggle_chin_width, "secondary"),
+            ("Profilo", self.toggle_face_profile, "info"),
+            
+            # Quarta riga - Misurazioni avanzate
+            ("Angolo N", self.toggle_nose_angle, "warning"),
+            ("Angolo B", self.toggle_mouth_angle, "danger"),
+            ("Proporz.", self.toggle_face_proportions, "primary"),
+            ("Distanze", self.toggle_key_distances, "success"),
+        ]
 
-        # Sezione MISURAZIONI con layout migliorato
-        measure_frame = ttk.LabelFrame(
-            parent, text="📏 MISURAZIONI", padding=10, bootstyle="success"
+        # Mantieni riferimenti ai pulsanti per aggiornare il testo
+        self.preset_buttons = {}
+        for i, (text, command, style) in enumerate(predefined_buttons):
+            row = i // 4  # 4 pulsanti per riga
+            col = i % 4
+            btn = ttk.Button(
+                predef_container, 
+                text=text, 
+                command=command, 
+                width=8,
+                bootstyle=f"{style}-outline"
+            )
+            btn.grid(row=row, column=col, padx=1, pady=2, sticky="ew")
+
+            # Salva riferimento ai pulsanti toggle (ora tutti hanno toggle functions)
+            toggle_buttons = ["Volto L", "Volto H", "Occhi D", "Naso L", "Bocca L", "Sopracc.", "Occhi A", 
+                            "Guance", "Fronte", "Mento", "Profilo", "Angolo N", "Angolo B", "Proporz.", "Distanze"]
+            if text in toggle_buttons:
+                preset_key_map = {
+                    "Volto L": "face_width",
+                    "Volto H": "face_height", 
+                    "Occhi D": "eye_distance",
+                    "Naso L": "nose_width",
+                    "Bocca L": "mouth_width",
+                    "Sopracc.": "eyebrow_areas",
+                    "Occhi A": "eye_areas",
+                    "Guance": "cheek_width",
+                    "Fronte": "forehead_width",
+                    "Mento": "chin_width",
+                    "Profilo": "face_profile",
+                    "Angolo N": "nose_angle",
+                    "Angolo B": "mouth_angle",
+                    "Proporz.": "face_proportions",
+                    "Distanze": "key_distances"
+                }
+                preset_key = preset_key_map.get(text)
+                if preset_key:
+                    self.preset_buttons[preset_key] = btn
+
+        # === SEZIONE RILEVAMENTI - Layout professionale ===
+        detections_card = ttk.Frame(parent, bootstyle="light")
+        detections_card.pack(fill=tk.X, pady=(0, 4), padx=2)
+        
+        # Header della card rilevamenti
+        det_header = ttk.Frame(detections_card, bootstyle="warning")
+        det_header.pack(fill=tk.X)
+        
+        det_title = ttk.Label(
+            det_header, text="🔍 RILEVAMENTI & ANALISI", 
+            font=("Segoe UI", 9, "bold"),
+            bootstyle="inverse-warning"
         )
-        measure_frame.pack(fill=tk.X, pady=(0, 8))
-
-
-
-        # Sezione RILEVAMENTI
-        detections_frame = ttk.LabelFrame(parent, text="🔍 RILEVAMENTI", padding=10,
-                                        bootstyle="warning")
-        detections_frame.pack(fill=tk.X, pady=(0, 10))
+        det_title.pack(pady=4)
+        
+        # Container per controlli rilevamenti
+        det_container = ttk.Frame(detections_card)
+        det_container.pack(fill=tk.X, padx=6, pady=6)
 
         # Inizializza le variabili di controllo
         self.show_axis_var = tk.BooleanVar(value=False)
@@ -701,393 +884,549 @@ class CanvasApp:
         self.overlay_var = tk.BooleanVar(value=True)  # Sempre attivo (grafiche sempre visibili)
         self.green_dots_var = tk.BooleanVar(value=False)
 
-        # Frame per i tre pulsanti principali
-        main_buttons_frame = ttk.Frame(detections_frame)
-        main_buttons_frame.pack(fill=tk.X, pady=(0, 10))
+        # Griglia 2x2 per pulsanti rilevamenti principali
+        det_container.columnconfigure(0, weight=1)
+        det_container.columnconfigure(1, weight=1)
 
-        # Pulsante ASSE
         self.asse_button = ttk.Button(
-            main_buttons_frame, 
+            det_container, 
             text="⚖️ ASSE", 
-            command=self.toggle_asse_section
+            command=self.toggle_asse_section,
+            bootstyle="info-outline",
+            width=15
         )
-        self.asse_button.grid(row=0, column=0, padx=(0, 2), sticky="ew")
+        self.asse_button.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
 
-        # Pulsante LANDMARKS  
         self.landmarks_button = ttk.Button(
-            main_buttons_frame, 
+            det_container, 
             text="🎯 LANDMARKS", 
-            command=self.toggle_landmarks_section
+            command=self.toggle_landmarks_section,
+            bootstyle="primary-outline",
+            width=15
         )
-        self.landmarks_button.grid(row=0, column=1, padx=2, sticky="ew")
+        self.landmarks_button.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
 
-        # Pulsante GREEN DOTS
         self.green_dots_button = ttk.Button(
-            main_buttons_frame, 
+            det_container, 
             text="🟢 GREEN DOTS", 
-            command=self.toggle_green_dots_section
+            command=self.toggle_green_dots_section,
+            bootstyle="success-outline",
+            width=15
         )
-        self.green_dots_button.grid(row=0, column=2, padx=2, sticky="ew")
+        self.green_dots_button.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
 
-        # Pulsante ANALISI FACCIALE
         self.face_analysis_button = ttk.Button(
-            main_buttons_frame, 
-            text="🔍 ANALISI FACCIALE", 
-            command=self.perform_face_analysis
+            det_container, 
+            text="🔍 ANALISI", 
+            command=self.perform_face_analysis,
+            bootstyle="danger-outline",
+            width=15
         )
-        self.face_analysis_button.grid(row=0, column=3, padx=(2, 0), sticky="ew")
+        self.face_analysis_button.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
 
-        # Configura colonne con peso uguale
-        main_buttons_frame.columnconfigure(0, weight=1)
-        main_buttons_frame.columnconfigure(1, weight=1)
-        main_buttons_frame.columnconfigure(2, weight=1)
-        main_buttons_frame.columnconfigure(3, weight=1)
-
-        # Misurazioni predefinite (sotto i pulsanti principali)
-        self.predefined_frame = ttk.LabelFrame(
-            detections_frame, text="Misurazioni Predefinite", padding=5
-        )
-        self.predefined_frame.pack(fill=tk.X, pady=(0, 0))
-
-        predefined_buttons = [
-            ("Larghezza Volto", self.toggle_face_width),
-            ("Altezza Volto", self.toggle_face_height),
-            ("Distanza Occhi", self.toggle_eye_distance),
-            ("Larghezza Naso", self.toggle_nose_width),
-            ("Larghezza Bocca", self.toggle_mouth_width),
-            ("Aree Sopraccigli", self.toggle_eyebrow_areas),
-            ("Aree Occhi", self.toggle_eye_areas),
-            ("Simmetria Facciale", self.measure_facial_symmetry),
-        ]
-
-        # Mantieni riferimenti ai pulsanti per aggiornare il testo
-        self.preset_buttons = {}
-        for i, (text, command) in enumerate(predefined_buttons):
-            row = i // 2
-            col = i % 2
-            btn = ttk.Button(
-                self.predefined_frame, text=f"Mostra {text}", command=command
-            )
-            btn.grid(row=row, column=col, padx=2, pady=2, sticky="ew")
-
-            # Salva riferimento al pulsante (escludi simmetria che non ha toggle)
-            if "Simmetria" not in text:
-                preset_key = (
-                    text.lower()
-                    .replace(" ", "_")
-                    .replace("larghezza_", "")
-                    .replace("distanza_", "")
-                    .replace("altezza_", "face_height")
-                    .replace("aree_", "")
-                )
-                if preset_key == "volto":
-                    preset_key = "face_width"
-                elif preset_key == "occhi" and "distanza" in text.lower():
-                    preset_key = "eye_distance"
-                elif preset_key == "sopraccigli":
-                    preset_key = "eyebrow_areas"
-                elif preset_key == "occhi":
-                    preset_key = "eye_areas"
-                self.preset_buttons[preset_key] = btn
-
-        # Configura le colonne per espandersi uniformemente
-        self.predefined_frame.columnconfigure(0, weight=1)
-        self.predefined_frame.columnconfigure(1, weight=1)
-
-        # === NUOVO: TABELLA LANDMARKS RILEVATI ===
-        landmarks_table_frame = ttk.LabelFrame(
-            parent, text="🎯 Landmarks Rilevati", padding=10, bootstyle="info"
-        )
-        landmarks_table_frame.pack(fill=tk.X, pady=(0, 10))
+        # === TABELLA LANDMARKS - Design professionale ===
+        landmarks_card = ttk.Frame(parent, bootstyle="light")
+        landmarks_card.pack(fill=tk.X, pady=(0, 4), padx=2)
         
-        # Treeview per landmarks con stile bootstrap
+        # Header della card landmarks
+        landmarks_header = ttk.Frame(landmarks_card, bootstyle="info")
+        landmarks_header.pack(fill=tk.X)
+        
+        landmarks_title = ttk.Label(
+            landmarks_header, text="🎯 TABELLA LANDMARKS", 
+            font=("Segoe UI", 9, "bold"),
+            bootstyle="inverse-info"
+        )
+        landmarks_title.pack(pady=4)
+        
+        # Container per tabella
+        landmarks_container = ttk.Frame(landmarks_card)
+        landmarks_container.pack(fill=tk.X, padx=6, pady=6)
+        
+        # Frame per la treeview con scrollbar
+        tree_frame = ttk.Frame(landmarks_container)
+        tree_frame.pack(fill=tk.X)
+        
+        # Treeview più compatto e professionale
         self.landmarks_tree = ttk.Treeview(
-            landmarks_table_frame,
-            columns=("ID", "Nome", "X", "Y", "Visibilità"),
+            tree_frame,
+            columns=("Overlay", "ID", "Nome", "X", "Y"),
             show="headings",
             height=6,
-            bootstyle="success"
+            bootstyle="info"
         )
         
-        # Intestazioni con emoji
-        self.landmarks_tree.heading("ID", text="🆔 ID")
-        self.landmarks_tree.heading("Nome", text="🏷️ Nome Landmark")
-        self.landmarks_tree.heading("X", text="📍 Coord X")
-        self.landmarks_tree.heading("Y", text="📍 Coord Y")
-        self.landmarks_tree.heading("Visibilità", text="👁️ Visibile")
+        # Intestazioni con icone
+        self.landmarks_tree.heading("Overlay", text="🎨")
+        self.landmarks_tree.heading("ID", text="ID")
+        self.landmarks_tree.heading("Nome", text="Nome Landmark")
+        self.landmarks_tree.heading("X", text="X")
+        self.landmarks_tree.heading("Y", text="Y")
         
-        # Configurazione colonne
-        self.landmarks_tree.column("ID", width=40, minwidth=30)
-        self.landmarks_tree.column("Nome", width=150, minwidth=100)
-        self.landmarks_tree.column("X", width=80, minwidth=60)
-        self.landmarks_tree.column("Y", width=80, minwidth=60)
-        self.landmarks_tree.column("Visibilità", width=80, minwidth=60)
+        # Configurazione colonne ottimizzata
+        self.landmarks_tree.column("Overlay", width=35, minwidth=30)
+        self.landmarks_tree.column("ID", width=40, minwidth=35)
+        self.landmarks_tree.column("Nome", width=140, minwidth=120)
+        self.landmarks_tree.column("X", width=60, minwidth=50)
+        self.landmarks_tree.column("Y", width=60, minwidth=50)
         
-        # Scrollbar per landmarks
+        # Scrollbar professionale
         landmarks_scroll = ttk.Scrollbar(
-            landmarks_table_frame, orient=tk.VERTICAL, command=self.landmarks_tree.yview
+            tree_frame, orient=tk.VERTICAL, command=self.landmarks_tree.yview,
+            bootstyle="round"
         )
         self.landmarks_tree.configure(yscrollcommand=landmarks_scroll.set)
         
-        # Layout
+        # Layout tabella
         self.landmarks_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         landmarks_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Eventi per interazione con la tabella
+        # Eventi per interazione
         self.landmarks_tree.bind('<Double-1>', self.on_landmark_double_click)
+        self.landmarks_tree.bind('<Button-1>', self.on_landmark_single_click)
+        
+        # Sistema overlay individuali
+        self.landmark_overlays = {}
+        self.landmark_overlay_objects = {}
+        
+        # Controlli overlay con design migliorato
+        overlay_controls = ttk.Frame(landmarks_container)
+        overlay_controls.pack(fill=tk.X, pady=(4, 0))
+        
+        self.clear_overlays_btn = ttk.Button(
+            overlay_controls,
+            text="🧹 Pulisci Overlay",
+            command=self.clear_all_landmark_overlays,
+            bootstyle="warning-outline",
+            width=15
+        )
+        self.clear_overlays_btn.pack(side=tk.LEFT, padx=(0, 4))
+        
+        info_label = ttk.Label(
+            overlay_controls,
+            text="💡 Doppio clic su 🎨 per attivare overlay",
+            font=("Segoe UI", 7, "italic"),
+            bootstyle="secondary"
+        )
+        info_label.pack(side=tk.LEFT)
         
         # Dizionario per mappare ID landmarks a nomi anatomici
         self.landmark_names = {
-            # Contorno viso
-            10: "Fronte Centro",
-            152: "Mento Centro", 
-            127: "Tempia Sinistra",
-            356: "Tempia Destra",
+            # === CONTORNO VISO ===
+            10: "🔵 Fronte Centro",
+            151: "🔵 Mento Inferiore",
+            152: "🔵 Mento Centro", 
+            175: "🔵 Mento Punta",
+            136: "🔵 Mascella Sinistra",
+            361: "🔵 Mascella Destra",
+            172: "🔵 Tempia Sinistra Bassa",
+            397: "🔵 Tempia Destra Bassa",
             
-            # Occhi
-            33: "Occhio Sinistro - Angolo Interno",
-            133: "Occhio Sinistro - Angolo Esterno", 
-            362: "Occhio Destro - Angolo Interno",
-            263: "Occhio Destro - Angolo Esterno",
-            159: "Occhio Sinistro - Centro Pupilla",
-            145: "Occhio Destro - Centro Pupilla",
+            # === OCCHI ===
+            # Occhio Sinistro
+            33: "👁️ Occhio Sin - Angolo Interno", 
+            133: "👁️ Occhio Sin - Angolo Esterno",
+            160: "👁️ Occhio Sin - Palpebra Sup Centro",
+            158: "👁️ Occhio Sin - Palpebra Inf Centro",
+            144: "👁️ Occhio Sin - Palpebra Sup Interna",
+            153: "👁️ Occhio Sin - Palpebra Inf Interna",
+            145: "👁️ Occhio Sin - Palpebra Sup Esterna",
+            154: "👁️ Occhio Sin - Palpebra Inf Esterna",
             
-            # Sopracciglia
-            70: "Sopracciglio Sinistro - Centro",
-            107: "Sopracciglio Sinistro - Interno",
-            55: "Sopracciglio Sinistro - Esterno",
-            296: "Sopracciglio Destro - Centro", 
-            334: "Sopracciglio Destro - Interno",
-            285: "Sopracciglio Destro - Esterno",
+            # Occhio Destro  
+            362: "👁️ Occhio Dx - Angolo Interno",
+            263: "👁️ Occhio Dx - Angolo Esterno", 
+            387: "👁️ Occhio Dx - Palpebra Sup Centro",
+            385: "👁️ Occhio Dx - Palpebra Inf Centro",
+            373: "👁️ Occhio Dx - Palpebra Sup Interna",
+            380: "👁️ Occhio Dx - Palpebra Inf Interna",
+            374: "👁️ Occhio Dx - Palpebra Sup Esterna",
+            381: "👁️ Occhio Dx - Palpebra Inf Esterna",
             
-            # Naso  
-            1: "Ponte Nasale",
-            2: "Punta Naso",
-            19: "Narice Sinistra",
-            20: "Narice Destra",
-            131: "Ala Nasale Sinistra",
-            360: "Ala Nasale Destra",
+            # Pupille (punti centrali approssimativi)
+            468: "👁️ Pupilla Sinistra Centro",
+            473: "👁️ Pupilla Destra Centro",
             
-            # Bocca
-            13: "Labbro Superiore Centro",
-            14: "Labbro Inferiore Centro",
-            78: "Angolo Bocca Sinistro",
-            308: "Angolo Bocca Destro",
-            61: "Labbro Superiore Sinistro",
-            291: "Labbro Superiore Destro",
-            17: "Labbro Inferiore Sinistro", 
-            18: "Labbro Inferiore Destro",
+            # === SOPRACCIGLIA ===
+            # Sopracciglio Sinistro
+            46: "🌟 Sopracciglio Sin - Interno",
+            53: "🌟 Sopracciglio Sin - Centro",
+            52: "🌟 Sopracciglio Sin - Esterno", 
+            65: "🌟 Sopracciglio Sin - Picco",
             
-            # Punti di riferimento chiave
-            9: "Glabella (Centro Fronte)",
-            168: "Centro Viso",
-            6: "Ponte Naso Alto",
-            151: "Mento Inferiore"
+            # Sopracciglio Destro
+            276: "🌟 Sopracciglio Dx - Interno", 
+            283: "🌟 Sopracciglio Dx - Centro",
+            282: "🌟 Sopracciglio Dx - Esterno",
+            295: "🌟 Sopracciglio Dx - Picco",
+            
+            # === NASO ===
+            1: "👃 Ponte Nasale Alto",
+            2: "👃 Punta Naso",
+            5: "👃 Ponte Nasale Centro",
+            6: "👃 Ponte Nasale Radice",
+            19: "👃 Narice Sinistra",
+            20: "👃 Narice Destra", 
+            115: "👃 Ala Nasale Sinistra",
+            131: "👃 Ala Nasale Sin Esterna",
+            134: "👃 Ala Nasale Sin Interna",
+            102: "👃 Ala Nasale Sin Superiore",
+            344: "👃 Ala Nasale Destra",
+            360: "👃 Ala Nasale Dx Esterna", 
+            363: "👃 Ala Nasale Dx Interna",
+            331: "👃 Ala Nasale Dx Superiore",
+            
+            # === BOCCA E LABBRA ===
+            # Labbro Superiore
+            13: "💋 Labbro Sup Centro (Arco Cupido)",
+            14: "💋 Labbro Inf Centro",
+            12: "💋 Labbro Sup Picco Sinistro", 
+            15: "💋 Labbro Sup Picco Destro",
+            269: "💋 Labbro Sup Destro",
+            271: "💋 Labbro Sup Sinistro",
+            
+            # Angoli Bocca
+            61: "💋 Angolo Bocca Sinistro",
+            291: "💋 Angolo Bocca Destro",
+            
+            # Labbro Inferiore
+            17: "💋 Labbro Inf Sinistro",
+            18: "💋 Labbro Inf Destro", 
+            200: "💋 Labbro Inf Centro Basso",
+            199: "💋 Labbro Inf Sinistro Basso",
+            428: "💋 Labbro Inf Destro Basso",
+            
+            # Contorno Bocca Esterno
+            78: "💋 Contorno Bocca Sin Superiore",
+            308: "💋 Contorno Bocca Dx Superiore",
+            87: "💋 Contorno Bocca Sin Inferiore", 
+            317: "💋 Contorno Bocca Dx Inferiore",
+            
+            # === PUNTI CHIAVE ANATOMICI ===
+            9: "🎯 Glabella (Centro Fronte)",
+            168: "🎯 Centro Geometrico Viso",
+            8: "🎯 Sellion (Base Naso)",
+            4: "🎯 Naso Dorsum",
+            
+            # === GUANCE ===
+            116: "😊 Guancia Sinistra",
+            117: "😊 Guancia Sin Superiore", 
+            118: "😊 Guancia Sin Inferiore",
+            345: "😊 Guancia Destra",
+            346: "😊 Guancia Dx Superiore",
+            347: "😊 Guancia Dx Inferiore",
+            
+            # === FRONTE ===
+            21: "🔝 Fronte Sin Superiore",
+            251: "🔝 Fronte Dx Superiore",
+            70: "🔝 Fronte Sin Laterale",
+            300: "🔝 Fronte Dx Laterale",
+            
+            # === MENTO E MASCELLA ===
+            18: "🗿 Mento Sin Laterale",
+            175: "🗿 Mento Centrale Basso",
+            199: "🗿 Mento Dx Laterale",
+            172: "🗿 Linea Mascella Sinistra",
+            397: "🗿 Linea Mascella Destra",
+            
+            # === ORECCHIE (approssimativi) ===
+            234: "👂 Orecchio Sin Superiore",
+            127: "👂 Orecchio Sin Centrale", 
+            162: "👂 Orecchio Sin Inferiore",
+            454: "👂 Orecchio Dx Superiore",
+            356: "👂 Orecchio Dx Centrale",
+            389: "👂 Orecchio Dx Inferiore"
         }
 
-        # === NUOVO: PANNELLO MISURAZIONI INTERATTIVE (SPOSTATO SOTTO RILEVAMENTI) ===
-        self.interactive_measurements_frame = ttk.LabelFrame(
-            detections_frame, text="📐 Misurazioni Interattive", padding=10
-        )
-        self.interactive_measurements_frame.pack(fill=tk.X, pady=(10, 0))
+        # === MISURAZIONI INTERATTIVE - Separate e indipendenti ===
+        measurements_card = ttk.Frame(parent, bootstyle="light")
+        measurements_card.pack(fill=tk.X, pady=(0, 4), padx=2)
         
-        # Checkbox per attivare modalità misurazione interattiva
+        # Header della card misurazioni interattive
+        meas_header = ttk.Frame(measurements_card, bootstyle="dark")
+        meas_header.pack(fill=tk.X)
+        
+        meas_title = ttk.Label(
+            meas_header, text="📐 MISURAZIONI INTERATTIVE", 
+            font=("Segoe UI", 9, "bold"),
+            bootstyle="inverse-dark"
+        )
+        meas_title.pack(pady=4)
+        
+        # Container per controlli misurazioni
+        meas_container = ttk.Frame(measurements_card)
+        meas_container.pack(fill=tk.X, padx=6, pady=6)
+        
+        # Attivazione modalità misurazione
         self.measurement_mode_active = tk.BooleanVar(value=False)
         self.measurement_checkbox = ttk.Checkbutton(
-            self.interactive_measurements_frame,
+            meas_container,
             text="🎯 Attiva Modalità Misurazione",
             variable=self.measurement_mode_active,
             command=self.toggle_measurement_mode,
+            bootstyle="success-round-toggle"
         )
-        self.measurement_checkbox.pack(anchor=tk.W, pady=(0, 10))
+        self.measurement_checkbox.pack(anchor=tk.W, pady=(0, 6))
 
-        # Griglia per modalità misurazione
-        mode_subframe = ttk.Frame(self.interactive_measurements_frame)
-        mode_subframe.pack(fill=tk.X, pady=2)
-        mode_subframe.columnconfigure(0, weight=1)
-        mode_subframe.columnconfigure(1, weight=1)
-        mode_subframe.columnconfigure(2, weight=1)
+        # Separatore visivo
+        ttk.Separator(meas_container, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 6))
 
-        ttk.Label(mode_subframe, text="Modalità:", font=("Arial", 9, "bold")).grid(
-            row=0, column=0, columnspan=3, sticky="w", pady=(0, 3)
-        )
+        # Frame per modalità misurazione con layout migliorato
+        mode_frame = ttk.LabelFrame(meas_container, text="Tipo di Misurazione", padding=4)
+        mode_frame.pack(fill=tk.X, pady=(0, 4))
+        
+        # Griglia per i radiobutton tipo misurazione
+        mode_frame.columnconfigure(0, weight=1)
+        mode_frame.columnconfigure(1, weight=1)
+        mode_frame.columnconfigure(2, weight=1)
 
         self.measure_var = tk.StringVar(value="distance")
+        
         ttk.Radiobutton(
-            mode_subframe,
+            mode_frame,
             text="📏 Distanza",
             variable=self.measure_var,
             value="distance",
             command=self.change_measurement_mode,
-        ).grid(row=1, column=0, sticky="w", padx=(0, 5))
+            bootstyle="primary-outline-toolbutton"
+        ).grid(row=0, column=0, sticky="ew", padx=2, pady=2)
 
         ttk.Radiobutton(
-            mode_subframe,
+            mode_frame,
             text="📐 Angolo",
             variable=self.measure_var,
             value="angle",
             command=self.change_measurement_mode,
-        ).grid(row=1, column=1, sticky="w", padx=(0, 5))
+            bootstyle="warning-outline-toolbutton"
+        ).grid(row=0, column=1, sticky="ew", padx=2, pady=2)
 
         ttk.Radiobutton(
-            mode_subframe,
+            mode_frame,
             text="📦 Area",
             variable=self.measure_var,
             value="area",
             command=self.change_measurement_mode,
-        ).grid(row=1, column=2, sticky="w")
+            bootstyle="info-outline-toolbutton"
+        ).grid(row=0, column=2, sticky="ew", padx=2, pady=2)
 
-        # Modalità selezione
-        selection_subframe = ttk.Frame(self.interactive_measurements_frame)
-        selection_subframe.pack(fill=tk.X, pady=3)
-        selection_subframe.columnconfigure(0, weight=1)
-        selection_subframe.columnconfigure(1, weight=1)
-
-        ttk.Label(
-            selection_subframe, text="Selezione:", font=("Arial", 9, "bold")
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 3))
+        # Frame per modalità selezione
+        selection_frame = ttk.LabelFrame(meas_container, text="Modalità Selezione", padding=4)
+        selection_frame.pack(fill=tk.X, pady=(0, 4))
+        
+        selection_frame.columnconfigure(0, weight=1)
+        selection_frame.columnconfigure(1, weight=1)
 
         self.selection_mode_var = tk.StringVar(value="landmark")
+        
         ttk.Radiobutton(
-            selection_subframe,
-            text="📍 Landmark",
+            selection_frame,
+            text="📍 Via Landmarks",
             variable=self.selection_mode_var,
             value="landmark",
             command=self.change_selection_mode,
-        ).grid(row=1, column=0, sticky="w", padx=(0, 5))
+            bootstyle="success-outline-toolbutton"
+        ).grid(row=0, column=0, sticky="ew", padx=2, pady=2)
 
         ttk.Radiobutton(
-            selection_subframe,
-            text="✋ Manuale",
+            selection_frame,
+            text="✋ Selezione Manuale",
             variable=self.selection_mode_var,
             value="manual",
             command=self.change_selection_mode,
-        ).grid(row=1, column=1, sticky="w")
+            bootstyle="danger-outline-toolbutton"
+        ).grid(row=0, column=1, sticky="ew", padx=2, pady=2)
 
-        # Pulsanti azione
-        action_subframe = ttk.Frame(self.interactive_measurements_frame)
-        action_subframe.pack(fill=tk.X, pady=5)
-        action_subframe.columnconfigure(0, weight=1)
-        action_subframe.columnconfigure(1, weight=1)
+        # Pulsanti azione con layout professionale
+        action_frame = ttk.Frame(meas_container)
+        action_frame.pack(fill=tk.X, pady=(4, 0))
+        action_frame.columnconfigure(0, weight=1)
+        action_frame.columnconfigure(1, weight=1)
 
         ttk.Button(
-            action_subframe, text="📊 Calcola", command=self.calculate_measurement
+            action_frame, 
+            text="📊 Calcola Misurazione", 
+            command=self.calculate_measurement,
+            bootstyle="success",
+            width=15
         ).grid(row=0, column=0, sticky="ew", padx=(0, 2))
+        
         ttk.Button(
-            action_subframe, text="🗑️ Cancella", command=self.clear_selections
+            action_frame, 
+            text="🗑️ Cancella Selezioni", 
+            command=self.clear_interactive_selections,
+            bootstyle="danger-outline",
+            width=15
         ).grid(row=0, column=1, sticky="ew", padx=(2, 0))
 
         # === SEZIONE CORREZIONE SOPRACCIGLIO ===
-        self.setup_eyebrow_correction_controls(detections_frame)
+        self.setup_eyebrow_correction_controls(parent)
 
-        # Sezione Controlli Score Frontalità
+        # === SEZIONE CONTROLLI SCORING ===
         self.setup_scoring_controls(parent)
 
     def setup_scoring_controls(self, parent):
-        """Configura il pannello dei controlli per i pesi dello scoring."""
-        scoring_frame = ttk.LabelFrame(
-            parent, text="⚖️ SCORING", padding=10
+        """Configura il pannello dei controlli per i pesi dello scoring con layout professionale."""
+        # === SCORING - Card professionale ===
+        scoring_card = ttk.Frame(parent, bootstyle="light")
+        scoring_card.pack(fill=tk.X, pady=(0, 4), padx=2)
+        
+        # Header della card scoring
+        scoring_header = ttk.Frame(scoring_card, bootstyle="dark")
+        scoring_header.pack(fill=tk.X)
+        
+        scoring_title = ttk.Label(
+            scoring_header, text="⚖️ SISTEMA SCORING", 
+            font=("Segoe UI", 9, "bold"),
+            bootstyle="inverse-dark"
         )
-        scoring_frame.pack(fill=tk.X, pady=(0, 8))
+        scoring_title.pack(pady=4)
+        
+        # Container per controlli scoring
+        scoring_container = ttk.Frame(scoring_card)
+        scoring_container.pack(fill=tk.X, padx=6, pady=6)
 
-        # Info correnti
-        info_frame = ttk.Frame(scoring_frame)
-        info_frame.pack(fill=tk.X, pady=(0, 10))
-
+        # Badge info score corrente
+        info_frame = ttk.Frame(scoring_container)
+        info_frame.pack(fill=tk.X, pady=(0, 8))
+        
         self.scoring_info_label = ttk.Label(
             info_frame,
-            text=f"Score corrente: {self.current_best_score:.3f}",
-            font=("Arial", 9, "bold"),
+            text=f"Score Corrente: {self.current_best_score:.3f}",
+            font=("Segoe UI", 10, "bold"),
+            bootstyle="success",
+            relief="solid",
+            borderwidth=1
         )
-        self.scoring_info_label.pack()
+        self.scoring_info_label.pack(fill=tk.X)
 
-        # Sliders per i pesi
-        sliders_frame = ttk.Frame(scoring_frame)
-        sliders_frame.pack(fill=tk.X)
+        # Frame per sliders organizzati
+        sliders_container = ttk.LabelFrame(scoring_container, text="Parametri Peso", padding=4)
+        sliders_container.pack(fill=tk.X, pady=(0, 6))
 
-        # Nose weight
-        nose_frame = ttk.Frame(sliders_frame)
+        # Nose weight con stile migliorato
+        nose_frame = ttk.Frame(sliders_container)
         nose_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(nose_frame, text="Naso:", width=12).pack(side=tk.LEFT)
+        ttk.Label(
+            nose_frame, text="👃 Naso:", width=10, 
+            font=("Segoe UI", 9, "bold")
+        ).pack(side=tk.LEFT)
         self.nose_scale = ttk.Scale(
             nose_frame,
             from_=0.0,
             to=1.0,
             orient=tk.HORIZONTAL,
             command=self.on_nose_weight_change,
+            bootstyle="info"
         )
-        self.nose_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
-        self.nose_value_label = ttk.Label(nose_frame, text="0.40", width=6)
+        self.nose_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
+        self.nose_value_label = ttk.Label(
+            nose_frame, text="0.40", width=6, 
+            font=("Segoe UI", 9, "bold"),
+            bootstyle="info"
+        )
         self.nose_value_label.pack(side=tk.RIGHT)
         self.nose_scale.set(self.scoring_config.nose_weight)
 
         # Mouth weight
-        mouth_frame = ttk.Frame(sliders_frame)
+        mouth_frame = ttk.Frame(sliders_container)
         mouth_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(mouth_frame, text="Bocca:", width=12).pack(side=tk.LEFT)
+        ttk.Label(
+            mouth_frame, text="💋 Bocca:", width=10, 
+            font=("Segoe UI", 9, "bold")
+        ).pack(side=tk.LEFT)
         self.mouth_scale = ttk.Scale(
             mouth_frame,
             from_=0.0,
             to=1.0,
             orient=tk.HORIZONTAL,
             command=self.on_mouth_weight_change,
+            bootstyle="warning"
         )
-        self.mouth_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
-        self.mouth_value_label = ttk.Label(mouth_frame, text="0.30", width=6)
+        self.mouth_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
+        self.mouth_value_label = ttk.Label(
+            mouth_frame, text="0.30", width=6, 
+            font=("Segoe UI", 9, "bold"),
+            bootstyle="warning"
+        )
         self.mouth_value_label.pack(side=tk.RIGHT)
         self.mouth_scale.set(self.scoring_config.mouth_weight)
 
         # Symmetry weight
-        symmetry_frame = ttk.Frame(sliders_frame)
+        symmetry_frame = ttk.Frame(sliders_container)
         symmetry_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(symmetry_frame, text="Simmetria:", width=12).pack(side=tk.LEFT)
+        ttk.Label(
+            symmetry_frame, text="⚖️ Simm.:", width=10, 
+            font=("Segoe UI", 9, "bold")
+        ).pack(side=tk.LEFT)
         self.symmetry_scale = ttk.Scale(
             symmetry_frame,
             from_=0.0,
             to=1.0,
             orient=tk.HORIZONTAL,
             command=self.on_symmetry_weight_change,
+            bootstyle="danger"
         )
-        self.symmetry_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
-        self.symmetry_value_label = ttk.Label(symmetry_frame, text="0.20", width=6)
+        self.symmetry_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
+        self.symmetry_value_label = ttk.Label(
+            symmetry_frame, text="0.20", width=6, 
+            font=("Segoe UI", 9, "bold"),
+            bootstyle="danger"
+        )
         self.symmetry_value_label.pack(side=tk.RIGHT)
         self.symmetry_scale.set(self.scoring_config.symmetry_weight)
 
         # Eye weight
-        eye_frame = ttk.Frame(sliders_frame)
+        eye_frame = ttk.Frame(sliders_container)
         eye_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(eye_frame, text="Occhi:", width=12).pack(side=tk.LEFT)
+        ttk.Label(
+            eye_frame, text="👁️ Occhi:", width=10, 
+            font=("Segoe UI", 9, "bold")
+        ).pack(side=tk.LEFT)
         self.eye_scale = ttk.Scale(
             eye_frame,
             from_=0.0,
             to=1.0,
             orient=tk.HORIZONTAL,
             command=self.on_eye_weight_change,
+            bootstyle="success"
         )
-        self.eye_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
-        self.eye_value_label = ttk.Label(eye_frame, text="0.10", width=6)
+        self.eye_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
+        self.eye_value_label = ttk.Label(
+            eye_frame, text="0.10", width=6, 
+            font=("Segoe UI", 9, "bold"),
+            bootstyle="success"
+        )
         self.eye_value_label.pack(side=tk.RIGHT)
         self.eye_scale.set(self.scoring_config.eye_weight)
 
-        # Pulsanti preset
-        preset_frame = ttk.Frame(scoring_frame)
-        preset_frame.pack(fill=tk.X, pady=(10, 5))
+        # Pulsanti preset con design migliorato
+        preset_frame = ttk.LabelFrame(scoring_container, text="Preset Veloci", padding=4)
+        preset_frame.pack(fill=tk.X, pady=(0, 4))
 
         preset_frame.columnconfigure(0, weight=1)
         preset_frame.columnconfigure(1, weight=1)
         preset_frame.columnconfigure(2, weight=1)
 
         ttk.Button(
-            preset_frame, text="Reset Default", command=self.reset_scoring_weights
-        ).grid(row=0, column=0, sticky="ew", padx=2)
-
-        ttk.Button(preset_frame, text="Più Naso", command=self.preset_nose_focus).grid(
-            row=0, column=1, sticky="ew", padx=2
-        )
+            preset_frame, text="🔄 Reset", 
+            command=self.reset_scoring_weights,
+            bootstyle="secondary-outline",
+            width=10
+        ).grid(row=0, column=0, sticky="ew", padx=1, pady=2)
 
         ttk.Button(
-            preset_frame, text="Meno Simmetria", command=self.preset_less_symmetry
-        ).grid(row=0, column=2, sticky="ew", padx=2)
+            preset_frame, text="👃 Focus Naso", 
+            command=self.preset_nose_focus,
+            bootstyle="info-outline",
+            width=10
+        ).grid(row=0, column=1, sticky="ew", padx=1, pady=2)
+
+        ttk.Button(
+            preset_frame, text="➖ Meno Simm.", 
+            command=self.preset_less_symmetry,
+            bootstyle="warning-outline",
+            width=10
+        ).grid(row=0, column=2, sticky="ew", padx=1, pady=2)
 
         # === INTEGRAZIONE ASSISTENTE VOCALE SEMPLICE ===
         if self.voice_assistant:
@@ -1104,50 +1443,124 @@ class CanvasApp:
                 print(f"⚠️ Errore integrazione assistente vocale: {e}")
 
     def setup_eyebrow_correction_controls(self, parent):
-        """Configura il pannello dei controlli per la correzione dei sopracciglio."""
-        eyebrow_frame = ttk.LabelFrame(
-            parent, text="✂️ CORREZIONE SOPRACCIGLIO", padding=10
+        """Configura i controlli per la correzione sopracciglia con layout professionale."""
+        # === CORREZIONE SOPRACCIGLIO - Card professionale ===
+        eyebrow_card = ttk.Frame(parent, bootstyle="light")
+        eyebrow_card.pack(fill=tk.X, pady=(0, 4), padx=2)
+        
+        # Header della card correzione
+        eyebrow_header = ttk.Frame(eyebrow_card, bootstyle="secondary")
+        eyebrow_header.pack(fill=tk.X)
+        
+        eyebrow_title = ttk.Label(
+            eyebrow_header, text="✂️ CORREZIONE SOPRACCIGLIA", 
+            font=("Segoe UI", 9, "bold"),
+            bootstyle="inverse-secondary"
         )
-        eyebrow_frame.pack(fill=tk.X, pady=(10, 0))
-
+        eyebrow_title.pack(pady=4)
+        
+        # Container per controlli correzione
+        eyebrow_container = ttk.Frame(eyebrow_card)
+        eyebrow_container.pack(fill=tk.X, padx=6, pady=6)
+        
         # Info sulla funzionalità
         info_label = ttk.Label(
-            eyebrow_frame,
-            text="Visualizza sopracciglio ritagliato con overlay dei punti verdi",
-            font=("Arial", 9),
-            foreground="gray"
+            eyebrow_container,
+            text="💡 Ritaglio sopracciglia con overlay punti verdi",
+            font=("Segoe UI", 8, "italic"),
+            bootstyle="secondary"
         )
-        info_label.pack(pady=(0, 10))
-
-        # Frame per i pulsanti
-        buttons_frame = ttk.Frame(eyebrow_frame)
+        info_label.pack(pady=(0, 6))
+        
+        # Griglia per pulsanti correzione
+        buttons_frame = ttk.Frame(eyebrow_container)
         buttons_frame.pack(fill=tk.X)
         buttons_frame.columnconfigure(0, weight=1)
         buttons_frame.columnconfigure(1, weight=1)
 
-        # Pulsante Correzione Sx
+        # Pulsanti correzione con stile professionale
         self.correction_left_button = ttk.Button(
             buttons_frame,
-            text="✂️ Correzione Sx",
+            text="✂️ Sopracciglio Sinistro",
             command=self.show_left_eyebrow_correction,
-            state=tk.DISABLED  # Inizialmente disabilitato
+            state=tk.DISABLED,
+            bootstyle="warning-outline",
+            width=18
         )
-        self.correction_left_button.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        self.correction_left_button.grid(row=0, column=0, sticky="ew", padx=(0, 2), pady=2)
 
-        # Pulsante Correzione Dx  
         self.correction_right_button = ttk.Button(
             buttons_frame,
-            text="✂️ Correzione Dx", 
+            text="✂️ Sopracciglio Destro", 
             command=self.show_right_eyebrow_correction,
-            state=tk.DISABLED  # Inizialmente disabilitato
+            state=tk.DISABLED,
+            bootstyle="warning-outline",
+            width=18
         )
-        self.correction_right_button.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+        self.correction_right_button.grid(row=0, column=1, sticky="ew", padx=(2, 0), pady=2)
 
         # Salva riferimenti per controllo stato
         self.eyebrow_correction_buttons = [
             self.correction_left_button,
             self.correction_right_button
         ]
+
+        # === PREFERENZE DEBUG ===
+        self.setup_debug_preferences(parent)
+
+    def setup_debug_preferences(self, parent):
+        """Configura le preferenze per il sistema di debug."""
+        # Variabile per modalità debug (tab vs finestre)
+        self.debug_use_tabs = tk.BooleanVar(value=True)  # Default: usa tab
+        
+        # Header per sezione debug
+        debug_header = ttk.LabelFrame(
+            parent, text="🔧 PREFERENZE DEBUG", 
+            padding=8, bootstyle="info"
+        )
+        debug_header.pack(fill=tk.X, pady=(15, 5))
+        
+        # Checkbox per modalità debug
+        debug_mode_frame = ttk.Frame(debug_header)
+        debug_mode_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Checkbutton(
+            debug_mode_frame,
+            text="📺 Usa Tab integrate per debug (invece di finestre popup)",
+            variable=self.debug_use_tabs,
+            bootstyle="info-round-toggle"
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Frame per pulsanti debug utilities
+        debug_utils_frame = ttk.Frame(debug_header)
+        debug_utils_frame.pack(fill=tk.X, pady=(5, 0))
+        debug_utils_frame.grid_columnconfigure(0, weight=1)
+        debug_utils_frame.grid_columnconfigure(1, weight=1)
+        debug_utils_frame.grid_columnconfigure(2, weight=1)
+        
+        ttk.Button(
+            debug_utils_frame,
+            text="🧹 Pulisci Tab Debug",
+            command=self.clear_all_debug_tabs,
+            bootstyle="secondary-outline",
+            width=15
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 2), pady=2)
+        
+        ttk.Button(
+            debug_utils_frame,
+            text="🎯 Tab Landmarks",
+            command=lambda: self.switch_to_debug_tab("landmarks"),
+            bootstyle="info-outline", 
+            width=15
+        ).grid(row=0, column=1, sticky="ew", padx=1, pady=2)
+        
+        ttk.Button(
+            debug_utils_frame,
+            text="✂️ Tab Sopracciglia",
+            command=lambda: self.switch_to_debug_tab("eyebrows"),
+            bootstyle="warning-outline",
+            width=15
+        ).grid(row=0, column=2, sticky="ew", padx=(2, 0), pady=2)
 
     # === METODI VOCALI RIMOSSI ===
     # Tutti i metodi relativi all'assistente vocale sono stati spostati in:
@@ -1178,8 +1591,7 @@ class CanvasApp:
         )
         self.canvas.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
 
-        # TOOLBAR INTEGRATA (sistema unificato)
-        self.setup_canvas_toolbar(parent)
+        # TOOLBAR INTEGRATA (sistema unificato) - RIMOSSA DA QUI, GESTITA NELLE TAB
 
         # EVENTI MOUSE UNIFICATI (PAN + MISURAZIONE)
         self.canvas.bind("<Button-1>", self.on_canvas_click_UNIFIED)
@@ -1235,9 +1647,181 @@ class CanvasApp:
 
         print("✅ Canvas tkinter originale ripristinato!")
 
+    def setup_canvas_tabs(self):
+        """Configura il sistema di tab per canvas principale e debug."""
+        print("🔧 Configurazione sistema tab per canvas...")
+        
+        # TAB 1: Canvas principale (setup normale)
+        self.main_canvas_frame.grid_columnconfigure(0, weight=1)
+        self.main_canvas_frame.grid_rowconfigure(1, weight=1)  # Canvas in row 1
+        self.setup_canvas_toolbar(self.main_canvas_frame)  # Toolbar in row 0
+        self.setup_canvas(self.main_canvas_frame)
+        
+        # TAB 2: Face Mesh (Landmarks)
+        self.debug_landmarks_frame.grid_columnconfigure(0, weight=1)
+        self.debug_landmarks_frame.grid_rowconfigure(1, weight=1)  # Canvas in row 1
+        
+        # Crea prima il canvas
+        self.debug_landmarks_canvas = tk.Canvas(
+            self.debug_landmarks_frame,
+            bg="lightgray",
+            highlightthickness=1,
+            highlightbackground="blue"
+        )
+        self.debug_landmarks_canvas.grid(row=1, column=0, sticky="nsew", padx=2, pady=2)
+        
+        # Poi i controlli (che hanno bisogno del canvas)
+        self.setup_debug_controls(self.debug_landmarks_frame)
+        
+        debug_landmarks_info = ttk.Label(
+            self.debug_landmarks_frame,
+            text="🎭 Face Mesh: Visualizzazione completa dei 468 landmarks MediaPipe",
+            bootstyle="info"
+        )
+        debug_landmarks_info.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
+        
+        # TAB 3: Analisi Geometrica
+        self.debug_geometry_frame.grid_columnconfigure(0, weight=1)
+        self.debug_geometry_frame.grid_rowconfigure(1, weight=1)  # Canvas in row 1
+        
+        # Crea prima il canvas
+        self.debug_geometry_canvas = tk.Canvas(
+            self.debug_geometry_frame,
+            bg="lightcyan",
+            highlightthickness=1,
+            highlightbackground="cyan"
+        )
+        self.debug_geometry_canvas.grid(row=1, column=0, sticky="nsew", padx=2, pady=2)
+        
+        # Poi i controlli
+        self.setup_debug_controls(self.debug_geometry_frame)
+        
+        debug_geometry_info = ttk.Label(
+            self.debug_geometry_frame,
+            text="📐 Geometria: Analisi forma del viso con misure e rapporti",
+            bootstyle="info"
+        )
+        debug_geometry_info.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
+        
+        # TAB 4: Analisi Sopracciglia
+        self.debug_eyebrows_frame.grid_columnconfigure(0, weight=1)
+        self.debug_eyebrows_frame.grid_rowconfigure(1, weight=1)  # Canvas in row 1
+        
+        # Crea prima il canvas
+        self.debug_eyebrows_canvas = tk.Canvas(
+            self.debug_eyebrows_frame,
+            bg="lightyellow",
+            highlightthickness=1,
+            highlightbackground="orange"
+        )
+        self.debug_eyebrows_canvas.grid(row=1, column=0, sticky="nsew", padx=2, pady=2)
+        
+        # Poi i controlli
+        self.setup_debug_controls(self.debug_eyebrows_frame)
+        
+        debug_eyebrows_info = ttk.Label(
+            self.debug_eyebrows_frame,
+            text="✂️ Sopracciglia: Analisi dettagliata zona sopracciglia e occhi",
+            bootstyle="warning"
+        )
+        debug_eyebrows_info.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
+        
+        # TAB 5: Forma Ideale
+        self.debug_ideal_frame.grid_columnconfigure(0, weight=1)
+        self.debug_ideal_frame.grid_rowconfigure(1, weight=1)  # Canvas in row 1
+        
+        # Crea prima il canvas
+        self.debug_ideal_canvas = tk.Canvas(
+            self.debug_ideal_frame,
+            bg="lightpink",
+            highlightthickness=1,
+            highlightbackground="magenta"
+        )
+        self.debug_ideal_canvas.grid(row=1, column=0, sticky="nsew", padx=2, pady=2)
+        
+        # Poi i controlli
+        self.setup_debug_controls(self.debug_ideal_frame)
+        
+        debug_ideal_info = ttk.Label(
+            self.debug_ideal_frame,
+            text="🎨 Forma Ideale: Guida per la forma ideale del sopracciglio",
+            bootstyle="secondary"
+        )
+        debug_ideal_info.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
+        
+        # TAB 6: Mappa Completa
+        self.debug_complete_frame.grid_columnconfigure(0, weight=1)
+        self.debug_complete_frame.grid_rowconfigure(1, weight=1)  # Canvas in row 1
+        
+        # Crea prima il canvas
+        self.debug_complete_canvas = tk.Canvas(
+            self.debug_complete_frame,
+            bg="lightgreen",
+            highlightthickness=1,
+            highlightbackground="green"
+        )
+        self.debug_complete_canvas.grid(row=1, column=0, sticky="nsew", padx=2, pady=2)
+        
+        # Poi i controlli
+        self.setup_debug_controls(self.debug_complete_frame)
+        
+        debug_complete_info = ttk.Label(
+            self.debug_complete_frame,
+            text="🗺️ Mappa Completa: Analisi visagistica completa con annotazioni",
+            bootstyle="success"
+        )
+        debug_complete_info.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
+        
+        # TAB 7: Report Testuale
+        self.debug_report_frame.grid_columnconfigure(0, weight=1)
+        self.debug_report_frame.grid_rowconfigure(0, weight=1)
+        
+        # Text widget con scrollbar per il report
+        report_text_frame = ttk.Frame(self.debug_report_frame)
+        report_text_frame.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+        report_text_frame.grid_columnconfigure(0, weight=1)
+        report_text_frame.grid_rowconfigure(0, weight=1)
+        
+        self.debug_report_text = tk.Text(
+            report_text_frame,
+            bg="lightyellow",
+            fg="black",
+            wrap=tk.WORD,
+            font=("Consolas", 10),
+            state=tk.DISABLED
+        )
+        self.debug_report_text.grid(row=0, column=0, sticky="nsew")
+        
+        report_scrollbar = ttk.Scrollbar(
+            report_text_frame,
+            orient="vertical",
+            command=self.debug_report_text.yview
+        )
+        report_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.debug_report_text.configure(yscrollcommand=report_scrollbar.set)
+        
+        # Controllo per pulire report  
+        report_controls = ttk.Frame(self.debug_report_frame)
+        report_controls.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
+        
+        ttk.Button(
+            report_controls, text="�️ Cancella Report", width=20,
+            command=lambda: self.clear_debug_tab("report"),
+            bootstyle="danger-outline"
+        ).pack(side=tk.LEFT, padx=2)
+        
+        debug_report_info = ttk.Label(
+            self.debug_report_frame,
+            text="📄 Report: Analisi completa in formato testuale dettagliato",
+            bootstyle="dark"
+        )
+        debug_report_info.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
+        
+        print("✅ Sistema tab configurato con 7 sezioni specializzate")
+
     def setup_canvas_toolbar(self, parent):
-        """Configura la toolbar per il canvas unificato."""
-        print("🔧 Configurazione toolbar canvas...")
+        """Configura la toolbar per il canvas unificato con layout su più righe."""
+        print("🔧 Configurazione toolbar canvas ottimizzata...")
 
         # Configura stili per pulsanti attivi/inattivi
         style = ttk.Style()
@@ -1253,12 +1837,16 @@ class CanvasApp:
             borderwidth=2
         )
 
-        # Toolbar compatta con controlli essenziali
+        # Container principale per toolbar multi-riga
         self.canvas_toolbar_frame = ttk.Frame(parent)
         self.canvas_toolbar_frame.pack(side=tk.TOP, fill=tk.X, padx=2, pady=1)
 
-        # Gruppo controlli visualizzazione
-        view_frame = ttk.LabelFrame(self.canvas_toolbar_frame, text="Vista", padding=2)
+        # === PRIMA RIGA: VISUALIZZAZIONE E NAVIGAZIONE ===
+        top_row = ttk.Frame(self.canvas_toolbar_frame)
+        top_row.pack(side=tk.TOP, fill=tk.X, pady=(0, 2))
+
+        # Gruppo Vista (compatto)
+        view_frame = ttk.LabelFrame(top_row, text="Vista", padding=2)
         view_frame.pack(side=tk.LEFT, padx=(0, 3))
 
         view_buttons = [
@@ -1268,45 +1856,20 @@ class CanvasApp:
         ]
 
         for icon, command, tooltip in view_buttons:
-            btn = ttk.Button(view_frame, text=icon, width=4, command=command, 
+            btn = ttk.Button(view_frame, text=icon, width=3, command=command, 
                            bootstyle="secondary")
             btn.pack(side=tk.LEFT, padx=1)
-            # TODO: Aggiungere tooltip se necessario
 
-        # Gruppo rotazione
-        rotation_frame = ttk.LabelFrame(
-            self.canvas_toolbar_frame, text="Rotazione", padding=2
-        )
-        rotation_frame.pack(side=tk.LEFT, padx=(0, 3))
-
-        rotation_buttons = [
-            ("↶", self.rotate_clockwise, "Ruota antiorario (1°)"),
-            ("↷", self.rotate_counterclockwise, "Ruota orario (1°)"),
-            ("⌂", self.reset_rotation, "Reset rotazione (0°)"),
-        ]
-
-        for icon, command, tooltip in rotation_buttons:
-            btn = ttk.Button(rotation_frame, text=icon, width=4, command=command,
-                           bootstyle="warning-outline")
-            btn.pack(side=tk.LEFT, padx=1)
-            ToolTip(btn, tooltip)  # Aggiungi tooltip per i pulsanti di rotazione
-
-        # Gruppo navigazione
-        nav_frame = ttk.LabelFrame(
-            self.canvas_toolbar_frame, text="Navigazione", padding=2
-        )
+        # Gruppo Navigazione (con strumento misura)
+        nav_frame = ttk.LabelFrame(top_row, text="Navigazione", padding=2)
         nav_frame.pack(side=tk.LEFT, padx=(0, 3))
 
         # Memorizza riferimenti ai pulsanti per feedback visivo
         self.tool_buttons = {}
 
         nav_buttons = [
-            ("✋", "PAN", "Pan (trascina vista)"),
-            (
-                "🎯",
-                "SELECTION",
-                "Selezione disegni (clicca per selezionare/modificare)",
-            ),
+            ("🎯", "SELECTION", "Selezione"),
+            ("✋", "PAN", "Trascinamento vista"),
             ("📐", "MEASURE", "Strumento misura"),
         ]
 
@@ -1314,59 +1877,102 @@ class CanvasApp:
             btn = ttk.Button(
                 nav_frame,
                 text=icon,
-                width=4,
+                width=3,
                 command=lambda t=tool: self.set_canvas_tool(t),
             )
             btn.pack(side=tk.LEFT, padx=1)
             # Memorizza riferimento per feedback visivo
             self.tool_buttons[tool] = btn
 
-        # Gruppo disegno
-        draw_frame = ttk.LabelFrame(
-            self.canvas_toolbar_frame, text="Disegno", padding=2
-        )
-        draw_frame.pack(side=tk.LEFT, padx=(0, 3))
+        # Gruppo Rotazione (compatto)
+        rotation_frame = ttk.LabelFrame(top_row, text="Rotazione", padding=2)
+        rotation_frame.pack(side=tk.LEFT, padx=(0, 3))
 
-        draw_buttons = [
+        rotation_buttons = [
+            ("↶", self.rotate_clockwise, "Ruota antiorario"),
+            ("↷", self.rotate_counterclockwise, "Ruota orario"),
+            ("⌂", self.reset_rotation, "Reset rotazione"),
+        ]
+
+        for icon, command, tooltip in rotation_buttons:
+            btn = ttk.Button(rotation_frame, text=icon, width=3, command=command,
+                           bootstyle="warning-outline")
+            btn.pack(side=tk.LEFT, padx=1)
+            ToolTip(btn, tooltip)
+
+        # === SECONDA RIGA: STRUMENTI DI DISEGNO ===
+        bottom_row = ttk.Frame(self.canvas_toolbar_frame)
+        bottom_row.pack(side=tk.TOP, fill=tk.X)
+
+        # Gruppo Forme di Base
+        shapes_frame = ttk.LabelFrame(bottom_row, text="Forme", padding=2)
+        shapes_frame.pack(side=tk.LEFT, padx=(0, 3))
+
+        shape_buttons = [
             ("📏", "LINE", "Linea"),
             ("○", "CIRCLE", "Cerchio"),
             ("▢", "RECTANGLE", "Rettangolo"),
-            ("✏️", "TEXT", "Testo"),
         ]
 
-        for icon, tool, tooltip in draw_buttons:
+        for icon, tool, tooltip in shape_buttons:
             btn = ttk.Button(
-                draw_frame,
+                shapes_frame,
                 text=icon,
-                width=4,
+                width=3,
                 command=lambda t=tool: self.set_canvas_tool(t),
             )
             btn.pack(side=tk.LEFT, padx=1)
             # Memorizza riferimento per feedback visivo
             self.tool_buttons[tool] = btn
 
-        # Pulsante per cancellare tutti i disegni
+        # Gruppo Annotazioni
+        annotations_frame = ttk.LabelFrame(bottom_row, text="Annotazioni", padding=2)
+        annotations_frame.pack(side=tk.LEFT, padx=(0, 3))
+
+        annotation_buttons = [
+            ("✏️", "TEXT", "Testo"),
+        ]
+
+        for icon, tool, tooltip in annotation_buttons:
+            btn = ttk.Button(
+                annotations_frame,
+                text=icon,
+                width=3,
+                command=lambda t=tool: self.set_canvas_tool(t),
+            )
+            btn.pack(side=tk.LEFT, padx=1)
+            # Memorizza riferimento per feedback visivo
+            self.tool_buttons[tool] = btn
+
+        # Gruppo Pulizia e Utilità
+        utils_frame = ttk.LabelFrame(bottom_row, text="Utilità", padding=2)
+        utils_frame.pack(side=tk.LEFT)
+
+        # Pulsanti utilità
         clear_btn = ttk.Button(
-            draw_frame,
+            utils_frame,
             text="🗑️",
-            width=4,
+            width=3,
             command=self.clear_all_drawings,
+            bootstyle="danger-outline"
         )
         clear_btn.pack(side=tk.LEFT, padx=1)
+        ToolTip(clear_btn, "Cancella disegni")
         
-        # 🎯 NUOVO: Pulsante pulizia overlay generale (mantiene solo landmark, asse, green dots)
         clear_overlays_btn = ttk.Button(
-            draw_frame,
+            utils_frame,
             text="🧹",
-            width=4,
+            width=3,
             command=self.clear_all_overlays_except_essentials,
+            bootstyle="warning-outline"
         )
         clear_overlays_btn.pack(side=tk.LEFT, padx=1)
+        ToolTip(clear_overlays_btn, "Pulisci overlay")
 
         # Inizializza stato visivo dei pulsanti
         self.update_button_states()
 
-        print("✅ Toolbar canvas configurata")
+        print("✅ Toolbar canvas ottimizzata configurata")
 
     def set_canvas_tool(self, tool_name):
         """Imposta il tool corrente del canvas con supporto toggle per PAN e feedback visivo."""
@@ -1951,6 +2557,8 @@ class CanvasApp:
         
         elif overlay_type == "area":
             # Per le aree, potremmo avere multipli poligoni
+            canvas_items = []  # Lista per tutti i canvas items delle aree multiple
+            
             if overlay_type == "area" and isinstance(points[0], list) and len(points) > 1:
                 # Multipli poligoni (es. sopracciglio sx + dx)
                 colors = overlay.get("colors", [(255, 255, 0), (0, 255, 255)])  # Default giallo e ciano
@@ -1982,6 +2590,9 @@ class CanvasApp:
                             {"outline": color_name, "fill": "", "width": 2}, is_overlay=True
                         )
                         
+                        # Aggiungi a lista canvas items
+                        canvas_items.append(poly_id)
+                        
                         # DEBUG e z-order per poligoni area
                         bbox = self.canvas.bbox(poly_id)
                         print(f"🔍 POLIGONO DEBUG: ID={poly_id}, bbox={bbox}, colore={color_name}")
@@ -1991,13 +2602,81 @@ class CanvasApp:
                         
                         if poly_idx == 0:  # Salva il primo come canvas_item principale
                             canvas_item = poly_id
-                        
+                
+                # Salva tutti gli items nell'overlay per rimozione completa
+                overlay["canvas_items"] = canvas_items
+                
 
             elif len(canvas_coords) >= 6:  # Singolo poligono
                 canvas_item = self.canvas.create_polygon(
                     canvas_coords, outline="yellow", fill="", width=2, 
                     tags="measurement_overlay"
                 )
+        
+        elif overlay_type == "multiline" and len(canvas_coords) >= 6:
+            # Disegna una polilinea che collega tutti i punti
+            color = overlay.get("color", (255, 0, 255))  # Default magenta
+            color_name = f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
+            
+            # Crea linee che collegano tutti i punti in sequenza
+            canvas_item = self.canvas.create_line(
+                canvas_coords, fill=color_name, width=2, 
+                tags="measurement_overlay", smooth=True
+            )
+            
+        elif overlay_type == "rectangle" and len(canvas_coords) >= 8:
+            # Disegna un rettangolo usando i primi 4 punti
+            color = overlay.get("color", (0, 200, 200))  # Default ciano
+            color_name = f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
+            
+            canvas_item = self.canvas.create_rectangle(
+                canvas_coords[0], canvas_coords[1],  # top-left
+                canvas_coords[4], canvas_coords[5],  # bottom-right
+                outline=color_name, width=2, tags="measurement_overlay"
+            )
+            
+        elif overlay_type == "multiple_lines":
+            # Disegna multiple linee separate
+            lines_data = overlay.get("lines", [])
+            canvas_items = []
+            
+            for line in lines_data:
+                start = line["start"]
+                end = line["end"]
+                color = line.get("color", (255, 255, 255))
+                color_name = f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
+                
+                # Converti coordinates
+                canvas_start = self.convert_image_to_canvas_coords(start[0], start[1])
+                canvas_end = self.convert_image_to_canvas_coords(end[0], end[1])
+                
+                line_id = self.canvas.create_line(
+                    canvas_start[0], canvas_start[1],
+                    canvas_end[0], canvas_end[1],
+                    fill=color_name, width=2, tags="measurement_overlay"
+                )
+                canvas_items.append(line_id)
+                
+                # Registra ogni linea
+                self.register_graphic(
+                    line_id, "line", [start[0], start[1], end[0], end[1]],
+                    {"fill": color_name, "width": 2}, is_overlay=True
+                )
+            
+            # Salva tutte le linee per rimozione
+            overlay["canvas_items"] = canvas_items
+            canvas_item = canvas_items[0] if canvas_items else None
+            
+        elif overlay_type == "line" and len(canvas_coords) >= 4:
+            # Disegna una singola linea
+            color = overlay.get("color", (0, 255, 100))  # Default verde chiaro
+            color_name = f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
+            
+            canvas_item = self.canvas.create_line(
+                canvas_coords[0], canvas_coords[1],
+                canvas_coords[2], canvas_coords[3],
+                fill=color_name, width=2, tags="measurement_overlay"
+            )
         
         # Registra l'elemento principale nel graphics_registry SOLO se non è un overlay area multiplo
         if canvas_item and len(image_coords) >= 4:
@@ -5296,6 +5975,7 @@ class CanvasApp:
         self.detach_btn.pack(side=tk.LEFT, padx=1)
         ToolTip(self.detach_btn, "Scorpora anteprima in finestra separata")
 
+        # DEBUG: Pulsante per testare rilevamento monitor
         # Seconda riga: seek bar e indicatori tempo (solo per file video)
         self.seek_frame = ttk.Frame(controls_frame)
         self.seek_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=2)
@@ -5582,94 +6262,48 @@ class CanvasApp:
             self.restart_btn.config(state=state)
 
     def detach_preview_window(self):
-        """Scorpora l'anteprima in una finestra separata con rilevamento automatico secondo monitor."""
+        """Scorpora l'anteprima in una finestra separata posizionata alla destra dell'interfaccia."""
         if self.is_preview_detached:
-            # Reincorpora l'anteprima nell'interfaccia principale
             self.reattach_preview_window()
             return
 
         # Crea finestra separata
         self.detached_preview_window = tk.Toplevel(self.root)
-        self.detached_preview_window.title("Anteprima Video - Monitor Secondario")
+        self.detached_preview_window.title("Anteprima Video")
         self.detached_preview_window.configure(bg='black')
         
-        # Rilevamento avanzato multi-monitor
-        monitor_info = self.detect_multiple_monitors()
+        # Posiziona alla destra dell'interfaccia principale
+        main_x = self.root.winfo_x()
+        main_y = self.root.winfo_y()
+        main_width = self.root.winfo_width()
         
-        if monitor_info['has_secondary']:
-            print(f"🖥️ Rilevati {monitor_info['monitor_count']} monitor")
-            print(f"📺 Monitor primario: {monitor_info['primary']['width']}x{monitor_info['primary']['height']}")
-            print(f"📺 Monitor secondario: {monitor_info['secondary']['width']}x{monitor_info['secondary']['height']}")
-            
-            # Posiziona a schermo intero sul secondo monitor
-            secondary = monitor_info['secondary']
-            geometry = f"{secondary['width']}x{secondary['height']}+{secondary['x']}+{secondary['y']}"
-            
-            self.detached_preview_window.geometry(geometry)
-            self.detached_preview_window.overrideredirect(True)  # Rimuove bordi finestra
-            self.detached_preview_window.attributes('-fullscreen', True)  # Schermo intero
-            self.detached_preview_window.attributes('-topmost', True)  # Sempre in primo piano
-            
-            print(f"🎯 Finestra anteprima aperta a schermo intero sul monitor 2")
-        else:
-            print("🖥️ Rilevato solo monitor primario")
-            # Monitor singolo - finestra centrata ma grande
-            primary_width = monitor_info['primary']['width']
-            primary_height = monitor_info['primary']['height']
-            
-            # Finestra grande ma non a schermo intero su monitor singolo
-            window_width = min(1200, int(primary_width * 0.8))
-            window_height = min(900, int(primary_height * 0.8))
-            pos_x = (primary_width - window_width) // 2
-            pos_y = (primary_height - window_height) // 2
-            
-            self.detached_preview_window.geometry(f"{window_width}x{window_height}+{pos_x}+{pos_y}")
-            print(f"🎯 Finestra anteprima aperta centrata ({window_width}x{window_height})")
+        # Posizione: subito a destra della finestra principale
+        new_x = main_x + main_width + 10
+        new_y = main_y
+        
+        # Dimensioni maggiori: il doppio rispetto a prima (1600x1200 invece di 800x600)
+        self.detached_preview_window.geometry(f"1600x1200+{new_x}+{new_y}")
 
-        # Label per l'anteprima separata
+        # Label per l'anteprima
         self.detached_preview_label = tk.Label(
             self.detached_preview_window,
             bg="black",
-            text="Anteprima Video Separata\n\nIn attesa del segnale...",
+            text="Anteprima Video\n\nIn attesa del segnale...",
             fg="white",
-            font=("Arial", 14),
+            font=("Arial", 16),
             justify=tk.CENTER,
         )
         self.detached_preview_label.pack(expand=True, fill=tk.BOTH)
 
-        # Frame controlli per finestra separata
-        if monitor_info['has_secondary']:
-            # Per schermo intero su secondo monitor: controlli minimali overlay
-            control_frame = tk.Frame(self.detached_preview_window, bg='black', height=50)
-            control_frame.pack(side=tk.BOTTOM, fill=tk.X)
-            control_frame.pack_propagate(False)
-            
-            # Pulsanti con stile adatto per overlay su schermo nero
-            btn_frame = tk.Frame(control_frame, bg='black')
-            btn_frame.pack(expand=True)
-            
-            ttk.Button(
-                btn_frame,
-                text="↩️ Chiudi Fullscreen",
-                command=self.reattach_preview_window
-            ).pack(side=tk.LEFT, padx=10, pady=10)
-            
-            ttk.Button(
-                btn_frame,
-                text="🔄 Esci da Schermo Intero",
-                command=lambda: self.toggle_fullscreen_preview(False)
-            ).pack(side=tk.LEFT, padx=10, pady=10)
-            
-        else:
-            # Per monitor singolo: controlli normali
-            control_frame = ttk.Frame(self.detached_preview_window)
-            control_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
-            
-            ttk.Button(
-                control_frame,
-                text="↩️ Reincorpora nell'interfaccia",
-                command=self.reattach_preview_window
-            ).pack(side=tk.LEFT)
+        # Controlli semplici
+        control_frame = ttk.Frame(self.detached_preview_window)
+        control_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
+        
+        ttk.Button(
+            control_frame,
+            text="↩️ Reincorpora nell'interfaccia",
+            command=self.reattach_preview_window
+        ).pack(side=tk.LEFT, padx=5)
 
         # Aggiorna stato
         self.is_preview_detached = True
@@ -5684,17 +6318,7 @@ class CanvasApp:
         # Gestisci eventi finestra
         self.detached_preview_window.protocol("WM_DELETE_WINDOW", self.reattach_preview_window)
         
-        # Scorciatoie da tastiera per finestra fullscreen
-        if monitor_info['has_secondary']:
-            self.detached_preview_window.bind('<Escape>', lambda e: self.toggle_fullscreen_preview(False))
-            self.detached_preview_window.bind('<F11>', lambda e: self.toggle_fullscreen_preview())
-            self.detached_preview_window.bind('<Alt-Return>', lambda e: self.reattach_preview_window())
-            self.detached_preview_window.focus_set()  # Abilita ricezione eventi tastiera
-            
-            print("🗗 Anteprima aperta a SCHERMO INTERO su monitor 2")
-            print("⌨️  Tasti: ESC=Esci fullscreen, F11=Toggle, Alt+Enter=Chiudi")
-        else:
-            print("🗗 Anteprima scorporata in finestra separata")
+        print("✅ Finestra anteprima aperta (1600x1200) accanto all'interfaccia")
 
     def reattach_preview_window(self):
         """Reincorpora l'anteprima nell'interfaccia principale."""
@@ -5714,147 +6338,206 @@ class CanvasApp:
 
         print("↩️ Anteprima reincorporata nell'interfaccia principale")
 
-    def toggle_fullscreen_preview(self, fullscreen=None):
+    def update_video_controls_state(self):
+        """Testa il posizionamento della finestra sui diversi monitor."""
+        if not self.detached_preview_window:
+            return
+            
+        monitor_info = self.detect_multiple_monitors()
+        
+        if monitor_info['has_secondary']:
+            secondary = monitor_info['secondary']
+            
+            # Test 1: Finestra piccola a sinistra del monitor 2
+            test_x = secondary['x'] + 50
+            test_y = 50
+            
+            print(f"🧪 TEST: Sposto finestra a ({test_x}, {test_y}) - monitor 2")
+            
+            # Disattiva fullscreen per il test
+            self.detached_preview_window.attributes('-fullscreen', False)
+            self.detached_preview_window.attributes('-topmost', False)
+            
+            # Posiziona finestra di test
+            self.detached_preview_window.geometry(f"400x300+{test_x}+{test_y}")
+            self.detached_preview_window.configure(bg='red')
+            self.detached_preview_window.update()
+            
+            # Verifica posizione effettiva
+            actual_x = self.detached_preview_window.winfo_x()
+            actual_y = self.detached_preview_window.winfo_y()
+            
+            print(f"📍 Posizione effettiva: ({actual_x}, {actual_y})")
+            
+            if actual_x >= secondary['x'] - 50:
+                print("✅ SUCCESS: Finestra è sul monitor 2!")
+                # Aspetta 2 secondi poi torna a fullscreen
+                self.root.after(2000, lambda: self.apply_fullscreen_on_monitor2())
+            else:
+                print("❌ FAILED: Finestra ancora sul monitor 1")
+                # Cambia colore per indicare errore
+                self.detached_preview_window.configure(bg='yellow')
+        else:
+            print("ℹ️ Solo un monitor rilevato")
+
+    def apply_fullscreen_on_monitor2(self):
+        """Applica fullscreen sul monitor 2 dopo test positivo."""
+        if not self.detached_preview_window:
+            return
+            
+        monitor_info = self.detect_multiple_monitors()
+        if monitor_info['has_secondary']:
+            secondary = monitor_info['secondary']
+            
+            self.detached_preview_window.configure(bg='black')
+            self.detached_preview_window.geometry(f"{secondary['width']}x{secondary['height']}+{secondary['x']}+{secondary['y']}")
+            self.detached_preview_window.attributes('-fullscreen', True)
+            self.detached_preview_window.attributes('-topmost', True)
+            
+            print("✅ Fullscreen applicato su monitor 2")
+
+    def debug_monitor_info(self):
+        """Funzione di debug per testare il rilevamento monitor."""
+        print("\n🔍 DEBUG MONITOR INFO")
+        print("=" * 30)
+        
+        # Test info Tkinter
+        try:
+            total_width = self.root.winfo_screenwidth() 
+            total_height = self.root.winfo_screenheight()
+            root_x = self.root.winfo_x()
+            root_y = self.root.winfo_y()
+            
+            print(f"Tkinter Desktop: {total_width}x{total_height}")
+            print(f"Finestra principale: posizione ({root_x}, {root_y})")
+            
+        except Exception as e:
+            print(f"Errore Tkinter info: {e}")
+            
+        # Test rilevamento monitor
+        monitor_info = self.detect_multiple_monitors()
+        print(f"Rilevamento: {monitor_info}")
+        
+        return monitor_info
+
+    def toggle_fullscreen_preview(self, event=None):
         """Toggle modalità fullscreen per finestra anteprima."""
         if not self.detached_preview_window:
             return
             
         try:
-            if fullscreen is None:
-                # Toggle automatico
-                current_fullscreen = self.detached_preview_window.attributes('-fullscreen')
-                new_fullscreen = not current_fullscreen
-            else:
-                new_fullscreen = fullscreen
+            # Toggle automatico
+            current_fullscreen = self.detached_preview_window.attributes('-fullscreen')
+            new_fullscreen = not current_fullscreen
                 
             if new_fullscreen:
                 # Attiva fullscreen
                 self.detached_preview_window.attributes('-fullscreen', True)
                 self.detached_preview_window.attributes('-topmost', True)
-                print("🔲 Finestra anteprima: Schermo intero ON")
+                print("🔲 Anteprima: Schermo intero ATTIVATO")
             else:
                 # Disattiva fullscreen
                 self.detached_preview_window.attributes('-fullscreen', False)
                 self.detached_preview_window.attributes('-topmost', False)
-                self.detached_preview_window.overrideredirect(False)
                 
-                # Ridimensiona a finestra normale
-                self.detached_preview_window.geometry("1200x900+100+100")
-                print("🔳 Finestra anteprima: Schermo intero OFF")
+                # Torna alle dimensioni normali alla destra della finestra principale
+                main_x = self.root.winfo_x()
+                main_y = self.root.winfo_y()
+                main_width = self.root.winfo_width()
+                new_x = main_x + main_width + 10
+                new_y = main_y
+                
+                self.detached_preview_window.geometry(f"800x600+{new_x}+{new_y}")
+                print("🔳 Anteprima: Schermo intero DISATTIVATO")
                 
         except Exception as e:
             print(f"❌ Errore toggle fullscreen: {e}")
 
     def detect_multiple_monitors(self):
-        """Rileva la presenza e configurazione di monitor multipli."""
+        """Rileva monitor multipli usando PowerShell per Windows"""
+        import subprocess
+        import json
+        
         try:
-            import subprocess
-            import json
+            # Metodo PowerShell: System.Windows.Forms.Screen
+            cmd = 'powershell "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | ForEach-Object { @{DeviceName=$_.DeviceName; Bounds=@{X=$_.Bounds.X; Y=$_.Bounds.Y; Width=$_.Bounds.Width; Height=$_.Bounds.Height}; Primary=$_.Primary} } | ConvertTo-Json"'
             
-            # Metodo 1: Usa wmic per Windows (più affidabile)
-            try:
-                result = subprocess.run(
-                    ['wmic', 'desktopmonitor', 'get', 'screenwidth,screenheight', '/format:csv'],
-                    capture_output=True, text=True, timeout=5
-                )
-                
-                if result.returncode == 0:
-                    lines = [line.strip() for line in result.stdout.split('\n') if line.strip() and 'Node' not in line and 'ScreenHeight' not in line]
-                    monitors = []
-                    for line in lines:
-                        parts = line.split(',')
-                        if len(parts) >= 3:
-                            try:
-                                height = int(parts[1]) if parts[1] else 0
-                                width = int(parts[2]) if parts[2] else 0
-                                if width > 0 and height > 0:
-                                    monitors.append({'width': width, 'height': height})
-                            except (ValueError, IndexError):
-                                continue
-                    
-                    if len(monitors) >= 2:
-                        # Configura monitor primario e secondario
-                        primary = monitors[0]
-                        secondary = monitors[1]
-                        
-                        return {
-                            'has_secondary': True,
-                            'monitor_count': len(monitors),
-                            'primary': {
-                                'width': primary['width'],
-                                'height': primary['height'],
-                                'x': 0,
-                                'y': 0
-                            },
-                            'secondary': {
-                                'width': secondary['width'],
-                                'height': secondary['height'],
-                                'x': primary['width'],  # Posiziona a destra del primario
-                                'y': 0
-                            }
-                        }
-            except Exception as e:
-                print(f"⚠️ Errore rilevamento wmic: {e}")
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=True, timeout=10)
             
-            # Metodo 2: Fallback con tkinter
-            try:
-                # Ottieni dimensioni schermo totali
-                total_width = self.root.winfo_screenwidth()
-                total_height = self.root.winfo_screenheight()
+            if result.returncode == 0 and result.stdout.strip():
+                screens_data = json.loads(result.stdout.strip())
                 
-                # Ottieni dimensioni finestra root per stimare monitor primario
-                self.root.update_idletasks()
-                root_width = self.root.winfo_width()
+                # Se è un singolo oggetto, convertilo in lista
+                if isinstance(screens_data, dict):
+                    screens_data = [screens_data]
                 
-                # Euristica: se larghezza totale > 1.5 * altezza, probabilmente dual monitor
-                aspect_ratio = total_width / total_height
-                if aspect_ratio > 2.5:  # Tipico di configurazione dual monitor 16:9
-                    estimated_primary_width = total_width // 2
+                monitors = []
+                for screen in screens_data:
+                    bounds = screen.get('Bounds', {})
+                    monitors.append({
+                        'name': screen.get('DeviceName', 'Unknown'),
+                        'x': bounds.get('X', 0),
+                        'y': bounds.get('Y', 0),
+                        'width': bounds.get('Width', 1920),
+                        'height': bounds.get('Height', 1080),
+                        'primary': screen.get('Primary', False)
+                    })
+                
+                print(f"🖥️ Rilevati {len(monitors)} monitor(s)")
+                for i, monitor in enumerate(monitors):
+                    print(f"   Monitor {i+1}: {monitor['width']}x{monitor['height']} @ ({monitor['x']},{monitor['y']}) {'[PRIMARY]' if monitor['primary'] else ''}")
+                
+                # Converti nel formato originale per compatibilità
+                if len(monitors) >= 2:
+                    secondary = [m for m in monitors if not m['primary']][0]
+                    primary = [m for m in monitors if m['primary']][0]
                     
                     return {
                         'has_secondary': True,
-                        'monitor_count': 2,
-                        'primary': {
-                            'width': estimated_primary_width,
-                            'height': total_height,
-                            'x': 0,
-                            'y': 0
-                        },
-                        'secondary': {
-                            'width': estimated_primary_width,
-                            'height': total_height,
-                            'x': estimated_primary_width,
-                            'y': 0
-                        }
+                        'monitor_count': len(monitors),
+                        'primary': primary,
+                        'secondary': secondary
                     }
-                
-            except Exception as e:
-                print(f"⚠️ Errore rilevamento tkinter: {e}")
-            
-            # Fallback: solo monitor primario
-            return {
-                'has_secondary': False,
-                'monitor_count': 1,
-                'primary': {
-                    'width': self.root.winfo_screenwidth(),
-                    'height': self.root.winfo_screenheight(),
-                    'x': 0,
-                    'y': 0
-                },
-                'secondary': None
-            }
+                else:
+                    return {
+                        'has_secondary': False,
+                        'monitor_count': 1,
+                        'primary': monitors[0],
+                        'secondary': None
+                    }
             
         except Exception as e:
-            print(f"❌ Errore generale rilevamento monitor: {e}")
-            # Fallback sicuro
+            print(f"⚠️ Errore PowerShell detection: {e}")
+        
+        # Fallback: Tkinter base
+        try:
+            primary = {
+                'name': 'DISPLAY1',
+                'x': 0,
+                'y': 0,
+                'width': self.root.winfo_screenwidth(),
+                'height': self.root.winfo_screenheight(),
+                'primary': True
+            }
+            print(f"🖥️ Fallback Tkinter: {primary['width']}x{primary['height']}")
+            return {
+                'has_secondary': False,
+                'monitor_count': 1,
+                'primary': primary,
+                'secondary': None
+            }
+        except:
+            # Ultimate fallback
             return {
                 'has_secondary': False,
                 'monitor_count': 1,
                 'primary': {
+                    'name': 'DISPLAY1',
+                    'x': 0,
+                    'y': 0,
                     'width': 1920,
                     'height': 1080,
-                    'x': 0,
-                    'y': 0
+                    'primary': True
                 },
                 'secondary': None
             }
@@ -6040,7 +6723,7 @@ class CanvasApp:
         print("Interfaccia resettata per nuova analisi")
 
     def update_landmarks_table(self):
-        """Aggiorna la tabella dei landmarks rilevati."""
+        """Aggiorna la tabella dei landmarks rilevati con supporto overlay individuali."""
         # Pulisce la tabella
         for item in self.landmarks_tree.get_children():
             self.landmarks_tree.delete(item)
@@ -6048,11 +6731,11 @@ class CanvasApp:
         if not hasattr(self, 'current_landmarks') or self.current_landmarks is None:
             # Mostra esempi di landmarks che verranno rilevati
             example_landmarks = [
-                ("9", "🎯 Glabella (Centro Fronte)", "Richiede", "rilevamento", "⏳"),
-                ("10", "🏠 Fronte Centro", "landmarks", "facciali", "⏳"),
-                ("152", "🎭 Mento Centro", "Carica", "immagine", "⏳"),
-                ("1", "👃 Ponte Nasale", "o avvia", "webcam", "⏳"),
-                ("33", "👁️ Occhio Sinistro", "per", "rilevare", "⏳")
+                ("⬜", "9", "🎯 Glabella (Centro Fronte)", "Carica", "immagine"),
+                ("⬜", "10", "🔵 Fronte Centro", "o avvia", "webcam"),
+                ("⬜", "152", "🔵 Mento Centro", "per", "rilevare"),
+                ("⬜", "1", "👃 Ponte Nasale Alto", "landmark", "facciali"),
+                ("⬜", "33", "👁️ Occhio Sin - Angolo Interno", "MediaPipe", "468 punti")
             ]
             
             for landmark_data in example_landmarks:
@@ -6062,8 +6745,23 @@ class CanvasApp:
             self.landmarks_tree.tag_configure("example", background="#f8f9fa", foreground="#6c757d")
             return
             
-        # Popola con landmarks importanti
-        important_landmarks = [9, 10, 152, 1, 2, 33, 133, 362, 263, 13, 14, 78, 308]
+        # Popola con landmarks importanti (selezionati per rappresentatività anatomica)
+        important_landmarks = [
+            # Punti chiave centrali
+            9, 10, 168, 151, 152, 175,
+            # Occhi
+            33, 133, 160, 158, 362, 263, 387, 385,
+            # Sopracciglia  
+            46, 53, 52, 276, 283, 282,
+            # Naso
+            1, 2, 5, 6, 19, 20, 115, 131, 344, 360,
+            # Bocca
+            13, 14, 61, 291, 78, 308, 12, 15,
+            # Contorno viso
+            136, 361, 172, 397,
+            # Guance
+            116, 345
+        ]
         
         for idx in important_landmarks:
             if idx < len(self.current_landmarks):
@@ -6099,69 +6797,208 @@ class CanvasApp:
                 # Nome del landmark
                 name = self.landmark_names.get(idx, f"Landmark {idx}")
                 
-                # Visibilità (usando la variabile visibility già calcolata)
-                visibility_icon = "✅" if visibility > 0.5 else "⚠️" if visibility > 0.3 else "❌"
+                # Stato overlay per questo landmark
+                overlay_active = self.landmark_overlays.get(idx, False)
+                overlay_icon = "✅" if overlay_active else "⬜"
                 
-                # Colore riga basato su visibilità
-                tags = ()
+                # Colore riga basato su visibilità e overlay
+                tags = []
+                if overlay_active:
+                    tags.append("overlay_active")
                 if visibility > 0.7:
-                    tags = ("high_vis",)
+                    tags.append("high_vis")
                 elif visibility > 0.4:  
-                    tags = ("med_vis",)
+                    tags.append("med_vis")
                 else:
-                    tags = ("low_vis",)
+                    tags.append("low_vis")
                 
                 self.landmarks_tree.insert('', 'end', values=(
-                    str(idx), name, str(x), str(y), visibility_icon
-                ), tags=tags)
+                    overlay_icon, str(idx), name, str(x), str(y)
+                ), tags=tuple(tags))
         
         # Configurazione colori per le righe
         self.landmarks_tree.tag_configure("high_vis", background="#d4edda")  # Verde chiaro
         self.landmarks_tree.tag_configure("med_vis", background="#fff3cd")   # Giallo chiaro  
         self.landmarks_tree.tag_configure("low_vis", background="#f8d7da")   # Rosso chiaro
+        self.landmarks_tree.tag_configure("overlay_active", background="#cce5ff", foreground="#0066cc")  # Blu per overlay attivi
+
+    def on_landmark_single_click(self, event):
+        """Gestisce il click singolo su un landmark per toggle dell'overlay."""
+        # Determina se il click è sulla colonna overlay
+        region = self.landmarks_tree.identify_region(event.x, event.y)
+        if region != "cell":
+            return
+            
+        # Identifica la colonna usando il metodo corretto
+        item = self.landmarks_tree.identify_row(event.y)
+        if not item:
+            return
+            
+        column = self.landmarks_tree.identify_column(event.x)
+        if column != "#1":  # Colonna Overlay è la prima (#1)
+            return
+            
+        # Seleziona l'item se non è già selezionato
+        self.landmarks_tree.selection_set(item)
+        
+        # Ottieni i dati del landmark selezionato
+        item_values = self.landmarks_tree.item(item, 'values')
+        if len(item_values) < 5 or item_values[1] == "N/A":
+            return
+            
+        try:
+            landmark_id = int(item_values[1])  # ID è ora la seconda colonna
+            self.toggle_landmark_overlay(landmark_id)
+            
+        except (ValueError, IndexError) as e:
+            print(f"Errore nel toggle overlay landmark: {e}")
 
     def on_landmark_double_click(self, event):
-        """Gestisce il doppio click su un landmark nella tabella per centrarlo sul canvas."""
+        """Gestisce il doppio click su un landmark: solo toggle overlay senza centrare."""
         selection = self.landmarks_tree.selection()
         if not selection:
             return
             
         # Ottieni i dati del landmark selezionato
         item_values = self.landmarks_tree.item(selection[0], 'values')
-        if len(item_values) < 4 or item_values[0] == "N/A":
+        if len(item_values) < 5 or item_values[1] == "N/A":
             return
             
         try:
-            landmark_id = int(item_values[0])
-            x = int(item_values[2])
-            y = int(item_values[3])
+            landmark_id = int(item_values[1])  # ID è la seconda colonna
             
-            # Centra il canvas su questo punto
-            if hasattr(self, 'canvas') and self.canvas:
-                # Converti coordinate immagine in coordinate canvas
-                canvas_x = x * self.canvas_scale + self.canvas_offset_x
-                canvas_y = y * self.canvas_scale + self.canvas_offset_y
+            # Solo toggle l'overlay per questo landmark (NIENTE CENTRATURA)
+            self.toggle_landmark_overlay(landmark_id)
                 
-                # Calcola offset per centrare
-                canvas_width = self.canvas.winfo_width()
-                canvas_height = self.canvas.winfo_height()
-                
-                target_offset_x = (canvas_width // 2) - canvas_x
-                target_offset_y = (canvas_height // 2) - canvas_y
-                
-                # Aggiorna offset
-                self.canvas_offset_x = target_offset_x
-                self.canvas_offset_y = target_offset_y
-                
-                # Aggiorna la visualizzazione
-                self.update_canvas_display()
-                
-                # Feedback all'utente
-                landmark_name = item_values[1]
-                self.status_bar.config(text=f"🎯 Centrato su: {landmark_name} (ID: {landmark_id})")
+            # Feedback all'utente
+            landmark_name = item_values[2]  # Nome è la terza colonna
+            overlay_state = "attivato" if self.landmark_overlays.get(landmark_id, False) else "disattivato"
+            self.status_bar.config(text=f"� Overlay {landmark_name}: {overlay_state}")
                 
         except (ValueError, IndexError) as e:
-            print(f"Errore nel centrare landmark: {e}")
+            print(f"Errore nel toggle overlay landmark: {e}")
+
+    def toggle_landmark_overlay(self, landmark_id):
+        """Attiva/disattiva l'overlay per un landmark specifico."""
+        if not self.current_landmarks or landmark_id >= len(self.current_landmarks):
+            return
+            
+        # Toggle stato overlay
+        current_state = self.landmark_overlays.get(landmark_id, False)
+        new_state = not current_state
+        self.landmark_overlays[landmark_id] = new_state
+        
+        if new_state:
+            # Attiva overlay: disegna evidenziazione per questo landmark
+            self.show_landmark_overlay(landmark_id)
+        else:
+            # Disattiva overlay: rimuovi evidenziazione
+            self.hide_landmark_overlay(landmark_id)
+        
+        # Aggiorna la tabella per riflettere il cambio di stato
+        self.update_landmarks_table()
+        
+        print(f"🎨 Overlay landmark {landmark_id}: {'ON' if new_state else 'OFF'}")
+
+    def show_landmark_overlay(self, landmark_id):
+        """Mostra l'overlay per un landmark specifico."""
+        if not self.current_landmarks or landmark_id >= len(self.current_landmarks):
+            return
+            
+        landmark = self.current_landmarks[landmark_id]
+        
+        # Gestisce diversi formati di landmark
+        try:
+            if hasattr(landmark, 'x') and hasattr(landmark, 'y'):
+                # Formato oggetto MediaPipe
+                lm_x = landmark.x
+                lm_y = landmark.y
+                
+                # Calcola coordinate pixel
+                img_width = self.original_image_for_rotations.shape[1] if hasattr(self, 'original_image_for_rotations') and self.original_image_for_rotations is not None else 640
+                img_height = self.original_image_for_rotations.shape[0] if hasattr(self, 'original_image_for_rotations') and self.original_image_for_rotations is not None else 480
+                
+                x = int(lm_x * img_width)
+                y = int(lm_y * img_height)
+                
+            elif isinstance(landmark, (tuple, list)) and len(landmark) >= 2:
+                x = int(landmark[0])
+                y = int(landmark[1])
+            else:
+                return
+                
+        except Exception as e:
+            print(f"⚠️ Errore nel mostrare overlay landmark {landmark_id}: {e}")
+            return
+        
+        # Rimuovi overlay precedente se esiste
+        self.hide_landmark_overlay(landmark_id)
+        
+        # Converti in coordinate canvas
+        canvas_x, canvas_y = self.image_to_canvas_coords(x, y)
+        
+        # Disegna overlay evidenziato (cerchio più grande + etichetta)
+        radius = max(8, int(6 * self.canvas_scale))
+        
+        # Cerchio esterno
+        outer_circle = self.canvas.create_oval(
+            canvas_x - radius,
+            canvas_y - radius,
+            canvas_x + radius,
+            canvas_y + radius,
+            fill="",
+            outline="cyan",
+            width=3,
+            tags=f"landmark_overlay_{landmark_id}"
+        )
+        
+        # Cerchio interno
+        inner_circle = self.canvas.create_oval(
+            canvas_x - radius//2,
+            canvas_y - radius//2,
+            canvas_x + radius//2,
+            canvas_y + radius//2,
+            fill="yellow",
+            outline="orange",
+            width=2,
+            tags=f"landmark_overlay_{landmark_id}"
+        )
+        
+        # Etichetta con nome landmark
+        landmark_name = self.landmark_names.get(landmark_id, f"L{landmark_id}")
+        text_obj = self.canvas.create_text(
+            canvas_x, 
+            canvas_y - radius - 15,
+            text=f"{landmark_id}: {landmark_name}",
+            fill="white",
+            font=("Arial", 8, "bold"),
+            tags=f"landmark_overlay_{landmark_id}"
+        )
+        
+        # Rettangolo di sfondo per il testo
+        text_bbox = self.canvas.bbox(text_obj)
+        if text_bbox:
+            bg_rect = self.canvas.create_rectangle(
+                text_bbox[0] - 2, text_bbox[1] - 1,
+                text_bbox[2] + 2, text_bbox[3] + 1,
+                fill="black",
+                outline="cyan",
+                tags=f"landmark_overlay_{landmark_id}"
+            )
+            # Porta il testo in primo piano
+            self.canvas.tag_raise(text_obj)
+        
+        # Salva i riferimenti agli oggetti canvas
+        self.landmark_overlay_objects[landmark_id] = [outer_circle, inner_circle, text_obj, bg_rect]
+
+    def hide_landmark_overlay(self, landmark_id):
+        """Nasconde l'overlay per un landmark specifico."""
+        # Rimuovi oggetti canvas se esistono
+        self.canvas.delete(f"landmark_overlay_{landmark_id}")
+        
+        # Pulisci riferimenti
+        if landmark_id in self.landmark_overlay_objects:
+            del self.landmark_overlay_objects[landmark_id]
 
     def setup_measurements_area(self, parent):
         """Configura l'area delle misurazioni in modo compatto."""
@@ -6895,17 +7732,33 @@ class CanvasApp:
                 # Carica nel canvas
                 self.set_current_image(frame, landmarks, auto_resize=False)
 
-                # Aggiorna info
+                # AGGIORNAMENTO DINAMICO SCORING: Ricalcola lo score con i pesi correnti
+                if landmarks and hasattr(self, 'scoring_config'):
+                    self.recalculate_current_score()
+                    current_score = self.current_best_score
+                    print(f"🔄 Score ricalcolato per frame da tabella: {current_score:.3f}")
+                else:
+                    current_score = float(item["values"][1])  # Usa lo score originale se non si può ricalcolare
+
+                # Aggiorna info con score aggiornato
                 timestamp = item["values"][0]  # Primo valore è il tempo (es. "12.3s")
-                score = float(item["values"][1])  # Secondo valore è lo score
-                self.best_frame_info.config(
-                    text=f"📸 FRAME DA TABELLA: {timestamp} - Score {score:.3f}"
-                )
+                original_score = float(item["values"][1])  # Score originale dalla tabella
+                
+                if landmarks and hasattr(self, 'scoring_config'):
+                    # Mostra entrambi gli score: originale e ricalcolato
+                    self.best_frame_info.config(
+                        text=f"📸 FRAME DA TABELLA: {timestamp} - Score originale: {original_score:.3f} → Corrente: {current_score:.3f}"
+                    )
+                else:
+                    self.best_frame_info.config(
+                        text=f"📸 FRAME DA TABELLA: {timestamp} - Score {original_score:.3f}"
+                    )
+                
                 self.status_bar.config(
-                    text=f"Caricato frame al tempo {timestamp} dalla tabella debug"
+                    text=f"Caricato frame {timestamp} - Score aggiornato: {current_score:.3f}"
                 )
 
-                print(f"📸 Caricato frame al tempo {timestamp} dalla tabella debug")
+                print(f"📸 Caricato frame al tempo {timestamp} dalla tabella debug - Score: {current_score:.3f}")
             else:
                 self.status_bar.config(
                     text=f"Frame al tempo {item['values'][0]} non disponibile nel buffer"
@@ -7001,6 +7854,11 @@ class CanvasApp:
         # Aggiorna la tabella landmarks se esiste
         if hasattr(self, 'landmarks_tree'):
             self.update_landmarks_table()
+
+        # AGGIORNAMENTO DINAMICO SCORING: Ricalcola lo score quando si cambia immagine
+        if self.current_landmarks and hasattr(self, 'scoring_config'):
+            self.recalculate_current_score()
+            print("🔄 Score ricalcolato dopo cambio immagine")
 
         print("✅ set_current_image completato")
 
@@ -7257,6 +8115,10 @@ class CanvasApp:
             if landmark_idx < 3:
                 print(f"🔴 LANDMARK {landmark_idx}: img({x:.1f},{y:.1f}) -> canvas({canvas_x:.1f},{canvas_y:.1f})")
 
+            # Salta il disegno del landmark base se ha un overlay attivo
+            if self.landmark_overlays.get(landmark_idx, False):
+                continue
+
             # Disegna punto landmark con tag per identificazione
             radius = max(1, int(2 * scale))
             self.canvas.create_oval(
@@ -7271,10 +8133,30 @@ class CanvasApp:
             )
 
         print(f"✅ Disegnati {len(self.current_landmarks)} landmarks con conversione unificata")
+        
+        # Ridisegna gli overlay attivi per mantenerli sopra
+        self.redraw_active_overlays()
+
+    def redraw_active_overlays(self):
+        """Ridisegna tutti gli overlay attivi dopo un refresh del canvas."""
+        for landmark_id, is_active in self.landmark_overlays.items():
+            if is_active:
+                self.show_landmark_overlay(landmark_id)
+
+    def clear_all_landmark_overlays(self):
+        """Pulisce tutti gli overlay dei landmarks."""
+        for landmark_id in list(self.landmark_overlays.keys()):
+            self.hide_landmark_overlay(landmark_id)
+        self.landmark_overlays.clear()
+        self.landmark_overlay_objects.clear()
+        self.update_landmarks_table()
 
     def detect_landmarks(self):
         """Rileva i landmark facciali nell'immagine corrente."""
         if self.current_image is not None:
+            # Pulisci overlay precedenti quando si rilevano nuovi landmarks
+            self.clear_all_landmark_overlays()
+            
             landmarks = self.face_detector.detect_face_landmarks(self.current_image)
             self.current_landmarks = landmarks
 
@@ -7295,8 +8177,14 @@ class CanvasApp:
             if hasattr(self, 'landmarks_tree'):
                 self.update_landmarks_table()
 
+            # AGGIORNAMENTO DINAMICO SCORING: Ricalcola lo score quando si rilevano nuovi landmarks
+            if landmarks and hasattr(self, 'scoring_config'):
+                self.recalculate_current_score()
+                print("🔄 Score ricalcolato dopo rilevamento landmarks")
+
             if landmarks:
-                self.status_bar.config(text=f"Rilevati {len(landmarks)} landmark")
+                score_text = f" - Score: {self.current_best_score:.3f}" if hasattr(self, 'current_best_score') else ""
+                self.status_bar.config(text=f"Rilevati {len(landmarks)} landmark{score_text}")
             else:
                 self.status_bar.config(text="Nessun volto rilevato")
 
@@ -8193,12 +9081,15 @@ Aree calcolate:
         self.selection_overlay_ids.clear()
 
     def change_selection_mode(self):
-        """Cambia la modalità di selezione tra manuale e landmark."""
+        """Cambia la modalità di selezione tra manuale e landmark per le misurazioni interattive.
+        
+        IMPORTANTE: Non influenza le misurazioni predefinite che sono separate e indipendenti.
+        """
         mode = self.selection_mode_var.get()
         self.landmark_measurement_mode = mode == "landmark"
 
-        # Pulisci le selezioni quando cambi modalità
-        self.clear_selections()
+        # Pulisci SOLO le selezioni delle misurazioni interattive, NON le predefinite
+        self.clear_interactive_selections()
 
         # Se modalità misurazione è attiva e si seleziona "landmark", attiva automaticamente i landmarks
         if (hasattr(self, 'measurement_mode_active') and 
@@ -8230,10 +9121,59 @@ Aree calcolate:
                     text="Modalità Manuale selezionata - attiva misurazione per usarla"
                 )
 
+    def clear_interactive_selections(self):
+        """Pulisce SOLO le selezioni delle misurazioni interattive, preservando le predefinite."""
+        self.selected_points.clear()
+        self.selected_landmarks.clear()
+        
+        # Rimuovi SOLO overlay di selezione interattiva, NON quelli delle misurazioni predefinite
+        self.clear_selection_overlays()
+        
+        # Rimuovi evidenziazione hover se presente
+        self.canvas.delete("landmark_hover")
+        if hasattr(self, 'hovered_landmark'):
+            self.hovered_landmark = None
+        
+        # NON cancellare gli overlay delle misurazioni predefinite
+        # Cancella solo gli overlay delle misurazioni interattive (non preset)
+        self.clear_interactive_measurement_overlays()
+        
+        self.update_canvas_display()
+        self.status_bar.config(text="Selezioni interattive cancellate (misurazioni predefinite preservate)")
+        print("🗑️ Selezioni interattive pulite, misurazioni predefinite preservate")
+
+    def clear_interactive_measurement_overlays(self):
+        """Pulisce SOLO gli overlay delle misurazioni interattive, preservando quelli predefiniti."""
+        # Filtra gli overlay mantenendo solo quelli delle misurazioni predefinite
+        preset_overlay_ids = set(id(overlay) for overlay in self.preset_overlays.values() if overlay is not None)
+        
+        # Rimuovi dal canvas solo gli overlay NON predefiniti
+        overlays_to_remove = []
+        for overlay in self.measurement_overlays:
+            # Se l'overlay non è una misurazione predefinita, rimuovilo
+            if id(overlay) not in preset_overlay_ids:
+                overlays_to_remove.append(overlay)
+                if "canvas_item" in overlay:
+                    canvas_item = overlay["canvas_item"]
+                    try:
+                        self.canvas.delete(canvas_item)
+                        if canvas_item in self.graphics_registry:
+                            del self.graphics_registry[canvas_item]
+                        print(f"🧹 Rimosso overlay interattivo: {canvas_item}")
+                    except Exception as e:
+                        print(f"⚠️ Errore rimozione overlay interattivo: {e}")
+        
+        # Rimuovi dalla lista solo gli overlay interattivi
+        for overlay in overlays_to_remove:
+            if overlay in self.measurement_overlays:
+                self.measurement_overlays.remove(overlay)
+        
+        print(f"🧹 Overlay interattivi rimossi: {len(overlays_to_remove)}, predefiniti preservati: {len(preset_overlay_ids)}")
+
     def change_measurement_mode(self):
-        """Cambia la modalità di misurazione."""
+        """Cambia la modalità di misurazione interattiva (non influenza le predefinite)."""
         self.measurement_mode = self.measure_var.get()
-        self.clear_selections()
+        self.clear_interactive_selections()
         self.status_bar.config(text=f"Modalità: {self.measurement_mode}")
 
     def clear_selections(self):
@@ -8591,28 +9531,164 @@ Aree calcolate:
             if self.preset_buttons.get("eye_areas"):
                 self.preset_buttons["eye_areas"].config(text="Mostra Aree Occhi")
 
+    def toggle_cheek_width(self):
+        """Toggle per overlay larghezza guance."""
+        if self.preset_overlays.get("cheek_width") is None:
+            self.measure_cheek_width()
+            # Aggiorna testo pulsante se disponibile
+            if self.preset_buttons.get("cheek_width"):
+                self.preset_buttons["cheek_width"].config(text="Nascondi Guance")
+        else:
+            self.remove_preset_overlay("cheek_width")
+            if self.preset_buttons.get("cheek_width"):
+                self.preset_buttons["cheek_width"].config(text="Guance")
+
+    def toggle_forehead_width(self):
+        """Toggle per overlay larghezza fronte."""
+        if self.preset_overlays.get("forehead_width") is None:
+            self.measure_forehead_width()
+            if self.preset_buttons.get("forehead_width"):
+                self.preset_buttons["forehead_width"].config(text="Nascondi Fronte")
+        else:
+            self.remove_preset_overlay("forehead_width")
+            if self.preset_buttons.get("forehead_width"):
+                self.preset_buttons["forehead_width"].config(text="Fronte")
+
+    def toggle_chin_width(self):
+        """Toggle per overlay larghezza mento."""
+        if self.preset_overlays.get("chin_width") is None:
+            self.measure_chin_width()
+            if self.preset_buttons.get("chin_width"):
+                self.preset_buttons["chin_width"].config(text="Nascondi Mento")
+        else:
+            self.remove_preset_overlay("chin_width")
+            if self.preset_buttons.get("chin_width"):
+                self.preset_buttons["chin_width"].config(text="Mento")
+
+    def toggle_face_profile(self):
+        """Toggle per overlay profilo volto."""
+        if self.preset_overlays.get("face_profile") is None:
+            self.measure_face_profile()
+            if self.preset_buttons.get("face_profile"):
+                self.preset_buttons["face_profile"].config(text="Nascondi Profilo")
+        else:
+            self.remove_preset_overlay("face_profile")
+            if self.preset_buttons.get("face_profile"):
+                self.preset_buttons["face_profile"].config(text="Profilo")
+
+    def toggle_nose_angle(self):
+        """Toggle per overlay angolo naso."""
+        if self.preset_overlays.get("nose_angle") is None:
+            self.measure_nose_angle()
+            if self.preset_buttons.get("nose_angle"):
+                self.preset_buttons["nose_angle"].config(text="Nascondi Ang.N")
+        else:
+            self.remove_preset_overlay("nose_angle")
+            if self.preset_buttons.get("nose_angle"):
+                self.preset_buttons["nose_angle"].config(text="Angolo N")
+
+    def toggle_mouth_angle(self):
+        """Toggle per overlay angolo bocca."""
+        if self.preset_overlays.get("mouth_angle") is None:
+            self.measure_mouth_angle()
+            if self.preset_buttons.get("mouth_angle"):
+                self.preset_buttons["mouth_angle"].config(text="Nascondi Ang.B")
+        else:
+            self.remove_preset_overlay("mouth_angle")
+            if self.preset_buttons.get("mouth_angle"):
+                self.preset_buttons["mouth_angle"].config(text="Angolo B")
+
+    def toggle_face_proportions(self):
+        """Toggle per overlay proporzioni facciali."""
+        if self.preset_overlays.get("face_proportions") is None:
+            self.measure_face_proportions()
+            if self.preset_buttons.get("face_proportions"):
+                self.preset_buttons["face_proportions"].config(text="Nascondi Prop.")
+        else:
+            self.remove_preset_overlay("face_proportions")
+            if self.preset_buttons.get("face_proportions"):
+                self.preset_buttons["face_proportions"].config(text="Proporz.")
+
+    def toggle_key_distances(self):
+        """Toggle per overlay distanze chiave."""
+        if self.preset_overlays.get("key_distances") is None:
+            self.measure_key_distances()
+            if self.preset_buttons.get("key_distances"):
+                self.preset_buttons["key_distances"].config(text="Nascondi Dist.")
+        else:
+            self.remove_preset_overlay("key_distances")
+            if self.preset_buttons.get("key_distances"):
+                self.preset_buttons["key_distances"].config(text="Distanze")
+
+    def toggle_facial_symmetry(self):
+        """Toggle per misurazione simmetria facciale."""
+        if self.preset_overlays.get("facial_symmetry") is None:
+            self.measure_facial_symmetry()
+            if self.preset_buttons.get("facial_symmetry"):
+                self.preset_buttons["facial_symmetry"].config(text="Nascondi Sim.")
+        else:
+            self.remove_preset_overlay("facial_symmetry")
+            if self.preset_buttons.get("facial_symmetry"):
+                self.preset_buttons["facial_symmetry"].config(text="Simmetria")
+
     def remove_preset_overlay(self, preset_key):
-        """Rimuove un overlay di preset specifico."""
+        """Rimuove un overlay di preset specifico, gestendo overlay multipli (come aree occhi/sopracciglia)."""
         if self.preset_overlays[preset_key] is not None:
-            # Trova e rimuovi l'overlay dalla lista
             overlay_to_remove = self.preset_overlays[preset_key]
             
-            # NUOVO SISTEMA: Rimuovi l'overlay dal canvas se presente
-            if "canvas_item" in overlay_to_remove:
-                canvas_item = overlay_to_remove["canvas_item"]
+            # NUOVO SISTEMA: Gestisci overlay multipli (per aree occhi/sopracciglia)
+            # Se l'overlay contiene multiple parti, rimuovile tutte
+            if isinstance(overlay_to_remove, list):
+                # Overlay multipli (come left_eyebrow + right_eyebrow)
+                for single_overlay in overlay_to_remove:
+                    self._remove_single_overlay_from_canvas(single_overlay)
+            else:
+                # Overlay singolo
+                self._remove_single_overlay_from_canvas(overlay_to_remove)
+            
+            # Rimuovi dalla lista measurement_overlays
+            try:
+                if isinstance(overlay_to_remove, list):
+                    for single_overlay in overlay_to_remove:
+                        if single_overlay in self.measurement_overlays:
+                            self.measurement_overlays.remove(single_overlay)
+                else:
+                    if overlay_to_remove in self.measurement_overlays:
+                        self.measurement_overlays.remove(overlay_to_remove)
+            except ValueError:
+                pass
+            
+            # Reset del preset overlay
+            self.preset_overlays[preset_key] = None
+            self.update_canvas_display()
+            print(f"🗑️ Overlay preset '{preset_key}' rimosso completamente")
+
+    def _remove_single_overlay_from_canvas(self, single_overlay):
+        """Rimuove un singolo overlay dal canvas."""
+        # Gestisci overlay con canvas_items multipli (aree multiple)
+        if "canvas_items" in single_overlay:
+            canvas_items = single_overlay["canvas_items"]
+            for canvas_item in canvas_items:
                 try:
                     self.canvas.delete(canvas_item)
                     # Rimuovi dal graphics_registry
                     if canvas_item in self.graphics_registry:
                         del self.graphics_registry[canvas_item]
-                    print(f"🗑️ Rimosso overlay canvas: {canvas_item}")
+                    print(f"🧹 Rimosso overlay canvas multiplo: {canvas_item}")
                 except Exception as e:
-                    print(f"⚠️ Errore rimozione overlay canvas: {e}")
-            
-            if overlay_to_remove in self.measurement_overlays:
-                self.measurement_overlays.remove(overlay_to_remove)
-            self.preset_overlays[preset_key] = None
-            self.update_canvas_display()
+                    print(f"⚠️ Errore rimozione overlay canvas multiplo: {e}")
+        
+        # Gestisci overlay con canvas_item singolo (metodo standard)
+        elif "canvas_item" in single_overlay:
+            canvas_item = single_overlay["canvas_item"]
+            try:
+                self.canvas.delete(canvas_item)
+                # Rimuovi dal graphics_registry
+                if canvas_item in self.graphics_registry:
+                    del self.graphics_registry[canvas_item]
+                print(f"🧹 Rimosso overlay canvas: {canvas_item}")
+            except Exception as e:
+                print(f"⚠️ Errore rimozione overlay canvas: {e}")
 
     # Metodi per misurazioni predefinite
     def measure_face_width(self):
@@ -8720,7 +9796,7 @@ Aree calcolate:
             )
             return
 
-        # FIX CORRETTO: Landmark per distanza ANGOLI INTERNI degli occhi (MediaPipe Face Mesh)
+        # FIX CORRETTO: Landmark per distanza ANGOLI INTERNI degli occhi (MediaPipeFACE_MESH_PLACEHOLDER)
         left_eye_inner = 133   # Angolo INTERNO occhio sinistro
         right_eye_inner = 362  # Angolo INTERNO occhio destro - CORREGGERE SE SBAGLIATO DOPO TEST
 
@@ -9066,6 +10142,19 @@ Aree calcolate:
                 self.current_landmarks
             )
             self.add_measurement("Simmetria Facciale", f"{symmetry_score:.3f}", "0-1")
+            
+            # Crea overlay per la simmetria facciale
+            overlay = self.measurement_tools.create_symmetry_overlay(self.current_landmarks)
+            if overlay:
+                overlay['type'] = 'multiple_lines'
+                overlay['color'] = 'purple'
+                overlay['description'] = f"Simmetria: {symmetry_score:.3f}"
+                self.measurement_overlays.append(overlay)
+                self.preset_overlays["facial_symmetry"] = overlay
+                self.draw_overlay_on_canvas(overlay)
+                if self.show_measurement_overlays:
+                    self.update_canvas_display()
+            
             self.status_bar.config(
                 text=f"Simmetria facciale calcolata: {symmetry_score:.3f}"
             )
@@ -9082,21 +10171,522 @@ Aree calcolate:
                 print(f"✅ Misurazione aggiunta: {measurement_type} = {value} {unit}")
             else:
                 print(f"⚠️ measurements_tree non disponibile, misurazione: {measurement_type} = {value} {unit}")
-                
-            # Aggiornamento misurazione completato
-                
-            self.status_bar.config(
-                text=f"✅ {measurement_type}: {value} {unit}"
-            )
-            
-            # Aggiorna lo stato dei pulsanti di correzione sopracciglio
-            self.update_eyebrow_correction_buttons_state()
         except Exception as e:
             print(f"❌ Errore aggiunta misurazione: {e}")
-            self.status_bar.config(
-                text=f"Misurazione calcolata: {measurement_type} = {value} {unit}"
-            )
 
+    def measure_cheek_width(self):
+        """Misura automatica della larghezza delle guance."""
+        print("🔴 ESEGUO: measure_cheek_width")
+        if not self.current_landmarks:
+            messagebox.showwarning(
+                "Attenzione",
+                "Assicurati che i landmark siano rilevati nell'immagine",
+            )
+            return
+
+        try:
+            # Landmark delle guance (approssimativo)
+            left_cheek = self.current_landmarks[116]  # Guancia sinistra
+            right_cheek = self.current_landmarks[345]  # Guancia destra
+            
+            # Calcola distanza
+            cheek_width = self.measurement_tools.calculate_distance(left_cheek, right_cheek)
+            
+            # Crea overlay per visualizzazione
+            overlay = {
+                "type": "line", 
+                "points": [left_cheek, right_cheek],
+                "value": f"{cheek_width:.2f}",
+                "label": "Larghezza Guance",
+                "color": (0, 255, 100),  # Verde chiaro
+            }
+            
+            self.measurement_overlays.append(overlay)
+            self.preset_overlays["cheek_width"] = overlay
+            self.draw_overlay_on_canvas(overlay)
+            
+            if self.show_measurement_overlays:
+                self.update_canvas_display()
+                
+            self.add_measurement("Larghezza Guance", f"{cheek_width:.2f}", "px")
+            self.status_bar.config(text=f"Larghezza guance: {cheek_width:.2f} px")
+            
+        except Exception as e:
+            print(f"❌ Errore in measure_cheek_width: {e}")
+            messagebox.showerror("Errore", f"Errore nel calcolo guance: {e}")
+
+    def measure_forehead_width(self):
+        """Misura automatica della larghezza della fronte."""
+        print("🔴 ESEGUO: measure_forehead_width")
+        if not self.current_landmarks:
+            messagebox.showwarning(
+                "Attenzione",
+                "Assicurati che i landmark siano rilevati nell'immagine",
+            )
+            return
+
+        try:
+            # Landmark della fronte (laterali)
+            left_forehead = self.current_landmarks[70]   # Fronte sinistra laterale
+            right_forehead = self.current_landmarks[300]  # Fronte destra laterale
+            
+            # Calcola distanza
+            forehead_width = self.measurement_tools.calculate_distance(left_forehead, right_forehead)
+            
+            # Crea overlay per visualizzazione
+            overlay = {
+                "type": "line",
+                "points": [left_forehead, right_forehead],
+                "value": f"{forehead_width:.2f}",
+                "label": "Larghezza Fronte",
+                "color": (255, 165, 0),  # Arancione
+            }
+            
+            self.measurement_overlays.append(overlay)
+            self.preset_overlays["forehead_width"] = overlay
+            self.draw_overlay_on_canvas(overlay)
+            
+            if self.show_measurement_overlays:
+                self.update_canvas_display()
+                
+            self.add_measurement("Larghezza Fronte", f"{forehead_width:.2f}", "px")
+            self.status_bar.config(text=f"Larghezza fronte: {forehead_width:.2f} px")
+            
+        except Exception as e:
+            print(f"❌ Errore in measure_forehead_width: {e}")
+            messagebox.showerror("Errore", f"Errore nel calcolo fronte: {e}")
+
+    def measure_chin_width(self):
+        """Misura automatica della larghezza del mento."""
+        print("🔴 ESEGUO: measure_chin_width")
+        if not self.current_landmarks:
+            messagebox.showwarning(
+                "Attenzione",
+                "Assicurati che i landmark siano rilevati nell'immagine",
+            )
+            return
+
+        try:
+            # Landmark del mento (laterali bassi)
+            left_chin = self.current_landmarks[172]   # Mento sinistra laterale
+            right_chin = self.current_landmarks[397]  # Mento destra laterale
+            
+            # Calcola distanza
+            chin_width = self.measurement_tools.calculate_distance(left_chin, right_chin)
+            
+            # Crea overlay per visualizzazione
+            overlay = {
+                "type": "line",
+                "points": [left_chin, right_chin],
+                "value": f"{chin_width:.2f}",
+                "label": "Larghezza Mento",
+                "color": (128, 128, 128),  # Grigio
+            }
+            
+            self.measurement_overlays.append(overlay)
+            self.preset_overlays["chin_width"] = overlay
+            self.draw_overlay_on_canvas(overlay)
+            
+            if self.show_measurement_overlays:
+                self.update_canvas_display()
+                
+            self.add_measurement("Larghezza Mento", f"{chin_width:.2f}", "px")
+            self.status_bar.config(text=f"Larghezza mento: {chin_width:.2f} px")
+            
+        except Exception as e:
+            print(f"❌ Errore in measure_chin_width: {e}")
+            messagebox.showerror("Errore", f"Errore nel calcolo mento: {e}")
+
+    def measure_face_profile(self):
+        """Misura automatica del profilo del volto."""
+        print("🔴 ESEGUO: measure_face_profile")
+        if not self.current_landmarks:
+            messagebox.showwarning(
+                "Attenzione",
+                "Assicurati che i landmark siano rilevati nell'immagine",
+            )
+            return
+
+        try:
+            # Landmark del profilo (da fronte a mento, centro)
+            forehead_center = self.current_landmarks[9]   # Glabella (centro fronte)
+            nose_tip = self.current_landmarks[1]          # Punta del naso
+            chin_center = self.current_landmarks[152]     # Centro del mento
+            
+            # Calcola altezza profilo
+            profile_height = self.measurement_tools.calculate_distance(forehead_center, chin_center)
+            
+            # Crea overlay per visualizzazione (linea del profilo)
+            overlay = {
+                "type": "multiline",
+                "points": [forehead_center, nose_tip, chin_center],
+                "value": f"{profile_height:.2f}",
+                "label": "Profilo Volto",
+                "color": (255, 0, 255),  # Magenta
+            }
+            
+            self.measurement_overlays.append(overlay)
+            self.preset_overlays["face_profile"] = overlay
+            self.draw_overlay_on_canvas(overlay)
+            
+            if self.show_measurement_overlays:
+                self.update_canvas_display()
+                
+            self.add_measurement("Profilo Volto", f"{profile_height:.2f}", "px")
+            self.status_bar.config(text=f"Altezza profilo: {profile_height:.2f} px")
+            
+        except Exception as e:
+            print(f"❌ Errore in measure_face_profile: {e}")
+            messagebox.showerror("Errore", f"Errore nel calcolo profilo: {e}")
+
+    def measure_nose_angle(self):
+        """Misura automatica dell'angolo del naso."""
+        print("🔴 ESEGUO: measure_nose_angle")
+        if not self.current_landmarks:
+            messagebox.showwarning(
+                "Attenzione",
+                "Assicurati che i landmark siano rilevati nell'immagine",
+            )
+            return
+
+        try:
+            # Landmark per angolo del naso
+            nose_bridge = self.current_landmarks[8]   # Sellion (base naso)
+            nose_tip = self.current_landmarks[1]      # Punta del naso
+            nose_bottom = self.current_landmarks[2]   # Base del naso
+            
+            # Calcola angolo (semplificato come distanza ponte-punta)
+            nose_angle = self.measurement_tools.calculate_distance(nose_bridge, nose_tip)
+            
+            # Crea overlay per visualizzazione
+            overlay = {
+                "type": "angle",
+                "points": [nose_bridge, nose_tip, nose_bottom],
+                "value": f"{nose_angle:.1f}°",
+                "label": "Angolo Naso",
+                "color": (255, 255, 0),  # Giallo
+            }
+            
+            self.measurement_overlays.append(overlay)
+            self.preset_overlays["nose_angle"] = overlay
+            self.draw_overlay_on_canvas(overlay)
+            
+            if self.show_measurement_overlays:
+                self.update_canvas_display()
+                
+            self.add_measurement("Angolo Naso", f"{nose_angle:.1f}", "°")
+            self.status_bar.config(text=f"Angolo naso: {nose_angle:.1f}°")
+            
+        except Exception as e:
+            print(f"❌ Errore in measure_nose_angle: {e}")
+            messagebox.showerror("Errore", f"Errore nel calcolo angolo naso: {e}")
+
+    def measure_mouth_angle(self):
+        """Misura automatica dell'angolo della bocca."""
+        print("🔴 ESEGUO: measure_mouth_angle")
+        if not self.current_landmarks:
+            messagebox.showwarning(
+                "Attenzione",
+                "Assicurati che i landmark siano rilevati nell'immagine",
+            )
+            return
+
+        try:
+            # Landmark per angolo della bocca
+            left_mouth = self.current_landmarks[61]    # Angolo sinistro bocca
+            mouth_center = self.current_landmarks[13]  # Centro bocca
+            right_mouth = self.current_landmarks[291]  # Angolo destro bocca
+            
+            # Calcola larghezza bocca (semplificato)
+            mouth_width = self.measurement_tools.calculate_distance(left_mouth, right_mouth)
+            
+            # Crea overlay per visualizzazione
+            overlay = {
+                "type": "angle",
+                "points": [left_mouth, mouth_center, right_mouth],
+                "value": f"{mouth_width:.1f}",
+                "label": "Angolo Bocca",
+                "color": (255, 100, 100),  # Rosa
+            }
+            
+            self.measurement_overlays.append(overlay)
+            self.preset_overlays["mouth_angle"] = overlay
+            self.draw_overlay_on_canvas(overlay)
+            
+            if self.show_measurement_overlays:
+                self.update_canvas_display()
+                
+            self.add_measurement("Angolo Bocca", f"{mouth_width:.1f}", "px")
+            self.status_bar.config(text=f"Angolo bocca: {mouth_width:.1f} px")
+            
+        except Exception as e:
+            print(f"❌ Errore in measure_mouth_angle: {e}")
+            messagebox.showerror("Errore", f"Errore nel calcolo angolo bocca: {e}")
+
+    def measure_face_proportions(self):
+        """Calcola automaticamente le proporzioni facciali principali."""
+        print("🔴 ESEGUO: measure_face_proportions")
+        if not self.current_landmarks:
+            messagebox.showwarning(
+                "Attenzione",
+                "Assicurati che i landmark siano rilevati nell'immagine",
+            )
+            return
+
+        try:
+            # Calcola altezza e larghezza del volto
+            top = self.current_landmarks[10]     # Top fronte
+            bottom = self.current_landmarks[152] # Mento
+            left = self.current_landmarks[172]   # Lato sinistro
+            right = self.current_landmarks[397]  # Lato destro
+            
+            face_height = self.measurement_tools.calculate_distance(top, bottom)
+            face_width = self.measurement_tools.calculate_distance(left, right)
+            
+            # Calcola rapporto altezza/larghezza
+            proportion_ratio = face_height / face_width if face_width > 0 else 0
+            
+            # Crea overlay per visualizzazione (rettangolo del volto)
+            overlay = {
+                "type": "rectangle",
+                "corners": [top, bottom, left, right],
+                "value": f"H/W: {proportion_ratio:.2f}",
+                "label": "Proporzioni",
+                "color": (0, 200, 200),  # Ciano
+            }
+            
+            self.measurement_overlays.append(overlay)
+            self.preset_overlays["face_proportions"] = overlay
+            self.draw_overlay_on_canvas(overlay)
+            
+            if self.show_measurement_overlays:
+                self.update_canvas_display()
+                
+            self.add_measurement("Proporzioni H/W", f"{proportion_ratio:.2f}", "ratio")
+            self.status_bar.config(text=f"Proporzioni H/W: {proportion_ratio:.2f}")
+            
+        except Exception as e:
+            print(f"❌ Errore in measure_face_proportions: {e}")
+            messagebox.showerror("Errore", f"Errore nel calcolo proporzioni: {e}")
+
+    def measure_key_distances(self):
+        """Misura automatica delle distanze chiave del volto."""
+        print("🔴 ESEGUO: measure_key_distances")
+        if not self.current_landmarks:
+            messagebox.showwarning(
+                "Attenzione",
+                "Assicurati che i landmark siano rilevati nell'immagine",
+            )
+            return
+
+        try:
+            # Distanze chiave
+            eye_left = self.current_landmarks[33]    # Occhio sinistro interno
+            eye_right = self.current_landmarks[263]  # Occhio destro interno
+            nose_tip = self.current_landmarks[1]     # Punta naso
+            mouth_center = self.current_landmarks[13] # Centro bocca
+            
+            # Calcola distanze principali
+            eye_distance = self.measurement_tools.calculate_distance(eye_left, eye_right)
+            nose_mouth_distance = self.measurement_tools.calculate_distance(nose_tip, mouth_center)
+            
+            # Crea overlay per visualizzazione (multiple linee)
+            overlay = {
+                "type": "multiple_lines",
+                "lines": [
+                    {"start": eye_left, "end": eye_right, "color": (255, 0, 0)},
+                    {"start": nose_tip, "end": mouth_center, "color": (0, 255, 0)}
+                ],
+                "value": f"O:{eye_distance:.1f} N-B:{nose_mouth_distance:.1f}",
+                "label": "Distanze Chiave",
+                "color": (255, 255, 255),  # Bianco
+            }
+            
+            self.measurement_overlays.append(overlay)
+            self.preset_overlays["key_distances"] = overlay
+            self.draw_overlay_on_canvas(overlay)
+            
+            if self.show_measurement_overlays:
+                self.update_canvas_display()
+                
+            self.add_measurement("Dist. Occhi", f"{eye_distance:.1f}", "px")
+            self.add_measurement("Dist. Naso-Bocca", f"{nose_mouth_distance:.1f}", "px")
+            self.status_bar.config(text=f"Distanze: Occhi {eye_distance:.1f}, Naso-Bocca {nose_mouth_distance:.1f}")
+            
+        except Exception as e:
+            print(f"❌ Errore in measure_key_distances: {e}")
+            messagebox.showerror("Errore", f"Errore nel calcolo distanze: {e}")
+
+    # === GESTIONE LAYOUT E INTERFACCIA ===
+    
+    def setup_layout_manager(self):
+        """Configura il gestore di layout per l'interfaccia."""
+        pass
+
+        try:
+            # Usa landmark del naso per calcolare l'angolo
+            tip_point = 2   # Punta del naso
+            bridge_point = 1  # Ponte nasale alto
+            base_point = 6   # Base del naso
+            
+            if len(self.current_landmarks) > max(tip_point, bridge_point, base_point):
+                tip = self.current_landmarks[tip_point]
+                bridge = self.current_landmarks[bridge_point]
+                base = self.current_landmarks[base_point]
+                
+                # Calcola angolo usando tre punti
+                import math
+                
+                # Vettori
+                v1 = (tip[0] - bridge[0], tip[1] - bridge[1])
+                v2 = (base[0] - bridge[0], base[1] - bridge[1])
+                
+                # Prodotto scalare e magnitudini
+                dot_product = v1[0] * v2[0] + v1[1] * v2[1]
+                mag1 = math.sqrt(v1[0]**2 + v1[1]**2)
+                mag2 = math.sqrt(v2[0]**2 + v2[1]**2)
+                
+                if mag1 > 0 and mag2 > 0:
+                    cos_angle = dot_product / (mag1 * mag2)
+                    cos_angle = max(-1, min(1, cos_angle))  # Clamp per evitare errori
+                    angle = math.degrees(math.acos(cos_angle))
+                    
+                    self.add_measurement("Angolo Naso", f"{angle:.1f}", "gradi")
+                    self.status_bar.config(text=f"Angolo naso: {angle:.1f}°")
+                else:
+                    messagebox.showwarning("Attenzione", "Punti coincidenti per il calcolo dell'angolo")
+            else:
+                messagebox.showwarning("Attenzione", "Landmark insufficienti per l'angolo del naso")
+                
+        except Exception as e:
+            messagebox.showerror("Errore", f"Errore nel calcolo dell'angolo del naso: {str(e)}")
+
+    def measure_mouth_angle(self):
+        """Misura l'angolo della bocca."""
+        if not self.current_landmarks:
+            messagebox.showwarning("Attenzione", "Nessun landmark rilevato")
+            return
+
+        try:
+            # Usa landmark della bocca per calcolare l'inclinazione
+            left_corner = 61   # Angolo bocca sinistro
+            right_corner = 291  # Angolo bocca destro
+            
+            if len(self.current_landmarks) > max(left_corner, right_corner):
+                left = self.current_landmarks[left_corner]
+                right = self.current_landmarks[right_corner]
+                
+                # Calcola inclinazione della linea della bocca
+                import math
+                
+                delta_y = right[1] - left[1]
+                delta_x = right[0] - left[0]
+                
+                if delta_x != 0:
+                    angle = math.degrees(math.atan(delta_y / delta_x))
+                    
+                    self.add_measurement("Angolo Bocca", f"{angle:.1f}", "gradi")
+                    self.status_bar.config(text=f"Inclinazione bocca: {angle:.1f}°")
+                else:
+                    messagebox.showwarning("Attenzione", "Bocca perfettamente verticale")
+            else:
+                messagebox.showwarning("Attenzione", "Landmark insufficienti per l'angolo della bocca")
+                
+        except Exception as e:
+            messagebox.showerror("Errore", f"Errore nel calcolo dell'angolo della bocca: {str(e)}")
+
+    def measure_face_proportions(self):
+        """Misura le proporzioni del viso secondo i canoni classici."""
+        if not self.current_landmarks:
+            messagebox.showwarning("Attenzione", "Nessun landmark rilevato")
+            return
+
+        try:
+            # Landmark per le proporzioni del viso
+            forehead_top = 10     # Fronte
+            eyebrow_center = 9    # Centro sopracciglia
+            nose_base = 2         # Base naso
+            chin_bottom = 152     # Mento
+            
+            if len(self.current_landmarks) > max(forehead_top, eyebrow_center, nose_base, chin_bottom):
+                forehead = self.current_landmarks[forehead_top]
+                brow = self.current_landmarks[eyebrow_center]
+                nose = self.current_landmarks[nose_base]
+                chin = self.current_landmarks[chin_bottom]
+                
+                # Calcola le tre sezioni del viso
+                upper_third = abs(brow[1] - forehead[1])  # Fronte ai sopracciglia
+                middle_third = abs(nose[1] - brow[1])     # Sopracciglia al naso
+                lower_third = abs(chin[1] - nose[1])      # Naso al mento
+                
+                total_height = upper_third + middle_third + lower_third
+                
+                if total_height > 0:
+                    # Calcola percentuali
+                    upper_pct = (upper_third / total_height) * 100
+                    middle_pct = (middle_third / total_height) * 100
+                    lower_pct = (lower_third / total_height) * 100
+                    
+                    # Proporzione ideale è 1:1:1 (33.3% ciascuna)
+                    ideal_pct = 33.3
+                    deviation = max(abs(upper_pct - ideal_pct), abs(middle_pct - ideal_pct), abs(lower_pct - ideal_pct))
+                    
+                    self.add_measurement("Proporzioni Viso", f"Deviazione: {deviation:.1f}%", f"U:{upper_pct:.1f}% M:{middle_pct:.1f}% L:{lower_pct:.1f}%")
+                    self.status_bar.config(text=f"Proporzioni - Alto:{upper_pct:.1f}% Medio:{middle_pct:.1f}% Basso:{lower_pct:.1f}%")
+                else:
+                    messagebox.showwarning("Attenzione", "Altezza viso zero")
+            else:
+                messagebox.showwarning("Attenzione", "Landmark insufficienti per le proporzioni")
+                
+        except Exception as e:
+            messagebox.showerror("Errore", f"Errore nel calcolo delle proporzioni: {str(e)}")
+
+    def measure_key_distances(self):
+        """Misura distanze chiave del viso."""
+        if not self.current_landmarks:
+            messagebox.showwarning("Attenzione", "Nessun landmark rilevato")
+            return
+
+        try:
+            # Misura diverse distanze importanti
+            measurements = []
+            
+            # Distanza pupilla-pupilla (se disponibili landmark pupille)
+            if len(self.current_landmarks) > 468:  # Landmark pupille disponibili
+                left_pupil = 468
+                right_pupil = 473
+                left = self.current_landmarks[left_pupil]
+                right = self.current_landmarks[right_pupil]
+                pupil_distance = ((right[0] - left[0])**2 + (right[1] - left[1])**2)**0.5
+                measurements.append(f"Pupille: {pupil_distance:.1f}px")
+            
+            # Distanza naso-bocca
+            nose_tip = 2
+            mouth_center = 13
+            if len(self.current_landmarks) > max(nose_tip, mouth_center):
+                nose = self.current_landmarks[nose_tip]
+                mouth = self.current_landmarks[mouth_center]
+                nose_mouth_dist = ((mouth[0] - nose[0])**2 + (mouth[1] - nose[1])**2)**0.5
+                measurements.append(f"Naso-Bocca: {nose_mouth_dist:.1f}px")
+            
+            # Distanza sopracciglia-occhi
+            brow_center = 9
+            eye_center = 168  # Centro geometrico
+            if len(self.current_landmarks) > max(brow_center, eye_center):
+                brow = self.current_landmarks[brow_center]
+                eye = self.current_landmarks[eye_center]
+                brow_eye_dist = ((eye[0] - brow[0])**2 + (eye[1] - brow[1])**2)**0.5
+                measurements.append(f"Sopracciglio-Occhio: {brow_eye_dist:.1f}px")
+            
+            if measurements:
+                result = " | ".join(measurements)
+                self.add_measurement("Distanze Chiave", result, "pixel")
+                self.status_bar.config(text=f"Distanze misurate: {len(measurements)} valori")
+            else:
+                messagebox.showwarning("Attenzione", "Nessuna distanza calcolabile")
+                
+        except Exception as e:
+            messagebox.showerror("Errore", f"Errore nel calcolo delle distanze: {str(e)}")
 
 
     def get_measurement_value_from_table(self, measurement_type: str) -> Optional[str]:
@@ -10228,12 +11818,21 @@ Aree calcolate:
             side: Lato del sopracciglio ('left' o 'right')
         """
         try:
+            # NUOVO SISTEMA: Mostra nella tab debug invece di finestra popup
+            side_name = "Sinistro" if side == 'left' else "Destro"
+            window_title = f"Correzione Sopracciglio {side_name}"
+            
+            # Preferenza: usa le tab se l'utente lo ha impostato e sono disponibili
+            if (hasattr(self, 'debug_use_tabs') and self.debug_use_tabs.get() and 
+                hasattr(self, 'canvas_notebook') and self.canvas_notebook):
+                self.show_debug_image_in_tab(cropped_image, "eyebrows", window_title)
+                print(f"✅ Correzione sopracciglio {side_name} mostrata in tab debug")
+                return
+            
+            # FALLBACK: Finestra popup (se le tab sono disabilitate o non disponibili)
             image_with_overlay = cropped_image
             
             # Crea una nuova finestra
-            side_name = "Sinistro" if side == 'left' else "Destro"
-            window_title = f"Correzione Sopracciglio {side_name} - NUOVO FLUSSO"
-            
             correction_window = tk.Toplevel(self.root)
             correction_window.title(window_title)
             
@@ -10969,8 +12568,16 @@ Aree calcolate:
             # Mostra le immagini generate dall'analisi
             self._display_analysis_images(result)
             
-            # Mostra finestra con il report completo
-            self._show_analysis_report_window(report_text, result)
+            # Mostra il report completo (in tab o finestra popup)
+            use_tabs = (hasattr(self, 'debug_use_tabs') and self.debug_use_tabs.get() and
+                       hasattr(self, 'canvas_notebook') and self.canvas_notebook)
+            
+            if use_tabs:
+                # Mostra report nella tab dedicata
+                self._show_analysis_report_in_tab(report_text, result)
+            else:
+                # Mostra finestra con il report completo
+                self._show_analysis_report_window(report_text, result)
             
             # Aggiorna status bar
             self.status_bar.config(text="✅ Analisi facciale completata con successo")
@@ -11031,31 +12638,124 @@ Aree calcolate:
 
     def _display_analysis_images(self, result: dict):
         """
-        Mostra le immagini generate dall'analisi in nuove finestre.
+        Mostra le immagini generate dall'analisi in nuove finestre disposte a griglia.
         """
         try:
+            # Reset contatore per nuova analisi
+            self.analysis_window_counter = 0
+            
+            # Mostra immagini debug nelle tab o finestre popup in base alle preferenze
             images_info = result.get('immagini_debug', {})
             
-            for image_name, image_path in images_info.items():
-                if os.path.exists(image_path):
-                    self._create_image_window(image_name, image_path)
+            # Controlla preferenza utente per debug
+            use_tabs = (hasattr(self, 'debug_use_tabs') and self.debug_use_tabs.get() and
+                       hasattr(self, 'canvas_notebook') and self.canvas_notebook)
+            
+            if use_tabs:
+                # NUOVO SISTEMA: Tab integrate con mappatura corretta
+                print(f"🔍 Immagini debug disponibili: {list(images_info.keys())}")
+                for image_name, image_path in images_info.items():
+                    print(f"🔍 Elaborazione immagine: '{image_name}' -> '{image_path}'")
+                    if os.path.exists(image_path):
+                        # Mappatura precisa basata sui nomi file generati dal modulo di analisi
+                        tab_type = "complete"  # Default perMAPPA_COMPLETA_PLACEHOLDER
+                        
+                        # Mapping preciso basato sulle chiavi esatte del modulo di analisi
+                        if image_name == "face_mesh":
+                            tab_type = "landmarks"
+                        elif image_name == "geometria":
+                            tab_type = "geometry"
+                        elif image_name == "sopracciglia":
+                            tab_type = "eyebrows"
+                        elif image_name == "forma_ideale":
+                            tab_type = "ideal"
+                        elif image_name == "mappa_completa":
+                            tab_type = "complete"
+                        
+                        print(f"📋 Mapping: '{image_name}' -> tab tipo '{tab_type}'")
+                        
+                        # Carica l'immagine e mostrala nella tab appropriata
+                        try:
+                            image = cv2.imread(image_path)
+                            if image is not None:
+                                self.show_debug_image_in_tab(image, tab_type, image_name)
+                                print(f"✅ Debug image '{image_name}' → tab '{tab_type}'")
+                            else:
+                                print(f"⚠️ Impossibile caricare immagine: {image_path}")
+                        except Exception as e:
+                            print(f"❌ Errore caricamento immagine {image_name}: {e}")
+                    else:
+                        print(f"❌ File non trovato: {image_path}")
+            else:
+                # SISTEMA ORIGINALE: Finestre popup separate
+                self._close_previous_analysis_windows()
+                for image_name, image_path in images_info.items():
+                    if os.path.exists(image_path):
+                        self._create_image_window(image_name, image_path)
                     
         except Exception as e:
             print(f"❌ Errore visualizzazione immagini analisi: {e}")
 
+    def _close_previous_analysis_windows(self):
+        """
+        Chiude le finestre dell'analisi precedente.
+        """
+        try:
+            for window in self.analysis_windows:
+                if window and window.winfo_exists():
+                    window.destroy()
+            self.analysis_windows.clear()
+        except Exception as e:
+            print(f"❌ Errore chiusura finestre precedenti: {e}")
+
     def _create_image_window(self, title: str, image_path: str):
         """
         Crea una nuova finestra per visualizzare un'immagine dell'analisi.
+        Posiziona le finestre in una griglia ordinata alla destra della finestra principale.
         """
         try:
             # Crea una nuova finestra
             window = tk.Toplevel(self.root)
             window.title(f"Analisi Facciale - {title}")
-            window.geometry("600x500")
+            
+            # Dimensioni delle finestre analisi
+            window_width = 450
+            window_height = 400
+            
+            # Calcola posizione della finestra principale
+            main_x = self.root.winfo_x()
+            main_y = self.root.winfo_y() 
+            main_width = self.root.winfo_width()
+            
+            # Configurazione griglia: 2 colonne, N righe
+            grid_cols = 2
+            grid_spacing_x = 20  # Spazio orizzontale tra finestre
+            grid_spacing_y = 20  # Spazio verticale tra finestre
+            
+            # Calcola posizione nella griglia
+            row = self.analysis_window_counter // grid_cols
+            col = self.analysis_window_counter % grid_cols
+            
+            # Posizione finestra: a destra della finestra principale + offset griglia
+            base_x = main_x + main_width + 20  # Spazio dalla finestra principale
+            base_y = main_y + 50  # Offset dall'alto
+            
+            new_x = base_x + col * (window_width + grid_spacing_x)
+            new_y = base_y + row * (window_height + grid_spacing_y)
+            
+            # Imposta geometria della finestra
+            window.geometry(f"{window_width}x{window_height}+{new_x}+{new_y}")
+            
+            # Incrementa contatore per la prossima finestra
+            self.analysis_window_counter += 1
+            
+            # Aggiungi finestra alla lista per tracking
+            self.analysis_windows.append(window)
             
             # Carica e ridimensiona l'immagine
             img = Image.open(image_path)
-            img.thumbnail((580, 450), Image.Resampling.LANCZOS)
+            # Adatta dimensioni alla nuova finestra più piccola
+            img.thumbnail((window_width - 40, window_height - 100), Image.Resampling.LANCZOS)
             photo = ImageTk.PhotoImage(img)
             
             # Frame per l'immagine
@@ -11069,16 +12769,44 @@ Aree calcolate:
             # Mantieni riferimento all'immagine
             label.image = photo
             
+            # Frame per pulsanti
+            btn_frame = ttk.Frame(frame)
+            btn_frame.pack(pady=5)
+            
             # Pulsante per salvare l'immagine
             save_btn = ttk.Button(
-                frame, 
-                text="💾 Salva Immagine",
+                btn_frame, 
+                text="💾 Salva",
                 command=lambda: self._save_analysis_image(image_path)
             )
-            save_btn.pack(pady=5)
+            save_btn.pack(side=tk.LEFT, padx=2)
+            
+            # Pulsante per chiudere questa finestra
+            close_btn = ttk.Button(
+                btn_frame, 
+                text="❌ Chiudi",
+                command=lambda: self._close_analysis_window(window)
+            )
+            close_btn.pack(side=tk.LEFT, padx=2)
+            
+            # Gestisci chiusura finestra
+            window.protocol("WM_DELETE_WINDOW", lambda: self._close_analysis_window(window))
+            
+            print(f"🪟 Finestra '{title}' creata in posizione griglia ({row}, {col})")
             
         except Exception as e:
             print(f"❌ Errore creazione finestra immagine: {e}")
+
+    def _close_analysis_window(self, window):
+        """
+        Chiude una specifica finestra di analisi e la rimuove dalla lista.
+        """
+        try:
+            if window in self.analysis_windows:
+                self.analysis_windows.remove(window)
+            window.destroy()
+        except Exception as e:
+            print(f"❌ Errore chiusura finestra analisi: {e}")
 
     def _save_analysis_image(self, source_path: str):
         """
@@ -11107,15 +12835,93 @@ Aree calcolate:
             print(f"❌ {error_msg}")
             messagebox.showerror("Errore", error_msg)
 
+    def _show_analysis_report_in_tab(self, report_text: str, result: dict):
+        """
+        Mostra il report completo dell'analisi nella tab dedicata.
+        """
+        try:
+            print(f"📄 Tentativo mostrare report in tab - Lunghezza testo: {len(report_text)} caratteri")
+            print(f"📄 Widget debug_report_text exists: {hasattr(self, 'debug_report_text')}")
+            
+            if hasattr(self, 'debug_report_text') and self.debug_report_text:
+                print("📄 Widget report trovato, inserimento testo...")
+                
+                # Abilita il widget per l'editing
+                self.debug_report_text.config(state=tk.NORMAL)
+                
+                # Pulisce il contenuto precedente
+                self.debug_report_text.delete(1.0, tk.END)
+                
+                # Inserisce il nuovo report
+                self.debug_report_text.insert(tk.END, report_text)
+                
+                # Disabilita nuovamente per rendere read-only
+                self.debug_report_text.config(state=tk.DISABLED)
+                
+                # Seleziona automaticamente la tab del report
+                if hasattr(self, 'canvas_notebook') and self.canvas_notebook:
+                    # Trova l'indice della tab report
+                    for i in range(self.canvas_notebook.index("end")):
+                        tab_text = self.canvas_notebook.tab(i, "text")
+                        if "Report" in tab_text:
+                            self.canvas_notebook.select(i)
+                            print(f"📄 Tab Report selezionata (indice {i})")
+                            break
+                
+                print("✅ Report mostrato nella tab dedicata")
+            else:
+                print("⚠️ Widget report non disponibile, fallback a finestra popup")
+                self._show_analysis_report_window(report_text, result)
+                
+        except Exception as e:
+            print(f"❌ Errore visualizzazione report in tab: {e}")
+            # Fallback a finestra popup in caso di errore
+            self._show_analysis_report_window(report_text, result)
+
     def _show_analysis_report_window(self, report_text: str, result: dict):
         """
         Mostra una finestra con il report completo dell'analisi facciale.
+        Posiziona la finestra nella griglia come le altre finestre dell'analisi.
         """
         try:
             # Crea finestra per il report
             report_window = tk.Toplevel(self.root)
             report_window.title("📋 Report Analisi Facciale Completa")
-            report_window.geometry("800x600")
+            
+            # Dimensioni per la finestra report (più larga per il testo)
+            report_width = 600
+            report_height = 500
+            
+            # Calcola posizione nella griglia (usa il sistema esistente)
+            main_x = self.root.winfo_x()
+            main_y = self.root.winfo_y() 
+            main_width = self.root.winfo_width()
+            
+            # Configurazione griglia: 2 colonne, N righe
+            grid_cols = 2
+            grid_spacing_x = 20
+            grid_spacing_y = 20
+            
+            # Calcola posizione nella griglia
+            row = self.analysis_window_counter // grid_cols
+            col = self.analysis_window_counter % grid_cols
+            
+            # Posizione finestra: a destra della finestra principale + offset griglia
+            base_x = main_x + main_width + 20
+            base_y = main_y + 50
+            
+            new_x = base_x + col * (450 + grid_spacing_x)  # Usa la larghezza standard delle altre finestre per allineamento
+            new_y = base_y + row * (400 + grid_spacing_y)  # Usa l'altezza standard delle altre finestre
+            
+            # Imposta geometria
+            report_window.geometry(f"{report_width}x{report_height}+{new_x}+{new_y}")
+            
+            # Incrementa contatore e aggiungi alla lista
+            self.analysis_window_counter += 1
+            self.analysis_windows.append(report_window)
+            
+            # Gestisci chiusura finestra
+            report_window.protocol("WM_DELETE_WINDOW", lambda: self._close_analysis_window(report_window))
             
             # Frame principale
             main_frame = ttk.Frame(report_window)
@@ -11379,6 +13185,536 @@ Aree calcolate:
         print(f"Sistema: Attivo | Immagine: {'Sì' if has_image else 'No'} | Landmarks: {'Sì' if has_landmarks else 'No'}")
 
 
+    # === GESTIONE DEBUG TAB ===
+    
+    def show_debug_image_in_tab(self, image, tab_type="landmarks", title="Debug"):
+        """Mostra un'immagine di debug nella tab specifica invece di una finestra popup.
+        
+        Args:
+            image: Immagine numpy array (H, W, 3) in formato BGR
+            tab_type: Tipo di tab ('landmarks', 'geometry', 'eyebrows', 'ideal', 'complete')
+            title: Titolo per reference (non mostrato nell'interfaccia)
+        """
+        try:
+            # Converti da BGR a RGB per tkinter
+            if len(image.shape) == 3:
+                image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            else:
+                image_rgb = image
+            
+            # Seleziona il canvas appropriato
+            if tab_type == "landmarks":
+                canvas = self.debug_landmarks_canvas
+                tab_index = 1  # 🎭FACE_MESH_PLACEHOLDER
+            elif tab_type == "geometry":
+                canvas = self.debug_geometry_canvas
+                tab_index = 2  # 📐 Geometria
+            elif tab_type == "eyebrows":
+                canvas = self.debug_eyebrows_canvas
+                tab_index = 3  # ✂️ Sopracciglia
+            elif tab_type == "ideal":
+                canvas = self.debug_ideal_canvas
+                tab_index = 4  # 🎨 Forma Ideale
+            elif tab_type == "complete":
+                canvas = self.debug_complete_canvas
+                tab_index = 5  # 🗺️MAPPA_COMPLETA_PLACEHOLDER
+            else:
+                print(f"⚠️ Tipo tab non riconosciuto: {tab_type}")
+                return
+            
+            # Calcola dimensioni per fit nel canvas
+            canvas.update()  # Assicura che le dimensioni siano aggiornate
+            canvas_width = canvas.winfo_width()
+            canvas_height = canvas.winfo_height()
+            
+            if canvas_width <= 1 or canvas_height <= 1:
+                # Canvas non ancora renderizzato, usa dimensioni default
+                canvas_width = 600
+                canvas_height = 400
+            
+            # Ridimensiona immagine per fit
+            img_height, img_width = image_rgb.shape[:2]
+            scale = min(canvas_width / img_width, canvas_height / img_height, 1.0)
+            
+            new_width = int(img_width * scale)
+            new_height = int(img_height * scale)
+            
+            resized_image = cv2.resize(image_rgb, (new_width, new_height))
+            
+            # Converti a PIL e poi a PhotoImage
+            pil_image = Image.fromarray(resized_image)
+            photo_image = ImageTk.PhotoImage(pil_image)
+            
+            # Pulisci canvas precedente
+            canvas.delete("all")
+            
+            # Centra l'immagine nel canvas
+            x_offset = (canvas_width - new_width) // 2
+            y_offset = (canvas_height - new_height) // 2
+            
+            # Disegna l'immagine
+            canvas.create_image(x_offset, y_offset, anchor="nw", image=photo_image)
+            
+            # Mantieni riferimento per evitare garbage collection
+            canvas.debug_image = photo_image
+            
+            # Attiva automaticamente la tab di debug
+            self.canvas_notebook.select(tab_index)
+            
+            print(f"✅ Debug image mostrata in tab '{tab_type}': {new_width}x{new_height}")
+            
+        except Exception as e:
+            print(f"❌ Errore mostrando debug image in tab: {e}")
+    
+    def show_debug_report_in_tab(self, report_text):
+        """Mostra il report testuale nella tab dedicata."""
+        try:
+            # Attiva il text widget per editing
+            self.debug_report_text.config(state=tk.NORMAL)
+            
+            # Pulisci contenuto precedente
+            self.debug_report_text.delete(1.0, tk.END)
+            
+            # Inserisci il nuovo report
+            self.debug_report_text.insert(1.0, report_text)
+            
+            # Disabilita editing per renderlo read-only
+            self.debug_report_text.config(state=tk.DISABLED)
+            
+            # Attiva la tab del report
+            self.canvas_notebook.select(6)  # Tab 7 (index 6)
+            
+            print("✅ Report testuale mostrato in tab dedicata")
+            
+        except Exception as e:
+            print(f"❌ Errore mostrando report in tab: {e}")
+    
+    def clear_debug_tab(self, tab_type="landmarks"):
+        """Pulisce una tab di debug specifica."""
+        try:
+            if tab_type == "landmarks":
+                self.debug_landmarks_canvas.delete("all")
+            elif tab_type == "geometry":
+                self.debug_geometry_canvas.delete("all")
+            elif tab_type == "eyebrows":
+                self.debug_eyebrows_canvas.delete("all")
+            elif tab_type == "ideal":
+                self.debug_ideal_canvas.delete("all")
+            elif tab_type == "complete":
+                self.debug_complete_canvas.delete("all")
+            elif tab_type == "report":
+                self.debug_report_text.config(state=tk.NORMAL)
+                self.debug_report_text.delete(1.0, tk.END)
+                self.debug_report_text.config(state=tk.DISABLED)
+            
+            print(f"🧹 Tab debug '{tab_type}' pulita")
+        except Exception as e:
+            print(f"❌ Errore pulendo tab debug: {e}")
+    
+    def switch_to_debug_tab(self, tab_type="landmarks"):
+        """Switcha alla tab di debug specifica."""
+        try:
+            if tab_type == "landmarks":
+                self.canvas_notebook.select(1)
+            elif tab_type == "geometry":
+                self.canvas_notebook.select(2)
+            elif tab_type == "eyebrows":
+                self.canvas_notebook.select(3)
+            elif tab_type == "ideal":
+                self.canvas_notebook.select(4)
+            elif tab_type == "complete":
+                self.canvas_notebook.select(5)
+            elif tab_type == "report":
+                self.canvas_notebook.select(6)
+            else:
+                self.canvas_notebook.select(0)  # Canvas principale
+        except Exception as e:
+            print(f"❌ Errore switching tab: {e}")
+    
+    def clear_all_debug_tabs(self):
+        """Pulisce tutte le tab di debug (escluso report)."""
+        self.clear_debug_tab("landmarks")
+        self.clear_debug_tab("geometry")
+        self.clear_debug_tab("eyebrows") 
+        self.clear_debug_tab("ideal")
+        self.clear_debug_tab("complete")
+        # Non cancellare il report automaticamente
+        print("🧹 Tutte le tab debug sono state pulite (report preservato)")
+
+    def test_report_tab(self):
+        """Testa la funzionalità della tab Report inserendo un testo di esempio."""
+        test_text = """📊 ANALISI FACCIALE PROFESSIONALE - REPORT DI TEST
+=====================================
+
+🎯 RILEVAMENTO FACCIALE
+• Algoritmo: MediaPipe Face Mesh (468 landmarks)
+• Landmarks rilevati: 478 punti
+• Qualità rilevamento: ECCELLENTE
+
+📐 ANALISI GEOMETRICA
+• Forma viso: Triangolare
+• Larghezza fronte: 165.2 px
+• Larghezza zigomi: 142.8 px  
+• Larghezza mandibola: 118.6 px
+
+✂️ ANALISI SOPRACCIGLIA
+• Forma attuale: Naturale
+• Simmetria: 85%
+• Raccomandazione: Arco tondo
+• Motivazione: Bilancia la forma triangolare del viso
+
+🎨 CONSIGLI PERSONALIZZATI
+1. Sopracciglia ad arco tondo per addolcire i lineamenti
+2. Evitare forme troppo angolari
+3. Mantenere un arco naturale nella parte centrale
+
+📊 PUNTEGGI SIMMETRIA
+• Simmetria generale: 87/100
+• Proporzioni auree: 82/100
+• Bilanciamento: 89/100
+
+⏰ Data analisi: """ + str(datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")) + """
+🔧 Versione software: v2.0
+        """
+        
+        try:
+            if hasattr(self, 'debug_report_text') and self.debug_report_text:
+                print("🧪 Inserimento testo di test nella tab Report...")
+                self.debug_report_text.config(state=tk.NORMAL)
+                self.debug_report_text.delete(1.0, tk.END)
+                self.debug_report_text.insert(tk.END, test_text)
+                self.debug_report_text.config(state=tk.DISABLED)
+                
+                # Seleziona la tab Report
+                self.canvas_notebook.select(6)
+                print("✅ Testo di test inserito nella tab Report")
+            else:
+                print("❌ Widget debug_report_text non trovato")
+        except Exception as e:
+            print(f"❌ Errore nel test report: {e}")
+
+    def setup_debug_controls(self, parent):
+        """Setup toolbar COMPLETA per le tab debug che opera su canvas specifici."""
+        # Determina quale canvas debug è associato a questo parent
+        debug_canvas = None
+        tab_name = ""
+        
+        if parent == self.debug_landmarks_frame:
+            debug_canvas = self.debug_landmarks_canvas
+            tab_name = "landmarks"
+        elif parent == self.debug_geometry_frame:
+            debug_canvas = self.debug_geometry_canvas  
+            tab_name = "geometry"
+        elif parent == self.debug_eyebrows_frame:
+            debug_canvas = self.debug_eyebrows_canvas
+            tab_name = "eyebrows"
+        elif parent == self.debug_ideal_frame:
+            debug_canvas = self.debug_ideal_canvas
+            tab_name = "ideal"
+        elif parent == self.debug_complete_frame:
+            debug_canvas = self.debug_complete_canvas
+            tab_name = "complete"
+        
+        if not debug_canvas:
+            print("⚠️ Canvas debug non trovato per setup_debug_controls")
+            return
+            
+        # Container principale per toolbar usando grid
+        toolbar_frame = ttk.Frame(parent)
+        toolbar_frame.grid(row=0, column=0, sticky="ew", padx=2, pady=1)
+        
+        # === PRIMA RIGA: VISUALIZZAZIONE E NAVIGAZIONE ===
+        row1_frame = ttk.Frame(toolbar_frame)
+        row1_frame.grid(row=0, column=0, sticky="ew", pady=(0, 2))
+        
+        # Gruppo Vista
+        view_frame = ttk.LabelFrame(row1_frame, text="Vista", padding=2)
+        view_frame.grid(row=0, column=0, padx=(0, 3), sticky="w")
+        
+        col = 0
+        for icon, tooltip in [("🏠", "Fit Window"), ("🔍+", "Zoom In"), ("🔍-", "Zoom Out")]:
+            ttk.Button(
+                view_frame, text=icon, width=3,
+                command=lambda i=icon, c=debug_canvas, t=tab_name: self.debug_view_action(i, c, t),
+                bootstyle="secondary"
+            ).grid(row=0, column=col, padx=1)
+            col += 1
+            
+        # Gruppo Navigazione  
+        nav_frame = ttk.LabelFrame(row1_frame, text="Navigazione", padding=2)
+        nav_frame.grid(row=0, column=1, padx=(0, 3), sticky="w")
+        
+        col = 0
+        for icon, tool in [("🎯", "SELECTION"), ("✋", "PAN"), ("📐", "MEASURE")]:
+            ttk.Button(
+                nav_frame, text=icon, width=3,
+                command=lambda t=tool, c=debug_canvas, tn=tab_name: self.debug_tool_action(t, c, tn),
+                bootstyle="info"
+            ).grid(row=0, column=col, padx=1)
+            col += 1
+            
+        # Gruppo Rotazione
+        rot_frame = ttk.LabelFrame(row1_frame, text="Rotazione", padding=2)
+        rot_frame.grid(row=0, column=2, padx=(0, 3), sticky="w")
+        
+        col = 0
+        for icon, action in [("↶", "ccw"), ("↷", "cw"), ("⌂", "reset")]:
+            ttk.Button(
+                rot_frame, text=icon, width=3,
+                command=lambda a=action, c=debug_canvas, t=tab_name: self.debug_rotate_action(a, c, t),
+                bootstyle="warning-outline"
+            ).grid(row=0, column=col, padx=1)
+            col += 1
+            
+        # === SECONDA RIGA: STRUMENTI DI DISEGNO ===
+        row2_frame = ttk.Frame(toolbar_frame)
+        row2_frame.grid(row=1, column=0, sticky="ew")
+        
+        # Gruppo Forme
+        shapes_frame = ttk.LabelFrame(row2_frame, text="Forme", padding=2)
+        shapes_frame.grid(row=0, column=0, padx=(0, 3), sticky="w")
+        
+        col = 0
+        for icon, tool in [("📏", "LINE"), ("○", "CIRCLE"), ("▢", "RECTANGLE")]:
+            ttk.Button(
+                shapes_frame, text=icon, width=3,
+                command=lambda t=tool, c=debug_canvas, tn=tab_name: self.debug_tool_action(t, c, tn),
+                bootstyle="success"
+            ).grid(row=0, column=col, padx=1)
+            col += 1
+            
+        # Gruppo Annotazioni
+        ann_frame = ttk.LabelFrame(row2_frame, text="Annotazioni", padding=2)
+        ann_frame.grid(row=0, column=1, padx=(0, 3), sticky="w")
+        
+        ttk.Button(
+            ann_frame, text="✏️", width=3,
+            command=lambda: self.debug_tool_action("TEXT", debug_canvas, tab_name),
+            bootstyle="primary"
+        ).grid(row=0, column=0, padx=1)
+        
+        # Gruppo Utilità
+        utils_frame = ttk.LabelFrame(row2_frame, text="Utilità", padding=2)
+        utils_frame.grid(row=0, column=2, sticky="w")
+        
+        col = 0
+        for icon, action, style in [("🗑️", "clear", "danger-outline"), ("🧹", "clean", "warning-outline")]:
+            ttk.Button(
+                utils_frame, text=icon, width=3,
+                command=lambda a=action, c=debug_canvas, t=tab_name: self.debug_utility_action(a, c, t),
+                bootstyle=style
+            ).grid(row=0, column=col, padx=1)
+            col += 1
+
+    def debug_view_action(self, action, canvas, tab_name):
+        """Gestisce le azioni di visualizzazione sui canvas debug."""
+        try:
+            print(f"🔧 Debug {tab_name}: azione vista '{action}'")
+            
+            if not hasattr(canvas, 'debug_image') or not canvas.debug_image:
+                print(f"ℹ️ Nessuna immagine debug nel canvas {tab_name}")
+                return
+            
+            if action == "🏠":  # Fit to window
+                self.debug_fit_to_window(canvas, tab_name)
+                    
+            elif action == "🔍+":  # Zoom in
+                self.debug_zoom(canvas, tab_name, 1.2)
+                
+            elif action == "🔍-":  # Zoom out  
+                self.debug_zoom(canvas, tab_name, 0.8)
+                
+        except Exception as e:
+            print(f"❌ Errore debug_view_action: {e}")
+
+    def debug_fit_to_window(self, canvas, tab_name):
+        """Adatta l'immagine debug alla finestra del canvas."""
+        try:
+            if not hasattr(canvas, 'debug_image_original'):
+                # Se non abbiamo l'originale, salviamo quello attuale
+                canvas.debug_image_original = canvas.debug_image
+                
+            # Ottieni dimensioni del canvas
+            canvas.update_idletasks()  # Assicura dimensioni aggiornate
+            canvas_w = canvas.winfo_width()
+            canvas_h = canvas.winfo_height()
+            
+            if canvas_w <= 1 or canvas_h <= 1:
+                return
+                
+            # Ottieni dimensioni dell'immagine originale
+            pil_img = ImageTk.getimage(canvas.debug_image_original)
+            img_w, img_h = pil_img.size
+            
+            # Calcola scala per fit
+            scale_w = canvas_w / img_w
+            scale_h = canvas_h / img_h
+            scale = min(scale_w, scale_h) * 0.9  # 90% per margini
+            
+            # Ridimensiona
+            new_w = int(img_w * scale)
+            new_h = int(img_h * scale)
+            
+            resized_img = pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            new_photo = ImageTk.PhotoImage(resized_img)
+            
+            # Aggiorna canvas
+            canvas.delete("all")
+            x_offset = (canvas_w - new_w) // 2
+            y_offset = (canvas_h - new_h) // 2
+            canvas.create_image(x_offset, y_offset, anchor="nw", image=new_photo)
+            canvas.debug_image = new_photo
+            
+            print(f"🏠 Debug {tab_name}: fit to {new_w}x{new_h}")
+            
+        except Exception as e:
+            print(f"❌ Errore debug_fit_to_window: {e}")
+
+    def debug_tool_action(self, tool, canvas, tab_name):
+        """Gestisce gli strumenti sui canvas debug."""
+        try:
+            print(f"🔧 Debug {tab_name}: tool '{tool}'")
+            
+            # Cambia cursore del canvas debug
+            if tool == "PAN":
+                canvas.configure(cursor="fleur")
+            elif tool in ["LINE", "CIRCLE", "RECTANGLE"]:
+                canvas.configure(cursor="cross")
+            elif tool == "MEASURE":
+                canvas.configure(cursor="target")
+            else:
+                canvas.configure(cursor="arrow")
+                
+            # Memorizza il tool corrente per questo canvas
+            if not hasattr(self, 'debug_canvas_tools'):
+                self.debug_canvas_tools = {}
+            self.debug_canvas_tools[tab_name] = tool
+            
+        except Exception as e:
+            print(f"❌ Errore debug_tool_action: {e}")
+
+    def debug_rotate_action(self, action, canvas, tab_name):
+        """Gestisce le rotazioni sui canvas debug.""" 
+        try:
+            print(f"🔧 Debug {tab_name}: rotazione '{action}'")
+            
+            if not hasattr(canvas, 'debug_image') or not canvas.debug_image:
+                print(f"ℹ️ Nessuna immagine da ruotare nel canvas {tab_name}")
+                return
+            
+            # Inizializza angolo di rotazione se non esiste
+            if not hasattr(canvas, 'rotation_angle'):
+                canvas.rotation_angle = 0
+                
+            # Se non abbiamo l'immagine originale, salviamola
+            if not hasattr(canvas, 'debug_image_original'):
+                canvas.debug_image_original = canvas.debug_image
+                
+            if action == "cw":  # Clockwise
+                canvas.rotation_angle = (canvas.rotation_angle + 90) % 360
+                print(f"↷ Rotazione oraria su canvas {tab_name}: {canvas.rotation_angle}°")
+                
+            elif action == "ccw":  # Counter-clockwise  
+                canvas.rotation_angle = (canvas.rotation_angle - 90) % 360
+                print(f"↶ Rotazione antioraria su canvas {tab_name}: {canvas.rotation_angle}°")
+                
+            elif action == "reset":
+                canvas.rotation_angle = 0
+                print(f"⌂ Reset rotazione su canvas {tab_name}")
+                
+            # Applica la rotazione
+            self.apply_debug_rotation(canvas, tab_name)
+                
+        except Exception as e:
+            print(f"❌ Errore debug_rotate_action: {e}")
+
+    def apply_debug_rotation(self, canvas, tab_name):
+        """Applica la rotazione all'immagine debug."""
+        try:
+            if not hasattr(canvas, 'debug_image_original') or not canvas.debug_image_original:
+                return
+                
+            # Ottieni l'immagine originale
+            pil_img = ImageTk.getimage(canvas.debug_image_original)
+            
+            # Applica rotazione
+            if canvas.rotation_angle != 0:
+                rotated_img = pil_img.rotate(-canvas.rotation_angle, expand=True, fillcolor='white')
+            else:
+                rotated_img = pil_img
+                
+            # Applica zoom se presente
+            if hasattr(canvas, 'zoom_factor') and canvas.zoom_factor != 1.0:
+                w, h = rotated_img.size
+                new_w = int(w * canvas.zoom_factor)
+                new_h = int(h * canvas.zoom_factor)
+                rotated_img = rotated_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            
+            # Converti a PhotoImage
+            new_photo = ImageTk.PhotoImage(rotated_img)
+            
+            # Aggiorna il canvas
+            canvas.delete("all")
+            
+            # Centra l'immagine
+            canvas_w = canvas.winfo_width()
+            canvas_h = canvas.winfo_height()
+            img_w, img_h = rotated_img.size
+            x_offset = (canvas_w - img_w) // 2
+            y_offset = (canvas_h - img_h) // 2
+            
+            canvas.create_image(x_offset, y_offset, anchor="nw", image=new_photo)
+            canvas.debug_image = new_photo
+            
+        except Exception as e:
+            print(f"❌ Errore apply_debug_rotation: {e}")
+
+    def debug_utility_action(self, action, canvas, tab_name):
+        """Gestisce le utilità sui canvas debug."""
+        try:
+            print(f"🔧 Debug {tab_name}: utilità '{action}'")
+            
+            if action == "clear":  # Cancella disegni
+                canvas.delete("drawing")  # Cancella solo disegni, non immagini
+                print(f"🗑️ Disegni cancellati da canvas {tab_name}")
+                
+            elif action == "clean":  # Pulisci overlay
+                canvas.delete("overlay")  # Cancella overlay
+                print(f"🧹 Overlay puliti da canvas {tab_name}")
+                
+        except Exception as e:
+            print(f"❌ Errore debug_utility_action: {e}")
+
+    def debug_zoom(self, canvas, tab_name, factor):
+        """Implementa zoom reale sui canvas debug."""
+        try:
+            if not hasattr(canvas, 'debug_image') or not canvas.debug_image:
+                print(f"ℹ️ Nessuna immagine da zoomare nel canvas {tab_name}")
+                return
+                
+            # Inizializza zoom factor se non esiste
+            if not hasattr(canvas, 'zoom_factor'):
+                canvas.zoom_factor = 1.0
+                
+            # Se non abbiamo l'immagine originale, salviamola
+            if not hasattr(canvas, 'debug_image_original'):
+                canvas.debug_image_original = canvas.debug_image
+                
+            # Aggiorna il fattore di zoom
+            canvas.zoom_factor *= factor
+            
+            # Limiti ragionevoli di zoom
+            canvas.zoom_factor = max(0.1, min(5.0, canvas.zoom_factor))
+            
+            print(f"🔍 Zoom debug {tab_name}: {canvas.zoom_factor:.2f}x")
+            
+            # Usa il metodo unificato per applicare zoom e rotazione
+            self.apply_debug_rotation(canvas, tab_name)
+            
+        except Exception as e:
+            print(f"❌ Errore debug_zoom: {e}")
+
+
 def main():
     """Funzione principale per avviare l'applicazione."""
     root = tk.Tk()
@@ -11388,3 +13724,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
