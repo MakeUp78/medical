@@ -23,6 +23,21 @@
     "cpu_pause_analysis": 0.005,
     "cpu_pause_preview": 0.01
   },
+  "scoring": {
+    "nose_weight": 0.27578710613746044,
+    "mouth_weight": 0.22429562988035284,
+    "symmetry_weight": 0.21336112079258582,
+    "eye_weight": 0.28655614318960093,
+    "nose_tolerance": 0.3,
+    "mouth_tolerance": 0.4,
+    "symmetry_tolerance": 0.7,
+    "roll_bonus_high": 1.03,
+    "roll_bonus_med": 1.015,
+    "penalty_threshold_nose": 0.4,
+    "penalty_threshold_mouth": 0.4,
+    "penalty_threshold_symmetry": 0.6,
+    "penalty_factor": 0.3
+  },
   "ui": {
     "window_width": 1200,
     "window_height": 800,

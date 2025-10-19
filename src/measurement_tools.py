@@ -203,6 +203,64 @@ class MeasurementTools:
         except (IndexError, KeyError):
             return 0.0
 
+    def create_symmetry_overlay(self, landmarks: List[Tuple[float, float]]) -> Optional[Dict]:
+        """
+        Crea un overlay per visualizzare l'analisi di simmetria facciale.
+        
+        Args:
+            landmarks: Lista dei landmark facciali
+            
+        Returns:
+            Dizionario con le informazioni dell'overlay
+        """
+        if len(landmarks) < 478:
+            return None
+            
+        try:
+            # Punti di riferimento
+            nose_tip = landmarks[1]
+            
+            # Linea di simmetria centrale (verticale dal naso)
+            face_top = landmarks[10]
+            face_bottom = landmarks[152]
+            
+            # Coppie di punti simmetrici per le linee di confronto
+            symmetric_pairs = [
+                (landmarks[33], landmarks[362]),    # Angoli esterni occhi
+                (landmarks[133], landmarks[362]),   # Angoli interni occhi  
+                (landmarks[61], landmarks[291]),    # Angoli bocca
+                (landmarks[116], landmarks[345]),   # Guanche
+                (landmarks[70], landmarks[300]),    # Sopracciglia esterne
+            ]
+            
+            # Crea le linee per l'overlay
+            lines = []
+            
+            # Linea centrale di simmetria
+            lines.append([nose_tip, face_top])
+            lines.append([nose_tip, face_bottom])
+            
+            # Linee orizzontali per ogni coppia simmetrica
+            for left_point, right_point in symmetric_pairs:
+                # Linea orizzontale che collega i punti simmetrici
+                lines.append([left_point, right_point])
+                
+                # Linee verticali dal centro verso i punti (per mostrare le distanze)
+                center_y = (left_point[1] + right_point[1]) / 2
+                center_point = (nose_tip[0], center_y)
+                lines.append([center_point, left_point])
+                lines.append([center_point, right_point])
+            
+            return {
+                'points': lines,
+                'type': 'multiple_lines',
+                'color': 'purple',
+                'description': 'Analisi simmetria facciale'
+            }
+            
+        except (IndexError, KeyError):
+            return None
+
     def calculate_golden_ratio_scores(
         self, measurements: Dict[str, float]
     ) -> Dict[str, float]:
