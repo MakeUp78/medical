@@ -24,10 +24,10 @@
     "cpu_pause_preview": 0.01
   },
   "scoring": {
-    "nose_weight": 0.27578710613746044,
-    "mouth_weight": 0.22429562988035284,
-    "symmetry_weight": 0.21336112079258582,
-    "eye_weight": 0.28655614318960093,
+    "nose_weight": 0.3222035604089766,
+    "mouth_weight": 0.2324134610220955,
+    "symmetry_weight": 0.13973545270812887,
+    "eye_weight": 0.3056475258607991,
     "nose_tolerance": 0.3,
     "mouth_tolerance": 0.4,
     "symmetry_tolerance": 0.7,

@@ -391,15 +391,17 @@ class CanvasApp:
 
         # PANNELLO CONTROLLI (sinistra) - Ottimizzato per larghezza ridotta
         control_main_frame = ttk.LabelFrame(
-            self.main_horizontal_paned, text="🎛️ Controlli", padding=8, width=320, 
+            self.main_horizontal_paned, text="🎛️ Controlli", padding=8, width=480,
             bootstyle="primary"
         )
         control_main_frame.grid_columnconfigure(0, weight=1)
         control_main_frame.grid_rowconfigure(0, weight=1)
-        self.main_horizontal_paned.add(control_main_frame, weight=1)
+        self.main_horizontal_paned.add(control_main_frame, weight=0)  # Weight 0 per non espandersi
 
         # Canvas scrollabile per i controlli con larghezza ridotta
         control_canvas = tk.Canvas(control_main_frame, highlightthickness=0, width=300)
+        # Esponi il canvas di controllo come attributo per poterlo aggiornare dal resize handler
+        self.control_canvas = control_canvas
         control_scrollbar = ttk.Scrollbar(
             control_main_frame, orient="vertical", command=control_canvas.yview
         )
@@ -467,40 +469,25 @@ class CanvasApp:
         # Setup canvas in ogni tab
         self.setup_canvas_tabs()
 
-        # PANNELLO DESTRO: Layers + Anteprima ottimizzato
-        # PanedWindow verticale per layers | anteprima con larghezza ridotta
-        self.right_sidebar_paned = ttk.PanedWindow(
-            self.main_horizontal_paned, orient=tk.VERTICAL, width=280
-        )
-        self.main_horizontal_paned.add(self.right_sidebar_paned, weight=1)
-
-        # Area Layers compatta (sopra)
-        layers_frame = ttk.LabelFrame(
-            self.right_sidebar_paned, text="📋 Layers", padding=5, width=280,
-            bootstyle="info"
-        )
-        layers_frame.grid_columnconfigure(0, weight=1)
-        layers_frame.grid_rowconfigure(0, weight=1)
-        self.right_sidebar_paned.add(layers_frame, weight=1)
-
-        # Setup area anteprima integrata compatta (sotto)
+        # PANNELLO DESTRO: Solo Anteprima (Layers spostato nella colonna sinistra)
+        # Frame principale per l'anteprima che occupa tutta la colonna destra
         preview_main_frame = ttk.LabelFrame(
-            self.right_sidebar_paned, text="📺 Anteprima", padding=5,
-            bootstyle="warning"
+            self.main_horizontal_paned, text="📺 Anteprima", padding=5,
+            bootstyle="warning", width=300
         )
         preview_main_frame.grid_columnconfigure(0, weight=1)
         preview_main_frame.grid_rowconfigure(0, weight=1)
-        self.right_sidebar_paned.add(preview_main_frame, weight=1)
+        self.main_horizontal_paned.add(preview_main_frame, weight=1)
 
-        # Canvas scrollabile per l'area anteprima con larghezza ridotta
-        preview_canvas = tk.Canvas(preview_main_frame, highlightthickness=0, width=260)
+        # Canvas scrollabile per l'area anteprima - larghezza automatica per evitare sovrapposizione scrollbar
+        preview_canvas = tk.Canvas(preview_main_frame, highlightthickness=0)
         preview_scrollbar = ttk.Scrollbar(
             preview_main_frame, orient="vertical", command=preview_canvas.yview
         )
 
         # Frame scrollabile per il contenuto anteprima compatto
         self.scrollable_preview_frame = ttk.LabelFrame(
-            preview_canvas, text="Anteprima", padding=6
+            preview_canvas, text="Anteprima", padding=4
         )
 
         self.scrollable_preview_frame.bind(
@@ -513,10 +500,19 @@ class CanvasApp:
         )
         preview_canvas.configure(yscrollcommand=preview_scrollbar.set)
 
+        # Assicura che il frame scrollabile utilizzi tutta la larghezza del canvas
+        def configure_canvas_width(event=None):
+            canvas_width = preview_canvas.winfo_width()
+            if canvas_width > 1:  # Solo se il canvas è stato renderizzato
+                preview_canvas.itemconfig(preview_canvas.find_all()[0], width=canvas_width)
+        
+        preview_canvas.bind("<Configure>", configure_canvas_width)
+
         preview_canvas.grid(row=0, column=0, sticky="nsew")
         preview_scrollbar.grid(row=0, column=1, sticky="ns")
         preview_main_frame.grid_rowconfigure(0, weight=1)
         preview_main_frame.grid_columnconfigure(0, weight=1)
+        preview_main_frame.grid_columnconfigure(1, weight=0, minsize=20)  # Spazio minimo garantito per scrollbar
 
         # Funzioni per il binding dello scroll
         def _on_mousewheel(event):
@@ -544,12 +540,68 @@ class CanvasApp:
         # Setup dei contenuti
         self.setup_controls(self.scrollable_control_frame)
         # self.setup_canvas(canvas_frame)  # Sostituito dal sistema tab
-        self.setup_layers_panel(layers_frame)
+        # Pannello layers spostato nella colonna sinistra come sezione collassabile
         self.setup_integrated_preview(self.scrollable_preview_frame)
 
         # Applica il binding a tutti i widget figli
         bind_mousewheel_to_frame(self.scrollable_control_frame)
         bind_preview_mousewheel(self.scrollable_preview_frame)
+
+        # Sidebar behavior: rendi la colonna sinistra un sidebar a larghezza "fissa" ma adattiva
+        # Impostazioni predefinite (ratio rispetto alla finestra, min/max)
+        self.left_sidebar_ratio = 0.30
+        self.left_sidebar_min_width = 420  # Aumentato per contenere tutto il testo
+        self.left_sidebar_max_width = 600  # Aumentato il massimo
+        self.left_sidebar_fixed_width = 480  # Larghezza fissa basata sui contenuti
+
+        # Forza la larghezza della sidebar al ridimensionamento della finestra principale
+        self.root.bind("<Configure>", self._on_root_resize_sidebar)
+
+        # Disabilita il trascinamento del sash sinistro
+        def _disable_sash_move(event):
+            # Forza sempre la posizione del sash sinistro
+            try:
+                # Usa la larghezza fissa invece del calcolo dinamico
+                self.main_horizontal_paned.sashpos(0, self.left_sidebar_fixed_width)
+            except:
+                pass
+            return "break"  # Impedisce il default behavior
+        
+        # Bind per disabilitare completamente l'interazione con il sash
+        self.main_horizontal_paned.bind("<Button-1>", _disable_sash_move)
+        self.main_horizontal_paned.bind("<B1-Motion>", _disable_sash_move)
+        self.main_horizontal_paned.bind("<ButtonRelease-1>", _disable_sash_move)
+        self.main_horizontal_paned.bind("<Motion>", lambda e: self._set_cursor_arrow(e))
+        
+        # Forza immediatamente la posizione corretta del sash
+        self.root.after(100, lambda: self._force_sidebar_width())
+        
+        # Disabilita completamente il cursore di resize
+        self.root.after(200, lambda: self._disable_paned_cursor())
+
+    def _disable_paned_cursor(self):
+        """Disabilita completamente il cursore di resize sul PanedWindow."""
+        try:
+            # Forza il cursore standard su tutto il PanedWindow
+            self.main_horizontal_paned.configure(cursor="")
+            
+            # Bind per mantenere il cursore normale
+            def _keep_normal_cursor(event):
+                try:
+                    event.widget.configure(cursor="")
+                except:
+                    pass
+                return "break"
+            
+            # Applica a tutti gli eventi del mouse
+            self.main_horizontal_paned.bind("<Enter>", _keep_normal_cursor)
+            self.main_horizontal_paned.bind("<Motion>", _keep_normal_cursor)
+            self.main_horizontal_paned.bind("<Leave>", _keep_normal_cursor)
+            
+            print("🚫 Cursore resize PanedWindow disabilitato")
+            
+        except Exception as e:
+            print(f"❌ Errore disabilitazione cursore: {e}")
 
         # Setup area misurazioni (in basso) ridimensionabile con stile card
         measurements_frame = ttk.LabelFrame(
@@ -582,19 +634,16 @@ class CanvasApp:
         self.main_horizontal_paned.bind("<ButtonRelease-1>", self._on_main_paned_resize_improved)
         print("   ✅ Main horizontal paned bind configurato")
 
-        self.right_sidebar_paned.bind(
-            "<ButtonRelease-1>", self._on_sidebar_paned_resize_improved
-        )
-        print("   ✅ Right sidebar paned bind configurato")
+        # Right sidebar paned rimosso - ora solo anteprima diretta
+        print("   ✅ Right sidebar paned rimosso (ora solo anteprima)")
 
         # Aggiungiamo anche eventi per il trascinamento continuo
         self.main_vertical_paned.bind("<B1-Motion>", self._on_vertical_paned_drag)
         self.main_horizontal_paned.bind("<B1-Motion>", self._on_main_paned_drag)
-        self.right_sidebar_paned.bind("<B1-Motion>", self._on_sidebar_paned_drag)
+        # right_sidebar_paned rimosso
 
-        # AGGIUNTA: Bind alternativo per catturare eventi Configure sui pannelli
-        self.right_sidebar_paned.bind("<Configure>", self._on_sidebar_paned_configure)
-        print("   ✅ Right sidebar Configure bind configurato")
+        # AGGIUNTA: Bind alternativo rimosso per right_sidebar_paned
+        print("   ✅ Right sidebar bind rimossi (pannello semplificato)")
 
         # Gestione chiusura delegata a main.py - non sovrascrivere
         # self.root.protocol("WM_DELETE_WINDOW", self.on_closing_with_layout_save)  # DISABILITATO per evitare conflitti
@@ -636,32 +685,76 @@ class CanvasApp:
             command=self.toggle_measurements,
         )
 
+    def _create_section(self, parent, title, bootstyle_name="secondary", expanded=False):
+        """Crea una sezione collassabile per l'interfaccia utente.
+        
+        Args:
+            parent: Frame genitore dove inserire la sezione
+            title: Titolo della sezione da visualizzare
+            bootstyle_name: Stile bootstrap da applicare
+            expanded: Se True, la sezione inizia espansa
+            
+        Returns:
+            content_frame: Frame contenuto dove aggiungere i controlli
+        """
+        # Header con pulsante toggle
+        header = ttk.Frame(parent, bootstyle=bootstyle_name)
+        header.pack(fill=tk.X, pady=(0, 2), padx=2)
+
+        # Toggle variable
+        toggle_var = tk.BooleanVar(value=expanded)
+
+        # Icon label per indicare stato
+        icon_label = ttk.Label(
+            header, 
+            text="▼" if expanded else "►", 
+            width=2, 
+            bootstyle="secondary"
+        )
+        icon_label.pack(side=tk.LEFT, padx=(2, 4))
+
+        # Funzione di toggle
+        def _toggle():
+            new_state = not toggle_var.get()
+            toggle_var.set(new_state)
+            if new_state:
+                content_frame.pack(fill=tk.X, padx=6, pady=(0, 6), after=header)
+                icon_label.config(text="▼")
+            else:
+                content_frame.pack_forget()
+                icon_label.config(text="►")
+
+        # Pulsante titolo cliccabile
+        btn = ttk.Button(
+            header,
+            text=title,
+            command=_toggle,
+            bootstyle=bootstyle_name,
+        )
+        btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Cursore indicatore di clic
+        btn.bind("<Enter>", lambda e: btn.configure(cursor="hand2"))
+        btn.bind("<Leave>", lambda e: btn.configure(cursor=""))
+
+        # Frame contenuto
+        content_frame = ttk.Frame(parent)
+        
+        # Inizialmente espanso o collassato
+        if expanded:
+            content_frame.pack(fill=tk.X, padx=6, pady=(0, 6), after=header)
+
+        return content_frame
+
     def setup_controls(self, parent):
         """Configura il pannello dei controlli con layout professionale e compatto."""
-        
         # === SEZIONE SORGENTE - Layout compatto professionale ===
-        source_card = ttk.Frame(parent, bootstyle="light")
-        source_card.pack(fill=tk.X, pady=(0, 4), padx=2)
-        
-        # Header della card con stile professionale
-        source_header = ttk.Frame(source_card, bootstyle="primary")
-        source_header.pack(fill=tk.X)
-        
-        source_title = ttk.Label(
-            source_header, text="🎯 SORGENTE", 
-            font=("Segoe UI", 9, "bold"),
-            bootstyle="inverse-primary"
-        )
-        source_title.pack(pady=4)
-        
-        # Content della card
-        source_content = ttk.Frame(source_card)
-        source_content.pack(fill=tk.X, padx=6, pady=6)
-        
+        source_content = self._create_section(parent, "🎯 SORGENTE", "primary", expanded=False)
+
         # Griglia 2x2 per pulsanti più spaziosi
         source_content.columnconfigure(0, weight=1)
         source_content.columnconfigure(1, weight=1)
-        
+
         # Pulsanti sorgente con icone e stile professionale
         ttk.Button(
             source_content, text="📁 Carica Immagine", 
@@ -669,21 +762,21 @@ class CanvasApp:
             bootstyle="primary-outline",
             width=18
         ).grid(row=0, column=0, sticky="ew", pady=2, padx=(0, 2))
-        
+
         ttk.Button(
             source_content, text="📹 Avvia Webcam", 
             command=self.start_webcam,
             bootstyle="success-outline",
             width=18
         ).grid(row=0, column=1, sticky="ew", pady=2, padx=(2, 0))
-        
+
         ttk.Button(
             source_content, text="🎬 Carica Video", 
             command=self.load_video,
             bootstyle="info-outline",
             width=18
         ).grid(row=1, column=0, sticky="ew", pady=2, padx=(0, 2))
-        
+
         ttk.Button(
             source_content, text="⏹️ Ferma Analisi", 
             command=self.stop_video_analysis,
@@ -692,9 +785,9 @@ class CanvasApp:
         ).grid(row=1, column=1, sticky="ew", pady=2, padx=(2, 0))
 
         # Status info compatto con bordo
-        status_info_frame = ttk.Frame(source_card)
-        status_info_frame.pack(fill=tk.X, padx=6, pady=(0, 6))
-        
+        status_info_frame = ttk.Frame(source_content)
+        status_info_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(4,0))
+
         self.best_frame_info = ttk.Label(
             status_info_frame, 
             text="Nessun frame analizzato",
@@ -706,26 +799,14 @@ class CanvasApp:
         self.best_frame_info.pack(fill=tk.X, pady=2)
 
         # === SEZIONE STATUS - Dashboard professionale ===
-        status_card = ttk.Frame(parent, bootstyle="light")
-        status_card.pack(fill=tk.X, pady=(0, 4), padx=2)
-        
-        # Header della card status
-        status_header = ttk.Frame(status_card, bootstyle="secondary")
-        status_header.pack(fill=tk.X)
-        
-        status_title = ttk.Label(
-            status_header, text="📊 STATUS SISTEMA", 
-            font=("Segoe UI", 9, "bold"),
-            bootstyle="inverse-secondary"
-        )
-        status_title.pack(pady=4)
-        
+        status_container = self._create_section(parent, "📊 STATUS SISTEMA", "secondary", expanded=False)
+
         # Dashboard badges organizzati in griglia
-        badges_container = ttk.Frame(status_card)
+        badges_container = ttk.Frame(status_container)
         badges_container.pack(fill=tk.X, padx=6, pady=6)
         badges_container.columnconfigure(0, weight=1)
         badges_container.columnconfigure(1, weight=1)
-        
+
         # Badge webcam
         self.webcam_badge = ttk.Label(
             badges_container, 
@@ -736,7 +817,7 @@ class CanvasApp:
             borderwidth=1
         )
         self.webcam_badge.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
-        
+
         # Badge landmarks
         self.landmarks_badge = ttk.Label(
             badges_container, 
@@ -747,7 +828,7 @@ class CanvasApp:
             borderwidth=1
         )
         self.landmarks_badge.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
-        
+
         # Badge qualità
         self.quality_badge = ttk.Label(
             badges_container, 
@@ -758,7 +839,7 @@ class CanvasApp:
             borderwidth=1
         )
         self.quality_badge.grid(row=1, column=0, padx=2, pady=2, sticky="ew")
-        
+
         # Badge misurazioni
         self.measurements_badge = ttk.Label(
             badges_container, 
@@ -771,23 +852,7 @@ class CanvasApp:
         self.measurements_badge.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
 
         # === SEZIONE MISURAZIONI PREDEFINITE - SEMPRE VISIBILI ===
-        predef_card = ttk.Frame(parent, bootstyle="light")
-        predef_card.pack(fill=tk.X, pady=(0, 4), padx=2)
-        
-        # Header della card misurazioni predefinite
-        predef_header = ttk.Frame(predef_card, bootstyle="success")
-        predef_header.pack(fill=tk.X)
-        
-        predef_title = ttk.Label(
-            predef_header, text="📏 MISURAZIONI PREDEFINITE", 
-            font=("Segoe UI", 9, "bold"),
-            bootstyle="inverse-success"
-        )
-        predef_title.pack(pady=4)
-        
-        # Container per pulsanti misurazioni predefinite
-        predef_container = ttk.Frame(predef_card)
-        predef_container.pack(fill=tk.X, padx=6, pady=6)
+        predef_container = self._create_section(parent, "📏 MISURAZIONI PREDEFINITE", "success", expanded=False)
         
         # Configura griglia 4 colonne per compattezza
         for i in range(4):
@@ -860,23 +925,7 @@ class CanvasApp:
                     self.preset_buttons[preset_key] = btn
 
         # === SEZIONE RILEVAMENTI - Layout professionale ===
-        detections_card = ttk.Frame(parent, bootstyle="light")
-        detections_card.pack(fill=tk.X, pady=(0, 4), padx=2)
-        
-        # Header della card rilevamenti
-        det_header = ttk.Frame(detections_card, bootstyle="warning")
-        det_header.pack(fill=tk.X)
-        
-        det_title = ttk.Label(
-            det_header, text="🔍 RILEVAMENTI & ANALISI", 
-            font=("Segoe UI", 9, "bold"),
-            bootstyle="inverse-warning"
-        )
-        det_title.pack(pady=4)
-        
-        # Container per controlli rilevamenti
-        det_container = ttk.Frame(detections_card)
-        det_container.pack(fill=tk.X, padx=6, pady=6)
+        det_container = self._create_section(parent, "🔍 RILEVAMENTI & ANALISI", "warning", expanded=False)
 
         # Inizializza le variabili di controllo
         self.show_axis_var = tk.BooleanVar(value=False)
@@ -925,23 +974,7 @@ class CanvasApp:
         self.face_analysis_button.grid(row=1, column=1, padx=2, pady=2, sticky="ew")
 
         # === TABELLA LANDMARKS - Design professionale ===
-        landmarks_card = ttk.Frame(parent, bootstyle="light")
-        landmarks_card.pack(fill=tk.X, pady=(0, 4), padx=2)
-        
-        # Header della card landmarks
-        landmarks_header = ttk.Frame(landmarks_card, bootstyle="info")
-        landmarks_header.pack(fill=tk.X)
-        
-        landmarks_title = ttk.Label(
-            landmarks_header, text="🎯 TABELLA LANDMARKS", 
-            font=("Segoe UI", 9, "bold"),
-            bootstyle="inverse-info"
-        )
-        landmarks_title.pack(pady=4)
-        
-        # Container per tabella
-        landmarks_container = ttk.Frame(landmarks_card)
-        landmarks_container.pack(fill=tk.X, padx=6, pady=6)
+        landmarks_container = self._create_section(parent, "🎯 TABELLA LANDMARKS", "info", expanded=False)
         
         # Frame per la treeview con scrollbar
         tree_frame = ttk.Frame(landmarks_container)
@@ -1139,23 +1172,7 @@ class CanvasApp:
         }
 
         # === MISURAZIONI INTERATTIVE - Separate e indipendenti ===
-        measurements_card = ttk.Frame(parent, bootstyle="light")
-        measurements_card.pack(fill=tk.X, pady=(0, 4), padx=2)
-        
-        # Header della card misurazioni interattive
-        meas_header = ttk.Frame(measurements_card, bootstyle="dark")
-        meas_header.pack(fill=tk.X)
-        
-        meas_title = ttk.Label(
-            meas_header, text="📐 MISURAZIONI INTERATTIVE", 
-            font=("Segoe UI", 9, "bold"),
-            bootstyle="inverse-dark"
-        )
-        meas_title.pack(pady=4)
-        
-        # Container per controlli misurazioni
-        meas_container = ttk.Frame(measurements_card)
-        meas_container.pack(fill=tk.X, padx=6, pady=6)
+        meas_container = self._create_section(parent, "📐 MISURAZIONI INTERATTIVE", "dark", expanded=False)
         
         # Attivazione modalità misurazione
         self.measurement_mode_active = tk.BooleanVar(value=False)
@@ -1261,32 +1278,21 @@ class CanvasApp:
         # === SEZIONE CORREZIONE SOPRACCIGLIO ===
         self.setup_eyebrow_correction_controls(parent)
 
+        # === SEZIONE LIVELLI/LAYERS ===
+        self.setup_layers_controls(parent)
+
         # === SEZIONE CONTROLLI SCORING ===
         self.setup_scoring_controls(parent)
 
     def setup_scoring_controls(self, parent):
         """Configura il pannello dei controlli per i pesi dello scoring con layout professionale."""
-        # === SCORING - Card professionale ===
-        scoring_card = ttk.Frame(parent, bootstyle="light")
-        scoring_card.pack(fill=tk.X, pady=(0, 4), padx=2)
-        
-        # Header della card scoring
-        scoring_header = ttk.Frame(scoring_card, bootstyle="dark")
-        scoring_header.pack(fill=tk.X)
-        
-        scoring_title = ttk.Label(
-            scoring_header, text="⚖️ SISTEMA SCORING", 
-            font=("Segoe UI", 9, "bold"),
-            bootstyle="inverse-dark"
+        # === SCORING - Sezione collassabile ===
+        scoring_section = self._create_section(
+            parent, "⚖️ SISTEMA SCORING", "success", expanded=True
         )
-        scoring_title.pack(pady=4)
         
-        # Container per controlli scoring
-        scoring_container = ttk.Frame(scoring_card)
-        scoring_container.pack(fill=tk.X, padx=6, pady=6)
-
         # Badge info score corrente
-        info_frame = ttk.Frame(scoring_container)
+        info_frame = ttk.Frame(scoring_section)
         info_frame.pack(fill=tk.X, pady=(0, 8))
         
         self.scoring_info_label = ttk.Label(
@@ -1300,7 +1306,7 @@ class CanvasApp:
         self.scoring_info_label.pack(fill=tk.X)
 
         # Frame per sliders organizzati
-        sliders_container = ttk.LabelFrame(scoring_container, text="Parametri Peso", padding=4)
+        sliders_container = ttk.LabelFrame(scoring_section, text="Parametri Peso", padding=4)
         sliders_container.pack(fill=tk.X, pady=(0, 6))
 
         # Nose weight con stile migliorato
@@ -1400,7 +1406,7 @@ class CanvasApp:
         self.eye_scale.set(self.scoring_config.eye_weight)
 
         # Pulsanti preset con design migliorato
-        preset_frame = ttk.LabelFrame(scoring_container, text="Preset Veloci", padding=4)
+        preset_frame = ttk.LabelFrame(scoring_section, text="Preset Veloci", padding=4)
         preset_frame.pack(fill=tk.X, pady=(0, 4))
 
         preset_frame.columnconfigure(0, weight=1)
@@ -1429,43 +1435,154 @@ class CanvasApp:
         ).grid(row=0, column=2, sticky="ew", padx=1, pady=2)
 
         # === INTEGRAZIONE ASSISTENTE VOCALE SEMPLICE ===
+        self.setup_voice_assistant_section(parent)
+
+    def setup_layers_controls(self, parent):
+        """Configura il pannello dei layers come sezione collassabile nella colonna sinistra."""
+        # === LIVELLI/LAYERS - Sezione collassabile ===
+        layers_section = self._create_section(
+            parent, "📋 LIVELLI", "info", expanded=False
+        )
+        
+        # Toolbar per i layers con layout compatto
+        toolbar_frame = ttk.Frame(layers_section)
+        toolbar_frame.pack(fill=tk.X, pady=(0, 6))
+        toolbar_frame.columnconfigure(0, weight=1)
+        toolbar_frame.columnconfigure(1, weight=1)
+        toolbar_frame.columnconfigure(2, weight=1)
+        toolbar_frame.columnconfigure(3, weight=1)
+
+        # Bottoni layers con stile uniforme alle altre sezioni
+        ttk.Button(
+            toolbar_frame,
+            text="➕ Nuovo",
+            command=self.add_layer,
+            bootstyle="success-outline",
+            width=10
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 2))
+
+        ttk.Button(
+            toolbar_frame,
+            text="➖ Rimuovi",
+            command=self.remove_layer,
+            bootstyle="danger-outline", 
+            width=10
+        ).grid(row=0, column=1, sticky="ew", padx=(2, 2))
+
+        ttk.Button(
+            toolbar_frame,
+            text="👁️ Toggle",
+            command=self.toggle_layer_visibility,
+            bootstyle="warning-outline",
+            width=10
+        ).grid(row=0, column=2, sticky="ew", padx=(2, 2))
+
+        ttk.Button(
+            toolbar_frame,
+            text="🔒 Blocca",
+            command=self.toggle_layer_lock,
+            bootstyle="secondary-outline",
+            width=10
+        ).grid(row=0, column=3, sticky="ew", padx=(2, 0))
+
+        # Container per la treeview layers con altezza ridotta per essere collassabile
+        tree_container = ttk.Frame(layers_section)
+        tree_container.pack(fill=tk.X, pady=(0, 4))
+
+        # Treeview per i layers con dimensioni adattate al layout collassabile
+        self.layers_tree = ttk.Treeview(
+            tree_container,
+            columns=("Status", "Visible", "Locked"),
+            show="tree headings",
+            height=6  # Altezza ridotta per sezione collassabile
+        )
+
+        self.layers_tree.heading("#0", text="Layer")
+        self.layers_tree.heading("Status", text="🎯")
+        self.layers_tree.heading("Visible", text="👁")
+        self.layers_tree.heading("Locked", text="🔒")
+
+        # Colonne adattate alla larghezza della sidebar sinistra
+        self.layers_tree.column("#0", width=120)
+        self.layers_tree.column("Status", width=30)
+        self.layers_tree.column("Visible", width=30)
+        self.layers_tree.column("Locked", width=30)
+
+        # Scrollbar per layer
+        layer_scrollbar = ttk.Scrollbar(
+            tree_container, orient="vertical", command=self.layers_tree.yview
+        )
+        self.layers_tree.configure(yscrollcommand=layer_scrollbar.set)
+
+        self.layers_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        layer_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Bind eventi per gestione layer (mantieni la funzionalità esistente)
+        self.layers_tree.bind("<<TreeviewSelect>>", self.on_layer_select)
+        self.layers_tree.bind("<Button-1>", self.on_layer_click) 
+        self.layers_tree.bind("<Double-Button-1>", self.on_layer_double_click)
+        self.layers_tree.bind("<Delete>", self.on_delete_key)
+        
+        # Keyboard shortcut globale
+        self.root.bind("<Control-l>", self.quick_add_layer)
+
+        # Info layer attivo compatto
+        info_frame = ttk.Frame(layers_section)
+        info_frame.pack(fill=tk.X, pady=(4, 0))
+        
+        ttk.Label(
+            info_frame,
+            text="Layer Attivo:",
+            font=("Segoe UI", 9, "bold")
+        ).pack(side=tk.LEFT)
+        
+        self.active_layer_label = ttk.Label(
+            info_frame,
+            text="Default",
+            font=("Segoe UI", 9),
+            bootstyle="info"
+        )
+        self.active_layer_label.pack(side=tk.LEFT, padx=(5, 0))
+
+        # Inizializza layers se non esistono già
+        if not hasattr(self, "layers_list"):
+            self.layers_list = []
+        
+        # Aggiorna visualizzazione layers
+        self.update_layers_display()
+
+    def setup_voice_assistant_section(self, parent):
+        """Configura la sezione dell'assistente vocale come sezione collassabile."""
         if self.voice_assistant:
             try:
+                # === ASSISTENTE VOCALE - Sezione collassabile ===
+                voice_section = self._create_section(
+                    parent, "🎤 ASSISTENTE VOCALE", "secondary", expanded=False
+                )
+                
                 # Setup riferimento app per comandi vocali
                 self.voice_assistant.set_canvas_app(self)
                 
-                # Crea GUI semplice per controllo on/off
-                self.voice_gui = self.voice_assistant.create_gui(parent)
-                self.voice_gui.pack(fill=tk.X, pady=(10, 0))  # AGGIUNTO PACK!
+                # Crea GUI semplice per controllo on/off nel contenuto della sezione
+                self.voice_gui = self.voice_assistant.create_gui(voice_section)
+                self.voice_gui.pack(fill=tk.X, pady=(5, 0))
                 
                 print("✅ Assistente vocale integrato con successo")
             except Exception as e:
                 print(f"⚠️ Errore integrazione assistente vocale: {e}")
+        else:
+            print("ℹ️ Assistente vocale non disponibile")
 
     def setup_eyebrow_correction_controls(self, parent):
         """Configura i controlli per la correzione sopracciglia con layout professionale."""
-        # === CORREZIONE SOPRACCIGLIO - Card professionale ===
-        eyebrow_card = ttk.Frame(parent, bootstyle="light")
-        eyebrow_card.pack(fill=tk.X, pady=(0, 4), padx=2)
-        
-        # Header della card correzione
-        eyebrow_header = ttk.Frame(eyebrow_card, bootstyle="secondary")
-        eyebrow_header.pack(fill=tk.X)
-        
-        eyebrow_title = ttk.Label(
-            eyebrow_header, text="✂️ CORREZIONE SOPRACCIGLIA", 
-            font=("Segoe UI", 9, "bold"),
-            bootstyle="inverse-secondary"
+        # === CORREZIONE SOPRACCIGLIO - Sezione collassabile ===
+        eyebrow_section = self._create_section(
+            parent, "✂️ CORREZIONE SOPRACCIGLIA", "warning", expanded=True
         )
-        eyebrow_title.pack(pady=4)
-        
-        # Container per controlli correzione
-        eyebrow_container = ttk.Frame(eyebrow_card)
-        eyebrow_container.pack(fill=tk.X, padx=6, pady=6)
         
         # Info sulla funzionalità
         info_label = ttk.Label(
-            eyebrow_container,
+            eyebrow_section,
             text="💡 Ritaglio sopracciglia con overlay punti verdi",
             font=("Segoe UI", 8, "italic"),
             bootstyle="secondary"
@@ -1473,7 +1590,7 @@ class CanvasApp:
         info_label.pack(pady=(0, 6))
         
         # Griglia per pulsanti correzione
-        buttons_frame = ttk.Frame(eyebrow_container)
+        buttons_frame = ttk.Frame(eyebrow_section)
         buttons_frame.pack(fill=tk.X)
         buttons_frame.columnconfigure(0, weight=1)
         buttons_frame.columnconfigure(1, weight=1)
@@ -1513,15 +1630,13 @@ class CanvasApp:
         # Variabile per modalità debug (tab vs finestre)
         self.debug_use_tabs = tk.BooleanVar(value=True)  # Default: usa tab
         
-        # Header per sezione debug
-        debug_header = ttk.LabelFrame(
-            parent, text="🔧 PREFERENZE DEBUG", 
-            padding=8, bootstyle="info"
+        # === PREFERENZE DEBUG - Sezione collassabile ===
+        debug_section = self._create_section(
+            parent, "🔧 PREFERENZE DEBUG", "info", expanded=False
         )
-        debug_header.pack(fill=tk.X, pady=(15, 5))
         
         # Checkbox per modalità debug
-        debug_mode_frame = ttk.Frame(debug_header)
+        debug_mode_frame = ttk.Frame(debug_section)
         debug_mode_frame.pack(fill=tk.X, pady=2)
         
         ttk.Checkbutton(
@@ -1532,7 +1647,7 @@ class CanvasApp:
         ).pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         # Frame per pulsanti debug utilities
-        debug_utils_frame = ttk.Frame(debug_header)
+        debug_utils_frame = ttk.Frame(debug_section)
         debug_utils_frame.pack(fill=tk.X, pady=(5, 0))
         debug_utils_frame.grid_columnconfigure(0, weight=1)
         debug_utils_frame.grid_columnconfigure(1, weight=1)
@@ -1805,7 +1920,7 @@ class CanvasApp:
         report_controls.grid(row=1, column=0, sticky="ew", padx=2, pady=2)
         
         ttk.Button(
-            report_controls, text="�️ Cancella Report", width=20,
+            report_controls, text="🗑️ Cancella Report", width=20,
             command=lambda: self.clear_debug_tab("report"),
             bootstyle="danger-outline"
         ).pack(side=tk.LEFT, padx=2)
@@ -5882,264 +5997,268 @@ class CanvasApp:
             # Crea layer base se non esiste
             self.create_default_layer_unified()
 
+        # Aggiorna la label del layer attivo nella sezione collassabile (se esiste)
+        if hasattr(self, "active_layer_label"):
+            if hasattr(self, "active_layer") and self.active_layer:
+                active_name = self.active_layer.get("name", "Default")
+            else:
+                active_name = "Default"
+            self.active_layer_label.config(text=active_name)
+
     def setup_integrated_preview(self, parent):
-        """Configura l'area anteprima integrata con layout scrollabile moderno."""
-        # Configura il grid del parent
-        parent.grid_rowconfigure(0, weight=0, minsize=40)  # Controlli
-        parent.grid_rowconfigure(1, weight=0, minsize=300)  # Video
-        parent.grid_rowconfigure(2, weight=0, minsize=60)  # Info
-        parent.grid_rowconfigure(3, weight=1, minsize=200)  # Debug logs (espandibile)
+        """Configura l'area anteprima integrata ottimizzata per larghezza limitata della colonna destra."""
+        # Configura il grid del parent - layout compatto e responsivo
+        parent.grid_rowconfigure(0, weight=0, minsize=35)   # Controlli principali (ridotto)
+        parent.grid_rowconfigure(1, weight=0, minsize=25)   # Controlli overlay (nuovo)
+        parent.grid_rowconfigure(2, weight=0, minsize=25)   # Seek + velocità (compatto)
+        parent.grid_rowconfigure(3, weight=0, minsize=250)  # Anteprima video (ridotto)
+        parent.grid_rowconfigure(4, weight=0, minsize=40)   # Info compatte
+        parent.grid_rowconfigure(5, weight=1, minsize=150)  # Debug logs (espandibile)
         parent.grid_columnconfigure(0, weight=1)
 
-        # Frame controlli video avanzati
-        controls_frame = ttk.LabelFrame(parent, text="🎬 Controlli Video", padding=5)
-        controls_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
-        controls_frame.grid_columnconfigure(1, weight=1)  # Seek bar espandibile
+        # === RIGA 1: Controlli principali compatti ===
+        main_controls = ttk.LabelFrame(parent, text="🎬 Video", padding=(4, 3))
+        main_controls.grid(row=0, column=0, sticky="ew", pady=(0, 2), padx=1)
+        main_controls.grid_columnconfigure(1, weight=1)
 
-        # Prima riga: controlli di base
-        control_row1 = ttk.Frame(controls_frame)
-        control_row1.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 5))
-        control_row1.grid_columnconfigure(2, weight=1)  # Spazio centrale espandibile
+        # Controlli principali in una riga compatta
+        main_row = ttk.Frame(main_controls)
+        main_row.pack(fill="x")
 
-        # Checkbox anteprima attiva
+        # Checkbox attivazione (compatto)
         self.preview_enabled = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            control_row1,
-            text="Attiva",
-            variable=self.preview_enabled,
-            command=self.toggle_video_preview,
-        ).grid(row=0, column=0, padx=(0, 5), sticky="w")
+            main_row, text="ON", variable=self.preview_enabled,
+            command=self.toggle_video_preview
+        ).pack(side="left", padx=(0, 3))
 
-        # NUOVO: Pulsanti overlay anteprima
-        overlay_frame = ttk.LabelFrame(control_row1, text="Overlay", padding=2)
-        overlay_frame.grid(row=0, column=1, padx=5, sticky="w")
+        # Pulsanti controllo compatti
+        control_frame = ttk.Frame(main_row)
+        control_frame.pack(side="left", padx=3)
+
+        btn_width = 3  # Pulsanti dimensionati per icone Unicode
+        self.start_btn = ttk.Button(control_frame, text="▶", width=btn_width, command=self.start_webcam_analysis)
+        self.start_btn.pack(side="left", padx=1)
+
+        self.pause_btn = ttk.Button(control_frame, text="⏸", width=btn_width, command=self.pause_webcam_analysis)
+        self.pause_btn.pack(side="left", padx=1)
+
+        self.stop_btn = ttk.Button(control_frame, text="⏹", width=btn_width, command=self.stop_webcam_analysis)
+        self.stop_btn.pack(side="left", padx=1)
+
+        self.restart_btn = ttk.Button(control_frame, text="🔄", width=btn_width, command=self.restart_webcam_analysis)
+        self.restart_btn.pack(side="left", padx=1)
+
+        # Pulsanti utilità (destra)
+        util_frame = ttk.Frame(main_row)
+        util_frame.pack(side="right")
+
+        ttk.Button(util_frame, text="📸", width=btn_width, command=self.capture_current_frame).pack(side="left", padx=1)
+
+        self.detach_btn = ttk.Button(util_frame, text="🗗", width=btn_width, command=self.detach_preview_window)
+        self.detach_btn.pack(side="left", padx=1)
+        ToolTip(self.detach_btn, "Finestra separata")
+
+        # === RIGA 2: Overlay controls compatti ===
+        overlay_controls = ttk.LabelFrame(parent, text="Overlay", padding=(3, 1))
+        overlay_controls.grid(row=1, column=0, sticky="ew", pady=1)
+
+        overlay_row = ttk.Frame(overlay_controls)
+        overlay_row.pack(fill="x")
+
+        # Checkbox overlay in riga unica
+        ttk.Checkbutton(overlay_row, text="Punti", variable=self.show_landmarks_var, 
+                       command=self.update_overlay_settings).pack(side="left", padx=2)
         
-        ttk.Checkbutton(
-            overlay_frame, text="Landmarks", variable=self.show_landmarks_var,
-            command=self.update_overlay_settings
-        ).grid(row=0, column=0, padx=2)
+        ttk.Checkbutton(overlay_row, text="Asse", variable=self.show_symmetry_var,
+                       command=self.update_overlay_settings).pack(side="left", padx=2)
         
-        ttk.Checkbutton(
-            overlay_frame, text="Simmetria", variable=self.show_symmetry_var,
-            command=self.update_overlay_settings
-        ).grid(row=0, column=1, padx=2)
+        ttk.Checkbutton(overlay_row, text="Area", variable=self.show_green_polygon_var,
+                       command=self.update_overlay_settings).pack(side="left", padx=2)
+
+        # === RIGA 3: Seek bar e velocità compatti ===
+        playback_controls = ttk.LabelFrame(parent, text="Tempo", padding=(3, 1))
+        playback_controls.grid(row=2, column=0, sticky="ew", pady=1)
+
+        # Seek bar compatto
+        seek_container = ttk.Frame(playback_controls)
+        seek_container.pack(fill="x", pady=1)
+        seek_container.grid_columnconfigure(1, weight=1)
+
+        # Tempo - seek - velocità in una riga
+        self.current_time_label = ttk.Label(seek_container, textvariable=self.current_time_var, width=5, font=("Arial", 8))
+        self.current_time_label.grid(row=0, column=0, padx=(0, 2))
+
+        self.seek_scale = ttk.Scale(seek_container, from_=0, to=100, orient="horizontal", 
+                                   variable=self.seek_var, command=self.on_seek_change)
+        self.seek_scale.grid(row=0, column=1, sticky="ew", padx=2)
+
+        self.total_time_label = ttk.Label(seek_container, textvariable=self.total_time_var, width=5, font=("Arial", 8))
+        self.total_time_label.grid(row=0, column=2, padx=2)
+
+        # Velocità compatta
+        speed_container = ttk.Frame(playback_controls)
+        speed_container.pack(fill="x", pady=1)
+        speed_container.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(speed_container, text="Vel:", font=("Arial", 8)).grid(row=0, column=0, padx=(0, 2))
         
-        ttk.Checkbutton(
-            overlay_frame, text="Poligono", variable=self.show_green_polygon_var,
-            command=self.update_overlay_settings
-        ).grid(row=0, column=2, padx=2)
+        speed_scale = ttk.Scale(speed_container, from_=0.25, to=3.0, orient="horizontal", 
+                               variable=self.speed_var, command=self.on_speed_change)
+        speed_scale.grid(row=0, column=1, sticky="ew", padx=2)
 
-        # Controlli playback
-        playback_frame = ttk.Frame(control_row1)
-        playback_frame.grid(row=0, column=2, padx=5)
+        self.speed_label = ttk.Label(speed_container, text="1.0x", width=4, font=("Arial", 8))
+        self.speed_label.grid(row=0, column=2, padx=(2, 0))
 
-        # Pulsanti controllo webcam/video
-        self.start_btn = ttk.Button(
-            playback_frame, text="▶️", width=3, command=self.start_webcam_analysis
-        )
-        self.start_btn.pack(side=tk.LEFT, padx=1)
+        # === RIGA 4: Area anteprima video ottimizzata ===
+        preview_frame = ttk.LabelFrame(parent, text="📺 Anteprima", padding=(3, 2))
+        preview_frame.grid(row=3, column=0, sticky="ew", pady=2)
 
-        self.pause_btn = ttk.Button(
-            playback_frame, text="⏸️", width=3, command=self.pause_webcam_analysis
-        )
-        self.pause_btn.pack(side=tk.LEFT, padx=1)
+        # Container per l'anteprima con dimensioni responsive
+        self.integrated_preview_frame = ttk.Frame(preview_frame, relief="sunken", borderwidth=1)
+        self.integrated_preview_frame.pack(fill="both", expand=True)
+        self.integrated_preview_frame.configure(height=250)  # Altezza ottimizzata
 
-        self.stop_btn = ttk.Button(
-            playback_frame, text="⏹️", width=3, command=self.stop_webcam_analysis
-        )
-        self.stop_btn.pack(side=tk.LEFT, padx=1)
-
-        self.restart_btn = ttk.Button(
-            playback_frame, text="🔄", width=3, command=self.restart_webcam_analysis
-        )
-        self.restart_btn.pack(side=tk.LEFT, padx=1)
-
-        # Pulsante cattura e finestra separata
-        capture_frame = ttk.Frame(control_row1)
-        capture_frame.grid(row=0, column=3, padx=(5, 0), sticky="e")
-
-        ttk.Button(
-            capture_frame,
-            text="📸",
-            width=3,
-            command=self.capture_current_frame,
-        ).pack(side=tk.LEFT, padx=1)
-
-        # NUOVO: Pulsante finestra separata
-        self.detach_btn = ttk.Button(
-            capture_frame,
-            text="🗗",
-            width=3,
-            command=self.detach_preview_window,
-        )
-        self.detach_btn.pack(side=tk.LEFT, padx=1)
-        ToolTip(self.detach_btn, "Scorpora anteprima in finestra separata")
-
-        # DEBUG: Pulsante per testare rilevamento monitor
-        # Seconda riga: seek bar e indicatori tempo (solo per file video)
-        self.seek_frame = ttk.Frame(controls_frame)
-        self.seek_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=2)
-        self.seek_frame.grid_columnconfigure(1, weight=1)
-
-        # Tempo corrente
-        self.current_time_label = ttk.Label(
-            self.seek_frame, textvariable=self.current_time_var, width=6
-        )
-        self.current_time_label.grid(row=0, column=0, padx=(0, 5))
-
-        # Seek bar
-        self.seek_scale = ttk.Scale(
-            self.seek_frame,
-            from_=0,
-            to=100,
-            orient="horizontal",
-            variable=self.seek_var,
-            command=self.on_seek_change,
-        )
-        self.seek_scale.grid(row=0, column=1, sticky="ew", padx=5)
-
-        # Tempo totale
-        self.total_time_label = ttk.Label(
-            self.seek_frame, textvariable=self.total_time_var, width=6
-        )
-        self.total_time_label.grid(row=0, column=2, padx=(5, 0))
-
-        # Terza riga: controlli velocità
-        speed_frame = ttk.Frame(controls_frame)
-        speed_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(2, 0))
-        speed_frame.grid_columnconfigure(1, weight=1)
-
-        ttk.Label(speed_frame, text="Velocità:").grid(
-            row=0, column=0, padx=(0, 5), sticky="w"
-        )
-
-        speed_scale = ttk.Scale(
-            speed_frame,
-            from_=0.25,
-            to=3.0,
-            orient="horizontal",
-            variable=self.speed_var,
-            command=self.on_speed_change,
-        )
-        speed_scale.grid(row=0, column=1, sticky="ew", padx=5)
-
-        self.speed_label = ttk.Label(speed_frame, text="1.0x", width=6)
-        self.speed_label.grid(row=0, column=2, padx=(5, 0))
-
-        # Area anteprima video con dimensioni responsive
-        self.integrated_preview_frame = ttk.Frame(
-            parent, relief="sunken", borderwidth=2, width=400, height=300
-        )
-        self.integrated_preview_frame.grid(row=1, column=0, sticky="ew", pady=(0, 5))
-        self.integrated_preview_frame.grid_propagate(False)  # Mantiene dimensioni base
-
-        # Label per l'anteprima che si adatta al contenuto
+        # Label anteprima con font compatto
         self.preview_label = tk.Label(
             self.integrated_preview_frame,
             bg="black",
-            text="Anteprima non attiva\n\nCarica un video o\navvia la webcam",
+            text="Anteprima non attiva\n\nCarica video/webcam",
             fg="white",
-            font=("Arial", 10),
-            justify=tk.CENTER,
+            font=("Arial", 9),
+            justify=tk.CENTER
         )
         self.preview_label.pack(expand=True, fill=tk.BOTH)
 
-        # Info frame per statistiche con altezza fissa
-        self.preview_info_frame = ttk.Frame(parent, height=60)
-        self.preview_info_frame.grid(row=2, column=0, sticky="ew")
-        self.preview_info_frame.grid_propagate(False)  # Mantiene altezza fissa
+        # === RIGA 5: Info statistiche compatte ===
+        info_frame = ttk.LabelFrame(parent, text="Info", padding=(3, 1))
+        info_frame.grid(row=4, column=0, sticky="ew", pady=1)
 
-        self.preview_info = ttk.Label(
-            self.preview_info_frame,
-            text="In attesa...",
-            font=("Arial", 9),
-            anchor="center",
-            width=50,
-        )
-        self.preview_info.pack(pady=5)
+        # Info su due righe per ottimizzare spazio
+        info_container = ttk.Frame(info_frame)
+        info_container.pack(fill="x")
 
-        # NUOVO: Area Debug Logs con tabella migliori frame
-        debug_frame = ttk.LabelFrame(
-            parent, text="🔍 Debug - Migliori Frame", padding=5
-        )
-        debug_frame.grid(row=3, column=0, sticky="nsew", pady=(5, 0))
+        self.preview_info = ttk.Label(info_container, text="In attesa...", font=("Arial", 8))
+        self.preview_info.pack(pady=1)
+
+        # === RIGA 6: Debug logs compatti ===
+        debug_frame = ttk.LabelFrame(parent, text="🔍 Frame Migliori", padding=(3, 2))
+        debug_frame.grid(row=5, column=0, sticky="nsew", pady=2)
         debug_frame.grid_rowconfigure(0, weight=1)
         debug_frame.grid_columnconfigure(0, weight=1)
 
-        # Frame per contenere treeview + scrollbar
+        # Container debug ottimizzato
         debug_container = ttk.Frame(debug_frame)
         debug_container.pack(fill="both", expand=True)
         debug_container.grid_rowconfigure(0, weight=1)
         debug_container.grid_columnconfigure(0, weight=1)
 
-        # Treeview per i logs con colonne personalizzate
-        columns = (
-            "timestamp",
-            "score",
-            "yaw",
-            "pitch",
-            "roll",
-            "symmetry",
-            "description",
-        )
-        self.debug_tree = ttk.Treeview(
-            debug_container, columns=columns, show="headings", height=8
-        )
+        # Treeview con TUTTE le colonne originali ottimizzate per spazio limitato
+        columns = ("frame", "time", "score", "yaw", "pitch", "roll", "sym", "status")
+        self.debug_tree = ttk.Treeview(debug_container, columns=columns, show="headings", height=6)
+        
+        # Configura font emoji per la treeview
+        try:
+            emoji_fonts = ["Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji", "Arial Unicode MS", "Arial"]
+            emoji_font = None
+            for font_name in emoji_fonts:
+                try:
+                    import tkinter.font as tkFont
+                    test_font = tkFont.Font(family=font_name, size=9)
+                    emoji_font = (font_name, 9)
+                    break
+                except:
+                    continue
+            
+            if emoji_font:
+                # Applica il font emoji alla treeview
+                style = ttk.Style()
+                style.configure("Debug.Treeview", font=emoji_font)
+                self.debug_tree.configure(style="Debug.Treeview")
+                print(f"✅ Font emoji configurato per tabella debug: {emoji_font[0]}")
+        except Exception as e:
+            print(f"⚠️ Impossibile configurare font emoji per tabella: {e}")
 
-        # Configura le colonne
-        self.debug_tree.heading("timestamp", text="Tempo")
-        self.debug_tree.heading("score", text="Score")
-        self.debug_tree.heading("yaw", text="Yaw")
-        self.debug_tree.heading("pitch", text="Pitch")
-        self.debug_tree.heading("roll", text="Roll")
-        self.debug_tree.heading("symmetry", text="Sym")
-        self.debug_tree.heading("description", text="Frame")
+        # Headers ultra-compatti con emoji e abbreviazioni
+        self.debug_tree.heading("frame", text="📋")  # Frame number
+        self.debug_tree.heading("time", text="⏱")    # Time
+        self.debug_tree.heading("score", text="📊")   # Score
+        self.debug_tree.heading("yaw", text="↔")      # Yaw (sinistra-destra)
+        self.debug_tree.heading("pitch", text="↕")    # Pitch (su-giù)
+        self.debug_tree.heading("roll", text="↻")     # Roll (rotazione)
+        self.debug_tree.heading("sym", text="⚖")     # Symmetry
+        self.debug_tree.heading("status", text="🎯")  # Status
 
-        # Imposta larghezze colonne ottimizzate per mostrare tutto senza scroll orizzontale
-        self.debug_tree.column("timestamp", width=45, minwidth=40)
-        self.debug_tree.column("score", width=55, minwidth=50)
-        self.debug_tree.column("yaw", width=40, minwidth=35)
-        self.debug_tree.column("pitch", width=40, minwidth=35)
-        self.debug_tree.column("roll", width=40, minwidth=35)
-        self.debug_tree.column("symmetry", width=50, minwidth=45)
-        self.debug_tree.column("description", width=50, minwidth=45)
+        # Larghezze micro-ottimizzate per sfruttare ogni pixel (totale ~270px per colonna destra)
+        self.debug_tree.column("frame", width=32, minwidth=28, anchor="center")   # #123
+        self.debug_tree.column("time", width=26, minwidth=23, anchor="center")    # 12s
+        self.debug_tree.column("score", width=38, minwidth=35, anchor="center")   # 0.89
+        self.debug_tree.column("yaw", width=26, minwidth=23, anchor="center")     # -5°
+        self.debug_tree.column("pitch", width=26, minwidth=23, anchor="center")   # 12°
+        self.debug_tree.column("roll", width=26, minwidth=23, anchor="center")    # 3°
+        self.debug_tree.column("sym", width=35, minwidth=30, anchor="center")     # 0.91
+        self.debug_tree.column("status", width=31, minwidth=28, anchor="center")  # ⭐🟢🟡🟠🔴
 
-        # Solo scrollbar verticale
-        debug_scrollbar_v = ttk.Scrollbar(
-            debug_container, orient="vertical", command=self.debug_tree.yview
-        )
-        self.debug_tree.configure(yscrollcommand=debug_scrollbar_v.set)
+        # Scrollbar verticale
+        debug_scrollbar = ttk.Scrollbar(debug_container, orient="vertical", command=self.debug_tree.yview)
+        self.debug_tree.configure(yscrollcommand=debug_scrollbar.set)
 
-        # Grid layout semplificato
+        # Layout compatto
         self.debug_tree.grid(row=0, column=0, sticky="nsew")
-        debug_scrollbar_v.grid(row=0, column=1, sticky="ns")
+        debug_scrollbar.grid(row=0, column=1, sticky="ns")
 
-        # Binding per doppio click su righe della tabella
+        # Binding eventi
         self.debug_tree.bind("<Double-1>", self.on_debug_row_double_click)
+        
+        # Nota: Tooltip non necessario per ora, le emoji sono auto-esplicative
 
-        # Configura il grid container
-        debug_container.grid_rowconfigure(0, weight=1)
-        debug_container.grid_columnconfigure(0, weight=1)
-
-        # Frame controlli debug
+        # Controlli debug compatti
         debug_controls = ttk.Frame(debug_frame)
-        debug_controls.pack(fill="x", pady=(5, 0))
+        debug_controls.pack(fill="x", pady=(2, 0))
 
-        ttk.Button(
-            debug_controls, text="Pulisci Log", command=self.clear_debug_logs
-        ).pack(side="left")
-
+        # Pulsanti piccoli in riga
+        ttk.Button(debug_controls, text="Pulisci", command=self.clear_debug_logs, width=6).pack(side="left", padx=1)
+        
         self.debug_auto_scroll = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            debug_controls, text="Auto-scroll", variable=self.debug_auto_scroll
-        ).pack(side="right")
+        ttk.Checkbutton(debug_controls, text="Auto", variable=self.debug_auto_scroll).pack(side="right")
 
-        # Inizializza lista debug logs
+        # Inizializzazione
         self.debug_logs = []
-        self.max_debug_logs = 50  # Limite massimo entries
+        self.max_debug_logs = 50
 
-        # Inizializza stato controlli video
+        # Aggiorna stato controlli
         self.update_video_controls_state()
+
+        # Applica configurazioni responsive e colori
+        self._configure_responsive_preview()
+        
+        # Configura colori debug tree iniziali
+        try:
+            self._configure_debug_tree_colors()
+            print("📋 Debug table OTTIMIZZATA: 8 colonne complete in spazio compatto (frame#, tempo, score, angoli, simmetria, status)")
+        except Exception as e:
+            print(f"⚠️ Errore inizializzazione colori debug: {e}")
+
+    def _configure_responsive_preview(self):
+        """Configura l'anteprima per adattarsi dinamicamente alla larghezza disponibile."""
+        try:
+            # Forza aggiornamento delle dimensioni
+            self.root.update_idletasks()
+            
+            # Calcola larghezza disponibile per l'anteprima
+            if hasattr(self, 'main_horizontal_paned'):
+                total_width = self.root.winfo_width()
+                sidebar_width = 480  # Larghezza fissa sidebar sinistra
+                available_width = max(300, total_width - sidebar_width - 50)  # Margini
+                
+                # Imposta larghezza massima per anteprima
+                preview_width = min(400, available_width)
+                self.integrated_preview_frame.configure(width=preview_width)
+                
+                print(f"📺 Anteprima OTTIMIZZATA configurata: larghezza {preview_width}px (disponibile: {available_width}px)")
+            
+        except Exception as e:
+            print(f"❌ Errore configurazione responsive: {e}")
 
     # =============== CONTROLLI VIDEO PLAYER ===============
 
@@ -6605,86 +6724,171 @@ class CanvasApp:
     # =============== FINE CONTROLLI VIDEO ===============
 
     def add_debug_log(self, score, debug_data, elapsed_time):
-        """Aggiunge una entry ai debug logs."""
-        import datetime
+        """Aggiunge una entry ai debug logs con TUTTE le colonne originali ottimizzate."""
+        # Estrai numero frame dalla description (formato "#123")
+        description = debug_data.get("description", "N/A")
+        frame_number = "N/A"
+        if description.startswith("#"):
+            frame_number = description  # Mantieni formato #123
+        
+        # Timestamp compatto (solo secondi)
+        timestamp = f"{elapsed_time:.0f}s"
 
-        # Timestamp formattato
-        timestamp = f"{elapsed_time:.1f}s"
-
-        # Estrai dati dal debug_data e gestisci stringhe formattate
+        # Estrai dati angoli con formato ultra-compatto
         yaw_str = debug_data.get("yaw", "0°")
         yaw = float(str(yaw_str).replace("°", "")) if yaw_str != "N/A" else 0
 
-        pitch_str = debug_data.get("pitch", "0°")
+        pitch_str = debug_data.get("pitch", "0°") 
         pitch = float(str(pitch_str).replace("°", "")) if pitch_str != "N/A" else 0
 
         roll_str = debug_data.get("roll", "0°")
         roll = float(str(roll_str).replace("°", "")) if roll_str != "N/A" else 0
 
-        # Per symmetry, controlla prima nella sezione debug, poi nei dati principali
+        # Symmetry score
         symmetry_str = debug_data.get("debug", {}).get(
             "symmetry_score", debug_data.get("symmetry", "0")
         )
         symmetry = float(str(symmetry_str)) if symmetry_str != "N/A" else 0
 
-        description = debug_data.get("description", "N/A")
+        # Status ultra-compatto basato su score con fallback per compatibilità
+        if score >= 0.9:
+            status = "⭐"     # Eccellente
+        elif score >= 0.8:
+            status = "🟢"     # Ottimo  
+        elif score >= 0.6:
+            status = "🟡"     # Buono
+        elif score >= 0.4:
+            status = "🟠"     # Medio
+        else:
+            status = "🔴"     # Basso
 
-        # Non troncare il numero del frame
-        # (la descrizione ora contiene solo il numero del frame come #123)
-
-        # Aggiungi alla lista
+        # Entry con TUTTE le colonne originali
         log_entry = {
-            "timestamp": timestamp,
-            "score": f"{score:.3f}",
-            "yaw": f"{yaw:.1f}°",
-            "pitch": f"{pitch:.1f}°",
-            "roll": f"{roll:.1f}°",
-            "symmetry": f"{symmetry:.3f}",
-            "description": description,
+            "frame": frame_number,
+            "time": timestamp,
+            "score": f"{score:.2f}",
+            "yaw": f"{yaw:.0f}°",
+            "pitch": f"{pitch:.0f}°",
+            "roll": f"{roll:.0f}°",
+            "symmetry": f"{symmetry:.2f}",
+            "status": status,
+            "full_data": debug_data  # Mantieni dati completi per doppio click
         }
 
         self.debug_logs.append(log_entry)
 
-        # Rimuovi entries vecchie se troppo lunghe
+        # Limita entries
         if len(self.debug_logs) > self.max_debug_logs:
             self.debug_logs.pop(0)
 
-        # Aggiorna la treeview
+        # Aggiorna vista
         self.update_debug_tree()
 
     def update_debug_tree(self):
-        """Aggiorna la visualizzazione della tabella debug."""
-        # Pulisci treeview esistente
+        """Aggiorna la visualizzazione della tabella debug con TUTTE le colonne originali."""
+        # Pulisci
         for item in self.debug_tree.get_children():
             self.debug_tree.delete(item)
 
-        # Ordina per score dal più alto al più basso
+        # Ordina per score
         sorted_logs = sorted(
             self.debug_logs, key=lambda x: float(x["score"]), reverse=True
         )
 
+        # Inserisci con colori basati su score
         for log_entry in sorted_logs:
+            score_val = float(log_entry["score"])
+            
+            # Tag colore basato su score (più granulari per emoji status)
+            if score_val >= 0.9:
+                tags = ("excellent",)
+            elif score_val >= 0.8:
+                tags = ("very_good",)
+            elif score_val >= 0.6:
+                tags = ("good",) 
+            elif score_val >= 0.4:
+                tags = ("medium",)
+            else:
+                tags = ("poor",)
+
+            # Debug per verificare i dati prima dell'inserimento
+            print(f"🔧 DEBUG TreeView insert: Status='{log_entry['status']}' Score={log_entry['score']}")
+            
             self.debug_tree.insert(
-                "",
-                "end",
+                "", "end",
                 values=(
-                    log_entry["timestamp"],
-                    log_entry["score"],
-                    log_entry["yaw"],
-                    log_entry["pitch"],
-                    log_entry["roll"],
-                    log_entry["symmetry"],
-                    log_entry["description"],
+                    log_entry["frame"],      # 📋 Frame number
+                    log_entry["time"],       # ⏱ Time
+                    log_entry["score"],      # 📊 Score
+                    log_entry["yaw"],        # ↔ Yaw
+                    log_entry["pitch"],      # ↕ Pitch
+                    log_entry["roll"],       # ↻ Roll
+                    log_entry["symmetry"],   # ⚖ Symmetry
+                    log_entry["status"]      # 🎯 Status
                 ),
+                tags=tags
             )
 
-        # Auto-scroll all'ultima entry se abilitato
+        # Configura colori tag con nuova granularità
+        try:
+            self._configure_debug_tree_colors()
+        except Exception as e:
+            print(f"⚠️ Errore configurazione colori debug: {e}")
+
+        # Auto-scroll
         if hasattr(self, "debug_auto_scroll") and self.debug_auto_scroll.get():
             children = self.debug_tree.get_children()
             if children:
                 self.debug_tree.selection_set(children[0])
-                self.debug_tree.focus(children[0])
                 self.debug_tree.see(children[0])
+
+    def _configure_debug_tree_colors(self):
+        """Configura i colori per i tag della tabella debug con granularità migliorata e emoji colorate."""
+        try:
+            # Lista di font che supportano emoji colorate su Windows
+            emoji_fonts = [
+                ("Segoe UI Emoji", 8),      # Font principale Windows per emoji
+                ("Apple Color Emoji", 8),   # macOS fallback
+                ("Noto Color Emoji", 8),    # Linux fallback
+                ("Twemoji", 8),             # Twitter emoji fallback
+                ("Arial", 8)                # Fallback finale
+            ]
+            
+            # Trova il primo font disponibile che supporta emoji
+            emoji_font = None
+            for font_name, size in emoji_fonts:
+                try:
+                    import tkinter.font as tkFont
+                    test_font = tkFont.Font(family=font_name, size=size)
+                    emoji_font = (font_name, size)
+                    print(f"✅ Font emoji trovato: {font_name}")
+                    break
+                except:
+                    continue
+            
+            # Se non troviamo font specifici per emoji, usa Arial con dimensione maggiore
+            if emoji_font is None:
+                emoji_font = ("Arial", 10)
+                print("⚠️ Font emoji specifico non trovato, uso Arial ingrandito")
+
+            # Colori ottimizzati per spazio ristretto - simboli colorati e distintivi
+            self.debug_tree.tag_configure("excellent", background="#e8f5e8", foreground="#ff6b00", font=emoji_font + ("bold",))  # ★ Eccellente (arancione oro)
+            self.debug_tree.tag_configure("very_good", background="#d4edda", foreground="#28a745", font=emoji_font)              # ● Ottimo (verde)  
+            self.debug_tree.tag_configure("good", background="#cce7ff", foreground="#007bff", font=emoji_font)                  # ◐ Buono (blu)
+            self.debug_tree.tag_configure("medium", background="#fff3cd", foreground="#ffc107", font=emoji_font)                # ◯ Medio (giallo)
+            self.debug_tree.tag_configure("poor", background="#f8d7da", foreground="#dc3545", font=emoji_font)                  # ✕ Basso (rosso)
+            
+            # Configurazione specifica per le colonne header (emoji negli header)
+            try:
+                # Applica font emoji anche agli header della treeview
+                style = ttk.Style()
+                style.configure("Treeview.Heading", font=emoji_font)
+                print(f"✅ Font emoji applicato agli header: {emoji_font}")
+            except Exception as header_error:
+                print(f"⚠️ Impossibile applicare font emoji agli header: {header_error}")
+                
+        except Exception as e:
+            print(f"❌ Errore configurazione colori debug tree: {e}")
 
     def clear_debug_logs(self):
         """Pulisce tutti i debug logs."""
@@ -7600,11 +7804,23 @@ class CanvasApp:
                 # Genera un ID unico basato sul timestamp per il buffer
                 buffer_id = f"t_{video_time_seconds:.3f}"
 
+                # Calcola i landmarks per il frame corrente se possibile
+                # Questo è necessario per il ricalcolo degli score
+                landmarks = None
+                if hasattr(self, 'face_detector') and self.face_detector:
+                    try:
+                        # Rileva landmarks per questo frame
+                        detected_landmarks = self.face_detector.detect_face_landmarks(frame)
+                        if detected_landmarks:
+                            landmarks = detected_landmarks
+                    except Exception as e:
+                        print(f"⚠️ Impossibile calcolare landmarks per frame buffer: {e}")
+
                 # Salva frame nel buffer per click
                 self.frame_buffer[buffer_id] = (
                     frame.copy(),
-                    None,
-                )  # Landmarks verranno calcolati se necessario
+                    landmarks,
+                )  # Landmarks calcolati al momento o None se non disponibili
 
                 # Mantieni buffer limitato
                 if len(self.frame_buffer) > self.max_buffer_size:
@@ -7618,20 +7834,38 @@ class CanvasApp:
                 simmetria_score = debug_info.get("simmetria_score", 0) * 100
                 dimensione_score = debug_info.get("dimensione_score", 0) * 100
 
-                # Aggiungi alla tabella
+                # Genera status emoji e tag colore basato su score - usando simboli Unicode compatibili
+                if score >= 0.9:
+                    status = "★"     # Stella piena - Eccellente  
+                    color_tag = "excellent"
+                elif score >= 0.8:
+                    status = "●"     # Cerchio pieno verde - Ottimo
+                    color_tag = "very_good"
+                elif score >= 0.6:
+                    status = "◐"     # Cerchio mezzo pieno - Buono
+                    color_tag = "good"
+                elif score >= 0.4:
+                    status = "◯"     # Cerchio vuoto - Medio
+                    color_tag = "medium"
+                else:
+                    status = "✕"     # X - Basso
+                    color_tag = "poor"
+
+                # Aggiungi alla tabella con tutte le 8 colonne e tag colore
                 new_item = self.debug_tree.insert(
                     "",
                     "end",
                     values=(
-                        f"{video_time_seconds:.1f}s",  # tempo in secondi
-                        f"{score:.3f}",  # score finale
-                        f"{yaw_score:.0f}",  # yaw (rotazione sx/dx)
-                        f"{pitch_score:.0f}",  # pitch (su/giù)
-                        f"{dimensione_score:.0f}",  # roll -> dimensione
-                        f"{simmetria_score:.0f}",  # simmetria
-                        f"#{frame_number}",  # numero del frame
+                        f"#{frame_number}",           # 📋 Frame
+                        f"{video_time_seconds:.1f}s", # ⏱ Time  
+                        f"{score:.3f}",              # 📊 Score
+                        f"{yaw_score:.0f}°",         # ↔ Yaw
+                        f"{pitch_score:.0f}°",       # ↕ Pitch
+                        f"{dimensione_score:.0f}°",  # ↻ Roll  
+                        f"{simmetria_score:.2f}",    # ⚖ Symmetry
+                        status                       # 🎯 Status
                     ),
-                    tags=(buffer_id,),  # Tag per identificare il frame
+                    tags=(buffer_id, color_tag),  # Tag per identificare il frame e colore
                 )
 
                 # Riordina la tabella per score decrescente (migliori in cima)
@@ -7689,7 +7923,7 @@ class CanvasApp:
             for child in self.debug_tree.get_children():
                 item = self.debug_tree.item(child)
                 values = item["values"]
-                score = float(values[1])  # Score è nella seconda colonna
+                score = float(values[2])  # Score è nella terza colonna (indice 2)
                 items.append((score, child, values, item["tags"]))
 
             # Ordina per score decrescente
@@ -7699,12 +7933,363 @@ class CanvasApp:
             for child in self.debug_tree.get_children():
                 self.debug_tree.delete(child)
 
-            # Reinserisci in ordine
-            for score, old_child, values, tags in items:
-                self.debug_tree.insert("", "end", values=values, tags=tags)
+            # Reinserisci in ordine con emoji aggiornate per posizione
+            for position, (score, old_child, values, tags) in enumerate(items):
+                # Aggiorna le emoji e tag colore in base alla posizione nella classifica
+                updated_values = list(values)
+                updated_tags = list(tags) if tags else []
+                
+                if position == 0:
+                    updated_values[7] = "★"  # Primo posto - Stella piena
+                    color_tag = "excellent"
+                elif score >= 0.8:
+                    updated_values[7] = "●"  # Ottimo - Cerchio pieno
+                    color_tag = "very_good"
+                elif score >= 0.6:
+                    updated_values[7] = "◐"  # Buono - Cerchio mezzo pieno  
+                    color_tag = "good"
+                elif score >= 0.4:
+                    updated_values[7] = "◯"  # Medio - Cerchio vuoto
+                    color_tag = "medium"
+                else:
+                    updated_values[7] = "✕"  # Basso - X
+                    color_tag = "poor"
+                
+                # Rimuovi eventuali tag colore esistenti e aggiungi quello nuovo
+                updated_tags = [tag for tag in updated_tags if tag not in ["excellent", "very_good", "good", "medium", "poor"]]
+                updated_tags.append(color_tag)
+                
+                self.debug_tree.insert("", "end", values=tuple(updated_values), tags=tuple(updated_tags))
 
         except Exception as e:
             print(f"❌ Errore ordinamento tabella debug: {e}")
+
+    def _recalculate_all_scores_and_update_table(self):
+        """
+        Ricalcola tutti gli score dei frame salvati nel buffer con la configurazione corrente
+        e aggiorna la tabella debug nell'anteprima video con i nuovi valori.
+        """
+        try:
+            # DEBUG: Verifica prerequisiti
+            print(f"🔍 DEBUG: Prerequisiti ricalcolo:")
+            print(f"   - frame_buffer esiste: {hasattr(self, 'frame_buffer')}")
+            if hasattr(self, 'frame_buffer'):
+                print(f"   - frame_buffer ha elementi: {len(self.frame_buffer) if self.frame_buffer else 0}")
+            print(f"   - debug_tree esiste: {hasattr(self, 'debug_tree')}")
+            if hasattr(self, 'debug_tree'):
+                print(f"   - debug_tree ha figli: {len(self.debug_tree.get_children()) if self.debug_tree else 0}")
+            
+            # Verifica che ci sia un buffer di frame da ricalcolare
+            if not hasattr(self, 'frame_buffer') or not self.frame_buffer:
+                print("❌ RETURN: Buffer frame vuoto o inesistente")
+                return
+
+            # Verifica che la tabella debug esista (viene creata quando si apre l'anteprima video)
+            if not hasattr(self, 'debug_tree') or self.debug_tree is None:
+                print("❌ RETURN: Tabella debug non disponibile")
+                return
+
+            # Verifica che ci siano elementi nella tabella da aggiornare
+            if not self.debug_tree.get_children():
+                print("❌ RETURN: Nessun elemento nella tabella debug")
+                return
+
+            from src.utils import calculate_pure_frontal_score
+            
+            print(f"🔄 Ricalcolo score per {len(self.frame_buffer)} frame nella tabella anteprima...")
+            
+            # DEBUG DETTAGLIATO: Analizza il contenuto del buffer per capire il formato landmarks
+            print(f"🔧 ANALISI DETTAGLIATA DEL BUFFER:")
+            landmarks_valid_count = 0
+            landmarks_none_count = 0
+            landmarks_formats = {}
+            
+            for i, (buffer_id, buffer_content) in enumerate(list(self.frame_buffer.items())[:5]):
+                # Verifica che il contenuto del buffer sia una tupla con 2 elementi
+                if isinstance(buffer_content, tuple) and len(buffer_content) == 2:
+                    frame, landmarks = buffer_content
+                    print(f"   Buffer {buffer_id}:")
+                    print(f"     - frame: {type(frame)}, shape: {getattr(frame, 'shape', 'N/A')}")
+                    print(f"     - landmarks: type={type(landmarks)}, value={landmarks}")
+                    
+                    if landmarks is not None:
+                        landmarks_valid_count += 1
+                        landmark_type = type(landmarks).__name__
+                        if hasattr(landmarks, '__len__'):
+                            landmark_len = len(landmarks)
+                            landmarks_formats[f"{landmark_type}_len_{landmark_len}"] = landmarks_formats.get(f"{landmark_type}_len_{landmark_len}", 0) + 1
+                        else:
+                            landmarks_formats[landmark_type] = landmarks_formats.get(landmark_type, 0) + 1
+                            
+                        # Mostra primi 3 landmark se è una lista/array
+                        if hasattr(landmarks, '__getitem__') and hasattr(landmarks, '__len__') and len(landmarks) > 0:
+                            try:
+                                sample_landmarks = landmarks[:3] if len(landmarks) >= 3 else landmarks
+                                print(f"     - primi landmarks: {sample_landmarks}")
+                            except:
+                                print(f"     - non riesco a campionare landmarks")
+                    else:
+                        landmarks_none_count += 1
+                        print(f"     - landmarks è None/False")
+                else:
+                    print(f"   Buffer {buffer_id}: formato inaspettato - {type(buffer_content)}")
+            
+            print(f"🔧 RIASSUNTO LANDMARKS:")
+            print(f"   - Landmarks validi: {landmarks_valid_count}")
+            print(f"   - Landmarks None/False: {landmarks_none_count}")
+            print(f"   - Formati landmarks: {landmarks_formats}")
+            
+            # Se tutti i landmarks sono None, attiva la strategia fallback
+            if landmarks_none_count > 0 and landmarks_valid_count == 0:
+                print("❌ PROBLEMA: Tutti i landmarks nel buffer sono None!")
+                print("🔄 ATTIVAZIONE STRATEGIA FALLBACK:")
+                print("   → I landmarks verranno rilevati dai frame durante il ricalcolo")
+                print("   → Usando face_detector per rianalizzare ogni frame")
+                print("   → Questo permetterà il ricalcolo score anche senza landmarks nel buffer")
+            elif landmarks_none_count > 0:
+                print(f"⚠️  STRATEGIA MISTA: {landmarks_valid_count} landmarks validi, {landmarks_none_count} da rilevare")
+                print("   → Combinazione di landmarks salvati + rilevamento fallback")
+            
+            # Lista per raccogliere i dati aggiornati
+            updated_items = []
+            
+            # Scorri tutti gli elementi nella tabella debug
+            for child in self.debug_tree.get_children():
+                item = self.debug_tree.item(child)
+                values = list(item["values"])
+                tags = item["tags"]
+                
+                if not tags:
+                    continue
+                    
+                buffer_id = tags[0]  # ID del frame nel buffer
+                
+                # Trova il frame corrispondente nel buffer
+                if buffer_id in self.frame_buffer:
+                    frame, landmarks = self.frame_buffer[buffer_id]
+                    
+                    print(f"🔧 Buffer {buffer_id}: frame={frame is not None}, landmarks={landmarks is not None}")
+                    if landmarks is not None:
+                        print(f"🔧 Landmarks tipo: {type(landmarks)}, lunghezza: {len(landmarks) if hasattr(landmarks, '__len__') else 'N/A'}")
+                    
+                    # STRATEGIA FALLBACK: Rileva landmarks usando la funzione helper
+                    landmarks = self._detect_landmarks_with_fallback(frame, landmarks)
+                    
+                    # Se abbiamo i landmarks (originali o rilevati via fallback), ricalcola lo score
+                    if landmarks is not None:
+                        # Converti landmarks nel formato richiesto se necessario
+                        if hasattr(landmarks[0], 'x') and hasattr(landmarks[0], 'y'):
+                            landmarks_list = [(lm.x * frame.shape[1], lm.y * frame.shape[0]) for lm in landmarks]
+                        else:
+                            landmarks_list = landmarks
+                        
+                        # DEBUG: Verifica configurazione scoring
+                        current_weights = {
+                            'nose': self.scoring_config.nose_weight,
+                            'mouth': self.scoring_config.mouth_weight,
+                            'symmetry': self.scoring_config.symmetry_weight,
+                            'eye': self.scoring_config.eye_weight
+                        }
+                        print(f"🔧 Config per {buffer_id}: {current_weights}")
+                        
+                        # Ricalcola lo score con la configurazione corrente
+                        new_score = calculate_pure_frontal_score(
+                            landmarks_list,
+                            frame.shape,
+                            config=self.scoring_config
+                        )
+                        
+                        # Aggiorna il valore dello score nella tabella
+                        values[2] = f"{new_score:.3f}"  # Score è nella colonna 2
+                        
+                        # Aggiorna anche il simbolo di status in base al nuovo score
+                        if new_score >= 0.9:
+                            status = "★"     # Stella piena - Eccellente  
+                            color_tag = "excellent"
+                        elif new_score >= 0.8:
+                            status = "●"     # Cerchio pieno verde - Ottimo
+                            color_tag = "very_good"
+                        elif new_score >= 0.6:
+                            status = "◐"     # Cerchio mezzo pieno - Buono
+                            color_tag = "good"
+                        elif new_score >= 0.4:
+                            status = "◯"     # Cerchio vuoto - Medio
+                            color_tag = "medium"
+                        else:
+                            status = "✕"     # X - Basso
+                            color_tag = "poor"
+                        
+                        values[7] = status  # Status è nella colonna 7
+                        
+                        # Aggiorna i tag colore
+                        updated_tags = [tag for tag in tags if tag not in ["excellent", "very_good", "good", "medium", "poor"]]
+                        updated_tags.append(color_tag)
+                        
+                        updated_items.append((new_score, values, updated_tags))
+                        
+                        print(f"📊 Frame {buffer_id}: score aggiornato da {item['values'][2]} a {new_score:.3f}")
+                    else:
+                        # Se non abbiamo landmarks, mantieni i valori originali
+                        original_score = float(values[2])
+                        updated_items.append((original_score, values, tags))
+                else:
+                    # Frame non trovato nel buffer, mantieni valori originali
+                    original_score = float(values[2])
+                    updated_items.append((original_score, values, tags))
+            
+            # DEBUG: Mostra i primi 5 score prima del riordinamento
+            print(f"🔍 PRIMA del riordinamento - Primi 5 score:")
+            for i, (score, values, tags) in enumerate(updated_items[:5]):
+                frame_id = tags[0] if tags else "N/A"
+                print(f"   {i+1}. Frame {frame_id}: {score:.3f}")
+            
+            # Rimuovi tutti gli elementi dalla tabella
+            for child in self.debug_tree.get_children():
+                self.debug_tree.delete(child)
+            
+            # Riordina per score decrescente (migliori in cima)
+            updated_items.sort(key=lambda x: x[0], reverse=True)
+            
+            # DEBUG: Mostra i primi 5 score dopo il riordinamento
+            print(f"🔍 DOPO il riordinamento - Primi 5 score:")
+            for i, (score, values, tags) in enumerate(updated_items[:5]):
+                frame_id = tags[0] if tags else "N/A"
+                print(f"   {i+1}. Frame {frame_id}: {score:.3f}")
+            
+            # Reinserisci gli elementi ordinati
+            for position, (score, values, tags) in enumerate(updated_items):
+                # Aggiorna il simbolo in base alla posizione finale
+                final_values = list(values)
+                final_tags = list(tags) if tags else []
+                
+                if position == 0:
+                    final_values[7] = "★"  # Primo posto sempre stella
+                    color_tag = "excellent"
+                elif score >= 0.8:
+                    final_values[7] = "●"
+                    color_tag = "very_good"
+                elif score >= 0.6:
+                    final_values[7] = "◐"
+                    color_tag = "good"
+                elif score >= 0.4:
+                    final_values[7] = "◯"
+                    color_tag = "medium"
+                else:
+                    final_values[7] = "✕"
+                    color_tag = "poor"
+                
+                # Aggiorna i tag colore finali
+                final_tags = [tag for tag in final_tags if tag not in ["excellent", "very_good", "good", "medium", "poor"]]
+                final_tags.append(color_tag)
+                
+                self.debug_tree.insert("", "end", values=tuple(final_values), tags=tuple(final_tags))
+            
+            print(f"✅ Ricalcolo completato: {len(updated_items)} frame aggiornati e riordinati")
+            
+            # AUTO-SELEZIONE: Seleziona automaticamente la prima riga (frame con score migliore)
+            self._auto_select_best_frame()
+            
+        except Exception as e:
+            print(f"❌ Errore nel ricalcolo degli score: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _auto_select_best_frame(self):
+        """
+        Seleziona automaticamente la prima riga della tabella debug (frame con score migliore)
+        e carica il frame corrispondente nel canvas principale.
+        """
+        try:
+            # Verifica che la tabella debug esista e abbia elementi
+            if not hasattr(self, 'debug_tree') or not self.debug_tree or not self.debug_tree.get_children():
+                print("🔍 Auto-selezione: Tabella debug vuota o non disponibile")
+                return
+            
+            # Ottieni la prima riga (frame con score migliore)
+            children = self.debug_tree.get_children()
+            best_frame_item = children[0]
+            
+            # Seleziona la prima riga
+            self.debug_tree.selection_set(best_frame_item)
+            self.debug_tree.see(best_frame_item)
+            
+            # Ottieni i dati della riga selezionata
+            item = self.debug_tree.item(best_frame_item)
+            tags = item["tags"]
+            
+            if not tags:
+                print("🔍 Auto-selezione: Nessun tag trovato per la riga migliore")
+                return
+            
+            buffer_id = tags[0]  # Il primo tag contiene l'ID del buffer
+            
+            # Cerca il frame nel buffer
+            if buffer_id in self.frame_buffer:
+                frame, landmarks = self.frame_buffer[buffer_id]
+                
+                # Carica il frame migliore nel canvas principale
+                self.set_current_image(frame, landmarks, auto_resize=False)
+                
+                # Ricalcola lo score con la configurazione corrente
+                if landmarks and hasattr(self, 'scoring_config'):
+                    self.recalculate_current_score()
+                    current_score = self.current_best_score
+                else:
+                    current_score = float(item["values"][2])  # Score dalla tabella
+                
+                # Aggiorna info nel status bar
+                frame_number = item["values"][0]  # Numero frame
+                timestamp = item["values"][1]     # Timestamp
+                
+                status_message = f"🎯 Auto-caricato frame migliore: {frame_number} (Score: {current_score:.3f}, Tempo: {timestamp})"
+                self.status_bar.config(text=status_message)
+                
+                print(f"🎯 Auto-selezione completata: Frame {frame_number} caricato (Score: {current_score:.3f})")
+                
+            else:
+                print(f"❌ Auto-selezione: Frame con ID {buffer_id} non trovato nel buffer")
+                
+        except Exception as e:
+            print(f"❌ Errore durante auto-selezione frame migliore: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _detect_landmarks_with_fallback(self, frame: np.ndarray, buffer_landmarks=None) -> Optional[list]:
+        """
+        Rileva landmarks con strategia di fallback:
+        1. Usa i landmarks dal buffer se disponibili e validi
+        2. Se non disponibili, rileva dai frame usando face_detector
+        
+        Args:
+            frame: Frame numpy array da cui rilevare landmarks
+            buffer_landmarks: Landmarks eventualmente salvati nel buffer
+            
+        Returns:
+            Lista di landmarks o None se non rilevabili
+        """
+        try:
+            # Prova prima con i landmarks dal buffer
+            if buffer_landmarks is not None:
+                print(f"✅ Usando landmarks dal buffer")
+                return buffer_landmarks
+            
+            # Fallback: rileva landmarks dal frame
+            if frame is not None and hasattr(self, 'face_detector') and self.face_detector:
+                print(f"🔄 FALLBACK: Rilevamento landmarks dal frame")
+                landmarks = self.face_detector.detect_face_landmarks(frame)
+                if landmarks is not None:
+                    print(f"✅ FALLBACK: Landmarks rilevati - {len(landmarks) if hasattr(landmarks, '__len__') else 'N/A'} punti")
+                    return landmarks
+                else:
+                    print(f"❌ FALLBACK: Impossibile rilevare landmarks")
+            else:
+                print(f"❌ FALLBACK: Frame o face_detector non disponibili")
+            
+            return None
+            
+        except Exception as e:
+            print(f"❌ Errore rilevamento landmarks fallback: {e}")
+            return None
 
     def on_debug_row_double_click(self, event):
         """
@@ -7738,30 +8323,31 @@ class CanvasApp:
                     current_score = self.current_best_score
                     print(f"🔄 Score ricalcolato per frame da tabella: {current_score:.3f}")
                 else:
-                    current_score = float(item["values"][1])  # Usa lo score originale se non si può ricalcolare
+                    current_score = float(item["values"][2])  # Usa lo score originale se non si può ricalcolare (indice 2)
 
-                # Aggiorna info con score aggiornato
-                timestamp = item["values"][0]  # Primo valore è il tempo (es. "12.3s")
-                original_score = float(item["values"][1])  # Score originale dalla tabella
+                # Aggiorna info con score aggiornato  
+                frame_number = item["values"][0]  # Primo valore è il frame (#123)
+                timestamp = item["values"][1]     # Secondo valore è il tempo (es. "12.3s") 
+                original_score = float(item["values"][2])  # Terzo valore è lo score originale dalla tabella
                 
                 if landmarks and hasattr(self, 'scoring_config'):
                     # Mostra entrambi gli score: originale e ricalcolato
                     self.best_frame_info.config(
-                        text=f"📸 FRAME DA TABELLA: {timestamp} - Score originale: {original_score:.3f} → Corrente: {current_score:.3f}"
+                        text=f"📸 FRAME DA TABELLA: {frame_number} ({timestamp}) - Score originale: {original_score:.3f} → Corrente: {current_score:.3f}"
                     )
                 else:
                     self.best_frame_info.config(
-                        text=f"📸 FRAME DA TABELLA: {timestamp} - Score {original_score:.3f}"
+                        text=f"📸 FRAME DA TABELLA: {frame_number} ({timestamp}) - Score {original_score:.3f}"
                     )
                 
                 self.status_bar.config(
-                    text=f"Caricato frame {timestamp} - Score aggiornato: {current_score:.3f}"
+                    text=f"Caricato frame {frame_number} al tempo {timestamp} - Score aggiornato: {current_score:.3f}"
                 )
 
-                print(f"📸 Caricato frame al tempo {timestamp} dalla tabella debug - Score: {current_score:.3f}")
+                print(f"📸 Caricato frame {frame_number} al tempo {timestamp} dalla tabella debug - Score: {current_score:.3f}")
             else:
                 self.status_bar.config(
-                    text=f"Frame al tempo {item['values'][0]} non disponibile nel buffer"
+                    text=f"Frame {item['values'][0]} al tempo {item['values'][1]} non disponibile nel buffer"
                 )
 
         except Exception as e:
@@ -10928,8 +11514,25 @@ Aree calcolate:
     def save_frame_to_buffer(self, frame_number: int, frame: np.ndarray, landmarks):
         """Salva un frame nel buffer per il doppio click."""
         try:
+            # DEBUG: Verifica il contenuto prima del salvataggio
+            print(f"🔧 SAVE_BUFFER DEBUG per frame {frame_number}:")
+            print(f"   - frame: {type(frame)}, shape: {getattr(frame, 'shape', 'N/A')}")
+            print(f"   - landmarks ricevuti: type={type(landmarks)}, is_None={landmarks is None}")
+            if landmarks is not None:
+                print(f"   - landmarks: len={len(landmarks) if hasattr(landmarks, '__len__') else 'N/A'}")
+                if hasattr(landmarks, '__getitem__') and hasattr(landmarks, '__len__') and len(landmarks) > 0:
+                    try:
+                        sample = landmarks[:2] if len(landmarks) >= 2 else landmarks
+                        print(f"   - sample landmarks: {sample}")
+                    except:
+                        print(f"   - non riesco a campionare landmarks")
+            
             # Aggiungi al buffer
             self.frame_buffer[frame_number] = (frame, landmarks)
+            
+            # Verifica immediatamente dopo il salvataggio
+            saved_frame, saved_landmarks = self.frame_buffer[frame_number]
+            print(f"   - DOPO salvataggio: frame={saved_frame is not None}, landmarks={saved_landmarks is not None}")
 
             # Mantieni solo i frame più recenti per evitare uso eccessivo della memoria
             if len(self.frame_buffer) > self.max_buffer_size:
@@ -11138,18 +11741,34 @@ Aree calcolate:
             )
 
             # Ripristina le posizioni ESATTE salvate dall'utente
-            if self.main_horizontal_paned.panes() and config.main_paned_position > 0:
+            if self.main_horizontal_paned.panes():
                 # SASHPOS(0): Divisore controlli | canvas
-                self.main_horizontal_paned.sashpos(0, config.main_paned_position)
-                print(f"📍 Main paned (controlli|canvas): {config.main_paned_position}")
+                # Nota: ignoriamo il valore salvato per main_paned_position per
+                # mantenere la colonna sinistra come sidebar a larghezza fissa/adattiva.
+                # Usa sempre la larghezza fissa per garantire contenuto non tagliato
+                desired_left = getattr(self, 'left_sidebar_fixed_width', 480)
+                try:
+                    self.main_horizontal_paned.sashpos(0, desired_left)
+                    print(f"📍 Main paned (controlli|canvas) impostato da ratio: {desired_left}")
+                except Exception:
+                    # Fallback al valore salvato se non riusciamo a impostare il sash
+                    if config.main_paned_position > 0:
+                        try:
+                            self.main_horizontal_paned.sashpos(0, config.main_paned_position)
+                            print(f"📍 Main paned (controlli|canvas) fallback a: {config.main_paned_position}")
+                        except Exception:
+                            pass
 
                 # SASHPOS(1): Divisore canvas | colonna destra
                 panes_count = len(self.main_horizontal_paned.panes())
                 if panes_count >= 3 and config.right_column_position > 0:
-                    self.main_horizontal_paned.sashpos(1, config.right_column_position)
-                    print(
-                        f"📍 Right column (canvas|destra): {config.right_column_position}"
-                    )
+                    try:
+                        self.main_horizontal_paned.sashpos(1, config.right_column_position)
+                        print(
+                            f"📍 Right column (canvas|destra): {config.right_column_position}"
+                        )
+                    except Exception:
+                        pass
 
             if self.main_vertical_paned.panes() and config.vertical_paned_position > 0:
                 self.main_vertical_paned.sashpos(0, config.vertical_paned_position)
@@ -11192,6 +11811,87 @@ Aree calcolate:
                 layout_manager.save_config()
         except Exception as e:
             print(f"❌ Errore aggiornamento vertical paned: {e}")
+
+    def _on_root_resize_sidebar(self, event):
+        """Calcola dinamicamente la larghezza ottimale della sidebar basata sul contenuto effettivo.
+        
+        Sistema intelligente che evita sia il taglio del contenuto che spazi eccessivi.
+        """
+        try:
+            if not hasattr(self, 'main_horizontal_paned'):
+                return
+
+            # Calcola larghezza ottimale basata sul contenuto reale
+            optimal_width = self._calculate_optimal_sidebar_width()
+
+            # Forza la posizione del sash (controlli|canvas) alla larghezza ottimale
+            try:
+                if self.main_horizontal_paned.panes():
+                    self.main_horizontal_paned.sashpos(0, optimal_width)
+                    # Debug message rimosso per evitare spam nel terminale
+                    # print(f"🎯 Sidebar dinamica: {optimal_width}px (basata su contenuto)")
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"❌ Errore gestione resize sidebar: {e}")
+
+    def _calculate_optimal_sidebar_width(self):
+        """Calcola la larghezza ottimale della sidebar basata sul contenuto reale."""
+        try:
+            if not hasattr(self, 'control_panel'):
+                return 480  # Fallback al valore predefinito
+            
+            # Aggiorna il layout per ottenere dimensioni correnti
+            self.control_panel.update_idletasks()
+            
+            # Ottieni la larghezza richiesta dal contenuto
+            content_width = self.control_panel.winfo_reqwidth()
+            
+            # Aggiungi margini di sicurezza
+            padding_margin = 40  # Margine per padding e scrollbar
+            safety_margin = 60   # Margine di sicurezza aggiuntivo
+            
+            calculated_width = content_width + padding_margin + safety_margin
+            
+            # Applica limiti ragionevoli
+            min_width = 350  # Larghezza minima utilizzabile
+            max_width = 650  # Larghezza massima ragionevole
+            
+            # Ottieni larghezza finestra per calcolo percentuale massima
+            if hasattr(self, 'root'):
+                window_width = self.root.winfo_width()
+                max_percentage_width = int(window_width * 0.4)  # Max 40% della finestra
+                max_width = min(max_width, max_percentage_width)
+            
+            optimal_width = max(min_width, min(calculated_width, max_width))
+            
+            print(f"📏 Calcolo larghezza sidebar: contenuto={content_width}px, "
+                  f"calcolata={calculated_width}px, ottimale={optimal_width}px")
+            
+            return optimal_width
+            
+        except Exception as e:
+            print(f"❌ Errore calcolo larghezza ottimale: {e}")
+            return 480  # Fallback sicuro
+
+    def _set_cursor_arrow(self, event):
+        """Forza il cursore a rimanere una freccia normale sul PanedWindow."""
+        try:
+            self.main_horizontal_paned.configure(cursor="arrow")
+        except:
+            pass
+
+    def _force_sidebar_width(self):
+        """Forza la larghezza ottimale della sidebar calcolata dinamicamente."""
+        try:
+            # Usa il nuovo sistema di calcolo dinamico
+            optimal_width = self._calculate_optimal_sidebar_width()
+            
+            if self.main_horizontal_paned.panes():
+                self.main_horizontal_paned.sashpos(0, optimal_width)
+                print(f"🔧 Sidebar width forced to: {optimal_width}px (DINAMICO)")
+        except Exception as e:
+            print(f"❌ Errore forcing sidebar width: {e}")
 
     def _on_main_paned_resize(self, event):
         """Callback per quando viene ridimensionato il pannello principale."""
@@ -11256,6 +11956,14 @@ Aree calcolate:
             if self.main_horizontal_paned.panes():
                 # Traccia entrambi i divisori durante il drag
                 left_position = self.main_horizontal_paned.sashpos(0)
+                # Forza il left_position in base alla larghezza fissa per evitare resize manuale
+                desired_left = getattr(self, 'left_sidebar_fixed_width', 480)
+                try:
+                    # Reimposta il sash al valore desiderato
+                    self.main_horizontal_paned.sashpos(0, desired_left)
+                    left_position = desired_left
+                except Exception:
+                    pass
                 print(f"📏 Main paned (controlli|canvas) trascinato a: {left_position}")
 
                 panes_count = len(self.main_horizontal_paned.panes())
@@ -11363,6 +12071,8 @@ Aree calcolate:
         self.scoring_config.set_nose_weight(weight)
         self.nose_value_label.config(text=f"{weight:.2f}")
         self.recalculate_current_score()
+        # Ricalcola tutti gli score della tabella debug con i nuovi parametri
+        self._recalculate_all_scores_and_update_table()
 
     def on_mouth_weight_change(self, value):
         """Callback per cambio peso bocca."""
@@ -11370,6 +12080,8 @@ Aree calcolate:
         self.scoring_config.set_mouth_weight(weight)
         self.mouth_value_label.config(text=f"{weight:.2f}")
         self.recalculate_current_score()
+        # Ricalcola tutti gli score della tabella debug con i nuovi parametri
+        self._recalculate_all_scores_and_update_table()
 
     def on_symmetry_weight_change(self, value):
         """Callback per cambio peso simmetria."""
@@ -11377,6 +12089,8 @@ Aree calcolate:
         self.scoring_config.set_symmetry_weight(weight)
         self.symmetry_value_label.config(text=f"{weight:.2f}")
         self.recalculate_current_score()
+        # Ricalcola tutti gli score della tabella debug con i nuovi parametri
+        self._recalculate_all_scores_and_update_table()
 
     def on_eye_weight_change(self, value):
         """Callback per cambio peso occhi."""
@@ -11384,6 +12098,8 @@ Aree calcolate:
         self.scoring_config.set_eye_weight(weight)
         self.eye_value_label.config(text=f"{weight:.2f}")
         self.recalculate_current_score()
+        # Ricalcola tutti gli score della tabella debug con i nuovi parametri
+        self._recalculate_all_scores_and_update_table()
 
     def on_scoring_config_change(self):
         """Callback chiamato quando la configurazione scoring cambia."""
