@@ -8,6 +8,7 @@ from ttkbootstrap.constants import *
 import tkinter as tk  # Manteniamo per compatibilità con alcuni widget
 from tkinter import filedialog, messagebox, colorchooser
 import cv2
+import time
 import numpy as np
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 from typing import List, Tuple, Optional, Dict, Any
@@ -398,21 +399,43 @@ class CanvasApp:
         control_main_frame.grid_rowconfigure(0, weight=1)
         self.main_horizontal_paned.add(control_main_frame, weight=0)  # Weight 0 per non espandersi
 
-        # Canvas scrollabile per i controlli con larghezza ridotta
-        control_canvas = tk.Canvas(control_main_frame, highlightthickness=0, width=300)
+        # Canvas scrollabile per i controlli - OCCUPA TUTTO LO SPAZIO
+        control_canvas = tk.Canvas(
+            control_main_frame, 
+            highlightthickness=0,
+            relief='flat',
+            bd=0
+        )
         # Esponi il canvas di controllo come attributo per poterlo aggiornare dal resize handler
         self.control_canvas = control_canvas
         control_scrollbar = ttk.Scrollbar(
             control_main_frame, orient="vertical", command=control_canvas.yview
         )
-        self.scrollable_control_frame = ttk.Frame(control_canvas, padding=6)
-
-        self.scrollable_control_frame.bind(
-            "<Configure>",
-            lambda e: control_canvas.configure(scrollregion=control_canvas.bbox("all")),
+        
+        # Frame scrollabile - ESPANSIONE COMPLETA
+        self.scrollable_control_frame = ttk.Frame(
+            control_canvas, 
+            padding=6
         )
 
-        control_canvas.create_window(
+        # Callback per aggiornare la scroll region e LARGHEZZA CANVAS
+        def _on_frame_configure(event):
+            # Aggiorna scroll region
+            control_canvas.configure(scrollregion=control_canvas.bbox("all"))
+            # FORZA il frame a occupare tutta la larghezza del canvas
+            canvas_width = control_canvas.winfo_width()
+            if canvas_width > 1:  # Solo quando il canvas ha dimensioni valide
+                control_canvas.itemconfig(canvas_window, width=canvas_width)
+
+        def _on_canvas_configure(event):
+            # Quando il canvas viene ridimensionato, aggiorna la larghezza del frame
+            canvas_width = event.width
+            control_canvas.itemconfig(canvas_window, width=canvas_width)
+
+        self.scrollable_control_frame.bind("<Configure>", _on_frame_configure)
+        control_canvas.bind("<Configure>", _on_canvas_configure)
+
+        canvas_window = control_canvas.create_window(
             (0, 0), window=self.scrollable_control_frame, anchor="nw"
         )
         control_canvas.configure(yscrollcommand=control_scrollbar.set)
@@ -500,19 +523,17 @@ class CanvasApp:
         )
         preview_canvas.configure(yscrollcommand=preview_scrollbar.set)
 
-        # Assicura che il frame scrollabile utilizzi tutta la larghezza del canvas
-        def configure_canvas_width(event=None):
-            canvas_width = preview_canvas.winfo_width()
-            if canvas_width > 1:  # Solo se il canvas è stato renderizzato
-                preview_canvas.itemconfig(preview_canvas.find_all()[0], width=canvas_width)
+        # RIMOSSO: Configure automatico che permetteva l'overflow
         
-        preview_canvas.bind("<Configure>", configure_canvas_width)
-
         preview_canvas.grid(row=0, column=0, sticky="nsew")
         preview_scrollbar.grid(row=0, column=1, sticky="ns")
         preview_main_frame.grid_rowconfigure(0, weight=1)
         preview_main_frame.grid_columnconfigure(0, weight=1)
         preview_main_frame.grid_columnconfigure(1, weight=0, minsize=20)  # Spazio minimo garantito per scrollbar
+        
+        # Forza immediatamente la configurazione e aggiorna
+        preview_main_frame.update_idletasks()
+        preview_main_frame.grid_columnconfigure(1, weight=0, minsize=20)
 
         # Funzioni per il binding dello scroll
         def _on_mousewheel(event):
@@ -551,7 +572,7 @@ class CanvasApp:
         # Impostazioni predefinite (ratio rispetto alla finestra, min/max)
         self.left_sidebar_ratio = 0.30
         self.left_sidebar_min_width = 420  # Aumentato per contenere tutto il testo
-        self.left_sidebar_max_width = 600  # Aumentato il massimo
+        self.left_sidebar_max_width = 480  # RIDOTTO: Forza il rispetto dei limiti
         self.left_sidebar_fixed_width = 480  # Larghezza fissa basata sui contenuti
 
         # Forza la larghezza della sidebar al ridimensionamento della finestra principale
@@ -571,13 +592,26 @@ class CanvasApp:
         self.main_horizontal_paned.bind("<Button-1>", _disable_sash_move)
         self.main_horizontal_paned.bind("<B1-Motion>", _disable_sash_move)
         self.main_horizontal_paned.bind("<ButtonRelease-1>", _disable_sash_move)
+        
+        # Aggiorna la larghezza del canvas di controllo ora che left_sidebar_fixed_width è impostato
+        self._update_control_canvas_width()
         self.main_horizontal_paned.bind("<Motion>", lambda e: self._set_cursor_arrow(e))
         
-        # Forza immediatamente la posizione corretta del sash
-        self.root.after(100, lambda: self._force_sidebar_width())
+        # RIMOSSO: Forcing della sidebar width che causava overflow
         
         # Disabilita completamente il cursore di resize
         self.root.after(200, lambda: self._disable_paned_cursor())
+
+    def _update_control_canvas_width(self):
+        """Aggiorna la larghezza del canvas di controllo con la larghezza sidebar corretta."""
+        try:
+            if hasattr(self, 'control_canvas') and hasattr(self, 'left_sidebar_fixed_width'):
+                sidebar_width = self.left_sidebar_fixed_width
+                
+                # Non forzare larghezze specifiche per ora, lascia che il layout si adatti naturalmente
+                print(f"🔧 Canvas di controllo: sidebar {sidebar_width}px (layout naturale)")
+        except Exception as e:
+            print(f"❌ Errore aggiornamento canvas di controllo: {e}")
 
     def _disable_paned_cursor(self):
         """Disabilita completamente il cursore di resize sul PanedWindow."""
@@ -685,6 +719,10 @@ class CanvasApp:
             command=self.toggle_measurements,
         )
 
+    # RIMOSSO: _apply_width_constraint - causava flickering e comportamenti strani all'avvio
+    
+    # RIMOSSO: _adapt_child_widget_width - non più necessario senza constraint automatici
+    
     def _create_section(self, parent, title, bootstyle_name="secondary", expanded=False):
         """Crea una sezione collassabile per l'interfaccia utente.
         
@@ -697,63 +735,79 @@ class CanvasApp:
         Returns:
             content_frame: Frame contenuto dove aggiungere i controlli
         """
-        # Header con pulsante toggle
+        # Header con pulsante toggle - UNIFORME ma senza vincoli eccessivi
         header = ttk.Frame(parent, bootstyle=bootstyle_name)
         header.pack(fill=tk.X, pady=(0, 2), padx=2)
+        # Header uniforme ma senza pack_propagate(False) che nasconde il contenuto
 
         # Toggle variable
         toggle_var = tk.BooleanVar(value=expanded)
 
-        # Icon label per indicare stato
+        # Icon label per indicare stato - posizionata a destra
         icon_label = ttk.Label(
             header, 
             text="▼" if expanded else "►", 
             width=2, 
             bootstyle="secondary"
         )
-        icon_label.pack(side=tk.LEFT, padx=(2, 4))
+        icon_label.pack(side=tk.RIGHT, padx=(4, 2))
 
-        # Funzione di toggle
+        # Funzione di toggle - SENZA CONSTRAINT AUTOMATICO
         def _toggle():
             new_state = not toggle_var.get()
             toggle_var.set(new_state)
             if new_state:
-                content_frame.pack(fill=tk.X, padx=6, pady=(0, 6), after=header)
+                content_frame.pack(fill=tk.X, padx=4, pady=(0, 4), after=header)
                 icon_label.config(text="▼")
+                # RIMOSSO: Constraint automatico che causava flickering
             else:
                 content_frame.pack_forget()
                 icon_label.config(text="►")
 
-        # Pulsante titolo cliccabile
+        # Pulsante titolo cliccabile - ESPANDE per occupare tutto lo spazio disponibile
         btn = ttk.Button(
             header,
             text=title,
             command=_toggle,
-            bootstyle=bootstyle_name,
+            bootstyle=bootstyle_name
         )
-        btn.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        # expand=True per uniformità estetica, icona posizionata a destra
+        # Limito il testo del pulsante per evitare overflow
+        if len(title) > 30:
+            btn.config(text=title[:27] + "...")
+        
+        # Bind per controllare che il testo rimanga nei limiti
+        def _check_text_width(event=None):
+            # RIMOSSO: Controllo dinamico delle dimensioni che causava overflow
+            pass
+        
+        # RIMOSSO: Applicazione del controllo del testo
 
         # Cursore indicatore di clic
         btn.bind("<Enter>", lambda e: btn.configure(cursor="hand2"))
         btn.bind("<Leave>", lambda e: btn.configure(cursor=""))
 
-        # Frame contenuto
+        # Frame contenuto - LARGHEZZA CONTROLLATA ma contenuti visibili
         content_frame = ttk.Frame(parent)
         
-        # Inizialmente espanso o collassato
+        # Inizialmente espanso o collassato - SENZA CONSTRAINT AUTOMATICO
         if expanded:
-            content_frame.pack(fill=tk.X, padx=6, pady=(0, 6), after=header)
+            content_frame.pack(fill=tk.X, padx=4, pady=(0, 4), after=header)
+            # RIMOSSO: Constraint automatico che causava flickering all'avvio
 
         return content_frame
 
     def setup_controls(self, parent):
         """Configura il pannello dei controlli con layout professionale e compatto."""
+        
         # === SEZIONE SORGENTE - Layout compatto professionale ===
         source_content = self._create_section(parent, "🎯 SORGENTE", "primary", expanded=False)
 
-        # Griglia 2x2 per pulsanti più spaziosi
-        source_content.columnconfigure(0, weight=1)
-        source_content.columnconfigure(1, weight=1)
+        # Griglia 2x2 con limiti di larghezza STRETTI
+        # RIMOSSO: weight=1 che causava espansione orizzontale oltre i limiti
+        source_content.columnconfigure(0, minsize=0)
+        source_content.columnconfigure(1, minsize=0)
 
         # Pulsanti sorgente con icone e stile professionale
         ttk.Button(
@@ -791,21 +845,23 @@ class CanvasApp:
         self.best_frame_info = ttk.Label(
             status_info_frame, 
             text="Nessun frame analizzato",
-            font=("Segoe UI", 8),
+            font=("Segoe UI", 7),  # Font più piccolo per evitare overflow
             bootstyle="info",
             relief="solid",
-            borderwidth=1
+            borderwidth=1,
+            wraplength=430  # Limita lunghezza del testo per evitare overflow
         )
-        self.best_frame_info.pack(fill=tk.X, pady=2)
+        self.best_frame_info.pack(pady=2)
 
         # === SEZIONE STATUS - Dashboard professionale ===
         status_container = self._create_section(parent, "📊 STATUS SISTEMA", "secondary", expanded=False)
 
-        # Dashboard badges organizzati in griglia
+        # Dashboard badges organizzati in griglia - VINCOLO: NO espansione orizzontale
         badges_container = ttk.Frame(status_container)
-        badges_container.pack(fill=tk.X, padx=6, pady=6)
-        badges_container.columnconfigure(0, weight=1)
-        badges_container.columnconfigure(1, weight=1)
+        badges_container.pack(padx=6, pady=6)
+        # RIMOSSO: weight=1 che causava espansione orizzontale oltre i limiti
+        badges_container.columnconfigure(0)
+        badges_container.columnconfigure(1)
 
         # Badge webcam
         self.webcam_badge = ttk.Label(
@@ -854,9 +910,9 @@ class CanvasApp:
         # === SEZIONE MISURAZIONI PREDEFINITE - SEMPRE VISIBILI ===
         predef_container = self._create_section(parent, "📏 MISURAZIONI PREDEFINITE", "success", expanded=False)
         
-        # Configura griglia 4 colonne per compattezza
+        # RIMOSSO: weight=1 che causava espansione orizzontale oltre i limiti
         for i in range(4):
-            predef_container.columnconfigure(i, weight=1)
+            predef_container.columnconfigure(i)
         
         # Pulsanti misurazioni predefinite organizzati per categoria - SEMPRE VISIBILI
         predefined_buttons = [
@@ -933,9 +989,9 @@ class CanvasApp:
         self.overlay_var = tk.BooleanVar(value=True)  # Sempre attivo (grafiche sempre visibili)
         self.green_dots_var = tk.BooleanVar(value=False)
 
-        # Griglia 2x2 per pulsanti rilevamenti principali
-        det_container.columnconfigure(0, weight=1)
-        det_container.columnconfigure(1, weight=1)
+        # RIMOSSO: weight=1 che causava espansione orizzontale oltre i limiti
+        det_container.columnconfigure(0)
+        det_container.columnconfigure(1)
 
         self.asse_button = ttk.Button(
             det_container, 
@@ -976,9 +1032,12 @@ class CanvasApp:
         # === TABELLA LANDMARKS - Design professionale ===
         landmarks_container = self._create_section(parent, "🎯 TABELLA LANDMARKS", "info", expanded=False)
         
-        # Frame per la treeview con scrollbar
+        # Frame per la treeview con scrollbar - CONFIGURAZIONE GRID OTTIMIZZATA
         tree_frame = ttk.Frame(landmarks_container)
-        tree_frame.pack(fill=tk.X)
+        tree_frame.pack(padx=5, pady=2, fill="both", expand=True)
+        tree_frame.grid_columnconfigure(0, weight=1)  # Treeview espandibile  
+        tree_frame.grid_columnconfigure(1, weight=0, minsize=20)  # Spazio fisso per scrollbar
+        tree_frame.grid_rowconfigure(0, weight=1)
         
         # Treeview più compatto e professionale
         self.landmarks_tree = ttk.Treeview(
@@ -996,12 +1055,14 @@ class CanvasApp:
         self.landmarks_tree.heading("X", text="X")
         self.landmarks_tree.heading("Y", text="Y")
         
-        # Configurazione colonne ottimizzata
-        self.landmarks_tree.column("Overlay", width=35, minwidth=30)
-        self.landmarks_tree.column("ID", width=40, minwidth=35)
-        self.landmarks_tree.column("Nome", width=140, minwidth=120)
-        self.landmarks_tree.column("X", width=60, minwidth=50)
-        self.landmarks_tree.column("Y", width=60, minwidth=50)
+        # Configurazione colonne OTTIMIZZATE per larghezza fissa 440px
+        # Spazio disponibile: 420px (440px frame - 20px scrollbar)
+        self.landmarks_tree.column("Overlay", width=35, minwidth=30)      # Icona overlay
+        self.landmarks_tree.column("ID", width=45, minwidth=40)           # ID numerico
+        self.landmarks_tree.column("Nome", width=180, minwidth=120)       # Nome landmark
+        self.landmarks_tree.column("X", width=80, minwidth=60)            # Coordinata X
+        self.landmarks_tree.column("Y", width=80, minwidth=60)            # Coordinata Y
+        # Totale: 420px - perfettamente allineato alla larghezza fissa
         
         # Scrollbar professionale
         landmarks_scroll = ttk.Scrollbar(
@@ -1010,9 +1071,9 @@ class CanvasApp:
         )
         self.landmarks_tree.configure(yscrollcommand=landmarks_scroll.set)
         
-        # Layout tabella
-        self.landmarks_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        landmarks_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        # Layout tabella OTTIMIZZATO con grid per evitare sovrapposizioni
+        self.landmarks_tree.grid(row=0, column=0, sticky="nsew")
+        landmarks_scroll.grid(row=0, column=1, sticky="ns")
         
         # Eventi per interazione
         self.landmarks_tree.bind('<Double-1>', self.on_landmark_double_click)
@@ -1024,11 +1085,11 @@ class CanvasApp:
         
         # Controlli overlay con design migliorato
         overlay_controls = ttk.Frame(landmarks_container)
-        overlay_controls.pack(fill=tk.X, pady=(4, 0))
+        overlay_controls.pack(pady=(4, 0))
         
         self.clear_overlays_btn = ttk.Button(
             overlay_controls,
-            text="🧹 Pulisci Overlay",
+            text="🧹 Pulisci",
             command=self.clear_all_landmark_overlays,
             bootstyle="warning-outline",
             width=15
@@ -1037,7 +1098,8 @@ class CanvasApp:
         
         info_label = ttk.Label(
             overlay_controls,
-            text="💡 Doppio clic su 🎨 per attivare overlay",
+            text="💡 Doppio clic 🎨 = overlay",
+            wraplength=400,
             font=("Segoe UI", 7, "italic"),
             bootstyle="secondary"
         )
@@ -1178,24 +1240,24 @@ class CanvasApp:
         self.measurement_mode_active = tk.BooleanVar(value=False)
         self.measurement_checkbox = ttk.Checkbutton(
             meas_container,
-            text="🎯 Attiva Modalità Misurazione",
+            text="🎯 Modalità Misura",
             variable=self.measurement_mode_active,
             command=self.toggle_measurement_mode,
             bootstyle="success-round-toggle"
         )
         self.measurement_checkbox.pack(anchor=tk.W, pady=(0, 6))
 
-        # Separatore visivo
-        ttk.Separator(meas_container, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(0, 6))
+        # Separatore visivo - VINCOLO: NO espansione orizzontale
+        ttk.Separator(meas_container, orient=tk.HORIZONTAL).pack(pady=(0, 6))
 
-        # Frame per modalità misurazione con layout migliorato
+        # Frame per modalità misurazione con layout migliorato - LARGHEZZA CONTROLLATA
         mode_frame = ttk.LabelFrame(meas_container, text="Tipo di Misurazione", padding=4)
-        mode_frame.pack(fill=tk.X, pady=(0, 4))
+        mode_frame.pack(pady=(0, 4), anchor=tk.W)
         
-        # Griglia per i radiobutton tipo misurazione
-        mode_frame.columnconfigure(0, weight=1)
-        mode_frame.columnconfigure(1, weight=1)
-        mode_frame.columnconfigure(2, weight=1)
+        # RIMOSSO: weight=1 che causava espansione orizzontale oltre i limiti
+        mode_frame.columnconfigure(0)
+        mode_frame.columnconfigure(1) 
+        mode_frame.columnconfigure(2)
 
         self.measure_var = tk.StringVar(value="distance")
         
@@ -1226,12 +1288,13 @@ class CanvasApp:
             bootstyle="info-outline-toolbutton"
         ).grid(row=0, column=2, sticky="ew", padx=2, pady=2)
 
-        # Frame per modalità selezione
+        # Frame per modalità selezione - LARGHEZZA CONTROLLATA
         selection_frame = ttk.LabelFrame(meas_container, text="Modalità Selezione", padding=4)
-        selection_frame.pack(fill=tk.X, pady=(0, 4))
+        selection_frame.pack(pady=(0, 4), anchor=tk.W)
         
-        selection_frame.columnconfigure(0, weight=1)
-        selection_frame.columnconfigure(1, weight=1)
+        # RIMOSSO: weight=1 che causava espansione orizzontale oltre i limiti
+        selection_frame.columnconfigure(0)
+        selection_frame.columnconfigure(1)
 
         self.selection_mode_var = tk.StringVar(value="landmark")
         
@@ -1253,11 +1316,10 @@ class CanvasApp:
             bootstyle="danger-outline-toolbutton"
         ).grid(row=0, column=1, sticky="ew", padx=2, pady=2)
 
-        # Pulsanti azione con layout professionale
+        # Pulsanti azione con layout professionale - LARGHEZZA CONTROLLATA
         action_frame = ttk.Frame(meas_container)
-        action_frame.pack(fill=tk.X, pady=(4, 0))
-        action_frame.columnconfigure(0, weight=1)
-        action_frame.columnconfigure(1, weight=1)
+        action_frame.pack(pady=(4, 0), anchor=tk.W)
+        # RIMOSSO: weight=1 per evitare espansione oltre i limiti
 
         ttk.Button(
             action_frame, 
@@ -1283,17 +1345,19 @@ class CanvasApp:
 
         # === SEZIONE CONTROLLI SCORING ===
         self.setup_scoring_controls(parent)
+        
+        # RIMOSSO: Adattamento finale contenuti sidebar che causava overflow
 
     def setup_scoring_controls(self, parent):
         """Configura il pannello dei controlli per i pesi dello scoring con layout professionale."""
         # === SCORING - Sezione collassabile ===
         scoring_section = self._create_section(
-            parent, "⚖️ SISTEMA SCORING", "success", expanded=True
+            parent, "⚖️ SISTEMA SCORING", "success", expanded=False
         )
         
-        # Badge info score corrente
+        # Badge info score corrente - LARGHEZZA CONTROLLATA
         info_frame = ttk.Frame(scoring_section)
-        info_frame.pack(fill=tk.X, pady=(0, 8))
+        info_frame.pack(pady=(0, 8), anchor=tk.W)
         
         self.scoring_info_label = ttk.Label(
             info_frame,
@@ -1301,17 +1365,18 @@ class CanvasApp:
             font=("Segoe UI", 10, "bold"),
             bootstyle="success",
             relief="solid",
-            borderwidth=1
+            borderwidth=1,
+            wraplength=400
         )
-        self.scoring_info_label.pack(fill=tk.X)
+        self.scoring_info_label.pack()
 
-        # Frame per sliders organizzati
+        # Frame per sliders organizzati - LARGHEZZA CONTROLLATA
         sliders_container = ttk.LabelFrame(scoring_section, text="Parametri Peso", padding=4)
-        sliders_container.pack(fill=tk.X, pady=(0, 6))
+        sliders_container.pack(pady=(0, 6), anchor=tk.W)
 
-        # Nose weight con stile migliorato
+        # Nose weight con stile migliorato - LARGHEZZA LIMITATA
         nose_frame = ttk.Frame(sliders_container)
-        nose_frame.pack(fill=tk.X, pady=2)
+        nose_frame.pack(pady=2, anchor=tk.W)
         ttk.Label(
             nose_frame, text="👃 Naso:", width=10, 
             font=("Segoe UI", 9, "bold")
@@ -1324,7 +1389,9 @@ class CanvasApp:
             command=self.on_nose_weight_change,
             bootstyle="info"
         )
-        self.nose_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
+        self.nose_scale.pack(side=tk.LEFT, padx=6)
+        # Imposto larghezza fissa per lo slider per evitare overflow
+        self.nose_scale.configure(length=200)
         self.nose_value_label = ttk.Label(
             nose_frame, text="0.40", width=6, 
             font=("Segoe UI", 9, "bold"),
@@ -1333,9 +1400,9 @@ class CanvasApp:
         self.nose_value_label.pack(side=tk.RIGHT)
         self.nose_scale.set(self.scoring_config.nose_weight)
 
-        # Mouth weight
+        # Mouth weight - LARGHEZZA CONTROLLATA
         mouth_frame = ttk.Frame(sliders_container)
-        mouth_frame.pack(fill=tk.X, pady=2)
+        mouth_frame.pack(pady=2, anchor=tk.W)
         ttk.Label(
             mouth_frame, text="💋 Bocca:", width=10, 
             font=("Segoe UI", 9, "bold")
@@ -1346,9 +1413,10 @@ class CanvasApp:
             to=1.0,
             orient=tk.HORIZONTAL,
             command=self.on_mouth_weight_change,
-            bootstyle="warning"
+            bootstyle="warning",
+            length=200  # Larghezza fissa
         )
-        self.mouth_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
+        self.mouth_scale.pack(side=tk.LEFT, padx=6)
         self.mouth_value_label = ttk.Label(
             mouth_frame, text="0.30", width=6, 
             font=("Segoe UI", 9, "bold"),
@@ -1357,9 +1425,9 @@ class CanvasApp:
         self.mouth_value_label.pack(side=tk.RIGHT)
         self.mouth_scale.set(self.scoring_config.mouth_weight)
 
-        # Symmetry weight
+        # Symmetry weight - LARGHEZZA CONTROLLATA
         symmetry_frame = ttk.Frame(sliders_container)
-        symmetry_frame.pack(fill=tk.X, pady=2)
+        symmetry_frame.pack(pady=2, anchor=tk.W)
         ttk.Label(
             symmetry_frame, text="⚖️ Simm.:", width=10, 
             font=("Segoe UI", 9, "bold")
@@ -1370,9 +1438,10 @@ class CanvasApp:
             to=1.0,
             orient=tk.HORIZONTAL,
             command=self.on_symmetry_weight_change,
-            bootstyle="danger"
+            bootstyle="danger",
+            length=200  # Larghezza fissa
         )
-        self.symmetry_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
+        self.symmetry_scale.pack(side=tk.LEFT, padx=6)
         self.symmetry_value_label = ttk.Label(
             symmetry_frame, text="0.20", width=6, 
             font=("Segoe UI", 9, "bold"),
@@ -1381,9 +1450,9 @@ class CanvasApp:
         self.symmetry_value_label.pack(side=tk.RIGHT)
         self.symmetry_scale.set(self.scoring_config.symmetry_weight)
 
-        # Eye weight
+        # Eye weight - LARGHEZZA CONTROLLATA
         eye_frame = ttk.Frame(sliders_container)
-        eye_frame.pack(fill=tk.X, pady=2)
+        eye_frame.pack(pady=2, anchor=tk.W)
         ttk.Label(
             eye_frame, text="👁️ Occhi:", width=10, 
             font=("Segoe UI", 9, "bold")
@@ -1394,9 +1463,10 @@ class CanvasApp:
             to=1.0,
             orient=tk.HORIZONTAL,
             command=self.on_eye_weight_change,
-            bootstyle="success"
+            bootstyle="success",
+            length=200  # Larghezza fissa
         )
-        self.eye_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=6)
+        self.eye_scale.pack(side=tk.LEFT, padx=6)
         self.eye_value_label = ttk.Label(
             eye_frame, text="0.10", width=6, 
             font=("Segoe UI", 9, "bold"),
@@ -1405,13 +1475,14 @@ class CanvasApp:
         self.eye_value_label.pack(side=tk.RIGHT)
         self.eye_scale.set(self.scoring_config.eye_weight)
 
-        # Pulsanti preset con design migliorato
+        # Pulsanti preset con design migliorato - LARGHEZZA CONTROLLATA
         preset_frame = ttk.LabelFrame(scoring_section, text="Preset Veloci", padding=4)
-        preset_frame.pack(fill=tk.X, pady=(0, 4))
+        preset_frame.pack(pady=(0, 4), anchor=tk.W)
 
-        preset_frame.columnconfigure(0, weight=1)
-        preset_frame.columnconfigure(1, weight=1)
-        preset_frame.columnconfigure(2, weight=1)
+        # RIMOSSO: weight=1 che causava espansione orizzontale oltre i limiti
+        preset_frame.columnconfigure(0)
+        preset_frame.columnconfigure(1)
+        preset_frame.columnconfigure(2)
 
         ttk.Button(
             preset_frame, text="🔄 Reset", 
@@ -1444,57 +1515,59 @@ class CanvasApp:
             parent, "📋 LIVELLI", "info", expanded=False
         )
         
-        # Toolbar per i layers con layout compatto
+        # Toolbar per i layers con layout compatto e responsive
         toolbar_frame = ttk.Frame(layers_section)
         toolbar_frame.pack(fill=tk.X, pady=(0, 6))
-        toolbar_frame.columnconfigure(0, weight=1)
-        toolbar_frame.columnconfigure(1, weight=1)
-        toolbar_frame.columnconfigure(2, weight=1)
-        toolbar_frame.columnconfigure(3, weight=1)
+        
+        # Configurazione griglia responsive - larghezza massima 450px
+        toolbar_frame.columnconfigure(0, weight=1, minsize=100)
+        toolbar_frame.columnconfigure(1, weight=1, minsize=100)
+        toolbar_frame.columnconfigure(2, weight=1, minsize=100)
+        toolbar_frame.columnconfigure(3, weight=1, minsize=100)
 
-        # Bottoni layers con stile uniforme alle altre sezioni
+        # Bottoni layers bilanciati - visibili ma controllati
         ttk.Button(
             toolbar_frame,
             text="➕ Nuovo",
             command=self.add_layer,
             bootstyle="success-outline",
-            width=10
-        ).grid(row=0, column=0, sticky="ew", padx=(0, 2))
+            width=8
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 1))
 
         ttk.Button(
             toolbar_frame,
             text="➖ Rimuovi",
             command=self.remove_layer,
             bootstyle="danger-outline", 
-            width=10
-        ).grid(row=0, column=1, sticky="ew", padx=(2, 2))
+            width=8
+        ).grid(row=0, column=1, sticky="ew", padx=1)
 
         ttk.Button(
             toolbar_frame,
             text="👁️ Toggle",
             command=self.toggle_layer_visibility,
             bootstyle="warning-outline",
-            width=10
-        ).grid(row=0, column=2, sticky="ew", padx=(2, 2))
+            width=8
+        ).grid(row=0, column=2, sticky="ew", padx=1)
 
         ttk.Button(
             toolbar_frame,
             text="🔒 Blocca",
             command=self.toggle_layer_lock,
             bootstyle="secondary-outline",
-            width=10
-        ).grid(row=0, column=3, sticky="ew", padx=(2, 0))
+            width=8
+        ).grid(row=0, column=3, sticky="ew", padx=(1, 0))
 
         # Container per la treeview layers con altezza ridotta per essere collassabile
         tree_container = ttk.Frame(layers_section)
         tree_container.pack(fill=tk.X, pady=(0, 4))
 
-        # Treeview per i layers con dimensioni adattate al layout collassabile
+        # Treeview per i layers con dimensioni responsive
         self.layers_tree = ttk.Treeview(
             tree_container,
             columns=("Status", "Visible", "Locked"),
             show="tree headings",
-            height=6  # Altezza ridotta per sezione collassabile
+            height=5  # Altezza ridotta per sezione collassabile
         )
 
         self.layers_tree.heading("#0", text="Layer")
@@ -1502,11 +1575,13 @@ class CanvasApp:
         self.layers_tree.heading("Visible", text="👁")
         self.layers_tree.heading("Locked", text="🔒")
 
-        # Colonne adattate alla larghezza della sidebar sinistra
-        self.layers_tree.column("#0", width=120)
-        self.layers_tree.column("Status", width=30)
-        self.layers_tree.column("Visible", width=30)
-        self.layers_tree.column("Locked", width=30)
+        # Colonne BILANCIATE per larghezza massima 460px
+        # Spazio disponibile: 440px (460px frame - 20px margini)
+        self.layers_tree.column("#0", width=280, minwidth=200, stretch=True)  # Nome layer con stretch
+        self.layers_tree.column("Status", width=50, minwidth=30, stretch=False)    # Icona status
+        self.layers_tree.column("Visible", width=50, minwidth=30, stretch=False)   # Icona visibilità 
+        self.layers_tree.column("Locked", width=40, minwidth=25, stretch=False)    # Icona lock
+        # Totale: 420px base + stretch per #0 = max 440px
 
         # Scrollbar per layer
         layer_scrollbar = ttk.Scrollbar(
@@ -1517,6 +1592,9 @@ class CanvasApp:
         self.layers_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         layer_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # RIMOSSO: Vincolo di larghezza fissa che causava overflow
+        # Il container ora si adatta alla larghezza della sezione
+        
         # Bind eventi per gestione layer (mantieni la funzionalità esistente)
         self.layers_tree.bind("<<TreeviewSelect>>", self.on_layer_select)
         self.layers_tree.bind("<Button-1>", self.on_layer_click) 
@@ -1528,7 +1606,7 @@ class CanvasApp:
 
         # Info layer attivo compatto
         info_frame = ttk.Frame(layers_section)
-        info_frame.pack(fill=tk.X, pady=(4, 0))
+        info_frame.pack(pady=(4, 0))
         
         ttk.Label(
             info_frame,
@@ -1577,23 +1655,25 @@ class CanvasApp:
         """Configura i controlli per la correzione sopracciglia con layout professionale."""
         # === CORREZIONE SOPRACCIGLIO - Sezione collassabile ===
         eyebrow_section = self._create_section(
-            parent, "✂️ CORREZIONE SOPRACCIGLIA", "warning", expanded=True
+            parent, "✂️ CORREZIONE SOPRACCIGLIA", "warning", expanded=False
         )
         
         # Info sulla funzionalità
         info_label = ttk.Label(
             eyebrow_section,
-            text="💡 Ritaglio sopracciglia con overlay punti verdi",
+            text="💡 Ritaglio sopracciglia + overlay",
             font=("Segoe UI", 8, "italic"),
-            bootstyle="secondary"
+            bootstyle="secondary",
+            wraplength=400
         )
         info_label.pack(pady=(0, 6))
         
-        # Griglia per pulsanti correzione
+        # Griglia per pulsanti correzione - VINCOLO: NO espansione orizzontale
         buttons_frame = ttk.Frame(eyebrow_section)
-        buttons_frame.pack(fill=tk.X)
-        buttons_frame.columnconfigure(0, weight=1)
-        buttons_frame.columnconfigure(1, weight=1)
+        buttons_frame.pack()
+        # RIMOSSO: weight=1 che causava espansione orizzontale oltre i limiti
+        buttons_frame.columnconfigure(0)
+        buttons_frame.columnconfigure(1)
 
         # Pulsanti correzione con stile professionale
         self.correction_left_button = ttk.Button(
@@ -1637,45 +1717,47 @@ class CanvasApp:
         
         # Checkbox per modalità debug
         debug_mode_frame = ttk.Frame(debug_section)
-        debug_mode_frame.pack(fill=tk.X, pady=2)
+        debug_mode_frame.pack(pady=2)
         
         ttk.Checkbutton(
             debug_mode_frame,
-            text="📺 Usa Tab integrate per debug (invece di finestre popup)",
+            text="📺 Debug in Tab (no popup)",
             variable=self.debug_use_tabs,
             bootstyle="info-round-toggle"
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ).pack(side=tk.LEFT, fill=tk.X)
         
-        # Frame per pulsanti debug utilities
+        # Frame per pulsanti debug utilities con layout responsive
         debug_utils_frame = ttk.Frame(debug_section)
         debug_utils_frame.pack(fill=tk.X, pady=(5, 0))
-        debug_utils_frame.grid_columnconfigure(0, weight=1)
-        debug_utils_frame.grid_columnconfigure(1, weight=1)
-        debug_utils_frame.grid_columnconfigure(2, weight=1)
+        
+        # Configurazione griglia responsive per larghezza massima 450px
+        debug_utils_frame.grid_columnconfigure(0, weight=1, minsize=140)
+        debug_utils_frame.grid_columnconfigure(1, weight=1, minsize=140)
+        debug_utils_frame.grid_columnconfigure(2, weight=1, minsize=140)
         
         ttk.Button(
             debug_utils_frame,
-            text="🧹 Pulisci Tab Debug",
+            text="🧹 Pulisci",
             command=self.clear_all_debug_tabs,
             bootstyle="secondary-outline",
-            width=15
-        ).grid(row=0, column=0, sticky="ew", padx=(0, 2), pady=2)
+            width=12
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 1), pady=2)
         
         ttk.Button(
             debug_utils_frame,
-            text="🎯 Tab Landmarks",
+            text="🎯 Landmarks",
             command=lambda: self.switch_to_debug_tab("landmarks"),
             bootstyle="info-outline", 
-            width=15
+            width=12
         ).grid(row=0, column=1, sticky="ew", padx=1, pady=2)
         
         ttk.Button(
             debug_utils_frame,
-            text="✂️ Tab Sopracciglia",
+            text="✂️ Soprac.",
             command=lambda: self.switch_to_debug_tab("eyebrows"),
             bootstyle="warning-outline",
-            width=15
-        ).grid(row=0, column=2, sticky="ew", padx=(2, 0), pady=2)
+            width=12
+        ).grid(row=0, column=2, sticky="ew", padx=(1, 0), pady=2)
 
     # === METODI VOCALI RIMOSSI ===
     # Tutti i metodi relativi all'assistente vocale sono stati spostati in:
@@ -1790,7 +1872,7 @@ class CanvasApp:
         
         debug_landmarks_info = ttk.Label(
             self.debug_landmarks_frame,
-            text="🎭 Face Mesh: Visualizzazione completa dei 468 landmarks MediaPipe",
+            text="🎭 Face Mesh: 468 landmarks",
             bootstyle="info"
         )
         debug_landmarks_info.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
@@ -1813,7 +1895,7 @@ class CanvasApp:
         
         debug_geometry_info = ttk.Label(
             self.debug_geometry_frame,
-            text="📐 Geometria: Analisi forma del viso con misure e rapporti",
+            text="📐 Geometria: Forma viso",
             bootstyle="info"
         )
         debug_geometry_info.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
@@ -1836,7 +1918,7 @@ class CanvasApp:
         
         debug_eyebrows_info = ttk.Label(
             self.debug_eyebrows_frame,
-            text="✂️ Sopracciglia: Analisi dettagliata zona sopracciglia e occhi",
+            text="✂️ Sopracciglia: Zona occhi",
             bootstyle="warning"
         )
         debug_eyebrows_info.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
@@ -1859,7 +1941,7 @@ class CanvasApp:
         
         debug_ideal_info = ttk.Label(
             self.debug_ideal_frame,
-            text="🎨 Forma Ideale: Guida per la forma ideale del sopracciglio",
+            text="🎨 Forma Ideale: Guida",
             bootstyle="secondary"
         )
         debug_ideal_info.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
@@ -1882,7 +1964,7 @@ class CanvasApp:
         
         debug_complete_info = ttk.Label(
             self.debug_complete_frame,
-            text="🗺️ Mappa Completa: Analisi visagistica completa con annotazioni",
+            text="🗺️ Mappa: Analisi completa",
             bootstyle="success"
         )
         debug_complete_info.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
@@ -1927,7 +2009,7 @@ class CanvasApp:
         
         debug_report_info = ttk.Label(
             self.debug_report_frame,
-            text="📄 Report: Analisi completa in formato testuale dettagliato",
+            text="📄 Report: Testo dettagliato",
             bootstyle="dark"
         )
         debug_report_info.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
@@ -5546,10 +5628,11 @@ class CanvasApp:
         self.layers_tree.heading("Visible", text="👁")
         self.layers_tree.heading("Locked", text="🔒")
 
-        self.layers_tree.column("#0", width=140)
-        self.layers_tree.column("Status", width=35)
-        self.layers_tree.column("Visible", width=35)
-        self.layers_tree.column("Locked", width=35)
+        # Colonne OTTIMIZZATE per canvas - spazio disponibile maggiore
+        self.layers_tree.column("#0", width=320)     # Molto più spazio per nome layer
+        self.layers_tree.column("Status", width=50)  # Più spazio per status
+        self.layers_tree.column("Visible", width=50) # Più spazio per visibilità 
+        self.layers_tree.column("Locked", width=40)  # Spazio sufficiente per lock
 
         # Tooltip per la treeview
         ToolTip(
@@ -5568,7 +5651,7 @@ class CanvasApp:
         )
         self.layers_tree.configure(yscrollcommand=layer_scrollbar.set)
 
-        self.layers_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.layers_tree.pack(side=tk.LEFT, fill=tk.BOTH)
         layer_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         # Bind eventi per gestione layer
@@ -6147,11 +6230,13 @@ class CanvasApp:
         debug_frame.grid_rowconfigure(0, weight=1)
         debug_frame.grid_columnconfigure(0, weight=1)
 
-        # Container debug ottimizzato
+        # Container debug ottimizzato con SPAZIO RISERVATO per i controlli
         debug_container = ttk.Frame(debug_frame)
         debug_container.pack(fill="both", expand=True)
-        debug_container.grid_rowconfigure(0, weight=1)
+        debug_container.grid_rowconfigure(0, weight=1)  # Treeview espandibile
+        debug_container.grid_rowconfigure(1, weight=0, minsize=35)  # SPAZIO FISSO per i controlli
         debug_container.grid_columnconfigure(0, weight=1)
+        debug_container.grid_columnconfigure(1, weight=0, minsize=20)  # Spazio minimo garantito per scrollbar
 
         # Treeview con TUTTE le colonne originali ottimizzate per spazio limitato
         columns = ("frame", "time", "score", "yaw", "pitch", "roll", "sym", "status")
@@ -6203,24 +6288,27 @@ class CanvasApp:
         debug_scrollbar = ttk.Scrollbar(debug_container, orient="vertical", command=self.debug_tree.yview)
         self.debug_tree.configure(yscrollcommand=debug_scrollbar.set)
 
-        # Layout compatto
+        # Layout compatto con SPAZIO RISERVATO per controlli
         self.debug_tree.grid(row=0, column=0, sticky="nsew")
         debug_scrollbar.grid(row=0, column=1, sticky="ns")
-
-        # Binding eventi
-        self.debug_tree.bind("<Double-1>", self.on_debug_row_double_click)
         
-        # Nota: Tooltip non necessario per ora, le emoji sono auto-esplicative
-
-        # Controlli debug compatti
-        debug_controls = ttk.Frame(debug_frame)
-        debug_controls.pack(fill="x", pady=(2, 0))
-
-        # Pulsanti piccoli in riga
+        # Controlli debug nella riga dedicata per evitare sovrapposizioni
+        debug_controls = ttk.Frame(debug_container)
+        debug_controls.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 0))
+        
+        # Pulsanti piccoli in riga - ora con spazio garantito
         ttk.Button(debug_controls, text="Pulisci", command=self.clear_debug_logs, width=6).pack(side="left", padx=1)
         
         self.debug_auto_scroll = tk.BooleanVar(value=True)
         ttk.Checkbutton(debug_controls, text="Auto", variable=self.debug_auto_scroll).pack(side="right")
+        
+        # Forza immediatamente la configurazione corretta delle colonne
+        debug_container.update_idletasks()
+        debug_container.grid_columnconfigure(0, weight=1)
+        debug_container.grid_columnconfigure(1, weight=0, minsize=20)
+
+        # Binding eventi
+        self.debug_tree.bind("<Double-1>", self.on_debug_row_double_click)
 
         # Inizializzazione
         self.debug_logs = []
@@ -7209,7 +7297,8 @@ class CanvasApp:
         # Frame principale per l'area misurazioni
         main_frame = ttk.Frame(parent)
         main_frame.grid(row=0, column=0, sticky="nsew")
-        main_frame.grid_columnconfigure(0, weight=1)
+        main_frame.grid_columnconfigure(0, weight=1)  # Treeview espandibile
+        main_frame.grid_columnconfigure(1, weight=0, minsize=20)  # Spazio fisso per scrollbar
         main_frame.grid_rowconfigure(0, weight=1)
 
         # Treeview per le misurazioni esistenti con stile bootstrap
@@ -7227,11 +7316,13 @@ class CanvasApp:
         self.measurements_tree.heading("Unit", text="📐 Unità")
         self.measurements_tree.heading("Status", text="✅ Stato")
 
-        # Configurazione colonne ottimizzata
-        self.measurements_tree.column("Type", width=200, minwidth=150)
-        self.measurements_tree.column("Value", width=100, minwidth=80)
-        self.measurements_tree.column("Unit", width=80, minwidth=60)
-        self.measurements_tree.column("Status", width=100, minwidth=80)
+        # Configurazione colonne OTTIMIZZATE per larghezza fissa 440px
+        # Spazio disponibile: 420px (440px frame - 20px scrollbar)
+        self.measurements_tree.column("Type", width=170, minwidth=120)    # Tipo misurazione
+        self.measurements_tree.column("Value", width=80, minwidth=60)     # Valore numerico
+        self.measurements_tree.column("Unit", width=60, minwidth=40)      # Unità di misura
+        self.measurements_tree.column("Status", width=110, minwidth=80)   # Stato misurazione
+        # Totale: 420px - perfettamente allineato alla larghezza fissa
 
         # Scrollbar per la lista misurazioni
         tree_scroll = ttk.Scrollbar(
@@ -7242,6 +7333,9 @@ class CanvasApp:
         # Layout ottimizzato con grid
         self.measurements_tree.grid(row=0, column=0, sticky="nsew")
         tree_scroll.grid(row=0, column=1, sticky="ns")
+        
+        # VINCOLO: Larghezza fissa allineata alle sezioni
+        main_frame.configure(width=420)  # Larghezza fissa perfettamente allineata
 
     def setup_status_bar(self):
         """Configura la status bar con progressbar moderna."""
@@ -7350,6 +7444,21 @@ class CanvasApp:
             }
             style = mode_styles.get(mode, "secondary")
             self.mode_badge.config(text=f"🔧 Modalità: {mode}", bootstyle=style)
+
+    def _truncate_status_text(self, text, max_length=50):
+        """
+        Tronca il testo per evitare overflow nella sezione SORGENTE.
+        
+        Args:
+            text: Testo da troncare
+            max_length: Lunghezza massima consentita
+            
+        Returns:
+            str: Testo troncato con '...' se necessario
+        """
+        if len(text) <= max_length:
+            return text
+        return text[:max_length-3] + "..."
 
     def load_image(self):
         """Carica un'immagine dal file system."""
@@ -7533,18 +7642,21 @@ class CanvasApp:
                         mouth_score = debug.get("mouth_score", 0)
                         nose_ratio = debug.get("nose_symmetry_ratio", 0)
 
-                        info_text = (
-                            f"Score: {score:.4f} | Naso:{nose_score:.3f} Occhi:{eye_score:.3f} "
-                            f"Bocca:{mouth_score:.3f} | Y:{yaw:.1f}° R:{roll:.1f}°"
-                        )
+                        # Testo compatto per evitare overflow nella sezione SORGENTE
+                        info_text = f"Score: {score:.3f} | N:{nose_score:.2f} O:{eye_score:.2f} B:{mouth_score:.2f} | Y:{yaw:.0f}° R:{roll:.0f}°"
+                        info_text = self._truncate_status_text(info_text, 48)
                     else:
-                        info_text = f"Score: {score:.4f} | Y:{yaw:.1f}° P:{pitch:.1f}° R:{roll:.1f}°"
+                        info_text = f"Score: {score:.3f} | Y:{yaw:.0f}° P:{pitch:.0f}° R:{roll:.0f}°"
+                        info_text = self._truncate_status_text(info_text, 48)
                 else:
                     info_text = f"Score: {score:.3f} (fallback)"
             else:
                 info_text = f"Score: {score:.2f}"
         except Exception as e:
-            info_text = f"Score: {score:.2f} (error: {str(e)[:30]})"
+            info_text = f"Score: {score:.2f} (err)"
+
+        # Tronca il testo per evitare overflow nella sezione SORGENTE
+        info_text = self._truncate_status_text(info_text, 48)
 
         # Aggiorna info in tempo reale
         self.root.after(0, lambda: self.best_frame_info.config(text=info_text))
@@ -7696,10 +7808,9 @@ class CanvasApp:
             self._force_canvas_refresh()
             print("🔄 Canvas unified refreshed")
 
-            # Aggiorna le informazioni
-            self.best_frame_info.config(
-                text=f"Miglior frame: Score {score:.2f} (Auto-aggiornato)"
-            )
+            # Aggiorna le informazioni (testo compatto)
+            short_text = f"Best: {score:.2f} (Auto)"
+            self.best_frame_info.config(text=short_text)
             self.status_bar.config(
                 text=f"Canvas aggiornato automaticamente - Score: {score:.2f}"
             )
@@ -7739,9 +7850,9 @@ class CanvasApp:
             if best_frame is not None:
                 print(f"🎯 Analisi completata! Miglior score: {best_score:.3f}")
                 self.set_current_image(best_frame, best_landmarks, auto_resize=False)
-                self.best_frame_info.config(
-                    text=f"✅ MIGLIOR FRAME FRONTALE: Score {best_score:.3f}"
-                )
+                # Testo compatto per evitare overflow
+                short_text = f"✅ Best Frame: {best_score:.3f}"
+                self.best_frame_info.config(text=short_text)
                 self.status_bar.config(
                     text="Analisi completata - Frame frontale caricato"
                 )
@@ -7770,10 +7881,9 @@ class CanvasApp:
                 # Forza il refresh del canvas per assicurarsi che si veda
                 self.root.update_idletasks()  # AGGIUNTO: forza aggiornamento UI
 
-                # Aggiorna info score
-                self.best_frame_info.config(
-                    text=f"📸 FRAME FRONTALE IN TEMPO REALE: Score {score:.3f}"
-                )
+                # Aggiorna info score (testo compatto)
+                short_text = f"📸 Live: {score:.3f}"
+                self.best_frame_info.config(text=short_text)
 
                 # Aggiorna status
                 self.status_bar.config(
@@ -7882,10 +7992,9 @@ class CanvasApp:
                     self.current_best_score = score
                     # Aggiorna il canvas con il nuovo frame migliore
                     self.set_current_image(frame, None, auto_resize=False)
-                    # Aggiorna info score
-                    self.best_frame_info.config(
-                        text=f"Miglior frame: Score {score:.3f}"
-                    )
+                    # Aggiorna info score (testo compatto)
+                    short_text = f"Best: {score:.3f}"
+                    self.best_frame_info.config(text=short_text)
 
                     # *** SALVA AUTOMATICAMENTE IL MIGLIOR FRAME COME PNG ***
                     try:
@@ -8331,14 +8440,13 @@ class CanvasApp:
                 original_score = float(item["values"][2])  # Terzo valore è lo score originale dalla tabella
                 
                 if landmarks and hasattr(self, 'scoring_config'):
-                    # Mostra entrambi gli score: originale e ricalcolato
-                    self.best_frame_info.config(
-                        text=f"📸 FRAME DA TABELLA: {frame_number} ({timestamp}) - Score originale: {original_score:.3f} → Corrente: {current_score:.3f}"
-                    )
+                    # Mostra entrambi gli score: originale e ricalcolato (testo compatto)
+                    short_text = f"📸 {frame_number} ({timestamp}) - {original_score:.3f}→{current_score:.3f}"
+                    self.best_frame_info.config(text=short_text)
                 else:
-                    self.best_frame_info.config(
-                        text=f"📸 FRAME DA TABELLA: {frame_number} ({timestamp}) - Score {original_score:.3f}"
-                    )
+                    # Testo compatto per evitare overflow
+                    short_text = f"📸 {frame_number} ({timestamp}) - {original_score:.3f}"
+                    self.best_frame_info.config(text=short_text)
                 
                 self.status_bar.config(
                     text=f"Caricato frame {frame_number} al tempo {timestamp} - Score aggiornato: {current_score:.3f}"
@@ -11813,66 +11921,41 @@ Aree calcolate:
             print(f"❌ Errore aggiornamento vertical paned: {e}")
 
     def _on_root_resize_sidebar(self, event):
-        """Calcola dinamicamente la larghezza ottimale della sidebar basata sul contenuto effettivo.
-        
-        Sistema intelligente che evita sia il taglio del contenuto che spazi eccessivi.
-        """
-        try:
-            if not hasattr(self, 'main_horizontal_paned'):
-                return
-
-            # Calcola larghezza ottimale basata sul contenuto reale
-            optimal_width = self._calculate_optimal_sidebar_width()
-
-            # Forza la posizione del sash (controlli|canvas) alla larghezza ottimale
-            try:
-                if self.main_horizontal_paned.panes():
-                    self.main_horizontal_paned.sashpos(0, optimal_width)
-                    # Debug message rimosso per evitare spam nel terminale
-                    # print(f"🎯 Sidebar dinamica: {optimal_width}px (basata su contenuto)")
-            except Exception:
-                pass
-        except Exception as e:
-            print(f"❌ Errore gestione resize sidebar: {e}")
+        """DISABILITATA - mantieni sidebar fissa."""
+        # Non fare nulla - mantieni la sidebar alla larghezza fissa
+        pass
 
     def _calculate_optimal_sidebar_width(self):
-        """Calcola la larghezza ottimale della sidebar basata sul contenuto reale."""
-        try:
-            if not hasattr(self, 'control_panel'):
-                return 480  # Fallback al valore predefinito
-            
-            # Aggiorna il layout per ottenere dimensioni correnti
-            self.control_panel.update_idletasks()
-            
-            # Ottieni la larghezza richiesta dal contenuto
-            content_width = self.control_panel.winfo_reqwidth()
-            
-            # Aggiungi margini di sicurezza
-            padding_margin = 40  # Margine per padding e scrollbar
-            safety_margin = 60   # Margine di sicurezza aggiuntivo
-            
-            calculated_width = content_width + padding_margin + safety_margin
-            
-            # Applica limiti ragionevoli
-            min_width = 350  # Larghezza minima utilizzabile
-            max_width = 650  # Larghezza massima ragionevole
-            
-            # Ottieni larghezza finestra per calcolo percentuale massima
-            if hasattr(self, 'root'):
-                window_width = self.root.winfo_width()
-                max_percentage_width = int(window_width * 0.4)  # Max 40% della finestra
-                max_width = min(max_width, max_percentage_width)
-            
-            optimal_width = max(min_width, min(calculated_width, max_width))
-            
-            print(f"📏 Calcolo larghezza sidebar: contenuto={content_width}px, "
-                  f"calcolata={calculated_width}px, ottimale={optimal_width}px")
-            
-            return optimal_width
-            
-        except Exception as e:
-            print(f"❌ Errore calcolo larghezza ottimale: {e}")
-            return 480  # Fallback sicuro
+        """RIMOSSO - Usa sempre larghezza fissa per evitare overflow."""
+        return 480  # Mantieni sempre 480px fissi
+
+    def _adapt_section_content_to_sidebar_width(self):
+        """RIMOSSO - Eliminato per forzare i contenuti a rimanere nei limiti della colonna."""
+        pass
+
+    def _adapt_long_text_widgets(self, sidebar_width):
+        """RIMOSSO - Eliminato per forzare i contenuti a rimanere nei limiti della colonna."""
+        pass
+
+    def _adapt_widgets_in_frame(self, frame, max_width):
+        """RIMOSSO - Eliminato per forzare i contenuti a rimanere nei limiti della colonna."""
+        pass
+
+    def _adapt_label_text(self, label, max_width):
+        """RIMOSSO - Eliminato per forzare i contenuti a rimanere nei limiti della colonna."""
+        pass
+
+    def _adapt_button_text(self, button, max_width):
+        """RIMOSSO - Eliminato per forzare i contenuti a rimanere nei limiti della colonna."""
+        pass
+
+    def _adapt_measurements_table(self, available_width):
+        """RIMOSSO - Eliminato per forzare i contenuti a rimanere nei limiti della colonna."""
+        pass
+
+    def _adapt_landmarks_table(self, available_width):
+        """RIMOSSO - Eliminato per forzare i contenuti a rimanere nei limiti della colonna."""
+        pass
 
     def _set_cursor_arrow(self, event):
         """Forza il cursore a rimanere una freccia normale sul PanedWindow."""
@@ -11880,18 +11963,10 @@ Aree calcolate:
             self.main_horizontal_paned.configure(cursor="arrow")
         except:
             pass
-
-    def _force_sidebar_width(self):
-        """Forza la larghezza ottimale della sidebar calcolata dinamicamente."""
-        try:
-            # Usa il nuovo sistema di calcolo dinamico
-            optimal_width = self._calculate_optimal_sidebar_width()
-            
-            if self.main_horizontal_paned.panes():
-                self.main_horizontal_paned.sashpos(0, optimal_width)
-                print(f"🔧 Sidebar width forced to: {optimal_width}px (DINAMICO)")
-        except Exception as e:
-            print(f"❌ Errore forcing sidebar width: {e}")
+    
+    def _on_vertical_paned_resize_improved(self, event):
+        """Callback migliorato per ridimensionamento pannello verticale."""
+        pass
 
     def _on_main_paned_resize(self, event):
         """Callback per quando viene ridimensionato il pannello principale."""
@@ -12120,11 +12195,11 @@ Aree calcolate:
             self.current_best_score = new_score
             self.scoring_info_label.config(text=f"Score corrente: {new_score:.3f}")
 
-            # Aggiorna anche il display del best frame se presente
+            # Aggiorna anche il display del best frame se presente (testo compatto)
             if hasattr(self, "best_frame_info") and self.best_frame_info:
-                self.best_frame_info.config(
-                    text=f"Score frame corrente: {new_score:.3f} - Pesi: N:{self.scoring_config.nose_weight:.2f} B:{self.scoring_config.mouth_weight:.2f} S:{self.scoring_config.symmetry_weight:.2f} O:{self.scoring_config.eye_weight:.2f}"
-                )
+                short_text = f"Score: {new_score:.3f} - N:{self.scoring_config.nose_weight:.1f} B:{self.scoring_config.mouth_weight:.1f} S:{self.scoring_config.symmetry_weight:.1f} O:{self.scoring_config.eye_weight:.1f}"
+                short_text = self._truncate_status_text(short_text, 48)
+                self.best_frame_info.config(text=short_text)
 
     def reset_scoring_weights(self):
         """Reset ai pesi di default."""

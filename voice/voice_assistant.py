@@ -251,7 +251,7 @@ class IsabellaVoiceAssistant:
     def get_message(self, message_type):
         """Ottiene un messaggio dalla configurazione (compatibilità)"""
         messages = {
-            "welcome_user": "Benvenuto in Kimerika AI! Io sono Simmètra e ti assisterò nella progettazione di questa dermopigmentazione sopraccigliare",
+            "welcome_user": "Benvenuto in Kimerika eiai! Io sono Simmètra e ti assisterò nella progettazione di questa dermopigmentazione sopraccigliare",
             "goodbye": "Arrivederci! Assistente vocale disattivato."
         }
         return messages.get(message_type, "")

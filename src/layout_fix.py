@@ -194,17 +194,35 @@ class LayoutRestorer:
             print(f"   • Vertical: {config.vertical_paned_position}")
             print(f"   • Layers/preview: {config.layers_preview_divider_position}")
             
-            # Applica main horizontal paned
+            # Applica main horizontal paned con VALIDAZIONE BILANCIATA
             if (hasattr(self.canvas_app, 'main_horizontal_paned') and 
                 self.canvas_app.main_horizontal_paned.panes() and 
                 config.main_paned_position > 0):
                 
-                self.canvas_app.main_horizontal_paned.sashpos(0, config.main_paned_position)
+                window_width = self.root.winfo_width()
                 
-                # Se abbiamo 3 panes, applica anche right column
+                # Assicura che la sidebar sinistra abbia spazio sufficiente (min 480px)
+                min_left_width = 480
+                max_left_width = window_width * 0.4  # Non più del 40% della finestra
+                safe_main_position = max(min_left_width, min(config.main_paned_position, max_left_width))
+                
+                self.canvas_app.main_horizontal_paned.sashpos(0, safe_main_position)
+                print(f"   ✅ Sidebar sinistra posizionata a {safe_main_position}px (bilanciata)")
+                
+                # Se abbiamo 3 panes, applica anche right column con VALIDAZIONE BILANCIATA
                 if (len(self.canvas_app.main_horizontal_paned.panes()) >= 3 and 
                     config.right_column_position > 0):
-                    self.canvas_app.main_horizontal_paned.sashpos(1, config.right_column_position)
+                    
+                    # Assicura che la sidebar destra abbia spazio sufficiente (min 480px)
+                    min_right_width = 480
+                    max_safe_right = window_width - min_right_width
+                    min_safe_right = safe_main_position + 400  # Canvas minimo 400px
+                    
+                    safe_right_position = max(min_safe_right, min(config.right_column_position, max_safe_right))
+                    
+                    self.canvas_app.main_horizontal_paned.sashpos(1, safe_right_position)
+                    actual_right_width = window_width - safe_right_position
+                    print(f"   ✅ Sidebar destra: {actual_right_width}px (bilanciata per finestra {window_width}px)")
             
             # Applica vertical paned
             if (hasattr(self.canvas_app, 'main_vertical_paned') and 
@@ -231,22 +249,46 @@ class LayoutRestorer:
             return False
     
     def _apply_fallback_layout(self):
-        """Applica un layout di fallback ragionevole."""
+        """Applica un layout di fallback ragionevole BILANCIATO per entrambe le colonne."""
         try:
-            print("🔧 Applicazione layout fallback...")
+            print("🔧 Applicazione layout fallback BILANCIATO...")
             
-            # Valori di fallback ragionevoli
+            # Valori di fallback BILANCIATI basati sulle dimensioni effettive
             window_width = self.root.winfo_width()
-            fallback_main = max(400, window_width // 4)
-            fallback_right = max(1000, window_width - 400)
-            fallback_vertical = max(600, self.root.winfo_height() - 200)
+            window_height = self.root.winfo_height()
+            
+            # CORREZIONE: Garantisce spazio sufficiente per entrambe le colonne
+            min_left_sidebar = 480   # Minimo per contenere i controlli senza tagliare
+            min_right_sidebar = 480  # Minimo per contenere le tabelle
+            min_canvas = 400         # Minimo per area canvas centrale
+            
+            required_total = min_left_sidebar + min_canvas + min_right_sidebar  # 1360px minimo
+            
+            if window_width >= required_total:
+                # Finestra abbastanza grande: usa spazi ottimali
+                fallback_main = min_left_sidebar
+                fallback_right = window_width - min_right_sidebar
+            else:
+                # Finestra piccola: distribuzione proporzionale ma con minimi garantiti
+                available_space = window_width - min_canvas  # Spazio per le sidebar
+                left_ratio = 0.5  # 50% dello spazio disponibile per la sidebar sinistra
+                
+                fallback_main = max(min_left_sidebar, int(available_space * left_ratio))
+                fallback_right = max(window_width - min_right_sidebar, fallback_main + min_canvas)
+            
+            fallback_vertical = max(600, window_height - 200)
             fallback_layers_preview = 250
+            
+            print(f"   📐 Finestra: {window_width}x{window_height}")
+            print(f"   📐 Fallback main: {fallback_main} (garantisce controlli visibili)")
+            print(f"   📐 Fallback right: {fallback_right} (garantisce tabelle visibili)")
             
             if hasattr(self.canvas_app, 'main_horizontal_paned'):
                 if self.canvas_app.main_horizontal_paned.panes():
                     self.canvas_app.main_horizontal_paned.sashpos(0, fallback_main)
                     if len(self.canvas_app.main_horizontal_paned.panes()) >= 3:
                         self.canvas_app.main_horizontal_paned.sashpos(1, fallback_right)
+                        print(f"   ✅ Layout bilanciato applicato: {fallback_main}px | canvas | {window_width - fallback_right}px")
             
             if hasattr(self.canvas_app, 'main_vertical_paned'):
                 if self.canvas_app.main_vertical_paned.panes():
