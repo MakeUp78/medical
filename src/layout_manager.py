@@ -22,10 +22,10 @@ class LayoutConfig:
 
     # Divisori PanedWindow - valori ottimizzati per massima visibilità
     main_paned_position: int = (
-        450  # Divisore sinistra (controlli | canvas) - sashpos(0)
+        480  # Divisore sinistra (controlli | canvas) - AUMENTATO per contenere controlli
     )
     right_column_position: int = (
-        1000  # Divisore destro (canvas | colonna destra) - sashpos(1)
+        800  # Divisore destro (canvas | colonna destra) - RIDOTTO per mantenere visibilità
     )
     sidebar_paned_position: int = (
         300  # Divisore sidebar destro (layers | anteprima) - aumentato
