@@ -1,4 +1,4 @@
-﻿"""
+"""
 Interactive canvas application for facial analysis with measurement tools.
 VERSIONE UNIFICATA - Include funzionalità professional canvas integrate
 """
