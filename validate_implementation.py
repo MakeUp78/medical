@@ -30,6 +30,11 @@ def check_module_syntax(filepath):
 def check_import_structure(filepath):
     """Check if ttkbootstrap is properly imported in the file."""
     try:
+        # Security: Check file size (limit to 50MB)
+        file_size = os.path.getsize(filepath)
+        if file_size > 50 * 1024 * 1024:
+            return {'error': 'File too large', 'file': filepath}
+        
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
             
@@ -101,7 +106,7 @@ def main():
     
     print("\n📋 Checking requirements.txt for ttkbootstrap...")
     if os.path.exists('requirements.txt'):
-        with open('requirements.txt', 'r') as f:
+        with open('requirements.txt', 'r', encoding='utf-8') as f:
             content = f.read()
             if 'ttkbootstrap' in content:
                 print("✅ ttkbootstrap is listed in requirements.txt")
