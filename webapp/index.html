@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏥 Facial Analysis Application v2.0 - Web Edition</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="stylesheet" href="static/css/main.css?v=1.2">
+    <link rel="stylesheet" href="static/css/components.css">
+    <link rel="stylesheet" href="static/css/tables.css">
+</head>
+
+<body>
+    <!-- Container principale identico alla app desktop -->
+    <div class="main-container">
+        <!-- SIDEBAR SINISTRA - Controlli identici all'app desktop -->
+        <div class="left-sidebar">
+            <div class="scrollable-controls">
+
+                <!-- Sezione SORGENTE -->
+                <div class="section" data-expanded="false">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">🎯 SORGENTE</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <!-- Griglia pulsanti 2x2 identica -->
+                        <div class="button-grid">
+                            <button class="btn btn-primary" onclick="loadImage()">📁 Carica Immagine</button>
+                            <button class="btn btn-info" onclick="loadVideo()">🎥 Carica Video</button>
+                            <button class="btn btn-success" onclick="startWebcam()">📹 Avvia Webcam</button>
+                            <button class="btn btn-warning" onclick="stopWebcam()">⏹️ Stop Webcam</button>
+                        </div>
+
+                        <!-- Info frame corrente -->
+                        <div class="status-info-frame">
+                            <div class="best-frame-info" id="best-frame-info">
+                                Nessun frame analizzato
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sezione STATUS SISTEMA -->
+                <div class="section" data-expanded="false">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">📊 STATUS SISTEMA</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <!-- Dashboard badges organizzati in griglia -->
+                        <div class="badges-container">
+                            <div class="badge api-badge" id="api-status">
+                                🌐 API: connecting...
+                            </div>
+                            <div class="badge webcam-badge" id="webcam-badge">
+                                📹 Webcam: Disconnessa
+                            </div>
+                            <div class="badge landmarks-badge" id="landmarks-badge">
+                                🎯 Landmarks: 0
+                            </div>
+                            <div class="badge quality-badge" id="quality-badge">
+                                ⭐ Qualità: N/A
+                            </div>
+                            <div class="badge mode-badge" id="mode-badge">
+                                🔧 Modalità: Selezione
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sezione MISURAZIONI PREDEFINITE -->
+                <div class="section" data-expanded="false">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">📏 MISURAZIONI PREDEFINITE</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <!-- Griglia 4 colonne per compattezza -->
+                        <div class="predefined-buttons">
+                            <button class="btn btn-measure" onclick="measureFaceWidth(event)">📐 Larghezza Viso</button>
+                            <button class="btn btn-measure" onclick="measureFaceHeight(event)">📏 Altezza Viso</button>
+                            <button class="btn btn-measure" onclick="measureEyeDistance(event)">👁️ Distanza
+                                Occhi</button>
+                            <button class="btn btn-measure" onclick="measureNoseWidth(event)">👃 Larghezza Naso</button>
+                            <button class="btn btn-measure" onclick="measureNoseHeight(event)">📏 Altezza Naso</button>
+                            <button class="btn btn-measure" onclick="measureMouthWidth(event)">👄 Larghezza
+                                Bocca</button>
+                            <button class="btn btn-measure" onclick="measureEyebrowAreas(event)">✂️ Aree
+                                Sopracciglia</button>
+
+                            <!-- NUOVE FUNZIONI AGGIUNTE PER PARITÀ CON APP DESKTOP -->
+                            <button class="btn btn-measure" onclick="measureEyeAreas(event)">👁️ Aree Occhi</button>
+                            <button class="btn btn-measure" onclick="measureCheekWidth(event)">😊 Larghezza
+                                Guance</button>
+                            <button class="btn btn-measure" onclick="measureForeheadWidth(event)">🤔 Larghezza
+                                Fronte</button>
+                            <button class="btn btn-measure" onclick="measureChinWidth(event)">😮 Larghezza
+                                Mento</button>
+                            <button class="btn btn-measure" onclick="measureFaceProfile(event)">👤 Profilo Viso</button>
+                            <button class="btn btn-measure" onclick="measureNoseAngle(event)">👃 Angolo Naso</button>
+                            <button class="btn btn-measure" onclick="measureMouthAngle(event)">👄 Angolo Bocca</button>
+                            <button class="btn btn-measure" onclick="measureFaceProportions(event)">📏
+                                Proporzioni</button>
+                            <button class="btn btn-measure" onclick="measureKeyDistances(event)">🔍 Distanze
+                                Chiave</button>
+                            <button class="btn btn-measure" onclick="measureFacialSymmetry(event)">⚖️ Simmetria</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sezione RILEVAMENTI -->
+                <div class="section" data-expanded="false">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">🔍 RILEVAMENTI</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <!-- Griglia 2x2 per pulsanti rilevamenti -->
+                        <div class="detection-grid">
+                            <button class="btn btn-detection" id="axis-btn" onclick="toggleAxis()">📏 ASSE</button>
+                            <button class="btn btn-detection" id="landmarks-btn" onclick="toggleLandmarks()">🎯
+                                LANDMARKS</button>
+                            <button class="btn btn-detection" id="green-dots-btn" onclick="toggleGreenDots()">🟢 GREEN
+                                DOTS</button>
+                            <button class="btn btn-detection" id="measure-btn" onclick="toggleMeasureMode()">📐
+                                MISURA</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sezione SISTEMA SCORING -->
+                <div class="section" data-expanded="false">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">⚖️ SISTEMA SCORING</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <!-- Badge info score corrente -->
+                        <div class="scoring-info" id="scoring-info">
+                            Score corrente: 0.000
+                        </div>
+
+                        <!-- Sliders per i pesi -->
+                        <div class="sliders-container">
+                            <div class="slider-row">
+                                <label>👃 Naso:</label>
+                                <input type="range" id="nose-slider" class="slider" min="0" max="1" step="0.01"
+                                    value="0.30" oninput="updateWeight('nose', this.value)">
+                                <span class="value" id="nose-value">0.30</span>
+                            </div>
+
+                            <div class="slider-row">
+                                <label>💋 Bocca:</label>
+                                <input type="range" id="mouth-slider" class="slider" min="0" max="1" step="0.01"
+                                    value="0.25" oninput="updateWeight('mouth', this.value)">
+                                <span class="value" id="mouth-value">0.25</span>
+                            </div>
+
+                            <div class="slider-row">
+                                <label>⚖️ Simm.:</label>
+                                <input type="range" id="symmetry-slider" class="slider" min="0" max="1" step="0.01"
+                                    value="0.25" oninput="updateWeight('symmetry', this.value)">
+                                <span class="value" id="symmetry-value">0.25</span>
+                            </div>
+
+                            <div class="slider-row">
+                                <label>👁️ Occhi:</label>
+                                <input type="range" id="eye-slider" class="slider" min="0" max="1" step="0.01"
+                                    value="0.20" oninput="updateWeight('eye', this.value)">
+                                <span class="value" id="eye-value">0.20</span>
+                            </div>
+                        </div>
+
+                        <!-- Pulsanti preset -->
+                        <div class="preset-buttons">
+                            <button class="btn btn-preset" onclick="resetWeights()">🔄 Reset</button>
+                            <button class="btn btn-preset" onclick="presetNoseFocus()">👃 Focus Naso</button>
+                            <button class="btn btn-preset" onclick="presetLessSymmetry()">⚖️ Meno Simmetria</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sezione CORREZIONE SOPRACCIGLIA -->
+                <div class="section" data-expanded="false">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">✂️ CORREZIONE SOPRACCIGLIA</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <div class="eyebrow-info">
+                            💡 Ritaglio sopracciglia + overlay
+                        </div>
+
+                        <div class="eyebrow-buttons">
+                            <button class="btn btn-eyebrow" onclick="showLeftEyebrow()">✂️ Sopracciglio
+                                Sinistro</button>
+                            <button class="btn btn-eyebrow" onclick="showRightEyebrow()">✂️ Sopracciglio Destro</button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- CANVAS CENTRALE identico al matplotlib canvas -->
+        <div class="canvas-container">
+            <!-- Toolbar strumenti -->
+            <div class="canvas-toolbar">
+                <button class="tool-btn active" data-tool="selection" onclick="setTool('selection')">🔍
+                    Selezione</button>
+                <button class="tool-btn" data-tool="zoom-in" onclick="setTool('zoom-in')">🔍+ Zoom In</button>
+                <button class="tool-btn" data-tool="zoom-out" onclick="setTool('zoom-out')">🔍- Zoom Out</button>
+                <button class="tool-btn" data-tool="pan" onclick="setTool('pan')">✋ Pan</button>
+                <button class="tool-btn" data-tool="line" onclick="setTool('line')">📏 Linea</button>
+                <button class="tool-btn" data-tool="rectangle" onclick="setTool('rectangle')">⬛ Rettangolo</button>
+                <button class="tool-btn" data-tool="circle" onclick="setTool('circle')">⭕ Cerchio</button>
+                <button class="tool-btn" data-tool="measure" onclick="setTool('measure')">📐 Misura</button>
+                <button class="tool-btn" onclick="toggleGrid()">⚏ Griglia</button>
+                <button class="tool-btn" onclick="fitToWindow()">🏠 Fit</button>
+                <button class="tool-btn" onclick="optimizeCurrentImageDisplay()"
+                    title="Ottimizza visualizzazione immagine">🎯 Ottimizza</button>
+                <button class="tool-btn" onclick="toggleImageTransform()"
+                    title="Abilita/Disabilita trasformazioni immagine">🔓 Transform</button>
+                <button class="tool-btn" onclick="clearAllMeasurementOverlays()" title="Pulisci tutte le misurazioni">📐
+                    Pulisci Mis.</button>
+                <button class="tool-btn" onclick="clearCanvas()">🧹 Pulisci</button>
+            </div>
+
+            <!-- Canvas principale -->
+            <div class="canvas-wrapper">
+                <canvas id="main-canvas"></canvas>
+            </div>
+
+            <!-- Video webcam nascosto -->
+            <video id="webcam-video" autoplay muted style="position: absolute; left: -9999px; top: -9999px;"></video>
+
+            <!-- Info cursore -->
+            <div class="cursor-info" id="cursor-info">
+                Mouse: (0, 0) | Zoom: 100%
+            </div>
+        </div>
+
+        <!-- SIDEBAR DESTRA identica alla colonna destra dell'app -->
+        <div class="right-sidebar">
+
+            <!-- Sezione Misurazioni -->
+            <div class="section" data-expanded="false">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <button class="toggle-btn">📏 MISURAZIONI</button>
+                    <span class="icon">►</span>
+                </div>
+                <div class="section-content" style="display: none;">
+                    <div class="table-container">
+                        <table class="data-table" id="measurements-table">
+                            <thead>
+                                <tr>
+                                    <th>📏 Tipo Misurazione</th>
+                                    <th>📊 Valore</th>
+                                    <th>📐 Unità</th>
+                                    <th>✅ Stato</th>
+                                </tr>
+                            </thead>
+                            <tbody id="measurements-data">
+                                <!-- Dati dinamici verranno inseriti qui -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sezione Landmarks -->
+            <div class="section" data-expanded="false">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <button class="toggle-btn">🎯 LANDMARKS</button>
+                    <span class="icon">►</span>
+                </div>
+                <div class="section-content" style="display: none;">
+                    <div class="table-container">
+                        <table class="data-table" id="landmarks-table">
+                            <thead>
+                                <tr>
+                                    <th>🎨</th>
+                                    <th>ID</th>
+                                    <th>Nome</th>
+                                    <th>X</th>
+                                    <th>Y</th>
+                                </tr>
+                            </thead>
+                            <tbody id="landmarks-data">
+                                <!-- Dati landmarks verranno inseriti qui -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 📄 Controlli paginazione landmarks -->
+                    <div class="landmarks-controls" id="landmarks-pagination" style="display: none;">
+                        <button class="btn btn-mini" onclick="showLandmarksPage('prev')" id="landmarks-prev">◀
+                            Prec</button>
+                        <span class="landmarks-page-info" id="landmarks-page-info">Pagina 1/1</span>
+                        <button class="btn btn-mini" onclick="showLandmarksPage('next')" id="landmarks-next">Succ
+                            ▶</button>
+                        <button class="btn btn-mini" onclick="showAllLandmarks()"
+                            title="Mostra tutti i landmarks in una nuova finestra">📋 Tutti</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sezione Debug -->
+            <div class="section" data-expanded="true">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <button class="toggle-btn">🐛 DEBUG ANALYSIS</button>
+                    <span class="icon">▼</span>
+                </div>
+                <div class="section-content debug-content">
+                    <div class="table-container">
+                        <table class="data-table debug-table" id="debug-table">
+                            <thead>
+                                <tr>
+                                    <th>Frame</th>
+                                    <th>Tempo</th>
+                                    <th>Score</th>
+                                    <th>Yaw</th>
+                                    <th>Pitch</th>
+                                    <th>Roll</th>
+                                    <th>Stato</th>
+                                </tr>
+                            </thead>
+                            <tbody id="debug-data">
+                                <!-- Dati debug verranno inseriti qui -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="debug-controls">
+                        <button class="btn btn-small" onclick="clearDebugLogs()">Pulisci</button>
+                        <button class="btn btn-small" onclick="ensureSidebarSectionsVisible()"
+                            title="Ripristina visibilità sezioni">🔧 Ripristina UI</button>
+                        <label class="auto-scroll-label">
+                            <input type="checkbox" id="auto-scroll" checked> Auto
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Anteprima Webcam nella colonna destra -->
+            <div class="section" data-expanded="false">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <button class="toggle-btn">📹 ANTEPRIMA WEBCAM</button>
+                    <span class="icon">►</span>
+                </div>
+                <div class="section-content webcam-preview-content" style="display: none;">
+                    <canvas id="webcam-preview-canvas"></canvas>
+                    <div id="webcam-preview-info">Anteprima webcam non attiva</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    </div>
+
+    <!-- Finestra modale per anteprima video -->
+    <div id="preview-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Anteprima Video - Analisi in corso</h3>
+                <span class="close" onclick="closeVideoPreview()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Player video per anteprima in tempo reale -->
+                <div id="video-player-container" style="display: none;">
+                    <video id="preview-video" width="640" height="480" controls>
+                        Il tuo browser non supporta il tag video.
+                    </video>
+                    <div class="video-controls">
+                        <button id="analyze-current-frame" class="btn btn-primary">🎯 Analizza Frame Corrente</button>
+                        <button id="auto-analyze" class="btn btn-success">🤖 Analisi Automatica</button>
+                        <button id="stop-analysis" class="btn btn-danger" style="display: none;">⏹️ Ferma</button>
+                    </div>
+                </div>
+
+                <!-- Canvas per risultati analisi -->
+                <canvas id="preview-canvas" width="640" height="480" style="display: none;"></canvas>
+
+                <!-- Area info/status -->
+                <div class="preview-info" id="preview-info">
+                    In attesa del video...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal separato per l'analisi video automatica -->
+    <div id="video-analysis-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Analisi Video Automatica</h3>
+                <span class="close" onclick="closeVideoAnalysis()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="video-analysis-status">
+                    <div class="analysis-progress">
+                        <div class="spinner"></div>
+                        <p>Analisi in corso...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+        <div class="status-text" id="status-text">Pronto</div>
+        <div class="progress-container" id="progress-container" style="display: none;">
+            <div class="progress-bar" id="progress-bar"></div>
+            <span class="progress-text" id="progress-text">0%</span>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <!-- Patch per bug textBaseline PRIMA di Fabric.js -->
+    <script>
+        console.log('🔧 Applicando patch preventivo per textBaseline...');
+
+        // Patch preventivo per il CanvasRenderingContext2D
+        if (typeof CanvasRenderingContext2D !== 'undefined') {
+            const descriptor = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'textBaseline');
+            if (descriptor && descriptor.set) {
+                const originalSetter = descriptor.set;
+                Object.defineProperty(CanvasRenderingContext2D.prototype, 'textBaseline', {
+                    set: function (value) {
+                        // Correggi automaticamente il valore errato PRIMA che causi errori
+                        if (value === 'alphabetical') {
+                            // Correzione silenziosa per evitare spam nella console
+                            value = 'alphabetic';
+                        }
+                        return originalSetter.call(this, value);
+                    },
+                    get: descriptor.get,
+                    enumerable: true,
+                    configurable: true
+                });
+            }
+        }
+
+        console.log('🔧 Patch preventivo applicato!');
+    </script>
+
+    <!-- Fabric.js per canvas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+
+    <script src="static/js/api-client.js?v=1.5"></script>
+    <script src="static/js/face-detection.js?v=1.5"></script>
+    <script src="static/js/measurements.js?v=2.0"></script>
+    <script src="static/js/scoring.js?v=1.5"></script>
+    <script src="static/js/canvas.js?v=2.7"></script>
+    <script src="static/js/main.js?v=5.2"></script>
+
+    <!-- Script di test per debug -->
+    <script>
+        console.log('🧪 TEST SCRIPT CARICATO');
+
+        // Test dopo il caricamento completo
+        window.addEventListener('load', function () {
+            console.log('🧪 PAGINA COMPLETAMENTE CARICATA');
+            console.log('🧪 Stato variabili globali:', {
+                currentLandmarks: typeof currentLandmarks !== 'undefined' ? currentLandmarks?.length : 'undefined',
+                fabricCanvas: typeof fabricCanvas !== 'undefined' ? !!fabricCanvas : 'undefined',
+                transformLandmarkCoordinate: typeof window.transformLandmarkCoordinate !== 'undefined' ? 'function available' : 'undefined',
+                measureFaceWidth: typeof measureFaceWidth !== 'undefined' ? 'function available' : 'undefined'
+            });
+
+            // Test diretto della funzione di misurazione (disabilitato)
+            // setTimeout(() => {
+            //     console.log('🧪 TEST DIRETTO - Chiamata measureFaceWidth()');
+            //     if (typeof measureFaceWidth === 'function') {
+            //         try {
+            //             measureFaceWidth();
+            //         } catch (e) {
+            //             console.error('🧪 ERRORE in measureFaceWidth:', e);
+            //         }
+            //     } else {
+            //         console.error('🧪 measureFaceWidth NON DEFINITA');
+            //     }
+            // }, 2000);
+        });
+    </script>
+
+    <!-- MediaPipe per face detection -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+</body>
+
+</html>
