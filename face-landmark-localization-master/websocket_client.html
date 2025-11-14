@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Frame Analysis Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .video-container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        video {
+            border: 2px solid #ddd;
+            border-radius: 10px;
+        }
+
+        .controls {
+            margin: 20px 0;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .start-btn {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .stop-btn {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .results-btn {
+            background-color: #2196F3;
+            color: white;
+        }
+
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-card {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .stat-label {
+            color: #6c757d;
+            font-size: 14px;
+        }
+
+        .results {
+            margin-top: 20px;
+        }
+
+        .result-frame {
+            display: inline-block;
+            margin: 10px;
+            text-align: center;
+        }
+
+        .result-frame img {
+            max-width: 150px;
+            border: 2px solid #007bff;
+            border-radius: 5px;
+        }
+
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 10px;
+            height: 200px;
+            overflow-y: scroll;
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎯 WebSocket Frame Analysis Client</h1>
+
+        <div class="status disconnected" id="status">
+            ❌ Disconnesso - Clicca "Avvia Sessione" per iniziare
+        </div>
+
+        <div class="video-container">
+            <div>
+                <h3>📷 Video Webcam</h3>
+                <video id="videoElement" width="320" height="240" autoplay muted></video>
+            </div>
+            <div>
+                <h3>📊 Statistiche Real-time</h3>
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="frameCount">0</div>
+                        <div class="stat-label">Frame Inviati</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="currentScore">0.0</div>
+                        <div class="stat-label">Score Corrente</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalFrames">0</div>
+                        <div class="stat-label">Frame Raccolti</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="facesDetected">0</div>
+                        <div class="stat-label">Volti Rilevati</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="start-btn" onclick="startSession()">🚀 Avvia Sessione</button>
+            <button class="stop-btn" onclick="stopSession()">⏹️ Ferma Invio</button>
+            <button class="results-btn" onclick="getResults()">📋 Ottieni Risultati</button>
+        </div>
+
+        <div class="results" id="results"></div>
+
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        let websocket = null;
+        let videoStream = null;
+        let canvas = null;
+        let isProcessing = false;
+        let frameCount = 0;
+        let sessionId = null;
+
+        // Inizializzazione
+        window.onload = function () {
+            canvas = document.createElement('canvas');
+            connectWebSocket();
+        };
+
+        function log(message) {
+            const logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.innerHTML += `[${timestamp}] ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function updateStatus(message, isConnected) {
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = message;
+            statusElement.className = `status ${isConnected ? 'connected' : 'disconnected'}`;
+        }
+
+        function connectWebSocket() {
+            try {
+                websocket = new WebSocket('ws://localhost:8765');
+
+                websocket.onopen = function () {
+                    log('✅ Connesso al server WebSocket');
+                    updateStatus('✅ Connesso - Pronto per iniziare sessione', true);
+                };
+
+                websocket.onmessage = function (event) {
+                    const data = JSON.parse(event.data);
+                    handleWebSocketMessage(data);
+                };
+
+                websocket.onclose = function () {
+                    log('❌ Connessione WebSocket chiusa');
+                    updateStatus('❌ Disconnesso', false);
+                };
+
+                websocket.onerror = function (error) {
+                    log(`❌ Errore WebSocket: ${error}`);
+                    updateStatus('❌ Errore di connessione', false);
+                };
+
+            } catch (error) {
+                log(`❌ Impossibile connettersi: ${error}`);
+                updateStatus('❌ Server non raggiungibile', false);
+            }
+        }
+
+        function handleWebSocketMessage(data) {
+            switch (data.action) {
+                case 'session_started':
+                    sessionId = data.session_id;
+                    log(`🎯 Sessione avviata: ${sessionId}`);
+                    updateStatus(`🎯 Sessione attiva: ${sessionId}`, true);
+                    startCamera();
+                    break;
+
+                case 'frame_processed':
+                    handleFrameResult(data);
+                    break;
+
+                case 'results_ready':
+                    handleResults(data);
+                    break;
+
+                case 'pong':
+                    log('🏓 Pong ricevuto');
+                    break;
+
+                default:
+                    if (data.error) {
+                        log(`❌ Errore: ${data.error}`);
+                    } else {
+                        log(`📨 Messaggio: ${JSON.stringify(data)}`);
+                    }
+            }
+        }
+
+        function handleFrameResult(data) {
+            // Aggiorna statistiche
+            document.getElementById('currentScore').textContent = data.current_score || '0.0';
+            document.getElementById('totalFrames').textContent = data.total_frames_collected || '0';
+            document.getElementById('facesDetected').textContent = data.faces_detected || '0';
+
+            if (data.faces_detected > 0) {
+                const pose = data.pose || {};
+                log(`📊 Score: ${data.current_score?.toFixed(1)} | Pitch: ${pose.pitch?.toFixed(1)}° | Yaw: ${pose.yaw?.toFixed(1)}°`);
+            }
+        }
+
+        function handleResults(data) {
+            if (data.success) {
+                log(`🏆 Risultati ricevuti: ${data.frames_count} migliori frame`);
+                displayResults(data);
+            } else {
+                log(`❌ Errore risultati: ${data.error}`);
+            }
+        }
+
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `
+                <h3>🏆 Migliori Frame (${data.frames_count})</h3>
+                <p><strong>Miglior punteggio:</strong> ${data.best_score?.toFixed(2)}</p>
+                <div id="frameGallery"></div>
+                <details>
+                    <summary>📄 Dati JSON Completi</summary>
+                    <pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; overflow: auto; max-height: 300px;">
+${JSON.stringify(data.json_data, null, 2)}
+                    </pre>
+                </details>
+            `;
+
+            // Mostra frame se disponibili
+            const gallery = document.getElementById('frameGallery');
+            if (data.frames && data.frames.length > 0) {
+                data.frames.forEach(frame => {
+                    const frameDiv = document.createElement('div');
+                    frameDiv.className = 'result-frame';
+                    frameDiv.innerHTML = `
+                        <img src="data:image/jpeg;base64,${frame.data}" alt="${frame.filename}">
+                        <div><strong>${frame.filename}</strong></div>
+                        <div>Rank: ${frame.rank} | Score: ${frame.score}</div>
+                    `;
+                    gallery.appendChild(frameDiv);
+                });
+            }
+        }
+
+        async function startCamera() {
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480 }
+                });
+
+                const videoElement = document.getElementById('videoElement');
+                videoElement.srcObject = videoStream;
+
+                log('📷 Webcam avviata');
+
+                // Inizia invio frame
+                setTimeout(startFrameCapture, 1000);
+
+            } catch (error) {
+                log(`❌ Errore webcam: ${error}`);
+            }
+        }
+
+        function startFrameCapture() {
+            if (!websocket || !videoStream || isProcessing) return;
+
+            isProcessing = true;
+            captureAndSendFrame();
+        }
+
+        function captureAndSendFrame() {
+            if (!isProcessing || !websocket || websocket.readyState !== WebSocket.OPEN) {
+                return;
+            }
+
+            const videoElement = document.getElementById('videoElement');
+
+            // Cattura frame dal video
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(videoElement, 0, 0);
+
+            // Converti in base64
+            canvas.toBlob(function (blob) {
+                const reader = new FileReader();
+                reader.onload = function () {
+                    const base64 = reader.result.split(',')[1]; // Rimuovi "data:image/jpeg;base64,"
+
+                    const message = {
+                        action: 'process_frame',
+                        frame_data: base64
+                    };
+
+                    websocket.send(JSON.stringify(message));
+
+                    frameCount++;
+                    document.getElementById('frameCount').textContent = frameCount;
+
+                    // Continua cattura (circa 5 FPS)
+                    setTimeout(captureAndSendFrame, 200);
+                };
+                reader.readAsDataURL(blob);
+            }, 'image/jpeg', 0.8);
+        }
+
+        function startSession() {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                log('❌ WebSocket non connesso');
+                connectWebSocket();
+                return;
+            }
+
+            sessionId = `web_session_${Date.now()}`;
+
+            const message = {
+                action: 'start_session',
+                session_id: sessionId
+            };
+
+            websocket.send(JSON.stringify(message));
+            log('🚀 Richiesta avvio sessione inviata');
+        }
+
+        function stopSession() {
+            isProcessing = false;
+
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+
+            log('⏹️ Sessione fermata');
+            updateStatus('⏹️ Sessione fermata', websocket && websocket.readyState === WebSocket.OPEN);
+        }
+
+        function getResults() {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                log('❌ WebSocket non connesso');
+                return;
+            }
+
+            const message = { action: 'get_results' };
+            websocket.send(JSON.stringify(message));
+            log('📋 Richiesta risultati inviata');
+        }
+
+        // Cleanup quando la pagina si chiude
+        window.onbeforeunload = function () {
+            stopSession();
+            if (websocket) {
+                websocket.close();
+            }
+        };
+    </script>
+</body>
+
+</html>

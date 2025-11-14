@@ -1,0 +1,1070 @@
+/* 
+ * Stili principali - Replica esatta dell'interfaccia desktop
+ * Basato su ttkbootstrap tema "cyborg" 
+ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background: #2b2b2b;
+    color: #ffffff;
+    overflow: hidden;
+    height: 100vh;
+}
+
+/* Layout principale identico all'app desktop */
+.main-container {
+    display: grid;
+    grid-template-columns: 480px 1fr 480px;
+    height: calc(100vh - 30px); /* Spazio per status bar */
+    background: #2b2b2b;
+}
+
+/* SIDEBAR SINISTRA - identica ai controlli dell'app desktop */
+.left-sidebar {
+    background: #353535;
+    border-right: 1px solid #555555;
+    overflow-y: auto;
+    padding: 6px;
+    width: 480px;
+    max-width: 480px;
+}
+
+.scrollable-controls {
+    width: 100%;
+}
+
+/* Sezioni collassabili - replica esatta */
+.section {
+    margin-bottom: 2px;
+    border: 1px solid #555555;
+    border-radius: 4px;
+    background: #404040;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 8px;
+    background: #4a4a4a;
+    border-bottom: 1px solid #555555;
+    cursor: pointer;
+    user-select: none;
+}
+
+.section-header:hover {
+    background: #505050;
+}
+
+.toggle-btn {
+    background: none;
+    border: none;
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 12px;
+    cursor: pointer;
+    flex: 1;
+    text-align: left;
+    padding: 4px 0;
+}
+
+.icon {
+    font-size: 12px;
+    transition: transform 0.2s ease;
+    min-width: 16px;
+    text-align: center;
+}
+
+.section[data-expanded="true"] .icon {
+    transform: rotate(90deg);
+}
+
+.section-content {
+    padding: 6px;
+    border-top: 1px solid #555555;
+}
+
+/* Pulsanti - stile ttkbootstrap identico */
+.btn {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin: 2px;
+    min-height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+/* Colori pulsanti identici a ttkbootstrap */
+.btn-primary { background: #007bff; color: white; }
+.btn-success { background: #28a745; color: white; }
+.btn-warning { background: #ffc107; color: #212529; }
+.btn-info { background: #17a2b8; color: white; }
+.btn-danger { background: #dc3545; color: white; }
+.btn-secondary { background: #6c757d; color: white; }
+.btn-measure { background: #fd7e14; color: white; transition: all 0.3s ease; }
+.btn-measure.btn-active { 
+    background: #28a745 !important; 
+    color: white !important; 
+    border: 2px solid #1e7e34 !important;
+    box-shadow: 0 0 8px rgba(40, 167, 69, 0.5) !important;
+    transform: translateY(-1px) !important;
+}
+.btn-detection { background: #fd7e14; color: white; }
+.btn-eyebrow { background: #e83e8c; color: white; }
+.btn-preset { background: #6f42c1; color: white; }
+.btn-small { 
+    background: #6c757d; 
+    color: white; 
+    padding: 4px 8px;
+    font-size: 10px;
+}
+
+/* Griglia pulsanti 2x2 */
+.button-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin: 4px 0;
+}
+
+/* Pulsanti misurazioni predefinite */
+.predefined-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+    margin: 4px 0;
+}
+
+/* Griglia rilevamenti 2x2 */
+.detection-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin: 4px 0;
+}
+
+/* Status info frame */
+.status-info-frame {
+    margin: 6px 0;
+    padding: 4px;
+    background: #2d3748;
+    border: 1px solid #4a5568;
+    border-radius: 4px;
+}
+
+.best-frame-info {
+    font-size: 8px;
+    color: #17a2b8;
+    font-weight: bold;
+    padding: 2px 4px;
+    border: 1px solid #17a2b8;
+    border-radius: 3px;
+    background: #1a2332;
+    word-wrap: break-word;
+    line-height: 1.2;
+}
+
+/* Dashboard badges */
+.badges-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin: 6px 0;
+}
+
+.badge {
+    font-size: 9px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    text-align: center;
+    font-weight: bold;
+}
+
+.webcam-badge { background: #dc3545; color: white; }
+.landmarks-badge { background: #28a745; color: white; }
+.quality-badge { background: #ffc107; color: #212529; }
+.mode-badge { background: #17a2b8; color: white; }
+
+/* Sistema scoring */
+.scoring-info {
+    font-size: 10px;
+    font-weight: bold;
+    color: #28a745;
+    padding: 4px 8px;
+    background: #1a2e1a;
+    border: 1px solid #28a745;
+    border-radius: 3px;
+    margin-bottom: 6px;
+    text-align: center;
+}
+
+.sliders-container {
+    margin: 6px 0;
+}
+
+.slider-row {
+    display: flex;
+    align-items: center;
+    margin: 4px 0;
+    padding: 2px 4px;
+}
+
+.slider-row label {
+    width: 70px;
+    font-size: 9px;
+    font-weight: bold;
+}
+
+.slider {
+    flex: 1;
+    margin: 0 6px;
+    height: 18px;
+    background: #555555;
+    border-radius: 9px;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+}
+
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #007bff;
+    cursor: pointer;
+    border: 1px solid #ffffff;
+}
+
+.slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #007bff;
+    cursor: pointer;
+    border: 1px solid #ffffff;
+}
+
+.value {
+    min-width: 40px;
+    font-size: 9px;
+    font-weight: bold;
+    color: #ffc107;
+    text-align: center;
+}
+
+/* Pulsanti preset */
+.preset-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 2px;
+    margin: 4px 0;
+}
+
+/* Info sopracciglia */
+.eyebrow-info {
+    font-size: 8px;
+    color: #6c757d;
+    font-style: italic;
+    margin-bottom: 6px;
+    text-align: center;
+}
+
+.eyebrow-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+}
+
+/* CANVAS CONTAINER - identico al matplotlib canvas */
+.canvas-container {
+    background: #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid #cccccc;
+    border-right: 1px solid #cccccc;
+}
+
+.canvas-toolbar {
+    background: #e0e0e0;
+    padding: 6px;
+    border-bottom: 1px solid #cccccc;
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    min-height: 40px;
+    align-items: center;
+}
+
+.tool-btn {
+    padding: 4px 8px;
+    background: #ffffff;
+    border: 1px solid #cccccc;
+    border-radius: 3px;
+    font-size: 10px;
+    cursor: pointer;
+    color: #333333;
+    transition: all 0.2s ease;
+}
+
+.tool-btn:hover {
+    background: #f8f9fa;
+    border-color: #007bff;
+}
+
+.tool-btn.active {
+    background: #007bff;
+    color: white;
+    border-color: #0056b3;
+}
+
+.canvas-wrapper {
+    flex: 1;
+    position: relative;
+    background: white;
+    overflow: hidden;
+    min-height: 0; /* Importante per flexbox */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#main-canvas {
+    display: block;
+    background: white;
+    cursor: crosshair;
+    max-width: 100%;
+    max-height: 100%;
+}
+
+#webcam-video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.cursor-info {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    background: rgba(0,0,0,0.7);
+    color: white;
+    padding: 2px 6px;
+    font-size: 10px;
+    border-radius: 3px;
+    pointer-events: none;
+}
+
+/* SIDEBAR DESTRA - identica alla colonna destra dell'app */
+.right-sidebar {
+    background: #353535;
+    border-left: 1px solid #555555;
+    overflow-y: auto;
+    padding: 6px;
+    width: 480px;
+    max-width: 480px;
+}
+
+.section-title {
+    background: #4a4a4a;
+    color: #ffffff;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: bold;
+    border-bottom: 1px solid #555555;
+}
+
+/* Contenuto sezioni nella sidebar destra */
+.debug-content {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.webcam-preview-content {
+    padding: 8px;
+}
+
+#webcam-preview-canvas {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    aspect-ratio: 4/3;
+    border: 2px solid #0d7377;
+    border-radius: 8px;
+    background: #1a1a1a;
+    display: none;
+}
+
+#webcam-preview-canvas.active {
+    display: block !important;
+}
+
+#webcam-preview-info {
+    text-align: center;
+    font-size: 10px;
+    color: #666;
+    padding: 10px;
+}
+
+.table-container {
+    flex: 1;
+    overflow-y: auto;
+    background: #404040;
+}
+
+/* Sezioni destra */
+.measurements-section,
+.landmarks-section,
+.debug-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid #555555;
+    min-height: 200px;
+}
+
+/* 📏 Sezione landmarks con scrollbar limitata */
+.landmarks-section {
+    max-height: 350px; /* Altezza fissa per mostrare circa 10 righe */
+}
+
+.landmarks-section .table-container {
+    max-height: 300px; /* Altezza contenuto tabella */
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* 📊 Stili scrollbar per landmarks */
+.landmarks-section .table-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.landmarks-section .table-container::-webkit-scrollbar-track {
+    background: #2a2a2a;
+    border-radius: 4px;
+}
+
+.landmarks-section .table-container::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 4px;
+}
+
+.landmarks-section .table-container::-webkit-scrollbar-thumb:hover {
+    background: #777;
+}
+
+/* 📋 Stili per la riga informativa landmarks */
+.landmarks-info-row {
+    background: rgba(136, 136, 136, 0.1) !important;
+    border-top: 1px solid #555 !important;
+}
+
+.landmarks-info-row:hover {
+    background: rgba(136, 136, 136, 0.15) !important;
+}
+
+/* 📄 Controlli paginazione landmarks */
+.landmarks-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    background: #3a3a3a;
+    border-top: 1px solid #555;
+    font-size: 10px;
+}
+
+.landmarks-page-info {
+    color: #ccc;
+    font-size: 9px;
+    text-align: center;
+    flex: 1;
+}
+
+.debug-section {
+    border-bottom: none;
+}
+
+.debug-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 8px;
+    background: #4a4a4a;
+    border-top: 1px solid #555555;
+}
+
+.auto-scroll-label {
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+/* STATUS BAR */
+.status-bar {
+    height: 30px;
+    background: #2b2b2b;
+    border-top: 1px solid #555555;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    color: #ffffff;
+    font-size: 11px;
+}
+
+.status-text {
+    flex: 1;
+}
+
+.progress-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 200px;
+}
+
+.progress-bar {
+    height: 6px;
+    background: #555555;
+    border-radius: 3px;
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: #28a745;
+    width: var(--progress, 0%);
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    font-size: 10px;
+    min-width: 30px;
+    text-align: right;
+}
+
+/* MODAL - per anteprima video */
+.modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+    background-color: #353535;
+    margin: 5% auto;
+    padding: 0;
+    border: 1px solid #555555;
+    border-radius: 6px;
+    width: 80%;
+    max-width: 800px;
+    color: white;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: #4a4a4a;
+    border-bottom: 1px solid #555555;
+}
+
+.modal-header h3 {
+    font-size: 14px;
+    margin: 0;
+}
+
+.close {
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    color: #ffffff;
+}
+
+.close:hover {
+    color: #ffc107;
+}
+
+.modal-body {
+    padding: 16px;
+    text-align: center;
+}
+
+#preview-canvas {
+    max-width: 100%;
+    background: black;
+    border: 1px solid #555555;
+}
+
+.preview-info {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #17a2b8;
+}
+
+/* Scrollbar personalizzate identiche all'app desktop */
+::-webkit-scrollbar {
+    width: 16px;
+}
+
+::-webkit-scrollbar-track {
+    background: #353535;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #555555;
+    border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #666666;
+}
+
+::-webkit-scrollbar-corner {
+    background: #353535;
+}
+
+/* Responsive per schermi più piccoli */
+@media (max-width: 1400px) {
+    .main-container {
+        grid-template-columns: 420px 1fr 420px;
+    }
+    
+    .left-sidebar,
+    .right-sidebar {
+        width: 420px;
+        max-width: 420px;
+    }
+}
+
+@media (max-width: 1200px) {
+    .main-container {
+        grid-template-columns: 350px 1fr 350px;
+    }
+    
+    .left-sidebar,
+    .right-sidebar {
+        width: 350px;
+        max-width: 350px;
+    }
+    
+    .btn {
+        font-size: 10px;
+        padding: 4px 8px;
+    }
+}
+
+/* Stili specifici per analisi video */
+.analysis-progress {
+    text-align: center;
+    padding: 20px;
+}
+
+.analysis-progress .spinner {
+    width: 40px;
+    height: 40px;
+    margin: 20px auto;
+    border: 4px solid #555;
+    border-top: 4px solid #00ff88;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.analysis-complete {
+    padding: 20px;
+    text-align: center;
+}
+
+.analysis-complete h4 {
+    color: #00ff88;
+    margin-bottom: 15px;
+}
+
+.analysis-complete p {
+    margin: 5px 0;
+}
+
+.analysis-error {
+    padding: 20px;
+    text-align: center;
+}
+
+.analysis-error h4 {
+    color: #ff4444;
+    margin-bottom: 15px;
+}
+
+.analysis-error button {
+    margin-top: 15px;
+}
+
+/* Stili per modal video e controlli */
+.choice-buttons {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.choice-buttons .btn {
+    flex: 1;
+    max-width: 250px;
+    text-align: center;
+    padding: 15px;
+    border-radius: 8px;
+}
+
+.choice-buttons small {
+    display: block;
+    font-size: 12px;
+    opacity: 0.8;
+    margin-top: 5px;
+}
+
+#video-player-container {
+    text-align: center;
+}
+
+#preview-video {
+    max-width: 100%;
+    border: 2px solid #555;
+    border-radius: 8px;
+}
+
+.video-controls {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.video-controls .btn {
+    font-size: 12px;
+    padding: 8px 12px;
+}
+
+/* === VIDEO CONTROLS PANEL STYLES === */
+.video-controls-panel {
+    margin-top: 15px;
+    background: #404040;
+    border-radius: 8px;
+    border: 1px solid #555555;
+}
+
+.video-controls-panel .section-content {
+    padding: 15px;
+}
+
+.video-info {
+    margin-bottom: 15px;
+    font-size: 11px;
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 10px;
+    border-radius: 6px;
+}
+
+.video-info p {
+    margin: 4px 0;
+    padding: 2px 0;
+}
+
+.video-timeline {
+    margin: 15px 0;
+}
+
+.timeline-slider {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: #2a2a2a;
+    outline: none;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.timeline-slider:hover {
+    opacity: 1;
+}
+
+.timeline-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #0d7377;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.timeline-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #0d7377;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+#time-display {
+    text-align: center;
+    font-size: 11px;
+    color: #ffffff;
+    margin-top: 6px;
+    font-family: 'Courier New', monospace;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.video-buttons {
+    display: flex;
+    gap: 6px;
+    margin: 12px 0;
+    flex-wrap: wrap;
+}
+
+.video-buttons .btn {
+    flex: 1;
+    min-width: 70px;
+    padding: 6px 8px;
+    font-size: 10px;
+}
+
+.analysis-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.analysis-buttons .btn {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 11px;
+}
+
+.frontality-display {
+    background: rgba(13, 115, 119, 0.2);
+    border: 1px solid #0d7377;
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+    margin-top: 12px;
+    font-size: 11px;
+}
+
+#current-score {
+    font-size: 14px;
+    font-weight: bold;
+    margin-left: 8px;
+}
+
+/* === DEBUG ANALYSIS TABLE STYLES === */
+.debug-table {
+    font-size: 10px !important;
+}
+
+.debug-table th {
+    background: #2a2a2a;
+    color: #ffffff;
+    padding: 6px 4px;
+    text-align: center;
+    border: 1px solid #555;
+}
+
+.debug-table td {
+    padding: 4px 6px;
+    text-align: center;
+    border: 1px solid #555;
+    cursor: pointer;
+}
+
+.debug-table tr:hover {
+    background: rgba(13, 115, 119, 0.2);
+}
+
+/* Score cell colors */
+.score-cell {
+    font-weight: bold;
+    font-size: 11px;
+}
+
+/* Status cell styling */
+.status-cell {
+    font-size: 9px;
+    font-weight: bold;
+}
+
+/* Frame quality row classes */
+.excellent-frame {
+    background: rgba(0, 255, 0, 0.1);
+}
+
+.good-frame {
+    background: rgba(255, 255, 0, 0.1);
+}
+
+.medium-frame {
+    background: rgba(255, 136, 0, 0.1);
+}
+
+.poor-frame {
+    background: rgba(255, 0, 0, 0.1);
+}
+
+/* 🥇 Primo classificato - Frame migliore */
+.top-frame {
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.4), rgba(255, 165, 0, 0.3)) !important;
+    border: 3px solid #FFD700 !important;
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.8);
+    animation: pulse-gold 2s infinite;
+}
+
+.top-frame td {
+    font-weight: bold;
+    color: #B8860B !important;
+}
+
+@keyframes pulse-gold {
+    0% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.8); }
+    50% { box-shadow: 0 0 25px rgba(255, 215, 0, 1); }
+    100% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.8); }
+}
+
+/* 🥈 Top 3 frame frontali */
+.best-frame-highlight {
+    background: rgba(13, 115, 119, 0.3) !important;
+    border: 2px solid #0d7377 !important;
+    box-shadow: 0 0 8px rgba(13, 115, 119, 0.5);
+}
+
+.best-frame-highlight td {
+    font-weight: bold;
+}
+
+/* ⭐ Frame molto frontali (score > 0.7) */
+.very-frontal-frame {
+    background: rgba(46, 125, 50, 0.2) !important;
+    border: 1px solid #2E7D32 !important;
+    box-shadow: 0 0 5px rgba(46, 125, 50, 0.4);
+}
+
+.very-frontal-frame td {
+    color: #2E7D32 !important;
+}
+
+.current-frame-highlight {
+    background: rgba(255, 255, 0, 0.2) !important;
+    border: 2px solid #ffff00 !important;
+    animation: pulse-current 1.5s infinite;
+}
+
+@keyframes pulse-current {
+    0% { box-shadow: 0 0 0 0 rgba(255, 255, 0, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(255, 255, 0, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 255, 0, 0); }
+}
+
+/* Debug section specific styles */
+.debug-section {
+    margin-top: 8px;
+}
+
+.debug-section .section-title {
+    background: #2a2a2a;
+    color: #ffffff;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: bold;
+    border-radius: 4px 4px 0 0;
+    border: 1px solid #555;
+}
+
+/* 🎯 Stili per i pulsanti filtro mini */
+.btn-mini {
+    padding: 2px 6px;
+    font-size: 9px;
+    margin: 0 1px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+    background: #f8f9fa;
+    color: #495057;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-mini:hover {
+    background: #e9ecef;
+    border-color: #adb5bd;
+}
+
+.btn-mini.active {
+    background: #007bff;
+    color: white;
+    border-color: #0056b3;
+    box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+}
+
+.frontal-filters {
+    border-left: 1px solid #ddd;
+    padding-left: 10px;
+}
+
+.debug-section .table-container {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #555;
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+}
