@@ -3,6 +3,16 @@
  * Replica comportamenti dell'app desktop
  */
 
+// 🚀 VERSION CHECK - main.js v6.5 - LEFT SIDEBAR FIX
+console.log('🚀🚀🚀 main.js v6.5 - LEFT SIDEBAR FIX! 🚀🚀🚀');
+console.log('   ✅ Cerca CORREZIONE SOPRACCIGLIA nella LEFT sidebar (non right!)');
+console.log('   ✅ Debug dettagliato per trovare la sezione');
+console.log('   ✅ Ora il calcolo usa la distanza perpendicolare dalla linea di simmetria');
+console.log('   ✅ Non più solo distanza orizzontale (X)!');
+console.log('   ℹ️ Se vedi ancora calcoli errati:');
+console.log('   1️⃣ Premi Ctrl+F5 per forzare reload');
+console.log('   2️⃣ Ripremi il pulsante GREEN DOTS per rigenerare la tabella');
+
 // Variabili globali (controllo per evitare ridichiarazioni)
 if (typeof currentTool === 'undefined') var currentTool = 'selection';
 if (typeof isWebcamActive === 'undefined') var isWebcamActive = false;
@@ -266,6 +276,24 @@ function loadImage() {
   input.click();
 }
 
+function collapseDetectionSections() {
+  // Trova e ESPANDI (apri) le sezioni "RILEVAMENTI" e "MISURAZIONI PREDEFINITE"
+  const sections = document.querySelectorAll('.left-sidebar .section');
+  sections.forEach(section => {
+    const btnText = section.querySelector('.toggle-btn')?.textContent || '';
+    if (btnText.includes('RILEVAMENTI') || btnText.includes('MISURAZIONI PREDEFINITE')) {
+      const content = section.querySelector('.section-content');
+      const icon = section.querySelector('.icon');
+      if (content && content.style.display === 'none') {
+        content.style.display = 'block';
+        if (icon) icon.textContent = '▼';
+        section.setAttribute('data-expanded', 'true');
+        console.log(`📂 Sezione "${btnText.trim()}" aperta`);
+      }
+    }
+  });
+}
+
 function loadVideo() {
   const input = document.createElement('input');
   input.type = 'file';
@@ -285,6 +313,9 @@ function handleFileLoad(file) {
   reader.onload = function (e) {
     const img = new Image();
     img.onload = async function () {
+      // Espandi sezioni dopo upload immagine
+      collapseDetectionSections();
+
       // 🔄 NUOVO FLUSSO: Converti immagine in base64 e usa il flusso video
       console.log('🖼️ Conversione immagine statica in flusso video-like...');
 
@@ -329,6 +360,9 @@ async function handleVideoLoad(file) {
   });
 
   try {
+    // Espandi sezioni dopo upload video
+    collapseDetectionSections();
+
     updateStatus('Avvio analisi video...');
 
     // Crea elemento video nascosto per elaborazione
@@ -574,8 +608,7 @@ function drawVideoFrame(video, currentTime) {
       img.onload = function () {
         displayImageOnCanvas(img);
 
-        // Salva frame corrente come immagine
-        currentImage = img;
+        // L'immagine viene salvata da displayImageOnCanvas()
 
         // Aggiorna interfaccia
         updateVideoTimeDisplay(currentTime, video.duration);
@@ -1236,8 +1269,8 @@ function displayImageOnCanvas(image) {
   fabricCanvas.sendToBack(fabricImage);
   fabricCanvas.renderAll();
 
-  // Salva riferimento
-  currentImage = image;
+  // Salva riferimento all'oggetto fabric (non all'elemento HTML)
+  currentImage = fabricImage;
 
   // Salva le informazioni di scala per i landmarks
   window.imageScale = scale;
@@ -1854,12 +1887,18 @@ function updateCanvasWithBestFrame(imageData) {
           cornerColor: '#007bff'
         });
 
-        // Imposta come immagine corrente
-        currentImage = img;
-
         // Aggiungi al canvas e metti in background
         fabricCanvas.add(img);
         fabricCanvas.sendToBack(img);
+
+        // IMPORTANTE: Assegna currentImage per le funzioni che ne hanno bisogno
+        currentImage = img;
+        currentImage.isBackgroundImage = true;
+
+        // Aggiorna le variabili globali di trasformazione
+        window.imageScale = sizing.scale;
+        window.imageOffset = { x: sizing.left, y: sizing.top };
+
         fabricCanvas.renderAll();
 
         console.log('✅ Canvas aggiornato con miglior frame - Dimensioni originali:', img.width, 'x', img.height, 'Scale:', sizing.scale);
@@ -2517,7 +2556,7 @@ function clearAllOverlays() {
   if (!fabricCanvas) return;
 
   const overlays = fabricCanvas.getObjects().filter(obj =>
-    obj.isLandmark || obj.isSymmetryAxis || obj.isGreenDot || obj.isDebugPoint
+    obj.isLandmark || obj.isSymmetryAxis || obj.isGreenDot || obj.isGreenDotsOverlay || obj.isGreenDotsGroup || obj.isDebugPoint
   );
   overlays.forEach(overlay => fabricCanvas.remove(overlay));
   fabricCanvas.renderAll();
@@ -2681,32 +2720,77 @@ function clearSymmetryAxis() {
 
 function drawGreenDots() {
   /**
-   * Disegna i green dots (punti chiave) per l'analisi medica.
-   * Simula il comportamento di green_dots_processor.py usando landmarks chiave.
+   * Disegna i green dots rilevati dall'API o fallback sui punti chiave landmarks.
+   * Integra i risultati del modulo src/green_dots_processor.py.
    */
-  if (!fabricCanvas || !currentLandmarks || currentLandmarks.length === 0) return;
+  if (!fabricCanvas) return;
 
-  console.log('🟢 Disegno green dots sui punti chiave per analisi medica');
+  console.log('🟢 Disegno green dots');
 
-  // Punti chiave MediaPipe per analisi facciale medica
-  // (contorno viso, occhi, naso, bocca, sopracciglia)
+  // Se abbiamo dati dall'API green dots, disegna quelli
+  if (window.greenDotsData && window.greenDotsData.success) {
+    drawGreenDotsFromAPI();
+  } else if (currentLandmarks && currentLandmarks.length > 0) {
+    // Fallback: disegna sui punti chiave landmarks
+    drawGreenDotsLandmarksFallback();
+  }
+}
+
+function drawGreenDotsFromAPI() {
+  /**
+   * Disegna l'overlay dei green dots rilevati dall'API green-dots-processor.
+   * NON disegna i singoli punti per evitare duplicazioni.
+   */
+  const data = window.greenDotsData;
+  console.log('🎯 Disegno overlay green dots dall\'API - Dati:', data);
+
+  // Rimuovi solo gli overlay green dots esistenti (non disabilitare movimento)
+  if (fabricCanvas) {
+    const elementsToRemove = fabricCanvas.getObjects().filter(obj =>
+      obj.isGreenDot || obj.isGreenDotsOverlay || obj.isGreenDotsGroup
+    );
+    elementsToRemove.forEach(element => fabricCanvas.remove(element));
+    console.log(`🧹 Rimossi ${elementsToRemove.length} elementi green dots dal canvas`);
+  }
+
+  // Disegna solo l'overlay se disponibile, altrimenti disegna i gruppi manualmente
+  if (data.overlay_base64) {
+    console.log('🎨 Uso overlay generato dal processore');
+    drawGreenDotsOverlay(data.overlay_base64);
+  } else if (data.groups) {
+    console.log('🔶 Disegno gruppi manualmente (nessun overlay disponibile)');
+    drawGreenDotsGroups(data.groups);
+  } else {
+    console.log('⚠️ Nessun overlay o gruppi disponibili, uso fallback landmarks');
+    drawGreenDotsLandmarksFallback();
+  }
+
+  // Assicura che il movimento dell'immagine sia abilitato dopo il ridisegno
+  if (window.currentGreenDotsOverlay || data.overlay_base64) {
+    enableImageMovement();
+  }
+
+  fabricCanvas.renderAll();
+  console.log('🎨 Overlay green dots disegnato dall\'API con movimento abilitato');
+}
+
+function drawGreenDotsLandmarksFallback() {
+  /**
+   * Fallback: disegna green dots sui landmarks chiave quando l'API non è disponibile.
+   */
+  console.log('🟡 Fallback: disegno green dots sui landmarks chiave');
+
   const keyPoints = [
-    // Contorno viso principale
     10, 151, 9, 8, 168, 6, 148, 152,
-    // Occhi - punti principali
     33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246,
     362, 398, 384, 385, 386, 387, 388, 466, 263, 249, 390, 373, 374, 380, 381, 382,
-    // Naso - contorno e punta
     1, 2, 5, 4, 6, 19, 20, 94, 125, 141, 235, 236, 237, 238, 239, 240, 241, 242,
-    // Bocca - contorno completo
     61, 84, 17, 314, 405, 320, 307, 375, 321, 308, 324, 318,
     78, 81, 13, 82, 312, 15, 16, 85, 179, 86, 316, 317, 18,
-    // Sopracciglia 
     46, 53, 52, 51, 48, 115, 131, 134, 102, 49, 220, 305,
     276, 283, 282, 295, 285, 336, 296, 334, 293, 300, 276, 283
   ];
 
-  // Disegna dots sui punti chiave esistenti
   let dotsDrawn = 0;
   keyPoints.forEach(pointIndex => {
     if (currentLandmarks[pointIndex]) {
@@ -2717,12 +2801,13 @@ function drawGreenDots() {
         left: transformedPoint.x - 2,
         top: transformedPoint.y - 2,
         radius: 2,
-        fill: '#00FF00',     // Verde brillante
-        stroke: '#008000',   // Verde scuro per il bordo
+        fill: '#00FF00',
+        stroke: '#008000',
         strokeWidth: 0.5,
         selectable: false,
         evented: false,
         isGreenDot: true,
+        isFallbackDot: true,
         landmarkIndex: pointIndex
       });
 
@@ -2732,15 +2817,782 @@ function drawGreenDots() {
   });
 
   fabricCanvas.renderAll();
-
-  console.log(`🟢 ${dotsDrawn} green dots disegnati sui punti chiave`);
+  console.log(`� ${dotsDrawn} green dots fallback disegnati sui landmarks`);
 }
 
-function clearGreenDots() {
-  if (fabricCanvas) {
-    const dots = fabricCanvas.getObjects().filter(obj => obj.isGreenDot);
-    dots.forEach(dot => fabricCanvas.remove(dot));
+function drawGreenDotsOverlay(overlayBase64) {
+  /**
+   * Disegna l'overlay trasparente generato dal processore green dots.
+   * Usa la stessa logica di trasformazione dinamica dei landmarks.
+   */
+  try {
+    fabric.Image.fromURL(overlayBase64, function (overlayImg) {
+      if (!currentImage) {
+        console.warn('⚠️ Nessuna immagine corrente disponibile per overlay');
+        return;
+      }
+
+      // Ricalcola le informazioni di trasformazione se necessario
+      if (!window.imageScale || !window.imageOffset) {
+        console.warn('⚠️ Informazioni trasformazione non disponibili, ricalcolo...');
+        recalculateImageTransformation();
+
+        if (!window.imageScale || !window.imageOffset) {
+          console.error('❌ Impossibile calcolare trasformazione per overlay');
+          return;
+        }
+      }
+
+      // L'overlay è delle dimensioni dell'immagine originale
+      const originalWidth = overlayImg.width;
+      const originalHeight = overlayImg.height;
+
+      console.log(`🎨 Overlay originale: ${originalWidth}x${originalHeight}`);
+      console.log(`🎨 Scala canvas: ${window.imageScale}, Offset: (${window.imageOffset.x}, ${window.imageOffset.y})`);
+
+      // Rimuovi overlay precedente se esiste
+      const existingOverlay = fabricCanvas.getObjects().find(obj => obj.isGreenDotsOverlay);
+      if (existingOverlay) {
+        fabricCanvas.remove(existingOverlay);
+      }
+
+      overlayImg.set({
+        // USA ESATTAMENTE LE STESSE COORDINATE DELL'IMMAGINE PRINCIPALE
+        left: currentImage.left,
+        top: currentImage.top,
+        scaleX: currentImage.scaleX,
+        scaleY: currentImage.scaleY,
+        selectable: false,
+        evented: false,
+        isGreenDotsOverlay: true,
+        opacity: 0.8,
+        originX: 'left',
+        originY: 'top'
+      });
+
+      // Salva riferimento all'overlay per poterlo aggiornare
+      window.currentGreenDotsOverlay = overlayImg;
+
+      fabricCanvas.add(overlayImg);
+
+      // Posiziona l'overlay sopra l'immagine di sfondo ma sotto altri elementi
+      const backgroundImage = fabricCanvas.getObjects().find(obj => obj.isBackgroundImage);
+      if (backgroundImage) {
+        // Prima manda l'immagine di sfondo in fondo
+        fabricCanvas.sendToBack(backgroundImage);
+        // Poi porta l'overlay sopra l'immagine ma non al top (per lasciare spazio ai punti)
+        const allObjects = fabricCanvas.getObjects();
+        const backgroundIndex = allObjects.indexOf(backgroundImage);
+        fabricCanvas.moveTo(overlayImg, backgroundIndex + 1);
+      } else {
+        // Se non c'è immagine di sfondo, l'overlay rimane dove è
+        console.log('🎨 Nessuna immagine di sfondo trovata');
+      }
+
+      fabricCanvas.renderAll();
+      console.log('🎨 Overlay green dots aggiunto e posizionato correttamente con coordinate dinamiche');
+
+      // Abilita l'immagine per essere spostata e configura sincronizzazione
+      enableImageMovement();
+    });
+  } catch (error) {
+    console.error('❌ Errore aggiunta overlay green dots:', error);
+  }
+}
+
+function enableImageMovement() {
+  /**
+   * Abilita l'immagine per essere spostata e configura la sincronizzazione overlay
+   */
+  if (!currentImage || !currentImage.isBackgroundImage) {
+    console.warn('⚠️ Immagine non disponibile per abilitare movimento');
+    return;
+  }
+
+  // Abilita la selezione e movimento dell'immagine
+  currentImage.set({
+    selectable: true,
+    evented: true,
+    lockUniScaling: true,
+    cornerStyle: 'circle',
+    cornerSize: 8,
+    transparentCorners: false,
+    cornerColor: '#007bff',
+    borderColor: '#007bff'
+  });
+
+  // Rimuovi event listeners precedenti per object events (NON mouse events - gestiti globalmente in canvas.js)
+  fabricCanvas.off('object:moving');
+  fabricCanvas.off('object:scaling');
+  fabricCanvas.off('object:modified');
+  fabricCanvas.off('object:moved');
+  fabricCanvas.off('object:scaled');
+  fabricCanvas.off('object:rotated');
+
+  // Configura nuovi event listeners specifici per l'immagine
+  fabricCanvas.on('object:moving', function (e) {
+    console.log('🔄 Event object:moving triggerato, target:', e.target, 'currentImage:', currentImage);
+    if (e.target === currentImage && window.currentGreenDotsOverlay) {
+      console.log('🔄 Immagine in movimento, sincronizzando overlay...');
+      // Sincronizza immediatamente durante il trascinamento
+      window.currentGreenDotsOverlay.set({
+        left: currentImage.left,
+        top: currentImage.top
+      });
+      fabricCanvas.requestRenderAll();
+    }
+  });
+
+  fabricCanvas.on('object:scaling', function (e) {
+    console.log('🔄 Event object:scaling triggerato, target:', e.target, 'currentImage:', currentImage);
+    if (e.target === currentImage && window.currentGreenDotsOverlay) {
+      console.log('🔄 Immagine ridimensionata, sincronizzando overlay...');
+      // Sincronizza posizione E scala durante il ridimensionamento
+      window.currentGreenDotsOverlay.set({
+        left: currentImage.left,
+        top: currentImage.top,
+        scaleX: currentImage.scaleX,
+        scaleY: currentImage.scaleY
+      });
+      fabricCanvas.requestRenderAll();
+    }
+  });
+
+  fabricCanvas.on('object:modified', function (e) {
+    console.log('🔄 Event object:modified triggerato, target:', e.target, 'currentImage:', currentImage);
+    if (e.target === currentImage && window.currentGreenDotsOverlay) {
+      console.log('🔄 Immagine modificata, sincronizzando overlay...');
+      // Sincronizza completamente dopo le modifiche
+      syncGreenDotsOverlayWithImage();
+    }
+  });
+
+  fabricCanvas.renderAll();
+  console.log('🎯 Movimento immagine abilitato, sincronizzazione configurata');
+}
+
+function disableImageMovement() {
+  /**
+   * Disabilita il movimento dell'immagine e rimuove event listeners
+   */
+  if (currentImage && currentImage.isBackgroundImage) {
+    currentImage.set({
+      selectable: false,
+      evented: false
+    });
+
+    // Rimuovi event listeners per object events (NON mouse events - rimangono globali)
+    fabricCanvas.off('object:moving');
+    fabricCanvas.off('object:scaling');
+    fabricCanvas.off('object:modified');
+    fabricCanvas.off('object:moved');
+    fabricCanvas.off('object:scaled');
+    fabricCanvas.off('object:rotated');
+
+    // Pulisci timeout pan se esiste
+    if (window.panSyncTimeout) {
+      clearTimeout(window.panSyncTimeout);
+      window.panSyncTimeout = null;
+    }
+
     fabricCanvas.renderAll();
+    console.log('🔒 Movimento immagine e pan canvas disabilitati');
+  }
+}
+
+function drawGreenDotsGroups(groups) {
+  /**
+   * Disegna le forme dei gruppi sinistro/destro dei green dots.
+   */
+  const colors = {
+    'Sx': { fill: 'rgba(0, 255, 0, 0.2)', stroke: 'rgba(0, 255, 0, 0.8)' },
+    'Dx': { fill: 'rgba(0, 0, 255, 0.2)', stroke: 'rgba(0, 0, 255, 0.8)' }
+  };
+
+  Object.keys(groups).forEach(groupName => {
+    const groupPoints = groups[groupName];
+    if (groupPoints && groupPoints.length >= 3) {
+
+      // Converte i punti in coordinate canvas
+      const canvasPoints = groupPoints.map(point => {
+        const scaled = scaleImageCoordinates(point.x, point.y);
+        return { x: scaled.x, y: scaled.y };
+      });
+
+      // Crea un poligono per il gruppo
+      const polygon = new fabric.Polygon(canvasPoints, {
+        fill: colors[groupName]?.fill || 'rgba(128, 128, 128, 0.2)',
+        stroke: colors[groupName]?.stroke || 'rgba(128, 128, 128, 0.8)',
+        strokeWidth: 2,
+        selectable: false,
+        evented: false,
+        isGreenDotsGroup: true,
+        groupName: groupName
+      });
+
+      fabricCanvas.add(polygon);
+      console.log(`🔶 Gruppo ${groupName} disegnato con ${groupPoints.length} punti`);
+    }
+  });
+}
+
+function scaleImageCoordinates(x, y) {
+  /**
+   * Converte coordinate dell'immagine originale in coordinate del canvas scalato.
+   * Usa la stessa logica di transformLandmarkCoordinate per coerenza.
+   */
+  if (!window.imageScale || !window.imageOffset) {
+    console.warn('⚠️ Informazioni scala green dots non disponibili, ricalcolo...');
+
+    // Prova a ricalcolare come per i landmarks
+    if (currentImage && fabricCanvas) {
+      recalculateImageTransformation();
+    }
+
+    if (!window.imageScale || !window.imageOffset) {
+      console.warn('❌ Impossibile scalare coordinate green dots, usando originali');
+      return { x, y };
+    }
+  }
+
+  const scaled = {
+    x: x * window.imageScale + window.imageOffset.x,
+    y: y * window.imageScale + window.imageOffset.y
+  };
+
+  console.log(`🟢 Scala green dots: (${x}, ${y}) → (${scaled.x.toFixed(1)}, ${scaled.y.toFixed(1)}) | Scala: ${window.imageScale?.toFixed(4)} Offset: (${window.imageOffset?.x?.toFixed(1)}, ${window.imageOffset?.y?.toFixed(1)})`);
+
+  return scaled;
+}
+
+function updateMeasurementsFromGreenDots(greenDotsResult) {
+  /**
+   * Aggiorna la sezione misurazioni con i risultati dell'analisi green dots.
+   */
+  console.log('📏 Aggiornamento misurazioni green dots:', greenDotsResult);
+
+  if (!greenDotsResult.success) {
+    console.warn('⚠️ Risultati green dots non validi per le misurazioni');
+    return;
+  }
+
+  try {
+    // Trova la sezione misurazioni (corretta struttura HTML)
+    const measurementsSection = document.querySelector('#measurements-data');
+    if (!measurementsSection) {
+      console.warn('⚠️ Sezione misurazioni non trovata - cercando #measurements-data');
+      console.log('🔍 Elementi disponibili:', document.querySelectorAll('[id*="measurement"], [class*="measurement"]'));
+      return;
+    }
+
+    // Rimuovi solo le righe green dots esistenti per evitare duplicati
+    const existingGreenDotsRows = measurementsSection.querySelectorAll('tr[data-type="green-dots"]');
+    existingGreenDotsRows.forEach(row => row.remove());
+
+    // Genera e aggiungi le nuove righe dei green dots
+    const tableRows = generateGreenDotsTableRows(greenDotsResult);
+    measurementsSection.insertAdjacentHTML('beforeend', tableRows);
+
+    // Assicurati che la sezione misurazioni sia visibile ed espansa
+    const measurementsSections = document.querySelectorAll('.right-sidebar .section');
+    measurementsSections.forEach(section => {
+      const toggleBtn = section.querySelector('.toggle-btn');
+      if (toggleBtn && toggleBtn.textContent.includes('📏 MISURAZIONI')) {
+        const sectionContent = section.querySelector('.section-content');
+        if (sectionContent) {
+          sectionContent.style.display = 'block';
+          section.setAttribute('data-expanded', 'true');
+          const icon = section.querySelector('.icon');
+          if (icon) icon.textContent = '▼';
+          console.log('👁️ Sezione misurazioni resa visibile ed espansa');
+        }
+      }
+    });
+
+    console.log('✅ Misurazioni green dots aggiornate e mostrate');
+
+  } catch (error) {
+    console.error('❌ Errore aggiornamento misurazioni green dots:', error);
+  }
+}
+
+function generateGreenDotsTableRows(result) {
+  /**
+   * Genera le righe della tabella delle misurazioni per i green dots.
+   */
+  let rows = '';
+
+  if (!result.success || !result.statistics) {
+    rows += `<tr data-type="green-dots">
+      <td>⚠️ Green Dots</td>
+      <td>Nessun dato</td>
+      <td>-</td>
+      <td>❌ Errore</td>
+    </tr>`;
+    return rows;
+  }
+
+  const stats = result.statistics;
+
+  // Calcola quale poligono è maggiore
+  let leftArea = stats.left ? stats.left.area : 0;
+  let rightArea = stats.right ? stats.right.area : 0;
+  let largerSide = leftArea > rightArea ? 'left' : rightArea > leftArea ? 'right' : 'equal';
+
+  // Area lato sinistro con evidenziazione se maggiore
+  if (stats.left) {
+    const isLarger = largerSide === 'left';
+    rows += `<tr data-type="green-dots">
+      <td>🟢 Poligono Sinistro</td>
+      <td>${stats.left.area.toFixed(1)} ${isLarger ? '🔴 MAGGIORE' : ''}</td>
+      <td>px²</td>
+      <td>✅ OK</td>
+    </tr>`;
+  }
+
+  // Area lato destro con evidenziazione se maggiore
+  if (stats.right) {
+    const isLarger = largerSide === 'right';
+    rows += `<tr data-type="green-dots">
+      <td>🟢 Poligono Destro</td>
+      <td>${stats.right.area.toFixed(1)} ${isLarger ? '🔴 MAGGIORE' : ''}</td>
+      <td>px²</td>
+      <td>✅ OK</td>
+    </tr>`;
+  }
+
+  // Area totale
+  if (stats.combined) {
+    rows += `<tr data-type="green-dots">
+      <td>🟢 Area Totale</td>
+      <td>${stats.combined.total_area.toFixed(1)}</td>
+      <td>px²</td>
+      <td>✅ OK</td>
+    </tr>`;
+  }
+
+  // === ANALISI SIMMETRIA ===
+  // Aggiungi analisi delle distanze dall'asse di simmetria
+  const symmetryRows = generateSymmetryAnalysisRows(result);
+  rows += symmetryRows;
+
+  // Punti totali rilevati
+  if (result.detection_results) {
+    rows += `<tr data-type="green-dots">
+      <td>🟢 Punti Rilevati</td>
+      <td>${result.detection_results.total_dots}</td>
+      <td>pz</td>
+      <td>✅ OK</td>
+    </tr>`;
+
+    rows += `<tr data-type="green-dots">
+      <td>🟢 Pixel Verdi</td>
+      <td>${result.detection_results.total_green_pixels}</td>
+      <td>px</td>
+      <td>✅ OK</td>
+    </tr>`;
+  }
+
+  return rows;
+}
+
+function generateSymmetryAnalysisRows(result) {
+  /**
+   * Genera le righe della tabella per l'analisi di simmetria dei punti green dots.
+   */
+  let rows = '';
+
+  // Verifica che ci siano i dati necessari
+  if (!result.coordinates || !result.coordinates.Sx || !result.coordinates.Dx) {
+    console.warn('⚠️ Coordinate non disponibili per analisi simmetria');
+    return '';
+  }
+
+  // Ottieni l'asse di simmetria
+  const symmetryAxisData = getSymmetryAxisPosition();
+  if (!symmetryAxisData) {
+    console.warn('⚠️ Asse di simmetria non disponibile');
+    rows += `<tr data-type="green-dots">
+      <td>⚖️ Simmetria</td>
+      <td>Asse non disponibile</td>
+      <td>-</td>
+      <td>❌ Errore</td>
+    </tr>`;
+    return rows;
+  }
+
+  console.log(`⚖️ generateSymmetryAnalysisRows: Asse X = ${symmetryAxisData.x.toFixed(1)}, Linea: (${symmetryAxisData.line.x1.toFixed(1)},${symmetryAxisData.line.y1}) → (${symmetryAxisData.line.x2.toFixed(1)},${symmetryAxisData.line.y2})`);
+  console.log(`   Linea in coordinate IMMAGINE ORIGINALE: (${symmetryAxisData.lineOriginal.x1.toFixed(1)},${symmetryAxisData.lineOriginal.y1}) → (${symmetryAxisData.lineOriginal.x2.toFixed(1)},${symmetryAxisData.lineOriginal.y2})`);
+
+  const leftPoints = result.coordinates.Sx; // Coordinate [(x,y), ...] in coordinate IMMAGINE ORIGINALE
+  const rightPoints = result.coordinates.Dx;
+
+  console.log('📍 COORDINATE GREEN DOTS (immagine originale):');
+  console.log('   Sx (sinistro):', leftPoints);
+  console.log('   Dx (destro):', rightPoints);
+
+  // Mapping degli indici ai nomi delle etichette
+  const leftLabels = ["LC1", "LA0", "LA", "LC", "LB"];
+  const rightLabels = ["RC1", "RB", "RC", "RA", "RA0"];
+
+  // Coppie da confrontare (indice sinistro, indice destro, nome confronto)
+  const comparisons = [
+    [1, 4, "LA0 vs RA0"], // LA0 (indice 1) vs RA0 (indice 4)  
+    [2, 3, "LA vs RA"],   // LA (indice 2) vs RA (indice 3)
+    [0, 0, "LC1 vs RC1"], // LC1 (indice 0) vs RC1 (indice 0)
+    [4, 1, "LB vs RB"],   // LB (indice 4) vs RB (indice 1)
+    [3, 2, "LC vs RC"]    // LC (indice 3) vs RC (indice 2)
+  ];
+
+  comparisons.forEach(([leftIdx, rightIdx, comparisonName]) => {
+    if (leftIdx < leftPoints.length && rightIdx < rightPoints.length) {
+      const leftPoint = leftPoints[leftIdx];
+      const rightPoint = rightPoints[rightIdx];
+
+      // Calcola distanze PERPENDICOLARI dall'asse usando coordinate immagine originale
+      const leftDistance = getPerpendicularDistanceFromLine(leftPoint[0], leftPoint[1], symmetryAxisData.lineOriginal);
+      const rightDistance = getPerpendicularDistanceFromLine(rightPoint[0], rightPoint[1], symmetryAxisData.lineOriginal);
+
+      const fartherPoint = leftDistance > rightDistance ? leftLabels[leftIdx] : rightLabels[rightIdx];
+      const maxDistance = Math.max(leftDistance, rightDistance);
+
+      // Calcola altezze (proiezione lungo l'asse) - valori Y più BASSI = più in alto
+      const leftHeight = getProjectionAlongLine(leftPoint[0], leftPoint[1], symmetryAxisData.lineOriginal);
+      const rightHeight = getProjectionAlongLine(rightPoint[0], rightPoint[1], symmetryAxisData.lineOriginal);
+
+      const higherPoint = leftHeight < rightHeight ? leftLabels[leftIdx] : rightLabels[rightIdx];
+      const heightDifference = Math.abs(leftHeight - rightHeight);
+
+      console.log(`  📊 ${comparisonName}: L=${leftLabels[leftIdx]}(${leftPoint[0].toFixed(1)},${leftPoint[1].toFixed(1)}, dist⊥=${leftDistance.toFixed(1)}, h=${leftHeight.toFixed(1)}) vs R=${rightLabels[rightIdx]}(${rightPoint[0].toFixed(1)},${rightPoint[1].toFixed(1)}, dist⊥=${rightDistance.toFixed(1)}, h=${rightHeight.toFixed(1)}) → 🔴 ${fartherPoint} più lontano, ⬆️ ${higherPoint} più alto (diff=${heightDifference.toFixed(1)}px)`);
+
+      rows += `<tr data-type="green-dots">
+        <td>⚖️ ${comparisonName}</td>
+        <td>🔴 ${fartherPoint} (${maxDistance.toFixed(1)}px)</td>
+        <td>px</td>
+        <td>✅ OK</td>
+      </tr>`;
+
+      rows += `<tr data-type="green-dots">
+        <td>⬆️ ${comparisonName} Altezza</td>
+        <td>⬆️ ${higherPoint} (${heightDifference.toFixed(1)}px)</td>
+        <td>px</td>
+        <td>✅ OK</td>
+      </tr>`;
+    } else {
+      rows += `<tr data-type="green-dots">
+        <td>⚖️ ${comparisonName}</td>
+        <td>Punti mancanti</td>
+        <td>-</td>
+        <td>❌ Errore</td>
+      </tr>`;
+    }
+  });
+
+  return rows;
+}
+
+function generateGreenDotsMeasurementsHTML(result) {
+  /**
+   * Genera l'HTML per visualizzare le misurazioni dei green dots con aree e confronti.
+   */
+  let html = '<h4>🟢 Analisi Green Dots</h4>';
+
+  // Aree poligoni con evidenziazione del maggiore
+  if (result.statistics && result.statistics.left && result.statistics.right) {
+    const leftArea = result.statistics.left.area;
+    const rightArea = result.statistics.right.area;
+    const largerArea = leftArea > rightArea ? 'left' : 'right';
+
+    html += '<div class="measurement-group">';
+    html += '<h5>� Aree Poligoni</h5>';
+
+    html += `<div class="measurement-item ${largerArea === 'left' ? 'highlighted' : ''}">
+      <span class="measurement-label">Area Sinistra:</span>
+      <span class="measurement-value">${leftArea.toFixed(1)} px²</span>
+      ${largerArea === 'left' ? '<span class="highlight-badge">MAGGIORE</span>' : ''}
+    </div>`;
+
+    html += `<div class="measurement-item ${largerArea === 'right' ? 'highlighted' : ''}">
+      <span class="measurement-label">Area Destra:</span>
+      <span class="measurement-value">${rightArea.toFixed(1)} px²</span>
+      ${largerArea === 'right' ? '<span class="highlight-badge">MAGGIORE</span>' : ''}
+    </div>`;
+
+    html += `<div class="measurement-item">
+      <span class="measurement-label">Differenza:</span>
+      <span class="measurement-value">${Math.abs(leftArea - rightArea).toFixed(1)} px²</span>
+    </div>`;
+
+    html += '</div>';
+  }
+
+  // Debug dei dati ricevuti
+  console.log('🔍 DEBUG generateGreenDotsMeasurementsHTML - dati completi:', result);
+  console.log('🔍 DEBUG coordinates object:', result.coordinates);
+  console.log('🔍 DEBUG Sx coordinates:', result.coordinates?.Sx);
+  console.log('🔍 DEBUG Dx coordinates:', result.coordinates?.Dx);
+
+  // Confronti distanze dall'asse di simmetria
+  html += generateSymmetryAnalysis(result);
+
+  // Statistiche generali
+  html += '<div class="measurement-group">';
+  html += '<h5>� Statistiche Generali</h5>';
+  html += `<div class="measurement-item">
+    <span class="measurement-label">Puntini Totali:</span>
+    <span class="measurement-value">${result.detection_results.total_dots}</span>
+  </div>`;
+  html += `<div class="measurement-item">
+    <span class="measurement-label">Pixel Verdi:</span>
+    <span class="measurement-value">${result.detection_results.total_green_pixels}</span>
+  </div>`;
+  html += '</div>';
+
+  return html;
+}
+
+function generateSymmetryAnalysis(result) {
+  /**
+   * Genera l'analisi delle distanze dall'asse di simmetria per coppie di punti.
+   */
+  let html = '<div class="measurement-group">';
+  html += '<h5>⚖️ Analisi Simmetria</h5>';
+
+  console.log('🔍 DEBUG generateSymmetryAnalysis:', {
+    result: result,
+    coordinates: result?.coordinates,
+    Sx: result?.coordinates?.Sx,
+    Dx: result?.coordinates?.Dx
+  });
+
+  // Ottieni l'asse di simmetria se disponibile
+  const symmetryAxisData = getSymmetryAxisPosition();
+
+  console.log('🔍 DEBUG symmetryAxis:', symmetryAxisData);
+  console.log('🔍 DEBUG currentLandmarks:', currentLandmarks);
+  console.log('🔍 DEBUG currentImage:', currentImage);
+  console.log('🔍 DEBUG window.imageScale:', window.imageScale);
+  console.log('🔍 DEBUG window.imageOffset:', window.imageOffset);
+
+  if (!symmetryAxisData || !result.coordinates || !result.coordinates.Sx || !result.coordinates.Dx) {
+    html += '<div class="measurement-item">';
+    html += '<span class="measurement-label">⚠️ Dati insufficienti per analisi simmetria</span>';
+    html += '<span class="measurement-value">Asse: ' + (symmetryAxisData ? symmetryAxisData.x : 'N/A') + ', Coords: ' + (result.coordinates ? 'SI' : 'NO') + '</span>';
+    html += '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  const leftPoints = result.coordinates.Sx; // Coordinate [(x,y), ...]
+  const rightPoints = result.coordinates.Dx;
+
+  // Mapping degli indici ai nomi delle etichette
+  const leftLabels = ["LC1", "LA0", "LA", "LC", "LB"];
+  const rightLabels = ["RC1", "RB", "RC", "RA", "RA0"];
+
+  // Coppie da confrontare (indice sinistro, indice destro, nome confronto)
+  const comparisons = [
+    [1, 4, "LA0 vs RA0"], // LA0 (indice 1) vs RA0 (indice 4)  
+    [2, 3, "LA vs RA"],   // LA (indice 2) vs RA (indice 3)
+    [0, 0, "LC1 vs RC1"], // LC1 (indice 0) vs RC1 (indice 0)
+    [4, 1, "LB vs RB"],   // LB (indice 4) vs RB (indice 1)
+    [3, 2, "LC vs RC"]    // LC (indice 3) vs RC (indice 2)
+  ];
+
+  comparisons.forEach(([leftIdx, rightIdx, comparisonName]) => {
+    if (leftIdx < leftPoints.length && rightIdx < rightPoints.length) {
+      const leftPoint = leftPoints[leftIdx];
+      const rightPoint = rightPoints[rightIdx];
+
+      // Calcola distanze PERPENDICOLARI dall'asse usando coordinate immagine originale
+      const leftDistance = getPerpendicularDistanceFromLine(leftPoint[0], leftPoint[1], symmetryAxisData.lineOriginal);
+      const rightDistance = getPerpendicularDistanceFromLine(rightPoint[0], rightPoint[1], symmetryAxisData.lineOriginal);
+
+      const fartherPoint = leftDistance > rightDistance ? leftLabels[leftIdx] : rightLabels[rightIdx];
+      const maxDistance = Math.max(leftDistance, rightDistance);
+
+      // Calcola altezze
+      const leftHeight = getProjectionAlongLine(leftPoint[0], leftPoint[1], symmetryAxisData.lineOriginal);
+      const rightHeight = getProjectionAlongLine(rightPoint[0], rightPoint[1], symmetryAxisData.lineOriginal);
+
+      const higherPoint = leftHeight < rightHeight ? leftLabels[leftIdx] : rightLabels[rightIdx];
+      const heightDifference = Math.abs(leftHeight - rightHeight);
+
+      html += `<div class="measurement-item">
+        <span class="measurement-label">${comparisonName} Distanza:</span>
+        <span class="measurement-value">
+          <strong class="farther-point">${fartherPoint}</strong> 
+          (${maxDistance.toFixed(1)} px)
+        </span>
+      </div>`;
+
+      html += `<div class="measurement-item">
+        <span class="measurement-label">${comparisonName} Altezza:</span>
+        <span class="measurement-value">
+          <strong class="higher-point">⬆️ ${higherPoint}</strong> 
+          (${heightDifference.toFixed(1)} px)
+        </span>
+      </div>`;
+    }
+  });
+
+  html += '</div>';
+  return html;
+}
+
+function getSymmetryAxisPosition() {
+  /**
+   * Ottiene la posizione X dell'asse di simmetria calcolato con landmarks 9 e 164.
+   * Questa è la STESSA logica usata in drawSymmetryAxis().
+   */
+  if (!currentLandmarks || currentLandmarks.length === 0) {
+    console.warn('⚠️ getSymmetryAxisPosition: Nessun landmark disponibile');
+    return null;
+  }
+
+  // Verifica landmarks necessari (STESSI usati per disegnare l'asse)
+  if (currentLandmarks.length <= 164 || !currentLandmarks[9] || !currentLandmarks[164]) {
+    console.warn('⚠️ getSymmetryAxisPosition: Landmarks 9 o 164 non disponibili');
+    return null;
+  }
+
+  // Landmark MediaPipe: Glabella (9) e Philtrum (164)
+  const glabella = currentLandmarks[9];
+  const philtrum = currentLandmarks[164];
+
+  // Trasforma le coordinate usando la stessa logica del disegno
+  const transformedGlabella = transformLandmarkCoordinate(glabella);
+  const transformedPhiltrum = transformLandmarkCoordinate(philtrum);
+
+  console.log(`🔬 DETTAGLI CALCOLO ASSE:`);
+  console.log(`   Glabella (9) normalizzato: x=${glabella.x.toFixed(3)}, y=${glabella.y.toFixed(3)}`);
+  console.log(`   Philtrum (164) normalizzato: x=${philtrum.x.toFixed(3)}, y=${philtrum.y.toFixed(3)}`);
+  console.log(`   Glabella trasformato: x=${transformedGlabella.x.toFixed(1)}, y=${transformedGlabella.y.toFixed(1)}`);
+  console.log(`   Philtrum trasformato: x=${transformedPhiltrum.x.toFixed(1)}, y=${transformedPhiltrum.y.toFixed(1)}`);
+
+  // Calcola la direzione della linea (stessa logica di drawSymmetryAxis)
+  const dx = transformedPhiltrum.x - transformedGlabella.x;
+  const dy = transformedPhiltrum.y - transformedGlabella.y;
+
+  // Estendi la linea per tutta l'altezza del canvas
+  const canvasHeight = fabricCanvas ? fabricCanvas.getHeight() : 1000;
+
+  let topX, topY, bottomX, bottomY;
+
+  if (Math.abs(dy) > 0.1) {
+    // Punto in alto (y=0)
+    topX = transformedGlabella.x - (transformedGlabella.y * dx / dy);
+    topY = 0;
+    // Punto in basso (y=canvasHeight)
+    bottomX = transformedGlabella.x + ((canvasHeight - transformedGlabella.y) * dx / dy);
+    bottomY = canvasHeight;
+  } else {
+    // Linea verticale
+    topX = bottomX = transformedGlabella.x;
+    topY = 0;
+    bottomY = canvasHeight;
+  }
+
+  const axisX = (transformedGlabella.x + transformedPhiltrum.x) / 2;
+
+  console.log(`📏 getSymmetryAxisPosition: X = ${axisX.toFixed(1)} (media di ${transformedGlabella.x.toFixed(1)} e ${transformedPhiltrum.x.toFixed(1)})`);
+  console.log(`   Linea estesa CANVAS: da (${topX.toFixed(1)}, ${topY}) a (${bottomX.toFixed(1)}, ${bottomY})`);
+
+  // CONVERSIONE INVERSA: Converti l'asse dalle coordinate canvas alle coordinate immagine originale
+  // Formula inversa: originalX = (canvasX - offsetX) / scale
+  const scale = window.imageScale || 1;
+  const offsetX = window.imageOffset ? window.imageOffset.x : 0;
+  const offsetY = window.imageOffset ? window.imageOffset.y : 0;
+
+  // Altezza immagine originale (stimata dai green dots che sono ~400px max)
+  const originalImageHeight = currentImage ? currentImage.height : 832;
+
+  // Converti i punti della linea in coordinate immagine originale
+  const topX_orig = (topX - offsetX) / scale;
+  const topY_orig = 0; // Top dell'immagine
+  const bottomX_orig = (bottomX - offsetX) / scale;
+  const bottomY_orig = originalImageHeight;
+
+  console.log(`   Linea estesa IMMAGINE ORIGINALE: da (${topX_orig.toFixed(1)}, ${topY_orig}) a (${bottomX_orig.toFixed(1)}, ${bottomY_orig})`);
+  console.log(`   Scale: ${scale.toFixed(3)}, Offset: (${offsetX.toFixed(1)}, ${offsetY.toFixed(1)})`);
+  console.log(`✅ ASSE CALCOLATO CON LANDMARKS 9 (glabella) & 164 (philtrum) - NON landmark 1 (naso)!`);
+
+  // Restituisce sia coordinate canvas che coordinate immagine originale
+  return {
+    x: axisX,
+    line: { x1: topX, y1: topY, x2: bottomX, y2: bottomY },
+    lineOriginal: { x1: topX_orig, y1: topY_orig, x2: bottomX_orig, y2: bottomY_orig }
+  };
+}
+
+function getPerpendicularDistanceFromLine(pointX, pointY, line) {
+  /**
+   * Calcola la distanza perpendicolare di un punto da una linea.
+   * Formula: |((x2-x1)(y1-y0) - (x1-x0)(y2-y1))| / sqrt((x2-x1)^2 + (y2-y1)^2)
+   * Dove (x0,y0) è il punto e la linea va da (x1,y1) a (x2,y2)
+   */
+  const { x1, y1, x2, y2 } = line;
+
+  const numerator = Math.abs((x2 - x1) * (y1 - pointY) - (x1 - pointX) * (y2 - y1));
+  const denominator = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+
+  const distance = numerator / denominator;
+
+  console.log(`    🔍 Distanza⊥ punto (${pointX.toFixed(1)},${pointY.toFixed(1)}) da linea [(${x1.toFixed(1)},${y1})→(${x2.toFixed(1)},${y2})]: ${distance.toFixed(2)}px`);
+
+  return distance;
+}
+
+function getProjectionAlongLine(pointX, pointY, line) {
+  /**
+   * Calcola la proiezione di un punto lungo la linea (coordinate parametrica t).
+   * Questo determina la "posizione verticale" del punto lungo l'asse di simmetria.
+   * Valori più BASSI = più in alto (verso y1), valori più ALTI = più in basso (verso y2)
+   * 
+   * Formula: t = ((P-A)·(B-A)) / |B-A|²
+   * dove A=(x1,y1), B=(x2,y2), P=(pointX,pointY)
+   */
+  const { x1, y1, x2, y2 } = line;
+
+  // Vettore dalla linea al punto
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  // Proiezione scalare
+  const dotProduct = (pointX - x1) * dx + (pointY - y1) * dy;
+  const lineLengthSquared = dx * dx + dy * dy;
+
+  const t = dotProduct / lineLengthSquared;
+
+  // Calcola la coordinata Y proiettata per il log
+  const projectedY = y1 + t * dy;
+
+  console.log(`    📐 Proiezione punto (${pointX.toFixed(1)},${pointY.toFixed(1)}) su linea: t=${t.toFixed(3)} → Y_proj=${projectedY.toFixed(1)} (più alto = Y minore)`);
+
+  return projectedY; // Restituisce la Y proiettata (più basso = più in basso nell'immagine)
+}
+
+function clearGreenDots(preserveMovement = false) {
+  /**
+   * Rimuove tutti gli elementi relativi ai green dots dal canvas.
+   * @param {boolean} preserveMovement - Se true, non disabilita il movimento dell'immagine
+   */
+  if (fabricCanvas) {
+    const elementsToRemove = fabricCanvas.getObjects().filter(obj =>
+      obj.isGreenDot || obj.isGreenDotsOverlay || obj.isGreenDotsGroup
+    );
+    elementsToRemove.forEach(element => fabricCanvas.remove(element));
+
+    // Pulisci riferimenti globali
+    window.currentGreenDotsOverlay = null;
+
+    // Disabilita il movimento dell'immagine solo se richiesto esplicitamente
+    if (!preserveMovement) {
+      disableImageMovement();
+    }
+
+    fabricCanvas.renderAll();
+    console.log(`🧹 Rimossi ${elementsToRemove.length} elementi green dots dal canvas`);
   }
 }
 
@@ -2798,6 +3650,15 @@ function calculateAxis() {
   }
 }
 
+// Variabile globale per modalità selezione landmarks
+window.landmarkSelectionMode = false;
+window.selectedLandmarksForTable = [];
+
+// Variabili globali per il sistema di misurazione
+window.measurementMode = false;
+window.selectedLandmarksForMeasurement = []; // Array di {id, x, y, name}
+window.measurementResults = []; // Array di risultati di misurazione
+
 function toggleLandmarks() {
   /**
    * Gestisce il toggle del pulsante LANDMARKS nella sezione RILEVAMENTI.
@@ -2828,6 +3689,22 @@ function toggleLandmarks() {
   });
 
   if (isActive) {
+    // Attiva modalità selezione landmarks
+    window.landmarkSelectionMode = true;
+    console.log('🖱️ Modalità selezione landmarks ATTIVA - clicca sui landmarks per aggiungerli alla tabella');
+
+    // Cambia cursore del canvas per indicare modalità selezione
+    if (fabricCanvas) {
+      fabricCanvas.defaultCursor = 'crosshair';
+      fabricCanvas.hoverCursor = 'crosshair';
+      fabricCanvas.selection = false; // Disabilita selezione multipla
+      fabricCanvas.forEachObject(obj => {
+        obj.selectable = false; // Disabilita selezione oggetti
+        obj.evented = false; // Disabilita eventi sugli oggetti
+      });
+      fabricCanvas.renderAll();
+    }
+
     if (!currentLandmarks || currentLandmarks.length === 0) {
       // Se non ci sono landmarks, rilevali automaticamente
       console.log('🔍 Rilevamento landmarks necessario');
@@ -2843,6 +3720,22 @@ function toggleLandmarks() {
       }
     }
   } else {
+    // Disattiva modalità selezione landmarks
+    window.landmarkSelectionMode = false;
+    console.log('🖱️ Modalità selezione landmarks DISATTIVATA');
+
+    // Ripristina cursore normale del canvas
+    if (fabricCanvas) {
+      fabricCanvas.defaultCursor = 'default';
+      fabricCanvas.hoverCursor = 'move';
+      fabricCanvas.selection = true; // Riabilita selezione multipla
+      fabricCanvas.forEachObject(obj => {
+        obj.selectable = true; // Riabilita selezione oggetti
+        obj.evented = true; // Riabilita eventi sugli oggetti
+      });
+      fabricCanvas.renderAll();
+    }
+
     // Nascondi landmarks
     console.log('❌ Nascondo landmarks');
     if (typeof clearLandmarks === 'function') {
@@ -2857,7 +3750,362 @@ function toggleLandmarks() {
     }
   }
 
-  updateStatus(isActive ? 'Landmarks attivi' : 'Landmarks disattivi');
+  updateStatus(isActive ? 'Landmarks attivi - Clicca per selezionarli' : 'Landmarks disattivi');
+}
+
+// ============================================================================
+// FUNZIONI PER SELEZIONE INTERATTIVA LANDMARKS
+// ============================================================================
+
+function handleLandmarkSelection(canvasX, canvasY) {
+  /**
+   * Gestisce il click sul canvas per selezionare un landmark
+   * Trova il landmark più vicino e lo aggiunge alla tabella
+   */
+  if (!fabricCanvas) {
+    console.warn('⚠️ fabricCanvas non disponibile');
+    return;
+  }
+
+  // Trova il landmark più vicino usando gli oggetti già disegnati sul canvas
+  const nearestLandmark = findNearestLandmarkOnCanvas(canvasX, canvasY);
+
+  if (nearestLandmark && nearestLandmark.distance < 20) {  // Tolleranza 20px
+    const landmarkId = nearestLandmark.landmarkIndex;
+    const landmark = window.currentLandmarks[landmarkId];
+
+    // Verifica se già selezionato
+    if (window.selectedLandmarksForTable.includes(landmarkId)) {
+      console.log(`⚠️ Landmark ${landmarkId} già nella tabella`);
+      return;
+    }
+
+    addLandmarkToTable(landmarkId, landmark);
+    console.log(`✅ Landmark ${landmarkId} selezionato e aggiunto alla tabella`);
+  } else {
+    console.log('❌ Nessun landmark abbastanza vicino al click');
+  }
+}
+
+function findNearestLandmarkOnCanvas(canvasX, canvasY) {
+  /**
+   * Trova il landmark più vicino alle coordinate canvas usando gli oggetti già disegnati
+   * Ritorna: { landmarkIndex, distance, circle }
+   */
+  if (!fabricCanvas) return null;
+
+  // Ottieni tutti gli oggetti landmark dal canvas
+  const landmarkObjects = fabricCanvas.getObjects().filter(obj => obj.isLandmark && obj.landmarkType === 'mediapipe');
+
+  if (landmarkObjects.length === 0) {
+    console.warn('⚠️ Nessun landmark disegnato sul canvas');
+    return null;
+  }
+
+  let nearestLandmark = null;
+  let minDistance = Infinity;
+
+  landmarkObjects.forEach((circle) => {
+    // Il centro del cerchio è left + radius, top + radius
+    const centerX = circle.left + circle.radius;
+    const centerY = circle.top + circle.radius;
+
+    // Calcola distanza euclidea dal click al centro del cerchio
+    const dx = centerX - canvasX;
+    const dy = centerY - canvasY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestLandmark = {
+        landmarkIndex: circle.landmarkIndex,
+        distance: distance,
+        circle: circle,
+        centerX: centerX,
+        centerY: centerY
+      };
+    }
+  });
+
+  return nearestLandmark;
+}
+
+function addLandmarkToTable(landmarkId, landmark) {
+  /**
+   * Aggiunge un landmark alla tabella nella colonna destra
+   */
+  // Verifica se già selezionato
+  if (window.selectedLandmarksForTable.includes(landmarkId)) {
+    console.log(`ℹ️ Landmark ${landmarkId} già nella tabella`);
+    return;
+  }
+
+  window.selectedLandmarksForTable.push(landmarkId);
+
+  const tbody = document.getElementById('landmarks-data');
+  if (!tbody) {
+    console.error('❌ Tabella landmarks-data non trovata');
+    return;
+  }
+
+  // Nome del landmark (usa mapping se disponibile)
+  const landmarkName = getLandmarkName(landmarkId);
+
+  // Coordinate in pixel
+  const imageWidth = window.currentImage?.width || 1;
+  const imageHeight = window.currentImage?.height || 1;
+  const pixelX = (landmark.x * imageWidth).toFixed(1);
+  const pixelY = (landmark.y * imageHeight).toFixed(1);
+
+  // Colore distintivo
+  const hue = (landmarkId * 137) % 360;  // Golden angle per distribuzione uniforme
+  const color = `hsl(${hue}, 70%, 50%)`;
+
+  // Crea riga
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    <td><div style="width:12px;height:12px;background:${color};border-radius:50%;margin:auto;"></div></td>
+    <td>${landmarkId}</td>
+    <td>${landmarkName}</td>
+    <td>${pixelX}</td>
+    <td>${pixelY}</td>
+  `;
+
+  tbody.appendChild(row);
+
+  // Evidenzia il landmark sul canvas
+  highlightSelectedLandmark(landmarkId, color);
+
+  // Apri automaticamente la sezione LANDMARKS se era chiusa
+  openLandmarksSection();
+
+  console.log(`📍 Landmark ${landmarkId} (${landmarkName}) aggiunto: (${pixelX}, ${pixelY})`);
+}
+
+function getLandmarkName(landmarkId) {
+  /**
+   * Ritorna il nome descrittivo del landmark MediaPipe Face Mesh (478 punti)
+   * Basato sulla documentazione ufficiale: https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker
+   */
+  const landmarkNames = {
+    // SILHOUETTE (Contorno viso)
+    10: 'Face Top', 152: 'Chin Center', 234: 'Left Cheek', 454: 'Right Cheek',
+
+    // LABBRA (Lips)
+    0: 'Lip Top Center', 17: 'Lip Bottom Center',
+    61: 'Lip Upper Left Outer', 291: 'Lip Upper Right Outer',
+    39: 'Lip Upper Left Inner', 269: 'Lip Upper Right Inner',
+    84: 'Lip Lower Left Outer', 314: 'Lip Lower Right Outer',
+    78: 'Lip Lower Left Inner', 308: 'Lip Lower Right Inner',
+    13: 'Lip Bottom Left', 14: 'Lip Bottom Right',
+    37: 'Lip Top Left', 267: 'Lip Top Right',
+
+    // OCCHIO SINISTRO (Left Eye)
+    33: 'Left Eye Outer Corner', 133: 'Left Eye Inner Corner',
+    160: 'Left Eye Top', 144: 'Left Eye Bottom',
+    159: 'Left Eye Top Left', 145: 'Left Eye Bottom Left',
+    158: 'Left Eye Top Right', 153: 'Left Eye Bottom Right',
+
+    // OCCHIO DESTRO (Right Eye)
+    362: 'Right Eye Outer Corner', 263: 'Right Eye Inner Corner',
+    387: 'Right Eye Top', 373: 'Right Eye Bottom',
+    386: 'Right Eye Top Left', 374: 'Right Eye Bottom Left',
+    385: 'Right Eye Top Right', 380: 'Right Eye Bottom Right',
+
+    // IRIS SINISTRO (Left Iris)
+    468: 'Left Iris Center', 469: 'Left Iris Right',
+    470: 'Left Iris Top', 471: 'Left Iris Left', 472: 'Left Iris Bottom',
+
+    // IRIS DESTRO (Right Iris)
+    473: 'Right Iris Center', 474: 'Right Iris Right',
+    475: 'Right Iris Top', 476: 'Right Iris Left', 477: 'Right Iris Bottom',
+
+    // SOPRACCIGLIO SINISTRO (Left Eyebrow)
+    46: 'Left Eyebrow Inner', 53: 'Left Eyebrow Top Inner',
+    52: 'Left Eyebrow Top Center', 65: 'Left Eyebrow Top Outer',
+    55: 'Left Eyebrow Outer', 70: 'Left Eyebrow Bottom Inner',
+    63: 'Left Eyebrow Bottom Center', 105: 'Left Eyebrow Bottom Outer',
+
+    // SOPRACCIGLIO DESTRO (Right Eyebrow)
+    276: 'Right Eyebrow Inner', 283: 'Right Eyebrow Top Inner',
+    282: 'Right Eyebrow Top Center', 295: 'Right Eyebrow Top Outer',
+    285: 'Right Eyebrow Outer', 300: 'Right Eyebrow Bottom Inner',
+    293: 'Right Eyebrow Bottom Center', 334: 'Right Eyebrow Bottom Outer',
+
+    // NASO (Nose)
+    1: 'Nose Bridge Top', 4: 'Nose Bridge Center',
+    5: 'Nose Left Side', 6: 'Nose Right Side',
+    8: 'Nose Bottom Center', 19: 'Nose Bottom Left', 94: 'Nose Bottom Right',
+    168: 'Nose Center', 195: 'Nose Tip Left', 197: 'Nose Tip Right',
+
+    // GUANCE (Cheeks)
+    117: 'Left Cheek Upper', 118: 'Left Cheek Center', 119: 'Left Cheek Lower',
+    101: 'Left Cheek Inner Upper', 36: 'Left Cheek Inner Center',
+    346: 'Right Cheek Upper', 347: 'Right Cheek Center', 348: 'Right Cheek Lower',
+    330: 'Right Cheek Inner Upper', 266: 'Right Cheek Inner Center',
+
+    // FRONTE (Forehead)
+    9: 'Forehead Center (Glabella)', 108: 'Forehead Left', 337: 'Forehead Right',
+    151: 'Chin Bottom',
+
+    // MASCELLA (Jaw)
+    58: 'Jaw Left Upper', 172: 'Jaw Left Center', 136: 'Jaw Left Lower',
+    132: 'Jaw Left Bottom', 150: 'Jaw Bottom Left',
+    288: 'Jaw Right Upper', 397: 'Jaw Right Center', 365: 'Jaw Right Lower',
+    361: 'Jaw Right Bottom', 379: 'Jaw Bottom Right',
+
+    // ZONE TEMPIE (Temples)
+    127: 'Left Temple', 356: 'Right Temple',
+
+    // Altri landmark rilevanti per anatomia facciale
+    2: 'Bridge Nose Left', 98: 'Bridge Nose Right',
+    200: 'Left Nostril Outer', 429: 'Right Nostril Outer',
+    49: 'Left Nose Wing', 279: 'Right Nose Wing',
+
+    // LABBRA SUPERIORE dettaglio
+    40: 'Upper Lip Left Peak', 270: 'Upper Lip Right Peak',
+    185: 'Upper Lip Left Curve', 409: 'Upper Lip Right Curve',
+
+    // LABBRA INFERIORE dettaglio  
+    91: 'Lower Lip Left Peak', 321: 'Lower Lip Right Peak',
+    146: 'Lower Lip Left Curve', 375: 'Lower Lip Right Curve',
+
+    // MENTO (Chin)
+    149: 'Chin Left Side', 378: 'Chin Right Side',
+    176: 'Chin Left Lower', 400: 'Chin Right Lower',
+    199: 'Chin Bottom Left Corner', 428: 'Chin Bottom Right Corner',
+
+    // CONTORNO OCCHI dettaglio aggiuntivo
+    246: 'Left Eye Upper Lid Center', 161: 'Left Eye Upper Lid Left',
+    7: 'Left Eye Upper Lid Right', 163: 'Left Eye Lower Lid Left',
+    466: 'Right Eye Upper Lid Center', 388: 'Right Eye Upper Lid Left',
+    255: 'Right Eye Upper Lid Right', 390: 'Right Eye Lower Lid Left'
+  };
+
+  return landmarkNames[landmarkId] || `Face Mesh Point ${landmarkId}`;
+}
+
+function openLandmarksSection() {
+  /**
+   * Apre la sezione LANDMARKS nella sidebar destra se è chiusa
+   */
+  const landmarksSection = document.querySelector('.section:has(#landmarks-table)');
+  if (!landmarksSection) {
+    console.warn('⚠️ Sezione LANDMARKS non trovata');
+    return;
+  }
+
+  const content = landmarksSection.querySelector('.section-content');
+  const icon = landmarksSection.querySelector('.icon');
+
+  // Se la sezione è chiusa (display: none), aprila
+  if (content && content.style.display === 'none') {
+    content.style.display = 'block';
+    landmarksSection.dataset.expanded = 'true';
+    if (icon) icon.textContent = '▼';
+    console.log('✅ Sezione LANDMARKS aperta automaticamente');
+  }
+}
+
+function highlightNearestLandmarkOnHover(canvasX, canvasY) {
+  /**
+   * Evidenzia temporaneamente il landmark più vicino durante l'hover
+   */
+  if (!fabricCanvas) {
+    console.warn('⚠️ fabricCanvas non disponibile per hover');
+    return;
+  }
+
+  if (!window.currentLandmarks || window.currentLandmarks.length === 0) {
+    console.warn('⚠️ currentLandmarks non disponibili per hover');
+    return;
+  }
+
+  // Rimuovi precedente evidenziazione hover
+  const existingHover = fabricCanvas.getObjects().filter(obj => obj.isHoverHighlight);
+  existingHover.forEach(obj => fabricCanvas.remove(obj));
+
+  // Trova il landmark più vicino usando gli oggetti canvas
+  const nearestLandmark = findNearestLandmarkOnCanvas(canvasX, canvasY);
+
+  if (nearestLandmark && nearestLandmark.distance < 20) {  // Tolleranza 20px
+    const landmarkId = nearestLandmark.landmarkIndex;
+    const centerX = nearestLandmark.centerX;
+    const centerY = nearestLandmark.centerY;
+
+    // Crea cerchio hover con effetto pulsante
+    const hoverCircle = new fabric.Circle({
+      left: centerX,
+      top: centerY,
+      radius: 10,
+      fill: 'rgba(255, 255, 0, 0.3)',
+      stroke: '#FFD700',
+      strokeWidth: 2,
+      originX: 'center',
+      originY: 'center',
+      selectable: false,
+      evented: false,
+      isHoverHighlight: true,
+      landmarkId: landmarkId
+    });
+
+    fabricCanvas.add(hoverCircle);
+
+    // Tooltip con ID e nome landmark
+    const landmarkName = getLandmarkName(landmarkId);
+    const tooltip = new fabric.Text(`${landmarkId}: ${landmarkName}`, {
+      left: centerX + 15,
+      top: centerY - 10,
+      fontSize: 12,
+      fill: '#FFD700',
+      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+      padding: 4,
+      selectable: false,
+      evented: false,
+      isHoverHighlight: true
+    });
+
+    fabricCanvas.add(tooltip);
+    fabricCanvas.renderAll();
+  }
+}
+
+function highlightSelectedLandmark(landmarkId, color) {
+  /**
+   * Evidenzia un landmark selezionato con un cerchio colorato
+   */
+  if (!window.currentLandmarks || !window.currentImage || !fabricCanvas) return;
+
+  const landmark = window.currentLandmarks[landmarkId];
+  if (!landmark) return;
+
+  const imageWidth = window.currentImage.width || 1;
+  const imageHeight = window.currentImage.height || 1;
+  const scale = window.imageScale || 1;
+  const offset = window.imageOffset || { x: 0, y: 0 };
+
+  // Converti a coordinate canvas
+  const canvasX = landmark.x * imageWidth * scale + offset.x;
+  const canvasY = landmark.y * imageHeight * scale + offset.y;
+
+  // Crea cerchio evidenziato
+  const circle = new fabric.Circle({
+    left: canvasX,
+    top: canvasY,
+    radius: 8,
+    fill: 'transparent',
+    stroke: color,
+    strokeWidth: 3,
+    originX: 'center',
+    originY: 'center',
+    selectable: false,
+    evented: false,
+    isLandmarkHighlight: true,
+    landmarkId: landmarkId
+  });
+
+  fabricCanvas.add(circle);
+  fabricCanvas.renderAll();
 }
 
 function toggleGreenDots() {
@@ -2884,14 +4132,17 @@ function toggleGreenDots() {
   updateStatus(isActive ? 'Green dots attivi' : 'Green dots disattivi');
 }
 
-function detectGreenDots() {
+async function detectGreenDots() {
   /**
-   * Rileva i puntini verdi REALI nell'immagine usando analisi colori HSV.
-   * Replica esattamente canvas_app.py:detect_green_dots()
-   * 
-   * NOTA: Questa funzione dovrebbe analizzare i pixel verdi nell'immagine,
-   * non disegnare punti sui landmarks. Per ora disabilitata fino a implementazione completa.
+   * Rileva i puntini verdi REALI nell'immagine usando l'API green dots.
+   * Integra le funzionalità di src/green_dots_processor.py tramite API.
    */
+  console.log('🟢 DEBUG: Funzioni disponibili:', {
+    analyzeGreenDotsViaAPI: typeof analyzeGreenDotsViaAPI,
+    API_CONFIG: typeof API_CONFIG,
+    currentImage: !!currentImage
+  });
+
   if (!currentImage) {
     showToast('Nessuna immagine caricata', 'warning');
     return;
@@ -2900,38 +4151,243 @@ function detectGreenDots() {
   try {
     updateStatus('🔄 Rilevamento green dots in corso...');
 
-    // TODO: Implementare il vero processore green dots
-    // Dovrebbe analizzare i pixel HSV dell'immagine per trovare punti verdi reali
-    // Come fa green_dots_processor.py nell'app desktop
+    // Ottieni l'immagine del canvas come base64
+    const canvasImageData = getCanvasImageAsBase64();
+    if (!canvasImageData) {
+      throw new Error('Impossibile ottenere dati immagine dal canvas');
+    }
 
-    console.log('🟢 Green dots: Funzione non ancora implementata completamente');
-    console.log('⚠️ Dovrebbe analizzare pixel verdi reali, non landmarks');
+    console.log('🟢 Invio richiesta API green dots...');
 
-    // Per ora NON impostare greenDotsDetected = true
-    // window.greenDotsDetected = true;
+    // Chiamata all'API - usa funzione centralizzata se disponibile, altrimenti fallback
+    let result;
+    if (typeof analyzeGreenDotsViaAPI === 'function') {
+      console.log('✅ Usando funzione API centralizzata');
+      result = await analyzeGreenDotsViaAPI(canvasImageData, {
+        hue_range: [60, 150],
+        saturation_min: 15,
+        value_range: [15, 95],
+        cluster_size_range: [2, 150],
+        clustering_radius: 2
+      });
+    } else {
+      console.log('⚠️ Fallback: chiamata API diretta');
+      // Fallback: chiamata diretta all'API
+      const baseUrl = (typeof API_CONFIG !== 'undefined' && API_CONFIG?.baseURL)
+        ? API_CONFIG.baseURL
+        : 'http://127.0.0.1:8001';
+      const apiUrl = `${baseUrl}/api/green-dots/analyze`;
+      console.log('🌍 URL API Green Dots (fallback):', apiUrl);
+      console.log('🔧 API_CONFIG disponibile:', typeof API_CONFIG !== 'undefined');
 
-    updateStatus('Green dots: implementazione in corso');
-    showToast('Funzione green dots in sviluppo', 'info');
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          image: canvasImageData,
+          hue_range: [60, 150],
+          saturation_min: 15,
+          value_range: [15, 95],
+          cluster_size_range: [2, 150],
+          clustering_radius: 2
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      result = await response.json();
+    }
+    console.log('🟢 Risposta API green dots:', result);
+
+    if (result.success) {
+      // Salva i risultati globalmente
+      window.greenDotsData = result;
+      window.greenDotsDetected = true;
+
+      // Aggiorna le misurazioni con i risultati
+      console.log('📊 Chiamando updateMeasurementsFromGreenDots con:', result);
+      updateMeasurementsFromGreenDots(result);
+
+      // AUTOMAZIONE: Attiva automaticamente l'asse di simmetria se non è già attivo
+      const axisBtn = document.getElementById('axis-btn');
+      if (axisBtn && !axisBtn.classList.contains('active')) {
+        console.log('🔄 Attivazione automatica asse di simmetria...');
+        axisBtn.click(); // Simula click per attivare l'asse
+      }
+
+      // AUTOMAZIONE: Espandi la sezione correzione sopracciglia se è chiusa (nella LEFT sidebar!)
+      console.log('🔍 Cercando sezione CORREZIONE SOPRACCIGLIA nella left sidebar...');
+      const allSections = document.querySelectorAll('.left-sidebar .section');
+      console.log(`🔍 Trovate ${allSections.length} sezioni nella left sidebar`);
+
+      let found = false;
+      allSections.forEach(section => {
+        const toggleBtn = section.querySelector('.toggle-btn');
+        if (toggleBtn) {
+          console.log(`   - Sezione trovata: "${toggleBtn.textContent.substring(0, 40)}..."`);
+          if (toggleBtn.textContent.includes('✂️ CORREZIONE SOPRACCIGLIA')) {
+            found = true;
+            const isExpanded = section.dataset.expanded === 'true';
+            console.log(`   ✅ CORREZIONE SOPRACCIGLIA trovata! Expanded: ${isExpanded}`);
+            if (!isExpanded) {
+              console.log('📂 Apertura automatica sezione CORREZIONE SOPRACCIGLIA...');
+              const sectionHeader = section.querySelector('.section-header');
+              if (sectionHeader) {
+                sectionHeader.click(); // Espandi la sezione
+              } else {
+                console.warn('⚠️ section-header non trovato!');
+              }
+            } else {
+              console.log('   ℹ️ Sezione già aperta, nessuna azione necessaria');
+            }
+          }
+        }
+      });
+
+      if (!found) {
+        console.warn('⚠️ Sezione CORREZIONE SOPRACCIGLIA non trovata nella left sidebar!');
+      }
+
+      // Ridisegna il canvas con l'overlay
+      updateCanvasDisplay();
+
+      updateStatus(`✅ Rilevati ${result.detection_results.total_dots} green dots`);
+      showToast(`Rilevamento completato: ${result.detection_results.total_dots} punti verdi`, 'success');
+
+    } else {
+      throw new Error(result.error || 'Errore sconosciuto durante l\'analisi');
+    }
 
   } catch (error) {
-    console.error('Errore rilevamento green dots:', error);
+    console.error('❌ Errore rilevamento green dots:', error);
     updateStatus('❌ Errore rilevamento green dots');
-    showToast('Errore durante il rilevamento', 'error');
+    showToast(`Errore: ${error.message}`, 'error');
+
+    // Disattiva il pulsante green dots in caso di errore
+    const btn = document.getElementById('green-dots-btn');
+    if (btn && btn.classList.contains('active')) {
+      btn.classList.remove('active');
+    }
+  }
+}
+
+function getCanvasImageAsBase64() {
+  /**
+   * Ottiene l'immagine corrente dal canvas come stringa base64.
+   * Prende solo l'immagine di base senza overlay.
+   */
+  try {
+    if (!currentImage) {
+      console.warn('⚠️ Nessuna immagine corrente disponibile');
+      return null;
+    }
+
+    // Crea un canvas temporaneo con solo l'immagine base
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+
+    // Ottiene l'elemento HTML dall'oggetto Fabric.js
+    let imageElement;
+    if (currentImage.getElement) {
+      imageElement = currentImage.getElement();
+    } else if (currentImage.src) {
+      // Se currentImage è già un elemento HTML
+      imageElement = currentImage;
+    } else {
+      console.error('❌ currentImage non è un oggetto valido');
+      return null;
+    }
+
+    // Imposta le dimensioni del canvas temporaneo
+    tempCanvas.width = imageElement.naturalWidth || imageElement.width || 800;
+    tempCanvas.height = imageElement.naturalHeight || imageElement.height || 600;
+
+    // Disegna solo l'immagine corrente
+    tempCtx.drawImage(imageElement, 0, 0, tempCanvas.width, tempCanvas.height);
+
+    // Converte in base64
+    const base64Data = tempCanvas.toDataURL('image/png');
+    console.log('✅ Immagine convertita in base64 per analisi green dots:', {
+      width: tempCanvas.width,
+      height: tempCanvas.height,
+      imageType: imageElement.constructor.name
+    });
+
+    return base64Data;
+
+  } catch (error) {
+    console.error('❌ Errore conversione canvas a base64:', error);
+    return null;
   }
 }
 
 function toggleMeasureMode() {
+  /**
+   * Attiva/Disattiva la modalità misurazione.
+   * - Con 2 punti: calcola distanza
+   * - Con 3+ punti: calcola area poligono
+   */
   const btn = document.getElementById('measure-btn');
-  btn.classList.toggle('active');
+  if (!btn) {
+    console.error('❌ Pulsante measure-btn non trovato!');
+    return;
+  }
 
+  btn.classList.toggle('active');
   const isActive = btn.classList.contains('active');
 
+  console.log('📐 Toggle Modalità Misurazione:', isActive);
+
   if (isActive) {
-    setTool('measure');
-    updateStatus('Modalità misurazione attiva');
+    // Attiva modalità misurazione
+    window.measurementMode = true;
+    window.selectedLandmarksForMeasurement = [];
+
+    // Cambia cursore del canvas
+    if (fabricCanvas) {
+      fabricCanvas.defaultCursor = 'crosshair';
+      fabricCanvas.hoverCursor = 'crosshair';
+      fabricCanvas.selection = false;
+      fabricCanvas.forEachObject(obj => {
+        obj.selectable = false;
+        obj.evented = false;
+      });
+      fabricCanvas.renderAll();
+    }
+
+    // Verifica se ci sono landmarks
+    if (!currentLandmarks || currentLandmarks.length === 0) {
+      console.log('🔍 Rilevamento landmarks necessario');
+      detectLandmarks();
+    } else {
+      console.log('✅ Landmarks disponibili per misurazione');
+      if (typeof drawMediaPipeLandmarks === 'function') {
+        drawMediaPipeLandmarks(currentLandmarks);
+      }
+    }
+
+    updateStatus('📐 Modalità misurazione attiva - Clicca sui landmarks (2 punti=distanza, 3+=area)');
   } else {
-    setTool('selection');
-    updateStatus('Modalità misurazione disattiva');
+    // Disattiva modalità misurazione
+    window.measurementMode = false;
+
+    // Ripristina cursore
+    if (fabricCanvas) {
+      fabricCanvas.defaultCursor = 'default';
+      fabricCanvas.hoverCursor = 'move';
+      fabricCanvas.selection = true;
+      fabricCanvas.forEachObject(obj => {
+        obj.selectable = true;
+        obj.evented = true;
+      });
+      fabricCanvas.renderAll();
+    }
+
+    updateStatus('Modalità misurazione disattivata');
   }
 }
 
@@ -2963,6 +4419,361 @@ function initializeKeyboardShortcuts() {
       // TODO: Attivare pan temporaneo
     }
   });
+}
+
+// === SISTEMA MISURAZIONE ===
+
+function handleMeasurementLandmarkSelection(canvasX, canvasY) {
+  /**
+   * Gestisce la selezione di un landmark per la misurazione.
+   * Calcola distanza (2 punti) o area poligono (3+ punti).
+   */
+  if (!fabricCanvas || !window.measurementMode) return;
+
+  const nearestLandmark = findNearestLandmarkOnCanvas(canvasX, canvasY);
+
+  if (nearestLandmark && nearestLandmark.distance < 20) {
+    const landmarkId = nearestLandmark.landmarkIndex;
+    const landmark = window.currentLandmarks[landmarkId];
+
+    // Verifica se già selezionato
+    const alreadySelected = window.selectedLandmarksForMeasurement.find(l => l.id === landmarkId);
+    if (alreadySelected) {
+      console.log(`⚠️ Landmark ${landmarkId} già selezionato per misurazione`);
+      return;
+    }
+
+    // Usa le coordinate del canvas (già trasformate) dal landmark trovato
+    const canvasCoords = {
+      x: nearestLandmark.centerX,
+      y: nearestLandmark.centerY
+    };
+
+    // Aggiungi alla lista di misurazione con coordinate canvas
+    const landmarkData = {
+      id: landmarkId,
+      x: canvasCoords.x,
+      y: canvasCoords.y,
+      name: getLandmarkName(landmarkId)
+    };
+    window.selectedLandmarksForMeasurement.push(landmarkData);
+
+    // Evidenzia il landmark
+    const hue = (landmarkId * 137) % 360;
+    const color = `hsl(${hue}, 90%, 50%)`;
+    highlightMeasurementLandmark(landmarkId, color);
+
+    console.log(`✅ Landmark ${landmarkId} aggiunto per misurazione (${window.selectedLandmarksForMeasurement.length} punti) - Canvas coords: (${canvasCoords.x.toFixed(1)}, ${canvasCoords.y.toFixed(1)})`);
+
+    // Calcola misurazione in base al numero di punti
+    const numPoints = window.selectedLandmarksForMeasurement.length;
+    if (numPoints === 2) {
+      calculateDistance();
+    } else if (numPoints >= 3) {
+      calculatePolygonArea();
+    }
+
+    updateStatus(`📐 ${numPoints} punto/i selezionato/i per misurazione`);
+  }
+}
+
+// Esponi la funzione a window
+window.handleMeasurementLandmarkSelection = handleMeasurementLandmarkSelection;
+
+function calculateDistance() {
+  /**
+   * Calcola la distanza euclidea tra i primi 2 punti selezionati.
+   */
+  if (window.selectedLandmarksForMeasurement.length < 2) return;
+
+  const p1 = window.selectedLandmarksForMeasurement[0];
+  const p2 = window.selectedLandmarksForMeasurement[1];
+
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  const result = {
+    type: 'distance',
+    label: `Distanza ${p1.name} → ${p2.name}`,
+    value: distance.toFixed(2),
+    unit: 'px',
+    landmarks: [p1.id, p2.id]
+  };
+
+  // Sostituisci completamente i risultati con solo questa distanza
+  window.measurementResults = [result];
+
+  // Rimuovi overlay precedenti (linee e poligoni, ma non highlights)
+  removeMeasurementOverlaysExceptHighlights();
+
+  updateMeasurementsTable();
+  drawMeasurementLine(p1, p2, distance);
+
+  console.log(`📏 Distanza calcolata: ${distance.toFixed(2)} px`);
+}
+
+function calculatePolygonArea() {
+  /**
+   * Calcola l'area del poligono formato dai punti selezionati usando la formula Shoelace.
+   */
+  if (window.selectedLandmarksForMeasurement.length < 3) return;
+
+  const points = window.selectedLandmarksForMeasurement;
+  let area = 0;
+
+  // Formula Shoelace (Gauss)
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    area += points[i].x * points[j].y;
+    area -= points[j].x * points[i].y;
+  }
+  area = Math.abs(area) / 2;
+
+  const landmarkIds = points.map(p => p.id);
+  const result = {
+    type: 'area',
+    label: `Area Poligono (${points.length} punti)`,
+    value: area.toFixed(2),
+    unit: 'px²',
+    landmarks: landmarkIds
+  };
+
+  // Sostituisci completamente i risultati con solo questo poligono
+  window.measurementResults = [result];
+
+  // Rimuovi overlay precedenti (linee e poligoni, ma non highlights)
+  removeMeasurementOverlaysExceptHighlights();
+
+  updateMeasurementsTable();
+  drawMeasurementPolygon(points, area);
+
+  console.log(`📐 Area poligono calcolata: ${area.toFixed(2)} px²`);
+}
+
+function updateMeasurementsTable() {
+  /**
+   * Aggiorna la tabella misurazioni con i risultati.
+   */
+  const tbody = document.getElementById('measurements-data');
+  if (!tbody) {
+    console.error('❌ Tabella measurements-data non trovata');
+    return;
+  }
+
+  // Pulisci tabella esistente
+  tbody.innerHTML = '';
+
+  // Aggiungi righe per ogni risultato
+  window.measurementResults.forEach(result => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${result.label}</td>
+      <td><strong>${result.value}</strong></td>
+      <td>${result.unit}</td>
+      <td><span class="status-ok">✅ Calcolato</span></td>
+    `;
+    tbody.appendChild(row);
+  });
+
+  // Apri automaticamente la sezione MISURAZIONI
+  openMeasurementsSection();
+
+  console.log(`📊 Tabella misurazioni aggiornata: ${window.measurementResults.length} risultati`);
+}
+
+function openMeasurementsSection() {
+  /**
+   * Apre automaticamente la sezione MISURAZIONI nella sidebar destra.
+   */
+  const sections = document.querySelectorAll('.right-sidebar .section');
+  sections.forEach(section => {
+    const toggleBtn = section.querySelector('.toggle-btn');
+    if (toggleBtn && toggleBtn.textContent.includes('📏 MISURAZIONI')) {
+      const content = section.querySelector('.section-content');
+      const icon = section.querySelector('.icon');
+      if (content && content.style.display === 'none') {
+        content.style.display = 'block';
+        icon.textContent = '▼';
+        section.setAttribute('data-expanded', 'true');
+        console.log('📏 Sezione MISURAZIONI aperta automaticamente');
+      }
+    }
+  });
+}
+
+function removeMeasurementOverlaysExceptHighlights() {
+  /**
+   * Rimuove linee e poligoni di misurazione dal canvas, ma mantiene gli highlights dei landmark.
+   */
+  if (!fabricCanvas) return;
+
+  const overlaysToRemove = fabricCanvas.getObjects().filter(obj =>
+    obj.isMeasurement && obj.measurementType !== 'highlight'
+  );
+  overlaysToRemove.forEach(obj => fabricCanvas.remove(obj));
+  fabricCanvas.renderAll();
+}
+
+function clearAllMeasurementOverlays() {
+  /**
+   * Pulisce tutte le misurazioni: resetta contatore punti, rimuove overlay dal canvas,
+   * svuota tabella misurazioni.
+   */
+  console.log('🧹 Pulizia misurazioni...');
+
+  // Reset variabili
+  window.selectedLandmarksForMeasurement = [];
+  window.measurementResults = [];
+
+  // Pulisci tabella
+  const tbody = document.getElementById('measurements-data');
+  if (tbody) {
+    tbody.innerHTML = '';
+  }
+
+  // Rimuovi overlay dal canvas
+  if (fabricCanvas) {
+    const measurementObjects = fabricCanvas.getObjects().filter(obj => obj.isMeasurement);
+    measurementObjects.forEach(obj => fabricCanvas.remove(obj));
+    fabricCanvas.renderAll();
+  }
+
+  // Ridisegna landmarks se necessario
+  if (window.measurementMode && currentLandmarks && currentLandmarks.length > 0) {
+    if (typeof drawMediaPipeLandmarks === 'function') {
+      drawMediaPipeLandmarks(currentLandmarks);
+    }
+  }
+
+  updateStatus('🧹 Misurazioni pulite - Riparti da zero');
+  console.log('✅ Misurazioni pulite completamente');
+}
+
+// Esponi la funzione a window
+window.clearAllMeasurementOverlays = clearAllMeasurementOverlays;
+
+function highlightMeasurementLandmark(landmarkId, color) {
+  /**
+   * Evidenzia un landmark selezionato per misurazione con un cerchio colorato.
+   */
+  if (!fabricCanvas) return;
+
+  // Trova il landmark sul canvas
+  const landmarkObjects = fabricCanvas.getObjects().filter(obj =>
+    obj.isLandmark && obj.landmarkType === 'mediapipe' && obj.landmarkIndex === landmarkId
+  );
+
+  if (landmarkObjects.length > 0) {
+    const landmark = landmarkObjects[0];
+
+    // Crea un cerchio di evidenziazione più grande
+    const highlightCircle = new fabric.Circle({
+      left: landmark.left - 3,
+      top: landmark.top - 3,
+      radius: landmark.radius + 3,
+      fill: 'transparent',
+      stroke: color,
+      strokeWidth: 3,
+      selectable: false,
+      evented: false,
+      isMeasurement: true,
+      measurementType: 'highlight'
+    });
+
+    fabricCanvas.add(highlightCircle);
+    fabricCanvas.renderAll();
+  }
+}
+
+function drawMeasurementLine(p1, p2, distance) {
+  /**
+   * Disegna una linea tra 2 punti con l'etichetta della distanza.
+   */
+  if (!fabricCanvas) return;
+
+  // Linea
+  const line = new fabric.Line([p1.x, p1.y, p2.x, p2.y], {
+    stroke: '#FF6B6B',
+    strokeWidth: 2,
+    selectable: false,
+    evented: false,
+    isMeasurement: true,
+    measurementType: 'line'
+  });
+
+  // Etichetta con distanza
+  const midX = (p1.x + p2.x) / 2;
+  const midY = (p1.y + p2.y) / 2;
+  const label = new fabric.Text(`${distance.toFixed(1)} px`, {
+    left: midX,
+    top: midY - 15,
+    fontSize: 14,
+    fill: '#FF6B6B',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    padding: 3,
+    selectable: false,
+    evented: false,
+    isMeasurement: true,
+    measurementType: 'label'
+  });
+
+  fabricCanvas.add(line, label);
+
+  // Porta in primo piano per renderli visibili sopra l'immagine
+  line.bringToFront();
+  label.bringToFront();
+
+  fabricCanvas.renderAll();
+  console.log('✅ Linea di misurazione disegnata e portata in primo piano');
+}
+
+function drawMeasurementPolygon(points, area) {
+  /**
+   * Disegna un poligono con i punti selezionati e mostra l'area.
+   */
+  if (!fabricCanvas) return;
+
+  // Crea array di punti per Fabric.js
+  const fabricPoints = points.map(p => ({ x: p.x, y: p.y }));
+
+  // Poligono
+  const polygon = new fabric.Polygon(fabricPoints, {
+    fill: 'rgba(76, 175, 80, 0.2)',
+    stroke: '#4CAF50',
+    strokeWidth: 2,
+    selectable: false,
+    evented: false,
+    isMeasurement: true,
+    measurementType: 'polygon'
+  });
+
+  // Calcola centro del poligono per posizionare l'etichetta
+  const centerX = points.reduce((sum, p) => sum + p.x, 0) / points.length;
+  const centerY = points.reduce((sum, p) => sum + p.y, 0) / points.length;
+
+  // Etichetta con area
+  const label = new fabric.Text(`${area.toFixed(1)} px²`, {
+    left: centerX - 30,
+    top: centerY - 10,
+    fontSize: 14,
+    fill: '#4CAF50',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    padding: 5,
+    selectable: false,
+    evented: false,
+    isMeasurement: true,
+    measurementType: 'label'
+  });
+
+  fabricCanvas.add(polygon, label);
+
+  // Porta in primo piano per renderli visibili sopra l'immagine
+  polygon.bringToFront();
+  label.bringToFront();
+
+  fabricCanvas.renderAll();
+  console.log('✅ Poligono di misurazione disegnato e portato in primo piano');
 }
 
 // === UTILITIES ===
@@ -3157,30 +4968,6 @@ function getLandmarkColor(index) {
   ];
 
   return colors[index % colors.length];
-}
-
-function getLandmarkName(index) {
-  // Nomi dei landmarks basati su MediaPipe Face Mesh
-  const names = {
-    0: 'Centro naso',
-    1: 'Punta naso',
-    2: 'Narice sx',
-    3: 'Narice dx',
-    4: 'Angolo occhio sx int',
-    5: 'Angolo occhio sx est',
-    6: 'Angolo occhio dx int',
-    7: 'Angolo occhio dx est',
-    8: 'Angolo bocca sx',
-    9: 'Angolo bocca dx',
-    10: 'Labbro sup centro',
-    11: 'Labbro inf centro',
-    12: 'Sopracciglio sx int',
-    13: 'Sopracciglio sx est',
-    14: 'Sopracciglio dx int',
-    15: 'Sopracciglio dx est'
-  };
-
-  return names[index] || `Landmark ${index}`;
 }
 
 function clearLandmarksTable() {
@@ -3810,11 +5597,21 @@ function convertCurrentImageToBase64() {
     throw new Error('currentImage non disponibile');
   }
 
+  // Ottiene l'elemento HTML dall'oggetto Fabric.js
+  let imageElement;
+  if (currentImage.getElement) {
+    imageElement = currentImage.getElement();
+  } else if (currentImage.src) {
+    imageElement = currentImage;
+  } else {
+    throw new Error('currentImage non è un oggetto valido');
+  }
+
   const canvas = document.createElement('canvas');
-  canvas.width = currentImage.width;
-  canvas.height = currentImage.height;
+  canvas.width = imageElement.naturalWidth || imageElement.width || currentImage.width;
+  canvas.height = imageElement.naturalHeight || imageElement.height || currentImage.height;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(currentImage, 0, 0);
+  ctx.drawImage(imageElement, 0, 0);
   return canvas.toDataURL('image/jpeg', 0.8);
 }
 
@@ -4057,3 +5854,100 @@ async function startAutomaticVideoScanning() {
     showToast('Errore nella scansione', 'error');
   }
 }
+
+// === FUNZIONI SINCRONIZZAZIONE OVERLAY GREEN DOTS ===
+
+function syncGreenDotsOverlayWithImage() {
+  /**
+   * Sincronizza la posizione e scala dell'overlay green dots con l'immagine principale
+   * Usa le stesse coordinate dinamiche dei landmarks per consistenza
+   */
+  if (!window.currentGreenDotsOverlay) {
+    console.log('⚠️ Nessun overlay green dots da sincronizzare');
+    return;
+  }
+
+  if (!currentImage || !currentImage.isBackgroundImage) {
+    console.log('⚠️ Nessuna immagine di sfondo da sincronizzare');
+    return;
+  }
+
+  // Salva posizioni precedenti per debug
+  const oldOverlayPos = {
+    left: window.currentGreenDotsOverlay.left,
+    top: window.currentGreenDotsOverlay.top
+  };
+
+  // Aggiorna le variabili globali di trasformazione
+  window.imageScale = currentImage.scaleX;
+  window.imageOffset = {
+    x: currentImage.left,
+    y: currentImage.top
+  };
+
+  // Aggiorna l'overlay con le coordinate ESATTE dell'immagine
+  window.currentGreenDotsOverlay.set({
+    left: currentImage.left,
+    top: currentImage.top,
+    scaleX: currentImage.scaleX,
+    scaleY: currentImage.scaleY
+  });
+
+  fabricCanvas.renderAll();
+
+  console.log('🔄 SINCRONIZZAZIONE OVERLAY GREEN DOTS:', {
+    immagine: {
+      pos: `(${currentImage.left.toFixed(1)}, ${currentImage.top.toFixed(1)})`,
+      scale: currentImage.scaleX.toFixed(3)
+    },
+    overlay: {
+      oldPos: `(${oldOverlayPos.left.toFixed(1)}, ${oldOverlayPos.top.toFixed(1)})`,
+      newPos: `(${window.currentGreenDotsOverlay.left.toFixed(1)}, ${window.currentGreenDotsOverlay.top.toFixed(1)})`,
+      scale: window.currentGreenDotsOverlay.scaleX.toFixed(3)
+    },
+    variabiliGlobali: {
+      imageScale: window.imageScale?.toFixed(3),
+      imageOffset: `(${window.imageOffset?.x?.toFixed(1)}, ${window.imageOffset?.y?.toFixed(1)})`
+    }
+  });
+}
+
+function syncGreenDotsOverlayWithViewport() {
+  /**
+   * Sincronizza l'overlay green dots quando il viewport del canvas cambia (pan)
+   * Durante il pan, entrambi immagine e overlay si spostano, ma potrebbero desincronizzarsi
+   */
+  if (!window.currentGreenDotsOverlay) {
+    console.log('⚠️ Nessun overlay green dots da sincronizzare con viewport');
+    return;
+  }
+
+  if (!currentImage || !currentImage.isBackgroundImage) {
+    console.log('⚠️ Nessuna immagine di sfondo per sincronizzazione viewport');
+    return;
+  }
+
+  // Forza l'overlay ad avere esattamente le stesse coordinate dell'immagine
+  window.currentGreenDotsOverlay.set({
+    left: currentImage.left,
+    top: currentImage.top,
+    scaleX: currentImage.scaleX,
+    scaleY: currentImage.scaleY
+  });
+
+  console.log('🔄 SINCRONIZZAZIONE VIEWPORT PAN:', {
+    viewportTransform: fabricCanvas.viewportTransform,
+    immagine: {
+      pos: `(${currentImage.left.toFixed(1)}, ${currentImage.top.toFixed(1)})`,
+      scale: currentImage.scaleX.toFixed(3)
+    },
+    overlay: {
+      pos: `(${window.currentGreenDotsOverlay.left.toFixed(1)}, ${window.currentGreenDotsOverlay.top.toFixed(1)})`,
+      scale: window.currentGreenDotsOverlay.scaleX.toFixed(3)
+    }
+  });
+
+  // Forza il re-rendering per assicurarsi che tutto sia sincronizzato
+  fabricCanvas.renderAll();
+}
+

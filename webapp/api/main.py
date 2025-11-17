@@ -2,7 +2,8 @@
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any, Tuple
 from contextlib import asynccontextmanager
@@ -16,6 +17,10 @@ import uuid
 from datetime import datetime
 import tempfile
 import os
+import sys
+
+# Aggiunge il percorso src per importare green_dots_processor
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 # Import MediaPipe solo quando necessario per evitare conflitti TensorFlow
 try:
@@ -25,10 +30,32 @@ except ImportError as e:
     print(f"Warning: MediaPipe not available: {e}")
     MEDIAPIPE_AVAILABLE = False
 
+# Import del modulo green_dots_processor
+try:
+    from green_dots_processor import GreenDotsProcessor
+    GREEN_DOTS_AVAILABLE = True
+    print("✅ GreenDotsProcessor importato con successo")
+except ImportError as e:
+    print(f"❌ Warning: GreenDotsProcessor not available: {e}")
+    GREEN_DOTS_AVAILABLE = False
+
+# Import Voice Assistant
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+try:
+    from voice.voice_assistant import IsabellaVoiceAssistant
+    VOICE_ASSISTANT_AVAILABLE = True
+    print("✅ IsabellaVoiceAssistant importato con successo")
+except ImportError as e:
+    print(f"❌ Warning: IsabellaVoiceAssistant not available: {e}")
+    VOICE_ASSISTANT_AVAILABLE = False
+
 # === INIZIALIZZAZIONE MEDIAPIPE ===
 
 mp_face_mesh = None
 face_mesh = None
+
+# === INIZIALIZZAZIONE VOICE ASSISTANT ===
+voice_assistant = None
 
 def initialize_mediapipe():
     global mp_face_mesh, face_mesh
@@ -48,6 +75,21 @@ def initialize_mediapipe():
         print(f"Error initializing MediaPipe: {e}")
         return False
 
+def initialize_voice_assistant():
+    global voice_assistant
+    if not VOICE_ASSISTANT_AVAILABLE:
+        print("⚠️ Voice Assistant non disponibile")
+        return False
+    
+    try:
+        config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'voice', 'voice_config.json')
+        voice_assistant = IsabellaVoiceAssistant(config_path=config_path)
+        print("✅ Voice Assistant inizializzato")
+        return True
+    except Exception as e:
+        print(f"❌ Errore inizializzazione Voice Assistant: {e}")
+        return False
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gestisce startup e shutdown dell'applicazione."""
@@ -59,9 +101,16 @@ async def lifespan(app: FastAPI):
         print("❌ ERRORE: MediaPipe non disponibile - API NON FUNZIONERÀ")
         raise RuntimeError("MediaPipe è OBBLIGATORIO - nessun fallback consentito")
     
+    # Inizializza Voice Assistant (opzionale)
+    voice_success = initialize_voice_assistant()
+    if voice_success:
+        print("🎤 Voice Assistant disponibile")
+    
     yield
     
     # Shutdown
+    if voice_assistant and voice_assistant.is_active:
+        voice_assistant.stop()
     print("🛑 Shutdown API server")
 
 app = FastAPI(
@@ -79,6 +128,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Monta i file statici della webapp
+webapp_dir = os.path.join(os.path.dirname(__file__), '..')
+app.mount("/static", StaticFiles(directory=os.path.join(webapp_dir, "static")), name="static")
+app.mount("/templates", StaticFiles(directory=os.path.join(webapp_dir, "templates")), name="templates")
+
+print(f"📁 Webapp directory: {webapp_dir}")
 
 # === MODELLI PYDANTIC ===
 
@@ -123,6 +179,81 @@ class AnalysisResult(BaseModel):
     frontality_score: float
     image_info: Dict[str, Any]
     timestamp: str
+
+# === MODELLI PYDANTIC PER GREEN DOTS ===
+
+class GreenDotPoint(BaseModel):
+    x: int
+    y: int
+    size: int
+    pixels: Optional[List[Dict]] = None
+
+class GreenDotsGroup(BaseModel):
+    label: str
+    vertices: int
+    area: float
+    perimeter: float
+    center: Dict[str, float]
+    points: List[GreenDotPoint]
+
+class GreenDotsDetectionResults(BaseModel):
+    dots: List[GreenDotPoint]
+    total_dots: int
+    total_green_pixels: int
+    image_size: Tuple[int, int]
+    parameters: Dict[str, Any]
+
+class GreenDotsAnalysisRequest(BaseModel):
+    image: str  # Base64 encoded image
+    hue_range: Optional[Tuple[int, int]] = (60, 150)
+    saturation_min: Optional[int] = 15
+    value_range: Optional[Tuple[int, int]] = (15, 95)
+    cluster_size_range: Optional[Tuple[int, int]] = (2, 150)
+    clustering_radius: Optional[int] = 2
+
+class GreenDotsAnalysisResult(BaseModel):
+    success: bool
+    session_id: str
+    error: Optional[str] = None
+    detection_results: Optional[GreenDotsDetectionResults] = None
+    groups: Optional[Dict[str, List[GreenDotPoint]]] = None
+    coordinates: Optional[Dict[str, List[Tuple[int, int]]]] = None
+    statistics: Optional[Dict[str, Any]] = None
+    overlay_base64: Optional[str] = None
+    image_size: Optional[Tuple[int, int]] = None
+    timestamp: str
+
+# === MODELLI PYDANTIC PER VOICE ASSISTANT ===
+
+class VoiceCommand(BaseModel):
+    command: str  # Comando vocale da processare
+
+class VoiceSpeakRequest(BaseModel):
+    text: str  # Testo da far pronunciare all'assistente
+
+class VoiceStatusResponse(BaseModel):
+    available: bool
+    is_active: bool
+    is_muted: bool
+    config: Optional[Dict[str, Any]] = None
+
+class VoiceCommandResponse(BaseModel):
+    success: bool
+    message: str
+    command_recognized: Optional[str] = None
+    action_executed: Optional[str] = None
+
+class VoiceMessageRequest(BaseModel):
+    message_key: str  # Chiave del messaggio predefinito
+
+class VoiceKeywordCommand(BaseModel):
+    keyword: str  # Parola chiave pronunciata dall'utente
+    
+class VoiceKeywordResponse(BaseModel):
+    success: bool
+    keyword: str
+    action: Optional[str] = None
+    message: Optional[str] = None
 
 # === UTILITY FUNCTIONS ===
 
@@ -581,12 +712,122 @@ def calculate_frontality_score_from_landmarks(landmarks_3d, frame_shape) -> floa
         print(f"Errore calcolo frontalità: {e}")
         return 0.0
 
+# === UTILITY FUNCTIONS PER GREEN DOTS ===
+
+def convert_numpy_types(obj):
+    """
+    Converte ricorsivamente tipi NumPy in tipi Python nativi per serializzazione JSON.
+    """
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_numpy_types(item) for item in obj)
+    else:
+        return obj
+
+def convert_pil_image_to_base64(pil_image: Image.Image) -> str:
+    """Converte un'immagine PIL in stringa base64."""
+    try:
+        buffer = BytesIO()
+        pil_image.save(buffer, format='PNG')
+        img_str = base64.b64encode(buffer.getvalue()).decode()
+        return f"data:image/png;base64,{img_str}"
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore conversione immagine: {str(e)}")
+
+def decode_base64_to_pil_image(base64_string: str) -> Image.Image:
+    """Decodifica stringa base64 in immagine PIL."""
+    try:
+        # Rimuovi prefisso data URL se presente
+        if base64_string.startswith('data:image'):
+            base64_string = base64_string.split(',')[1]
+        
+        # Decodifica base64
+        image_data = base64.b64decode(base64_string)
+        
+        # Converti in PIL Image
+        pil_image = Image.open(BytesIO(image_data))
+        
+        # Converti in RGB se necessario
+        if pil_image.mode != 'RGB':
+            pil_image = pil_image.convert('RGB')
+        
+        return pil_image
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Errore decodifica immagine: {str(e)}")
+
+def process_green_dots_analysis(
+    image_base64: str,
+    hue_range: Tuple[int, int] = (60, 150),
+    saturation_min: int = 15,
+    value_range: Tuple[int, int] = (15, 95),
+    cluster_size_range: Tuple[int, int] = (2, 150),
+    clustering_radius: int = 2
+) -> Dict:
+    """Processa un'immagine per il rilevamento dei green dots."""
+    
+    if not GREEN_DOTS_AVAILABLE:
+        raise HTTPException(
+            status_code=500, 
+            detail="Modulo GreenDotsProcessor non disponibile. Verificare l'installazione delle dipendenze."
+        )
+    
+    try:
+        # Decodifica l'immagine
+        pil_image = decode_base64_to_pil_image(image_base64)
+        
+        # Inizializza il processore con parametri personalizzati
+        processor = GreenDotsProcessor(
+            hue_range=hue_range,
+            saturation_min=saturation_min,
+            value_range=value_range,
+            cluster_size_range=cluster_size_range,
+            clustering_radius=clustering_radius
+        )
+        
+        # Processa l'immagine
+        results = processor.process_pil_image(pil_image)
+        
+        # Converte l'overlay in base64 se disponibile
+        if results.get('success') and 'overlay' in results:
+            overlay_base64 = convert_pil_image_to_base64(results['overlay'])
+            results['overlay_base64'] = overlay_base64
+            # Rimuove l'oggetto PIL dall'output JSON
+            del results['overlay']
+        
+        return results
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore durante l'analisi green dots: {str(e)}")
+
 # === API ENDPOINTS ===
 
 @app.get("/")
 async def root():
-    """Endpoint di salute API."""
+    """Serve la webapp index.html"""
+    webapp_path = os.path.join(os.path.dirname(__file__), '..', 'index.html')
+    if os.path.exists(webapp_path):
+        return FileResponse(webapp_path)
     return {"message": "Medical Facial Analysis API", "version": "1.0.0", "status": "active"}
+
+@app.get("/index.html")
+async def serve_index():
+    """Serve la webapp index.html"""
+    webapp_path = os.path.join(os.path.dirname(__file__), '..', 'index.html')
+    if os.path.exists(webapp_path):
+        return FileResponse(webapp_path)
+    raise HTTPException(status_code=404, detail="index.html not found")
 
 @app.get("/health")
 async def health_check():
@@ -595,12 +836,16 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "mediapipe": "available" if MEDIAPIPE_AVAILABLE else "mock_mode",
+        "green_dots": "available" if GREEN_DOTS_AVAILABLE else "not_available",
         "version": "1.0.0",
         "endpoints": {
             "analyze": "/api/analyze",
             "batch": "/api/batch-analyze", 
             "config": "/api/config/validate",
-            "landmarks": "/api/landmarks/info"
+            "landmarks": "/api/landmarks/info",
+            "green_dots_analyze": "/api/green-dots/analyze",
+            "green_dots_info": "/api/green-dots/info",
+            "green_dots_test": "/api/green-dots/test"
         }
     }
 
@@ -911,6 +1156,400 @@ async def get_best_frames():
         return {
             "success": False,
             "message": f"Errore lettura dati frame: {e}"
+        }
+
+# === API ENDPOINTS PER GREEN DOTS ===
+
+@app.post("/api/green-dots/analyze", response_model=GreenDotsAnalysisResult)
+async def analyze_green_dots(request: GreenDotsAnalysisRequest):
+    """
+    Analizza un'immagine per rilevare puntini verdi e genera overlay grafico.
+    
+    Questo endpoint utilizza le funzioni del modulo src/green_dots_processor.py
+    per rilevare puntini verdi, dividerli in gruppi sinistro/destro,
+    calcolare statistiche delle forme e generare overlay trasparenti.
+    """
+    try:
+        # Genera ID sessione
+        session_id = str(uuid.uuid4())
+        timestamp = datetime.now().isoformat()
+        
+        print(f"🟢 Inizio analisi green dots - Sessione: {session_id}")
+        
+        # Verifica disponibilità del modulo
+        if not GREEN_DOTS_AVAILABLE:
+            return GreenDotsAnalysisResult(
+                success=False,
+                session_id=session_id,
+                error="Modulo GreenDotsProcessor non disponibile. Verificare l'installazione delle dipendenze.",
+                timestamp=timestamp
+            )
+        
+        # Processa l'immagine con i parametri forniti
+        results = process_green_dots_analysis(
+            image_base64=request.image,
+            hue_range=request.hue_range,
+            saturation_min=request.saturation_min,
+            value_range=request.value_range,
+            cluster_size_range=request.cluster_size_range,
+            clustering_radius=request.clustering_radius
+        )
+        
+        print(f"🟢 Analisi completata - Successo: {results.get('success', False)}")
+        
+        # Costruisce la risposta
+        if results['success']:
+            # Converte tutti i tipi NumPy in tipi Python nativi
+            clean_results = convert_numpy_types(results)
+            
+            # Converte i dati nelle strutture Pydantic
+            detection_results = GreenDotsDetectionResults(
+                dots=[GreenDotPoint(**dot) for dot in clean_results['detection_results']['dots']],
+                total_dots=clean_results['detection_results']['total_dots'],
+                total_green_pixels=clean_results['detection_results']['total_green_pixels'],
+                image_size=clean_results['detection_results']['image_size'],
+                parameters=clean_results['detection_results']['parameters']
+            )
+            
+            return GreenDotsAnalysisResult(
+                success=True,
+                session_id=session_id,
+                detection_results=detection_results,
+                groups=clean_results['groups'],
+                coordinates=clean_results['coordinates'],
+                statistics=clean_results['statistics'],
+                overlay_base64=clean_results.get('overlay_base64'),
+                image_size=clean_results['image_size'],
+                timestamp=timestamp
+            )
+        else:
+            # Converte anche i dati di errore
+            clean_results = convert_numpy_types(results)
+            
+            return GreenDotsAnalysisResult(
+                success=False,
+                session_id=session_id,
+                error=clean_results.get('error', 'Errore sconosciuto durante l\'analisi'),
+                detection_results=GreenDotsDetectionResults(
+                    dots=[GreenDotPoint(**dot) for dot in clean_results['detection_results']['dots']],
+                    total_dots=clean_results['detection_results']['total_dots'],
+                    total_green_pixels=clean_results['detection_results']['total_green_pixels'],
+                    image_size=clean_results['detection_results']['image_size'],
+                    parameters=clean_results['detection_results']['parameters']
+                ) if 'detection_results' in clean_results else None,
+                timestamp=timestamp
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Errore endpoint green dots: {str(e)}")
+        return GreenDotsAnalysisResult(
+            success=False,
+            session_id=session_id if 'session_id' in locals() else str(uuid.uuid4()),
+            error=f"Errore interno del server: {str(e)}",
+            timestamp=datetime.now().isoformat()
+        )
+
+@app.get("/api/green-dots/info")
+async def get_green_dots_info():
+    """
+    Restituisce informazioni sui parametri e funzionalità del modulo GreenDotsProcessor.
+    """
+    try:
+        return {
+            "available": GREEN_DOTS_AVAILABLE,
+            "module_info": {
+                "description": "Modulo per il rilevamento di puntini verdi e generazione di overlay trasparenti",
+                "functions": [
+                    "Rilevamento puntini verdi usando analisi HSV",
+                    "Divisione dei puntini in gruppi sinistro (Sx) e destro (Dx)",
+                    "Generazione di overlay trasparenti con i perimetri",
+                    "Calcolo delle coordinate e statistiche delle forme"
+                ]
+            },
+            "default_parameters": {
+                "hue_range": [60, 150],
+                "saturation_min": 15,
+                "value_range": [15, 95],
+                "cluster_size_range": [2, 150],
+                "clustering_radius": 2
+            },
+            "output_format": {
+                "success": "bool - Indica se l'analisi è riuscita",
+                "groups": "Dict - Gruppi di puntini (Sx/Dx)",
+                "coordinates": "Dict - Coordinate dei puntini per gruppo",
+                "statistics": "Dict - Statistiche delle forme (area, perimetro, etc.)",
+                "overlay_base64": "str - Overlay grafico in formato base64",
+                "image_size": "Tuple - Dimensioni originali dell'immagine"
+            },
+            "requirements": {
+                "min_dots_total": 6,
+                "min_dots_per_side": 3,
+                "dependencies": ["opencv-python", "numpy", "pillow"]
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore recupero informazioni: {str(e)}")
+
+@app.post("/api/green-dots/test")
+async def test_green_dots():
+    """
+    Endpoint di test per verificare il funzionamento del modulo GreenDotsProcessor.
+    """
+    try:
+        if not GREEN_DOTS_AVAILABLE:
+            return {
+                "success": False,
+                "message": "Modulo GreenDotsProcessor non disponibile",
+                "available": False
+            }
+        
+        # Test di inizializzazione del processore
+        try:
+            processor = GreenDotsProcessor()
+            return {
+                "success": True,
+                "message": "Modulo GreenDotsProcessor funzionante",
+                "available": True,
+                "processor_initialized": True,
+                "default_config": {
+                    "hue_range": [processor.hue_min, processor.hue_max],
+                    "saturation_min": processor.saturation_min,
+                    "value_range": [processor.value_min, processor.value_max],
+                    "cluster_size_range": [processor.cluster_min, processor.cluster_max],
+                    "clustering_radius": processor.clustering_radius
+                }
+            }
+        except Exception as init_error:
+            return {
+                "success": False,
+                "message": f"Errore inizializzazione processore: {str(init_error)}",
+                "available": True,
+                "processor_initialized": False
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore test modulo: {str(e)}")
+
+# === API ENDPOINTS SPECIFICI PER CORREZIONE SOPRACCIGLIA ===
+
+class EyebrowAnalysisRequest(BaseModel):
+    image: str  # Base64 encoded image
+    side: str   # "left" o "right"
+    expand_factor: float = 0.5  # Fattore espansione bounding box
+    hue_range: Tuple[int, int] = (60, 150)
+    saturation_min: int = 15
+    value_range: Tuple[int, int] = (15, 95)
+    cluster_size_range: Tuple[int, int] = (2, 150)
+    clustering_radius: int = 2
+
+class EyebrowAnalysisResult(BaseModel):
+    success: bool
+    session_id: str
+    side: str
+    dots: Optional[List[Dict[str, Any]]] = None
+    coordinates: Optional[List[Tuple[float, float]]] = None
+    statistics: Optional[Dict[str, Any]] = None
+    bbox: Optional[Dict[str, float]] = None
+    overlay_base64: Optional[str] = None
+    error: Optional[str] = None
+    timestamp: str
+
+@app.post("/api/eyebrow/analyze", response_model=EyebrowAnalysisResult)
+async def analyze_eyebrow(request: EyebrowAnalysisRequest):
+    """
+    Analizza un sopracciglio specifico (sinistro o destro) generando gli stessi
+    output di src/green_dots_processor.py per i pulsanti della webapp.
+    """
+    try:
+        # Genera ID sessione
+        session_id = str(uuid.uuid4())
+        timestamp = datetime.now().isoformat()
+        
+        print(f"✂️ Inizio analisi sopracciglio {request.side} - Sessione: {session_id}")
+        
+        # Verifica disponibilità del modulo
+        if not GREEN_DOTS_AVAILABLE:
+            return EyebrowAnalysisResult(
+                success=False,
+                session_id=session_id,
+                side=request.side,
+                error="Modulo GreenDotsProcessor non disponibile. Verificare l'installazione delle dipendenze.",
+                timestamp=timestamp
+            )
+        
+        # Valida il lato richiesto
+        if request.side not in ["left", "right"]:
+            return EyebrowAnalysisResult(
+                success=False,
+                session_id=session_id,
+                side=request.side,
+                error="Il parametro 'side' deve essere 'left' o 'right'",
+                timestamp=timestamp
+            )
+        
+        # Processa l'immagine con i parametri forniti
+        results = process_green_dots_analysis(
+            image_base64=request.image,
+            hue_range=request.hue_range,
+            saturation_min=request.saturation_min,
+            value_range=request.value_range,
+            cluster_size_range=request.cluster_size_range,
+            clustering_radius=request.clustering_radius
+        )
+        
+        if not results['success']:
+            return EyebrowAnalysisResult(
+                success=False,
+                session_id=session_id,
+                side=request.side,
+                error=results.get('error', 'Errore sconosciuto durante l\'analisi'),
+                timestamp=timestamp
+            )
+        
+        # Converte tutti i tipi NumPy in tipi Python nativi
+        clean_results = convert_numpy_types(results)
+        
+        # Estrai dati del sopracciglio richiesto
+        if request.side == "left":
+            eyebrow_dots = clean_results['groups']['Sx']
+            eyebrow_coordinates = clean_results['coordinates']['Sx']
+            eyebrow_statistics = clean_results['statistics']['left']
+        else:  # right
+            eyebrow_dots = clean_results['groups']['Dx']
+            eyebrow_coordinates = clean_results['coordinates']['Dx']
+            eyebrow_statistics = clean_results['statistics']['right']
+        
+        # Calcola bounding box con espansione
+        if eyebrow_dots:
+            # Usa il processore per calcolare il bounding box
+            processor = GreenDotsProcessor()
+            processor.left_dots = clean_results['groups']['Sx'] if request.side == "left" else []
+            processor.right_dots = clean_results['groups']['Dx'] if request.side == "right" else []
+            
+            if request.side == "left":
+                bbox_tuple = processor.get_left_eyebrow_bbox(request.expand_factor)
+            else:
+                bbox_tuple = processor.get_right_eyebrow_bbox(request.expand_factor)
+            
+            bbox = {
+                "x_min": bbox_tuple[0],
+                "y_min": bbox_tuple[1], 
+                "x_max": bbox_tuple[2],
+                "y_max": bbox_tuple[3]
+            }
+        else:
+            bbox = {"x_min": 0, "y_min": 0, "x_max": 0, "y_max": 0}
+        
+        # Genera overlay specifico per il lato richiesto
+        overlay_base64 = None
+        if 'overlay_base64' in clean_results:
+            # L'overlay originale contiene entrambi i lati
+            # Per un uso specifico, potremmo generare un overlay solo per un lato
+            # Ma per compatibilità, usiamo quello completo
+            overlay_base64 = clean_results['overlay_base64']
+        
+        print(f"✂️ Analisi sopracciglio {request.side} completata - Punti: {len(eyebrow_dots)}")
+        
+        return EyebrowAnalysisResult(
+            success=True,
+            session_id=session_id,
+            side=request.side,
+            dots=eyebrow_dots,
+            coordinates=eyebrow_coordinates,
+            statistics=eyebrow_statistics,
+            bbox=bbox,
+            overlay_base64=overlay_base64,
+            timestamp=timestamp
+        )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Errore endpoint sopracciglio {request.side}: {str(e)}")
+        return EyebrowAnalysisResult(
+            success=False,
+            session_id=session_id if 'session_id' in locals() else str(uuid.uuid4()),
+            side=request.side,
+            error=f"Errore interno del server: {str(e)}",
+            timestamp=datetime.now().isoformat()
+        )
+
+@app.post("/api/eyebrow/left")
+async def analyze_left_eyebrow(request: Dict[str, str]):
+    """
+    Endpoint specifico per il sopracciglio sinistro - equivalente alla funzione 
+    showLeftEyebrow() del JavaScript.
+    """
+    try:
+        # Crea richiesta per il sopracciglio sinistro
+        eyebrow_request = EyebrowAnalysisRequest(
+            image=request["image"],
+            side="left"
+        )
+        
+        # Analizza il sopracciglio sinistro
+        result = await analyze_eyebrow(eyebrow_request)
+        
+        # Restituisce un formato semplificato compatibile con il frontend
+        return {
+            "success": result.success,
+            "side": "left",
+            "data": {
+                "dots": result.dots,
+                "coordinates": result.coordinates,
+                "statistics": result.statistics,
+                "bbox": result.bbox
+            } if result.success else None,
+            "error": result.error,
+            "timestamp": result.timestamp
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "side": "left", 
+            "error": f"Errore analisi sopracciglio sinistro: {str(e)}",
+            "timestamp": datetime.now().isoformat()
+        }
+
+@app.post("/api/eyebrow/right")
+async def analyze_right_eyebrow(request: Dict[str, str]):
+    """
+    Endpoint specifico per il sopracciglio destro - equivalente alla funzione
+    showRightEyebrow() del JavaScript.
+    """
+    try:
+        # Crea richiesta per il sopracciglio destro
+        eyebrow_request = EyebrowAnalysisRequest(
+            image=request["image"],
+            side="right"
+        )
+        
+        # Analizza il sopracciglio destro
+        result = await analyze_eyebrow(eyebrow_request)
+        
+        # Restituisce un formato semplificato compatibile con il frontend
+        return {
+            "success": result.success,
+            "side": "right",
+            "data": {
+                "dots": result.dots,
+                "coordinates": result.coordinates,
+                "statistics": result.statistics,
+                "bbox": result.bbox
+            } if result.success else None,
+            "error": result.error,
+            "timestamp": result.timestamp
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "side": "right",
+            "error": f"Errore analisi sopracciglio destro: {str(e)}",
+            "timestamp": datetime.now().isoformat()
         }
 
 # === ENDPOINT UNIFICATO PER ANALISI COMPLETA ===
@@ -1318,6 +1957,329 @@ def calculate_face_outline_symmetry(points: List[Tuple[float, float]]) -> float:
         
     except:
         return 0.0
+
+# ========================================
+# VOICE ASSISTANT ENDPOINTS
+# ========================================
+
+@app.get("/api/voice/status", response_model=VoiceStatusResponse)
+async def get_voice_status():
+    """Ottiene lo stato corrente del voice assistant."""
+    if not VOICE_ASSISTANT_AVAILABLE or voice_assistant is None:
+        return VoiceStatusResponse(
+            available=False,
+            is_active=False,
+            is_muted=False,
+            config=None
+        )
+    
+    return VoiceStatusResponse(
+        available=True,
+        is_active=voice_assistant.is_active,
+        is_muted=voice_assistant.is_muted,
+        config=voice_assistant.config
+    )
+
+@app.post("/api/voice/start")
+async def start_voice_assistant():
+    """Avvia l'assistente vocale."""
+    if not VOICE_ASSISTANT_AVAILABLE or voice_assistant is None:
+        raise HTTPException(status_code=503, detail="Voice Assistant non disponibile")
+    
+    try:
+        voice_assistant.start()
+        return {"success": True, "message": "Assistente vocale avviato"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore avvio assistente: {str(e)}")
+
+@app.post("/api/voice/stop")
+async def stop_voice_assistant():
+    """Ferma l'assistente vocale."""
+    if not VOICE_ASSISTANT_AVAILABLE or voice_assistant is None:
+        raise HTTPException(status_code=503, detail="Voice Assistant non disponibile")
+    
+    try:
+        voice_assistant.stop()
+        return {"success": True, "message": "Assistente vocale fermato"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore stop assistente: {str(e)}")
+
+@app.post("/api/voice/toggle")
+async def toggle_voice_assistant():
+    """Attiva/disattiva l'assistente vocale."""
+    if not VOICE_ASSISTANT_AVAILABLE or voice_assistant is None:
+        raise HTTPException(status_code=503, detail="Voice Assistant non disponibile")
+    
+    try:
+        voice_assistant.toggle()
+        status = "attivato" if voice_assistant.is_active else "disattivato"
+        return {
+            "success": True, 
+            "message": f"Assistente vocale {status}",
+            "is_active": voice_assistant.is_active
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore toggle assistente: {str(e)}")
+
+@app.post("/api/voice/mute")
+async def mute_voice_assistant():
+    """Silenzia l'assistente vocale."""
+    if not VOICE_ASSISTANT_AVAILABLE or voice_assistant is None:
+        raise HTTPException(status_code=503, detail="Voice Assistant non disponibile")
+    
+    try:
+        voice_assistant.mute()
+        return {"success": True, "message": "Assistente vocale silenziato", "is_muted": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore mute assistente: {str(e)}")
+
+@app.post("/api/voice/unmute")
+async def unmute_voice_assistant():
+    """Riattiva l'audio dell'assistente vocale."""
+    if not VOICE_ASSISTANT_AVAILABLE or voice_assistant is None:
+        raise HTTPException(status_code=503, detail="Voice Assistant non disponibile")
+    
+    try:
+        voice_assistant.unmute()
+        return {"success": True, "message": "Audio assistente riattivato", "is_muted": False}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore unmute assistente: {str(e)}")
+
+@app.post("/api/voice/speak")
+async def speak_text(request: VoiceSpeakRequest):
+    """Genera audio con voce Isabella e lo restituisce al browser."""
+    if not VOICE_ASSISTANT_AVAILABLE or voice_assistant is None:
+        raise HTTPException(status_code=503, detail="Voice Assistant non disponibile")
+    
+    try:
+        # Importa edge_tts per generazione diretta
+        import edge_tts
+        import asyncio
+        
+        print(f"🎙️ Generazione TTS per: '{request.text[:50]}...'")
+        
+        # Genera audio con voce Isabella
+        voice = voice_assistant.config.get("tts_voice", "it-IT-IsabellaNeural")
+        print(f"🔊 Voce selezionata: {voice}")
+        
+        # Crea file temporaneo
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        temp_path = temp_file.name
+        temp_file.close()  # Chiudi subito il file per permettere a edge-tts di scriverci
+        print(f"📁 File temporaneo: {temp_path}")
+        
+        # Genera audio con edge-tts
+        communicate = edge_tts.Communicate(request.text, voice)
+        await communicate.save(temp_path)
+        print(f"✅ Audio generato")
+        
+        # Leggi file e converti in base64
+        with open(temp_path, 'rb') as f:
+            audio_data = f.read()
+        
+        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+        print(f"📦 Audio codificato in base64 ({len(audio_base64)} chars)")
+        
+        # Elimina file temporaneo (con retry per Windows)
+        import time
+        max_retries = 5
+        for i in range(max_retries):
+            try:
+                os.unlink(temp_path)
+                print(f"✅ File temporaneo eliminato")
+                break
+            except PermissionError:
+                if i < max_retries - 1:
+                    time.sleep(0.1)  # Aspetta 100ms e riprova
+                else:
+                    print(f"⚠️ Non è stato possibile eliminare il file temporaneo: {temp_path}")
+            except Exception as e:
+                print(f"⚠️ Errore eliminazione file: {e}")
+                break
+        
+        return {
+            "success": True, 
+            "message": "Audio generato con successo",
+            "audio": f"data:audio/mp3;base64,{audio_base64}",
+            "voice": voice
+        }
+    except Exception as e:
+        print(f"❌ ERRORE generazione audio: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Errore generazione audio: {str(e)}")
+
+@app.post("/api/voice/command", response_model=VoiceCommandResponse)
+async def process_voice_command(request: VoiceCommand):
+    """Processa un comando vocale testuale (per testing senza microfono)."""
+    if not VOICE_ASSISTANT_AVAILABLE or voice_assistant is None:
+        raise HTTPException(status_code=503, detail="Voice Assistant non disponibile")
+    
+    try:
+        # Processa il comando
+        voice_assistant.process_command(request.command)
+        
+        return VoiceCommandResponse(
+            success=True,
+            message="Comando processato",
+            command_recognized=request.command
+        )
+    except Exception as e:
+        return VoiceCommandResponse(
+            success=False,
+            message=f"Errore processamento comando: {str(e)}",
+            command_recognized=request.command
+        )
+
+@app.get("/api/voice/commands")
+async def get_voice_commands():
+    """Ottiene la lista dei comandi vocali disponibili."""
+    if not VOICE_ASSISTANT_AVAILABLE or voice_assistant is None:
+        raise HTTPException(status_code=503, detail="Voice Assistant non disponibile")
+    
+    try:
+        commands = voice_assistant.config.get("commands", [])
+        return {
+            "success": True,
+            "commands": commands,
+            "activation_keywords": voice_assistant.config.get("activation_keywords", [])
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore recupero comandi: {str(e)}")
+
+@app.get("/api/voice/messages")
+async def get_voice_messages():
+    """Ottiene i messaggi predefiniti che Isabella può pronunciare."""
+    messages = {
+        "welcome": "Benvenuto nella webapp di analisi facciale. Io sono Isabella, la tua assistente vocale.",
+        "analysis_start": "Avvio analisi del volto. Attendere prego.",
+        "analysis_complete": "Analisi completata con successo. I risultati sono visibili sullo schermo.",
+        "analysis_failed": "Mi dispiace, l'analisi non è riuscita. Riprova con un'immagine migliore.",
+        "webcam_started": "Webcam attivata correttamente.",
+        "webcam_stopped": "Webcam disattivata.",
+        "image_loaded": "Immagine caricata con successo.",
+        "axis_on": "Asse di simmetria attivato.",
+        "axis_off": "Asse di simmetria disattivato.",
+        "landmarks_on": "Landmarks attivati.",
+        "landmarks_off": "Landmarks disattivati.",
+        "green_dots_on": "Rilevamento punti verdi attivato.",
+        "green_dots_off": "Rilevamento punti verdi disattivato.",
+        "measurement_started": "Misurazione avviata. Seleziona i punti richiesti.",
+        "error": "Si è verificato un errore. Riprova.",
+        "command_not_recognized": "Comando non riconosciuto. Prova a ripetere."
+    }
+    return {"success": True, "messages": messages}
+
+@app.post("/api/voice/speak-message")
+async def speak_predefined_message(request: VoiceMessageRequest):
+    """Fa pronunciare un messaggio predefinito a Isabella."""
+    if not VOICE_ASSISTANT_AVAILABLE or voice_assistant is None:
+        raise HTTPException(status_code=503, detail="Voice Assistant non disponibile")
+    
+    # Messaggi predefiniti
+    messages = {
+        "welcome": "Benvenuto nella webapp di analisi facciale. Io sono Isabella, la tua assistente vocale.",
+        "analysis_start": "Avvio analisi del volto. Attendere prego.",
+        "analysis_complete": "Analisi completata con successo. I risultati sono visibili sullo schermo.",
+        "analysis_failed": "Mi dispiace, l'analisi non è riuscita. Riprova con un'immagine migliore.",
+        "webcam_started": "Webcam attivata correttamente.",
+        "webcam_stopped": "Webcam disattivata.",
+        "image_loaded": "Immagine caricata con successo.",
+        "axis_on": "Asse di simmetria attivato.",
+        "axis_off": "Asse di simmetria disattivato.",
+        "landmarks_on": "Landmarks attivati.",
+        "landmarks_off": "Landmarks disattivati.",
+        "green_dots_on": "Rilevamento punti verdi attivato.",
+        "green_dots_off": "Rilevamento punti verdi disattivato.",
+        "measurement_started": "Misurazione avviata. Seleziona i punti richiesti.",
+        "error": "Si è verificato un errore. Riprova.",
+        "command_not_recognized": "Comando non riconosciuto. Prova a ripetere."
+    }
+    
+    text = messages.get(request.message_key)
+    if not text:
+        raise HTTPException(status_code=404, detail=f"Messaggio '{request.message_key}' non trovato")
+    
+    try:
+        import edge_tts
+        
+        voice = voice_assistant.config.get("tts_voice", "it-IT-IsabellaNeural")
+        
+        # Crea file temporaneo
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        temp_path = temp_file.name
+        temp_file.close()
+        
+        # Genera audio
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(temp_path)
+        
+        # Leggi e codifica
+        with open(temp_path, 'rb') as f:
+            audio_data = f.read()
+        
+        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+        
+        # Elimina file temporaneo
+        import time
+        for i in range(5):
+            try:
+                os.unlink(temp_path)
+                break
+            except PermissionError:
+                if i < 4:
+                    time.sleep(0.1)
+        
+        return {
+            "success": True,
+            "message": "Audio generato",
+            "audio": f"data:audio/mp3;base64,{audio_base64}",
+            "text": text
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore generazione audio: {str(e)}")
+
+@app.post("/api/voice/process-keyword", response_model=VoiceKeywordResponse)
+async def process_voice_keyword(request: VoiceKeywordCommand):
+    """Processa una parola chiave vocale e restituisce l'azione da eseguire nel frontend."""
+    keyword = request.keyword.lower().strip()
+    
+    # Mappa parole chiave -> azioni frontend
+    keyword_map = {
+        "asse": {"action": "toggleAxis", "message": "Attivazione/disattivazione asse di simmetria"},
+        "landmarks": {"action": "toggleLandmarks", "message": "Attivazione/disattivazione landmarks"},
+        "punti verdi": {"action": "toggleGreenDots", "message": "Attivazione/disattivazione punti verdi"},
+        "verde": {"action": "toggleGreenDots", "message": "Attivazione/disattivazione punti verdi"},
+        "webcam": {"action": "startWebcam", "message": "Avvio webcam"},
+        "ferma webcam": {"action": "stopWebcam", "message": "Stop webcam"},
+        "stop webcam": {"action": "stopWebcam", "message": "Stop webcam"},
+        "carica immagine": {"action": "loadImage", "message": "Apertura caricamento immagine"},
+        "immagine": {"action": "loadImage", "message": "Apertura caricamento immagine"},
+        "carica video": {"action": "loadVideo", "message": "Apertura caricamento video"},
+        "video": {"action": "loadVideo", "message": "Apertura caricamento video"},
+        "analizza": {"action": "analyzeFace", "message": "Avvio analisi facciale"},
+        "analisi": {"action": "analyzeFace", "message": "Avvio analisi facciale"},
+        "cancella": {"action": "clearCanvas", "message": "Pulizia canvas"},
+        "pulisci": {"action": "clearCanvas", "message": "Pulizia canvas"},
+        "sopracciglio sinistro": {"action": "analyzeLeftEyebrow", "message": "Analisi sopracciglio sinistro"},
+        "sopracciglio destro": {"action": "analyzeRightEyebrow", "message": "Analisi sopracciglio destro"},
+    }
+    
+    # Cerca match
+    for key, value in keyword_map.items():
+        if key in keyword:
+            return VoiceKeywordResponse(
+                success=True,
+                keyword=keyword,
+                action=value["action"],
+                message=value["message"]
+            )
+    
+    return VoiceKeywordResponse(
+        success=False,
+        keyword=keyword,
+        message="Parola chiave non riconosciuta"
+    )
 
 if __name__ == "__main__":
     import uvicorn

@@ -11,7 +11,10 @@ const API_CONFIG = {
     batch: '/api/batch-analyze',
     health: '/health',
     config: '/api/config/validate',
-    landmarks: '/api/landmarks/info'
+    landmarks: '/api/landmarks/info',
+    greenDotsAnalyze: '/api/green-dots/analyze',
+    greenDotsInfo: '/api/green-dots/info',
+    greenDotsTest: '/api/green-dots/test'
   },
   timeout: 30000 // 30 secondi
 };
@@ -27,8 +30,8 @@ console.log('🔧 Timestamp caricamento:', new Date().toISOString());
  */
 async function checkAPIHealth() {
   try {
-    // Forza la configurazione per debug
-    const baseURL = 'http://127.0.0.1:8001';
+    // Usa la configurazione API_CONFIG 
+    const baseURL = API_CONFIG.baseURL;
 
     // Aggiungi timestamp per evitare cache
     const timestamp = new Date().getTime();
@@ -94,8 +97,8 @@ async function analyzeImageViaAPI(imageBase64, config = null) {
       }
     };
 
-    // Forza la configurazione per debug
-    const baseURL = 'http://127.0.0.1:8001';
+    // Usa la configurazione API_CONFIG
+    const baseURL = API_CONFIG.baseURL;
     const analyzeURL = `${baseURL}${API_CONFIG.endpoints.analyze}`;
     console.log('🔍 Sending analysis request to:', analyzeURL);
     console.log('🔍 API_CONFIG.baseURL:', API_CONFIG.baseURL);
@@ -361,8 +364,75 @@ document.addEventListener('DOMContentLoaded', function () {
   setInterval(checkAPIHealth, 30000);
 });
 
+/**
+ * Analizza immagine per rilevare green dots tramite API
+ */
+async function analyzeGreenDotsViaAPI(imageBase64, parameters = {}) {
+  try {
+    const url = `${API_CONFIG.baseURL}${API_CONFIG.endpoints.greenDotsAnalyze}`;
+    console.log('🟢 API Green Dots URL:', url);
+
+    const defaultParams = {
+      hue_range: [60, 150],
+      saturation_min: 15,
+      value_range: [15, 95],
+      cluster_size_range: [2, 150],
+      clustering_radius: 2
+    };
+
+    const payload = {
+      image: imageBase64,
+      ...defaultParams,
+      ...parameters
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(API_CONFIG.timeout)
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('🟢 Risposta API Green Dots:', result);
+
+    return result;
+
+  } catch (error) {
+    console.error('❌ Errore API Green Dots:', error);
+    throw error;
+  }
+}
+
+/**
+ * Ottiene informazioni sui parametri Green Dots
+ */
+async function getGreenDotsInfo() {
+  try {
+    const response = await fetch(`${API_CONFIG.baseURL}${API_CONFIG.endpoints.greenDotsInfo}`);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return await response.json();
+
+  } catch (error) {
+    console.error('❌ Errore recupero info Green Dots:', error);
+    throw error;
+  }
+}
+
 // Esporta funzioni per uso globale
 window.analyzeImageViaAPI = analyzeImageViaAPI;
 window.validateScoringConfig = validateScoringConfig;
 window.getLandmarksInfo = getLandmarksInfo;
+window.analyzeGreenDotsViaAPI = analyzeGreenDotsViaAPI;
+window.getGreenDotsInfo = getGreenDotsInfo;
 window.checkAPIHealth = checkAPIHealth;

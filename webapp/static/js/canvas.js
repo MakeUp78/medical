@@ -75,12 +75,78 @@ function initializeFabricCanvas() {
 function setupCanvasEventListeners() {
   if (!fabricCanvas) return;
 
-  // Mouse events per misurazioni
+  // LISTENER GLOBALI MOUSE - gestiscono tutte le interazioni
+  let isPanningCanvas = false;
+
+  // Mouse down - gestisce pan, misurazioni, selezione landmarks
   fabricCanvas.on('mouse:down', function (e) {
-    if (measurementMode && e.e) {
-      const pointer = fabricCanvas.getPointer(e.e);
-      handleMeasurementClick(pointer.x, pointer.y);
+    console.log('🖱️ CANVAS.JS mouse:down', {
+      target: e.target?.type,
+      measurementMode: window.measurementMode,
+      landmarkSelectionMode: window.landmarkSelectionMode,
+      currentLandmarks: window.currentLandmarks?.length || 0,
+      handleLandmarkSelection: typeof window.handleLandmarkSelection
+    });
+
+    // 1. Pan canvas (se non c'è oggetto target)
+    if (!e.target && window.currentGreenDotsOverlay) {
+      isPanningCanvas = true;
+      console.log('🔄 Inizio pan canvas...');
     }
+
+    // 2. Misurazioni (se measurementMode attivo)
+    if (window.measurementMode && e.e && window.currentLandmarks && window.currentLandmarks.length > 0) {
+      const pointer = fabricCanvas.getPointer(e.e);
+      console.log('📐 Modalità misurazione - click a', pointer);
+      if (typeof window.handleMeasurementLandmarkSelection === 'function') {
+        window.handleMeasurementLandmarkSelection(pointer.x, pointer.y);
+      } else {
+        console.error('❌ window.handleMeasurementLandmarkSelection non è una funzione!');
+      }
+    }
+
+    // 3. Selezione landmarks (se landmarkSelectionMode attivo)
+    if (window.landmarkSelectionMode && e.e && window.currentLandmarks && window.currentLandmarks.length > 0) {
+      const pointer = fabricCanvas.getPointer(e.e);
+      console.log('🎯 CANVAS.JS Modalità selezione landmark - click a', pointer);
+      if (typeof window.handleLandmarkSelection === 'function') {
+        window.handleLandmarkSelection(pointer.x, pointer.y);
+      } else {
+        console.error('❌ window.handleLandmarkSelection non è una funzione!');
+      }
+    }
+  });
+
+  // Mouse move - gestisce pan sync e hover landmarks
+  fabricCanvas.on('mouse:move', function (e) {
+    // 1. Sincronizza overlay durante pan
+    if (window.currentGreenDotsOverlay && isPanningCanvas) {
+      clearTimeout(window.panSyncTimeout);
+      window.panSyncTimeout = setTimeout(() => {
+        if (typeof syncGreenDotsOverlayWithViewport === 'function') {
+          syncGreenDotsOverlayWithViewport();
+        }
+      }, 16);
+    }
+
+    // 2. Hover effect per landmarks
+    if (window.landmarkSelectionMode && e.e && window.currentLandmarks && window.currentLandmarks.length > 0) {
+      const pointer = fabricCanvas.getPointer(e.e);
+      if (typeof window.highlightNearestLandmarkOnHover === 'function') {
+        window.highlightNearestLandmarkOnHover(pointer.x, pointer.y);
+      }
+    }
+  });
+
+  // Mouse up - gestisce fine pan
+  fabricCanvas.on('mouse:up', function (e) {
+    if (window.currentGreenDotsOverlay && isPanningCanvas) {
+      console.log('🔄 Fine pan canvas');
+      if (typeof syncGreenDotsOverlayWithViewport === 'function') {
+        syncGreenDotsOverlayWithViewport();
+      }
+    }
+    isPanningCanvas = false;
   });
 
   // Zoom con rotella mouse
@@ -100,34 +166,7 @@ function setupCanvasEventListeners() {
     updateZoomDisplay(zoom);
   });
 
-  // Event listener per trasformazioni dell'immagine
-  fabricCanvas.on('object:modified', function (e) {
-    if (e.target === currentImage) {
-      console.log('🔄 Immagine trasformata - ridisegno landmark');
-      setTimeout(() => redrawLandmarks(), 50);
-    }
-  });
-
-  fabricCanvas.on('object:moved', function (e) {
-    if (e.target === currentImage) {
-      console.log('📍 Immagine spostata - aggiorno landmark');
-      setTimeout(() => redrawLandmarks(), 10);
-    }
-  });
-
-  fabricCanvas.on('object:scaled', function (e) {
-    if (e.target === currentImage) {
-      console.log('📏 Immagine ridimensionata - aggiorno landmark');
-      setTimeout(() => redrawLandmarks(), 10);
-    }
-  });
-
-  fabricCanvas.on('object:rotated', function (e) {
-    if (e.target === currentImage) {
-      console.log('🔄 Immagine ruotata - aggiorno landmark');
-      setTimeout(() => redrawLandmarks(), 10);
-    }
-  });
+  // Event listeners per trasformazioni rimossi - gestiti dinamicamente in main.js
 
   // Event listener per zoom canvas
   fabricCanvas.on('after:render', function () {
@@ -141,36 +180,7 @@ function setupCanvasEventListeners() {
     }
   });
 
-  // Pan con trascinamento
-  let isPanning = false;
-  fabricCanvas.on('mouse:down', function (opt) {
-    const evt = opt.e;
-    if (evt.ctrlKey === true) {
-      isPanning = true;
-      fabricCanvas.selection = false;
-      fabricCanvas.defaultCursor = 'move';
-    }
-  });
-
-  fabricCanvas.on('mouse:move', function (opt) {
-    if (isPanning === true) {
-      const evt = opt.e;
-      const vpt = fabricCanvas.viewportTransform;
-      vpt[4] += evt.clientX - (this.lastPosX || evt.clientX);
-      vpt[5] += evt.clientY - (this.lastPosY || evt.clientY);
-
-      fabricCanvas.requestRenderAll();
-      this.lastPosX = evt.clientX;
-      this.lastPosY = evt.clientY;
-    }
-  });
-
-  fabricCanvas.on('mouse:up', function (opt) {
-    fabricCanvas.setViewportTransform(fabricCanvas.viewportTransform);
-    isPanning = false;
-    fabricCanvas.selection = true;
-    fabricCanvas.defaultCursor = 'default';
-  });
+  // Pan rimosso - gestito dinamicamente quando necessario
 
   // Ridimensionamento finestra
   window.addEventListener('resize', resizeCanvas);

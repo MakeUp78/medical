@@ -130,8 +130,8 @@
                     </div>
                 </div>
 
-                <!-- Sezione SISTEMA SCORING -->
-                <div class="section" data-expanded="false">
+                <!-- Sezione SISTEMA SCORING (NASCOSTA) -->
+                <div class="section" data-expanded="false" style="display: none;">
                     <div class="section-header" onclick="toggleSection(this)">
                         <button class="toggle-btn">⚖️ SISTEMA SCORING</button>
                         <span class="icon">►</span>
@@ -333,10 +333,10 @@
                         </table>
                     </div>
                     <div class="debug-controls">
-                        <button class="btn btn-small" onclick="clearDebugLogs()">Pulisci</button>
+                        <button class="btn btn-small" onclick="clearDebugLogs()" style="display: none;">Pulisci</button>
                         <button class="btn btn-small" onclick="ensureSidebarSectionsVisible()"
-                            title="Ripristina visibilità sezioni">🔧 Ripristina UI</button>
-                        <label class="auto-scroll-label">
+                            title="Ripristina visibilità sezioni" style="display: none;">🔧 Ripristina UI</button>
+                        <label class="auto-scroll-label" style="display: none;">
                             <input type="checkbox" id="auto-scroll" checked> Auto
                         </label>
                     </div>
@@ -453,8 +453,10 @@
     <script src="static/js/face-detection.js?v=1.5"></script>
     <script src="static/js/measurements.js?v=2.0"></script>
     <script src="static/js/scoring.js?v=1.5"></script>
-    <script src="static/js/canvas.js?v=2.7"></script>
-    <script src="static/js/main.js?v=5.2"></script>
+    <script src="static/js/canvas.js?v=2.8"></script>
+    <!-- NUOVO FILE PULITO - Correzione sopracciglia -->
+    <script src="static/js/eyebrow-correction.js?v=2.6"></script>
+    <script src="static/js/main.js?v=6.17"></script>
 
     <!-- Script di test per debug -->
     <script>
@@ -491,6 +493,227 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+
+    <!-- ========================================
+         VOICE ASSISTANT INTEGRATION
+         ======================================== -->
+
+    <!-- Voice Assistant Script -->
+    <script src="static/js/voice_assistant.js"></script>
+
+    <!-- Voice Widget Container -->
+    <div id="voice-widget-container"></div>
+
+    <script>
+        // Carica widget voice assistant
+        fetch('templates/voice_widget.html')
+            .then(response => response.text())
+            .then(html => {
+                document.getElementById('voice-widget-container').innerHTML = html;
+            })
+            .catch(err => console.warn('Voice widget non caricato:', err));
+    </script>
+
+    <!-- Integrazione Voice Feedback nelle funzioni esistenti -->
+    <script>
+        // Attendi che voiceAssistant sia disponibile
+        if (typeof voiceAssistant !== 'undefined') {
+
+            // Non sovrascrivere loadImage, loadVideo, startWebcam, stopWebcam
+            // perché ora il voice assistant simula click sui pulsanti
+
+            // Aggiungi listener per il caricamento immagine/video
+            // (il feedback vocale verrà dato quando il file è effettivamente caricato)
+            const originalHandleFileLoad = window.handleFileLoad;
+            if (originalHandleFileLoad) {
+                window.handleFileLoad = function (file) {
+                    const result = originalHandleFileLoad(file);
+                    // Feedback vocale dopo il caricamento
+                    setTimeout(() => {
+                        voiceAssistant.speakMessage('image_loaded');
+                    }, 500);
+                    return result;
+                };
+            }
+
+            // SORGENTE - Avvia Webcam
+            const originalStartWebcam = window.startWebcam;
+            window.startWebcam = async function () {
+                if (originalStartWebcam) await originalStartWebcam();
+                voiceAssistant.speakMessage('webcam_started');
+            };
+
+            // SORGENTE - Stop Webcam
+            const originalStopWebcam = window.stopWebcam;
+            window.stopWebcam = function () {
+                if (originalStopWebcam) originalStopWebcam();
+                voiceAssistant.speakMessage('webcam_stopped');
+            };
+
+            // TOGGLE - Asse di Simmetria
+            const originalToggleAxis = window.toggleAxis;
+            window.toggleAxis = function () {
+                if (originalToggleAxis) originalToggleAxis();
+
+                const axisBtn = document.getElementById('axis-btn');
+                if (axisBtn && axisBtn.classList.contains('active')) {
+                    voiceAssistant.speakMessage('axis_on');
+                } else {
+                    voiceAssistant.speakMessage('axis_off');
+                }
+            };
+
+            // TOGGLE - Landmarks
+            const originalToggleLandmarks = window.toggleLandmarks;
+            window.toggleLandmarks = function () {
+                if (originalToggleLandmarks) originalToggleLandmarks();
+
+                const landmarksBtn = document.getElementById('landmarks-btn');
+                if (landmarksBtn && landmarksBtn.classList.contains('active')) {
+                    voiceAssistant.speakMessage('landmarks_on');
+                } else {
+                    voiceAssistant.speakMessage('landmarks_off');
+                }
+            };
+
+            // TOGGLE - Green Dots
+            const originalToggleGreenDots = window.toggleGreenDots;
+            window.toggleGreenDots = function () {
+                if (originalToggleGreenDots) originalToggleGreenDots();
+
+                const greenDotsBtn = document.getElementById('green-dots-btn');
+                if (greenDotsBtn && greenDotsBtn.classList.contains('active')) {
+                    voiceAssistant.speakMessage('green_dots_on');
+                } else {
+                    voiceAssistant.speakMessage('green_dots_off');
+                }
+            };
+
+            // ANALISI - Volto
+            const originalAnalyzeFace = window.analyzeFace;
+            window.analyzeFace = async function () {
+                voiceAssistant.speakMessage('analysis_start');
+
+                if (originalAnalyzeFace) {
+                    try {
+                        await originalAnalyzeFace();
+                        voiceAssistant.speakMessage('analysis_complete');
+                    } catch (error) {
+                        voiceAssistant.speakMessage('analysis_failed');
+                    }
+                }
+            };
+
+            // CANVAS - Pulisci
+            const originalClearCanvas = window.clearCanvas;
+            window.clearCanvas = function () {
+                if (originalClearCanvas) originalClearCanvas();
+                voiceAssistant.speak('Canvas pulito');
+            };
+
+            // MISURAZIONI - Aggiungi feedback vocale
+            const measurementFunctions = [
+                'measureFaceWidth', 'measureFaceHeight', 'measureEyeDistance',
+                'measureNoseWidth', 'measureNoseHeight', 'measureMouthWidth'
+            ];
+
+            measurementFunctions.forEach(funcName => {
+                const original = window[funcName];
+                if (original) {
+                    window[funcName] = function (event) {
+                        voiceAssistant.speakMessage('measurement_started');
+                        original(event);
+                    };
+                }
+            });
+
+            console.log('✅ Voice Assistant integrato con successo');
+        }
+    </script>
+
+    <!-- Voice Widget Control Functions (Global) -->
+    <script>
+        // Variabili globali per il widget
+        let isVoiceWidgetMinimized = false;
+        let isVoiceListening = false;
+        let isVoiceMuted = false;
+
+        function toggleVoiceWidget() {
+            isVoiceWidgetMinimized = !isVoiceWidgetMinimized;
+            const widget = document.getElementById('voice-assistant-widget');
+            const btn = document.querySelector('.voice-minimize-btn');
+
+            if (widget && btn) {
+                if (isVoiceWidgetMinimized) {
+                    widget.classList.add('minimized');
+                    btn.textContent = '+';
+                } else {
+                    widget.classList.remove('minimized');
+                    btn.textContent = '−';
+                }
+            }
+        }
+
+        function toggleVoiceListening() {
+            if (typeof voiceAssistant === 'undefined') {
+                console.error('voiceAssistant non disponibile');
+                return;
+            }
+
+            const btn = document.getElementById('toggle-listening-btn');
+            const indicator = document.getElementById('status-indicator');
+            const statusText = document.getElementById('status-text');
+
+            isVoiceListening = voiceAssistant.toggleListening();
+
+            if (btn) {
+                if (isVoiceListening) {
+                    btn.classList.add('active');
+                    if (btn.querySelector('.btn-text')) btn.querySelector('.btn-text').textContent = 'Stop Ascolto';
+                    if (btn.querySelector('.btn-icon')) btn.querySelector('.btn-icon').textContent = '🔴';
+                    if (indicator) {
+                        indicator.textContent = '🔴';
+                        indicator.classList.add('listening');
+                    }
+                    if (statusText) statusText.textContent = 'In ascolto...';
+                } else {
+                    btn.classList.remove('active');
+                    if (btn.querySelector('.btn-text')) btn.querySelector('.btn-text').textContent = 'Avvia Ascolto';
+                    if (btn.querySelector('.btn-icon')) btn.querySelector('.btn-icon').textContent = '🎤';
+                    if (indicator) {
+                        indicator.textContent = '🟢';
+                        indicator.classList.remove('listening');
+                        indicator.classList.add('active');
+                    }
+                    if (statusText) statusText.textContent = 'Pronto';
+                }
+            }
+        }
+
+        function toggleVoiceMute() {
+            if (typeof voiceAssistant === 'undefined') {
+                console.error('voiceAssistant non disponibile');
+                return;
+            }
+
+            const btn = document.getElementById('toggle-mute-btn');
+
+            isVoiceMuted = voiceAssistant.toggleMute();
+
+            if (btn) {
+                if (isVoiceMuted) {
+                    btn.classList.add('active');
+                    if (btn.querySelector('.btn-text')) btn.querySelector('.btn-text').textContent = 'Unmute';
+                    if (btn.querySelector('.btn-icon')) btn.querySelector('.btn-icon').textContent = '🔇';
+                } else {
+                    btn.classList.remove('active');
+                    if (btn.querySelector('.btn-text')) btn.querySelector('.btn-text').textContent = 'Muto';
+                    if (btn.querySelector('.btn-icon')) btn.querySelector('.btn-icon').textContent = '🔊';
+                }
+            }
+        }
+    </script>
+
 </body>
 
 </html>
