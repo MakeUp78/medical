@@ -1,0 +1,382 @@
+<!-- Voice Assistant Widget per Webapp -->
+<div id="voice-assistant-widget" class="voice-widget">
+    <div class="voice-header">
+        <span class="voice-title">🎤 Assistente Vocale Isabella</span>
+        <button class="voice-minimize-btn" onclick="toggleVoiceWidget()">−</button>
+    </div>
+
+    <div class="voice-content" id="voice-content">
+        <!-- Status -->
+        <div class="voice-status" id="voice-status">
+            <div class="status-indicator active" id="status-indicator">🟢</div>
+            <span id="status-text">Pronto</span>
+        </div>
+
+        <!-- Controlli principali -->
+        <div class="voice-controls">
+            <button class="voice-btn voice-btn-primary" id="toggle-listening-btn" onclick="toggleVoiceListening()">
+                <span class="btn-icon">🎤</span>
+                <span class="btn-text">Avvia Ascolto</span>
+            </button>
+
+            <button class="voice-btn voice-btn-secondary" id="toggle-mute-btn" onclick="toggleVoiceMute()">
+                <span class="btn-icon">🔊</span>
+                <span class="btn-text">Muto</span>
+            </button>
+        </div>
+
+        <!-- Info riconoscimento -->
+        <div class="voice-info" id="voice-last-command">
+            Ultimo comando: <span id="last-command-text">Nessuno</span>
+        </div>
+
+        <!-- Messaggi rapidi -->
+        <div class="voice-quick-messages">
+            <div class="quick-msg-title">Messaggi Rapidi:</div>
+            <div class="quick-msg-buttons">
+                <button class="quick-msg-btn" onclick="voiceAssistant.speakMessage('welcome')">👋 Benvenuto</button>
+                <button class="quick-msg-btn" onclick="voiceAssistant.speakMessage('axis_on')">📏 Asse On</button>
+                <button class="quick-msg-btn" onclick="voiceAssistant.speakMessage('landmarks_on')">🎯 Landmarks
+                    On</button>
+            </div>
+        </div>
+
+        <!-- Lista comandi vocali disponibili -->
+        <details class="voice-commands-help">
+            <summary>📋 Comandi Vocali Disponibili</summary>
+            <div class="commands-list">
+                <div class="command-item">
+                    <strong>"Asse"</strong> → Attiva/disattiva asse di simmetria
+                </div>
+                <div class="command-item">
+                    <strong>"Landmarks"</strong> → Attiva/disattiva landmarks
+                </div>
+                <div class="command-item">
+                    <strong>"Punti verdi" / "Verde"</strong> → Attiva/disattiva rilevamento punti verdi
+                </div>
+                <div class="command-item">
+                    <strong>"Webcam"</strong> → Avvia webcam
+                </div>
+                <div class="command-item">
+                    <strong>"Stop webcam" / "Ferma webcam"</strong> → Ferma webcam
+                </div>
+                <div class="command-item">
+                    <strong>"Carica immagine" / "Immagine"</strong> → Apri file immagine
+                </div>
+                <div class="command-item">
+                    <strong>"Analizza" / "Analisi"</strong> → Avvia analisi facciale
+                </div>
+                <div class="command-item">
+                    <strong>"Cancella" / "Pulisci"</strong> → Pulisci canvas
+                </div>
+            </div>
+        </details>
+    </div>
+</div>
+
+<style>
+    /* Voice Assistant Widget Styles */
+    .voice-widget {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 320px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        color: white;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        z-index: 10000;
+        overflow: hidden;
+    }
+
+    .voice-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 15px;
+        background: rgba(0, 0, 0, 0.2);
+        cursor: move;
+    }
+
+    .voice-title {
+        font-weight: 600;
+        font-size: 14px;
+    }
+
+    .voice-minimize-btn {
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+        width: 25px;
+        height: 25px;
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 18px;
+        line-height: 1;
+        transition: background 0.2s;
+    }
+
+    .voice-minimize-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+    }
+
+    .voice-content {
+        padding: 15px;
+    }
+
+    .voice-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 15px;
+        padding: 8px;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+        font-size: 13px;
+    }
+
+    .status-indicator {
+        font-size: 12px;
+        animation: pulse 2s infinite;
+    }
+
+    .status-indicator.active {
+        color: #4caf50;
+    }
+
+    .status-indicator.listening {
+        color: #ff5722;
+        animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+
+        0%,
+        100% {
+            opacity: 1;
+        }
+
+        50% {
+            opacity: 0.5;
+        }
+    }
+
+    .voice-controls {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+
+    .voice-btn {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        padding: 12px 8px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 11px;
+        color: white;
+    }
+
+    .voice-btn-primary {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+
+    .voice-btn-secondary {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
+
+    .voice-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    .voice-btn:active {
+        transform: translateY(0);
+    }
+
+    .voice-btn.active {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    }
+
+    .btn-icon {
+        font-size: 24px;
+    }
+
+    .btn-text {
+        font-weight: 600;
+    }
+
+    .voice-info {
+        padding: 8px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        font-size: 12px;
+        margin-bottom: 15px;
+    }
+
+    #last-command-text {
+        font-weight: 600;
+        color: #ffd700;
+    }
+
+    .voice-quick-messages {
+        margin-bottom: 15px;
+    }
+
+    .quick-msg-title {
+        font-size: 12px;
+        margin-bottom: 8px;
+        opacity: 0.9;
+    }
+
+    .quick-msg-buttons {
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+    }
+
+    .quick-msg-btn {
+        padding: 6px 10px;
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        border-radius: 5px;
+        color: white;
+        font-size: 11px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .quick-msg-btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+    }
+
+    .voice-commands-help {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 8px;
+        padding: 10px;
+    }
+
+    .voice-commands-help summary {
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 5px;
+        list-style: none;
+    }
+
+    .voice-commands-help summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .commands-list {
+        margin-top: 10px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    .command-item {
+        padding: 6px 8px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 5px;
+        margin-bottom: 5px;
+        font-size: 11px;
+    }
+
+    .command-item strong {
+        color: #ffd700;
+    }
+
+    .voice-widget.minimized .voice-content {
+        display: none;
+    }
+
+    /* Scrollbar personalizzata */
+    .commands-list::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .commands-list::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+    }
+
+    .commands-list::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 3px;
+    }
+
+    .commands-list::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.5);
+    }
+</style>
+
+<script>
+    // Inizializzazione widget
+    window.addEventListener('load', async () => {
+        // Aspetta che voiceAssistant sia disponibile
+        let attempts = 0;
+        const maxAttempts = 50;
+
+        const waitForVoiceAssistant = () => {
+            if (typeof voiceAssistant !== 'undefined') {
+                initVoiceWidget();
+            } else if (attempts < maxAttempts) {
+                attempts++;
+                setTimeout(waitForVoiceAssistant, 100);
+            } else {
+                console.error('❌ Voice Assistant non disponibile');
+                const indicator = document.getElementById('status-indicator');
+                const statusText = document.getElementById('status-text');
+                if (indicator) indicator.textContent = '🔴';
+                if (statusText) statusText.textContent = 'Script non caricato';
+            }
+        };
+
+        waitForVoiceAssistant();
+    });
+
+    async function initVoiceWidget() {
+        const indicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+
+        try {
+            const status = await voiceAssistant.getStatus();
+
+            if (status && status.available) {
+                indicator.textContent = '🟢';
+                indicator.classList.add('active');
+                statusText.textContent = 'Connesso';
+            } else {
+                // API non risponde ma TTS potrebbe funzionare
+                indicator.textContent = '🟢';
+                indicator.classList.add('active');
+                statusText.textContent = 'Pronto';
+            }
+        } catch (error) {
+            // Errore di rete, ma assumiamo che funzioni
+            console.log('Voice status check fallito, ma TTS potrebbe funzionare');
+            indicator.textContent = '🟢';
+            indicator.classList.add('active');
+            statusText.textContent = 'Pronto';
+        }
+    }
+
+    // Override executeAction per aggiornare UI
+    const originalExecuteAction = voiceAssistant.executeAction.bind(voiceAssistant);
+    voiceAssistant.executeAction = function (action) {
+        // Aggiorna ultimo comando
+        const lastCommandText = document.getElementById('last-command-text');
+        if (lastCommandText) {
+            lastCommandText.textContent = action;
+        }
+
+        // Esegui azione originale
+        originalExecuteAction(action);
+    };
+</script>

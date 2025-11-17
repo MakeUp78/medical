@@ -1068,3 +1068,109 @@ body {
     border-top: none;
     border-radius: 0 0 4px 4px;
 }
+
+/* === STILI PER GREEN DOTS MEASUREMENTS === */
+
+.green-dots-measurements {
+    background: #2d3338;
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 10px;
+}
+
+.green-dots-measurements h4 {
+    color: #00ff88;
+    margin-bottom: 8px;
+    font-size: 14px;
+    border-bottom: 1px solid #4a5258;
+    padding-bottom: 4px;
+}
+
+.green-dots-measurements h5 {
+    color: #88ccff;
+    margin: 6px 0 4px 0;
+    font-size: 12px;
+}
+
+.green-dots-measurements .measurement-group {
+    background: #343a40;
+    border-radius: 3px;
+    padding: 6px;
+    margin-bottom: 6px;
+    border-left: 3px solid #00ff88;
+}
+
+.green-dots-measurements .measurement-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 0;
+    font-size: 11px;
+}
+
+.green-dots-measurements .measurement-label {
+    color: #adb5bd;
+    font-weight: 500;
+}
+
+.green-dots-measurements .measurement-value {
+    color: #ffffff;
+    font-family: 'Courier New', monospace;
+    font-weight: bold;
+}
+
+.green-dots-measurements .measurement-subgroup {
+    margin: 4px 0;
+    padding: 4px;
+    background: #3a4046;
+    border-radius: 2px;
+}
+
+.green-dots-measurements .coordinates-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.green-dots-measurements .coordinate-pair {
+    background: #495057;
+    padding: 2px 4px;
+    border-radius: 2px;
+    font-size: 10px;
+    font-family: 'Courier New', monospace;
+    color: #e9ecef;
+}
+
+/* Animazioni per green dots */
+@keyframes greenDotPulse {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.1); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+.green-dots-measurements.processing {
+    animation: greenDotPulse 2s infinite;
+}
+
+/* Stili per evidenziazione misurazioni */
+.green-dots-measurements .measurement-item.highlighted {
+    background: rgba(0, 255, 0, 0.1);
+    border-left: 3px solid #00ff00;
+    padding-left: 8px;
+}
+
+.green-dots-measurements .highlight-badge {
+    background: #00ff00;
+    color: #000000;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.8em;
+    font-weight: bold;
+    margin-left: 8px;
+}
+
+.green-dots-measurements .farther-point {
+    color: #ffa500;
+    font-weight: bold;
+}

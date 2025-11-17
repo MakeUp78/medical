@@ -494,11 +494,7 @@ class GreenDotsProcessor:
         overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
 
-        # Disegna linea di divisione centrale
-        middle_x = width // 2
-        draw.line(
-            [(middle_x, 0), (middle_x, height)], fill=(128, 128, 128, 100), width=1
-        )
+        # Linea di divisione centrale rimossa per richiesta utente
 
         # Usa i punti forniti o quelli dell'ultimo processing
         if left_points is None:
@@ -519,6 +515,8 @@ class GreenDotsProcessor:
             draw.polygon(polygon_points, outline=border_color, width=border_width)
 
             # Vertici
+            # Etichette personalizzate per il lato sinistro: LC1, LA0, LA, LC, LB
+            left_labels = ["LC1", "LA0", "LA", "LC", "LB"]
             for i, point in enumerate(sorted_left):
                 x, y = point["x"], point["y"]
                 draw.ellipse(
@@ -527,7 +525,9 @@ class GreenDotsProcessor:
                     outline=(0, 0, 0, 255),
                     width=1,
                 )
-                draw.text((x + 6, y - 6), f"L{i+1}", fill=(0, 0, 0, 255))
+                # Usa etichette personalizzate o fallback se ci sono più punti
+                label = left_labels[i] if i < len(left_labels) else f"L{i+1}"
+                draw.text((x + 6, y - 6), label, fill=(0, 0, 0, 255))
 
         # Disegna forma destra
         if right_points and len(right_points) >= 3:
@@ -542,6 +542,8 @@ class GreenDotsProcessor:
             draw.polygon(polygon_points, outline=border_color, width=border_width)
 
             # Vertici
+            # Etichette personalizzate per il lato destro: RC1, RB, RC, RA, RA0
+            right_labels = ["RC1", "RB", "RC", "RA", "RA0"]
             for i, point in enumerate(sorted_right):
                 x, y = point["x"], point["y"]
                 draw.ellipse(
@@ -550,7 +552,9 @@ class GreenDotsProcessor:
                     outline=(0, 0, 0, 255),
                     width=1,
                 )
-                draw.text((x + 6, y - 6), f"R{i+1}", fill=(0, 0, 0, 255))
+                # Usa etichette personalizzate o fallback se ci sono più punti
+                label = right_labels[i] if i < len(right_labels) else f"R{i+1}"
+                draw.text((x + 6, y - 6), label, fill=(0, 0, 0, 255))
 
         return overlay
 

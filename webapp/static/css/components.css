@@ -48,6 +48,117 @@
     padding: 6px;
 }
 
+/* === STILI SPECIFICI PER EYEBROW PROCESSOR === */
+
+/* Container per statistiche sopracciglia */
+.eyebrow-stats {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 12px;
+    margin: 8px 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.eyebrow-stats h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #495057;
+    border-bottom: 1px solid #dee2e6;
+    padding-bottom: 4px;
+}
+
+/* Griglia per le statistiche */
+.stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 4px;
+    border-radius: 3px;
+    background: white;
+}
+
+.stat-label {
+    font-weight: 500;
+    color: #6c757d;
+}
+
+.stat-value {
+    font-weight: 600;
+    color: #495057;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+}
+
+/* Pulsanti sopracciglia con colori specifici */
+.btn-eyebrow {
+    background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+    border: none;
+    color: white;
+    font-weight: 600;
+    padding: 8px 12px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-eyebrow:hover {
+    background: linear-gradient(135deg, #ee5a24, #ff6b6b);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(238, 90, 36, 0.3);
+}
+
+.btn-eyebrow:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(238, 90, 36, 0.3);
+}
+
+/* Container per pulsanti sopracciglia */
+.eyebrow-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+/* Info sui sopracciglia */
+.eyebrow-info {
+    background: #e8f4f8;
+    border: 1px solid #bee5eb;
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 12px;
+    color: #0c5460;
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+/* Responsive per schermi piccoli */
+@media (max-width: 768px) {
+    .stats-grid {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+    
+    .eyebrow-buttons {
+        gap: 6px;
+    }
+    
+    .btn-eyebrow {
+        font-size: 12px;
+        padding: 6px 10px;
+    }
+}
+
 /* Badge con colori dinamici */
 .badge.connected {
     background: #28a745 !important;

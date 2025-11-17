@@ -1,0 +1,163 @@
+<!-- 
+    ESEMPIO DI INTEGRAZIONE VOICE ASSISTANT IN index.html
+    
+    Copia questo codice e incollalo nel tuo webapp/index.html
+    prima del tag </body>
+-->
+
+<!-- 1. Includi lo script del voice assistant -->
+<script src="static/js/voice_assistant.js"></script>
+
+<!-- 2. Carica il widget UI -->
+<div id="voice-widget-container"></div>
+<script>
+    fetch('templates/voice_widget.html')
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('voice-widget-container').innerHTML = html;
+        });
+</script>
+
+<!-- 3. Integra i messaggi vocali nelle tue funzioni esistenti -->
+<script>
+    // ========================================
+    // INTEGRAZIONE VOICE ASSISTANT
+    // ========================================
+
+    // Sovrascrivi le funzioni esistenti per aggiungere feedback vocale
+
+    // ESEMPIO 1: Quando carichi un'immagine
+    const originalLoadImage = window.loadImage;
+    window.loadImage = function () {
+        voiceAssistant.speakMessage('image_loaded');
+        if (originalLoadImage) originalLoadImage();
+    };
+
+    // ESEMPIO 2: Quando attivi l'asse
+    const originalToggleAxis = window.toggleAxis;
+    window.toggleAxis = function () {
+        if (originalToggleAxis) originalToggleAxis();
+
+        // Controlla lo stato e parla
+        const axisBtn = document.getElementById('axis-btn');
+        if (axisBtn && axisBtn.classList.contains('active')) {
+            voiceAssistant.speakMessage('axis_on');
+        } else {
+            voiceAssistant.speakMessage('axis_off');
+        }
+    };
+
+    // ESEMPIO 3: Quando attivi landmarks
+    const originalToggleLandmarks = window.toggleLandmarks;
+    window.toggleLandmarks = function () {
+        if (originalToggleLandmarks) originalToggleLandmarks();
+
+        const landmarksBtn = document.getElementById('landmarks-btn');
+        if (landmarksBtn && landmarksBtn.classList.contains('active')) {
+            voiceAssistant.speakMessage('landmarks_on');
+        } else {
+            voiceAssistant.speakMessage('landmarks_off');
+        }
+    };
+
+    // ESEMPIO 4: Quando attivi punti verdi
+    const originalToggleGreenDots = window.toggleGreenDots;
+    window.toggleGreenDots = function () {
+        if (originalToggleGreenDots) originalToggleGreenDots();
+
+        const greenDotsBtn = document.getElementById('green-dots-btn');
+        if (greenDotsBtn && greenDotsBtn.classList.contains('active')) {
+            voiceAssistant.speakMessage('green_dots_on');
+        } else {
+            voiceAssistant.speakMessage('green_dots_off');
+        }
+    };
+
+    // ESEMPIO 5: Quando avvii webcam
+    const originalStartWebcam = window.startWebcam;
+    window.startWebcam = async function () {
+        voiceAssistant.speakMessage('webcam_started');
+        if (originalStartWebcam) await originalStartWebcam();
+    };
+
+    // ESEMPIO 6: Quando fermi webcam
+    const originalStopWebcam = window.stopWebcam;
+    window.stopWebcam = function () {
+        if (originalStopWebcam) originalStopWebcam();
+        voiceAssistant.speakMessage('webcam_stopped');
+    };
+
+    // ESEMPIO 7: Quando carichi un video
+    const originalLoadVideo = window.loadVideo;
+    window.loadVideo = function () {
+        voiceAssistant.speakMessage('image_loaded'); // Usa stesso messaggio
+        if (originalLoadVideo) originalLoadVideo();
+    };
+
+    // ESEMPIO 8: Quando analizzi il volto
+    const originalAnalyzeFace = window.analyzeFace;
+    window.analyzeFace = async function () {
+        voiceAssistant.speakMessage('analysis_start');
+
+        if (originalAnalyzeFace) {
+            try {
+                await originalAnalyzeFace();
+                voiceAssistant.speakMessage('analysis_complete');
+            } catch (error) {
+                voiceAssistant.speakMessage('analysis_failed');
+            }
+        }
+    };
+
+    // ESEMPIO 9: Quando pulisci il canvas
+    const originalClearCanvas = window.clearCanvas;
+    window.clearCanvas = function () {
+        if (originalClearCanvas) originalClearCanvas();
+        voiceAssistant.speak('Canvas pulito');
+    };
+
+    // ESEMPIO 10: Messaggi personalizzati per misurazioni
+    const originalMeasureFaceWidth = window.measureFaceWidth;
+    window.measureFaceWidth = function (event) {
+        voiceAssistant.speak('Misurazione larghezza viso avviata');
+        if (originalMeasureFaceWidth) originalMeasureFaceWidth(event);
+    };
+
+    const originalMeasureEyeDistance = window.measureEyeDistance;
+    window.measureEyeDistance = function (event) {
+        voiceAssistant.speak('Misurazione distanza occhi avviata');
+        if (originalMeasureEyeDistance) originalMeasureEyeDistance(event);
+    };
+
+    // ========================================
+    // MESSAGGI DI BENVENUTO
+    // ========================================
+
+    // Messaggio di benvenuto all'avvio
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            voiceAssistant.speakMessage('welcome');
+        }, 2000); // Aspetta 2 secondi dopo il caricamento
+    });
+
+    // ========================================
+    // COMANDI VOCALI PERSONALIZZATI
+    // ========================================
+
+    // Se vuoi gestire manualmente alcuni comandi
+    voiceAssistant.onCustomCommand = function (keyword) {
+        // Gestisci comandi speciali qui
+        console.log('Comando custom:', keyword);
+    };
+
+</script>
+
+<!-- 
+    FINE INTEGRAZIONE VOICE ASSISTANT
+    
+    UTILIZZO WIDGET:
+    - Il widget apparirà in basso a destra
+    - Clicca "Avvia Ascolto" per attivare riconoscimento vocale
+    - Pronuncia le parole chiave per controllare la webapp
+    - Usa i pulsanti "Messaggi Rapidi" per test
+-->

@@ -1,0 +1,1053 @@
+/**
+ * Eyebrow Processor per la webapp - equivalente di src/green_dots_processor.py
+ * Implementa le stesse funzionalità per i pulsanti "Sopracciglio Sinistro" e "Sopracciglio Destro"
+ */
+
+class EyebrowProcessor {
+  constructor() {
+    // Parametri configurabili (stessi valori di default del processore Python)
+    this.config = {
+      hue_range: { min: 60, max: 150 },
+      saturation_min: 15,
+      value_range: { min: 15, max: 95 },
+      cluster_size_range: { min: 2, max: 150 },
+      clustering_radius: 2
+    };
+
+    // Risultati dell'ultimo processing
+    this.lastResults = null;
+    this.leftDots = [];
+    this.rightDots = [];
+  }
+
+  /**
+   * Converte valori RGB in HSV (equivalente del metodo Python)
+   */
+  rgbToHsv(r, g, b) {
+    r /= 255.0;
+    g /= 255.0;
+    b /= 255.0;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const diff = max - min;
+
+    let h, s, v;
+
+    // Hue
+    if (diff === 0) {
+      h = 0;
+    } else if (max === r) {
+      h = ((g - b) / diff) % 6;
+    } else if (max === g) {
+      h = (b - r) / diff + 2;
+    } else {
+      h = (r - g) / diff + 4;
+    }
+
+    h = Math.round(h * 60);
+    if (h < 0) h += 360;
+
+    // Saturation
+    s = max === 0 ? 0 : Math.round((diff / max) * 100);
+
+    // Value
+    v = Math.round(max * 100);
+
+    return { h, s, v };
+  }
+
+  /**
+   * Determina se un pixel è verde (equivalente del metodo Python)
+   */
+  isGreenPixel(r, g, b) {
+    const { h, s, v } = this.rgbToHsv(r, g, b);
+    return (
+      h >= this.config.hue_range.min &&
+      h <= this.config.hue_range.max &&
+      s >= this.config.saturation_min &&
+      v >= this.config.value_range.min &&
+      v <= this.config.value_range.max
+    );
+  }
+
+  /**
+   * Raggruppa i pixel verdi in cluster usando algoritmo BFS (equivalente del metodo Python)
+   */
+  clusterPixels(pixels) {
+    const visited = new Set();
+    const clusters = [];
+
+    for (const pixel of pixels) {
+      const key = `${pixel.x},${pixel.y}`;
+      if (visited.has(key)) continue;
+
+      // Trova tutti i pixel connessi (BFS)
+      const cluster = [];
+      const queue = [pixel];
+
+      while (queue.length > 0) {
+        const current = queue.shift();
+        const currentKey = `${current.x},${current.y}`;
+
+        if (visited.has(currentKey)) continue;
+
+        visited.add(currentKey);
+        cluster.push(current);
+
+        // Cerca pixel adiacenti
+        for (const neighbor of pixels) {
+          const neighborKey = `${neighbor.x},${neighbor.y}`;
+          if (!visited.has(neighborKey)) {
+            const dx = Math.abs(current.x - neighbor.x);
+            const dy = Math.abs(current.y - neighbor.y);
+            if (dx <= this.config.clustering_radius && dy <= this.config.clustering_radius) {
+              queue.push(neighbor);
+            }
+          }
+        }
+      }
+
+      if (cluster.length >= this.config.cluster_size_range.min &&
+        cluster.length <= this.config.cluster_size_range.max) {
+        clusters.push(cluster);
+      }
+    }
+
+    return clusters;
+  }
+
+  /**
+   * Rileva i puntini verdi in un canvas ImageData
+   */
+  detectGreenDots(imageData) {
+    const { data, width, height } = imageData;
+    const greenPixels = [];
+
+    // Scansiona tutti i pixel
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const index = (y * width + x) * 4;
+        const r = data[index];
+        const g = data[index + 1];
+        const b = data[index + 2];
+
+        if (this.isGreenPixel(r, g, b)) {
+          const { h, s, v } = this.rgbToHsv(r, g, b);
+          greenPixels.push({ x, y, r, g, b, h, s, v });
+        }
+      }
+    }
+
+    // Raggruppa i pixel verdi in cluster
+    const clusters = this.clusterPixels(greenPixels);
+
+    // Calcola centroidi per ogni cluster
+    const dots = clusters.map(cluster => {
+      const avgX = cluster.reduce((sum, p) => sum + p.x, 0) / cluster.length;
+      const avgY = cluster.reduce((sum, p) => sum + p.y, 0) / cluster.length;
+
+      return {
+        x: Math.round(avgX),
+        y: Math.round(avgY),
+        size: cluster.length,
+        pixels: cluster
+      };
+    });
+
+    return {
+      dots,
+      total_dots: dots.length,
+      total_green_pixels: greenPixels.length,
+      image_size: [width, height],
+      parameters: this.config
+    };
+  }
+
+  /**
+   * Divide i puntini in gruppi sinistro e destro
+   */
+  divideDotsByVerticalCenter(dots, imageWidth) {
+    const middleX = imageWidth / 2;
+
+    this.leftDots = dots.filter(dot => dot.x < middleX);
+    this.rightDots = dots.filter(dot => dot.x >= middleX);
+
+    return { left: this.leftDots, right: this.rightDots };
+  }
+
+  /**
+   * Calcola il bounding box del sopracciglio con espansione
+   */
+  calculateEyebrowBoundingBox(dots, expandFactor = 0.5) {
+    if (!dots || dots.length === 0) {
+      return { xMin: 0, yMin: 0, xMax: 0, yMax: 0 };
+    }
+
+    const xCoords = dots.map(dot => dot.x);
+    const yCoords = dots.map(dot => dot.y);
+
+    const xMin = Math.min(...xCoords);
+    const xMax = Math.max(...xCoords);
+    const yMin = Math.min(...yCoords);
+    const yMax = Math.max(...yCoords);
+
+    // Calcola espansione
+    const width = xMax - xMin;
+    const height = yMax - yMin;
+    const expandWidth = Math.floor(width * expandFactor / 2);
+    const expandHeight = Math.floor(height * expandFactor / 2);
+
+    return {
+      xMin: Math.max(0, xMin - expandWidth),
+      yMin: Math.max(0, yMin - expandHeight),
+      xMax: xMax + expandWidth,
+      yMax: yMax + expandHeight
+    };
+  }
+
+  /**
+   * Ordina i punti per prossimità (algoritmo Nearest Neighbor)
+   */
+  sortPointsByProximity(points) {
+    if (points.length < 3) return points;
+
+    const sorted = [points[0]];
+    const remaining = [...points.slice(1)];
+
+    while (remaining.length > 0) {
+      const current = sorted[sorted.length - 1];
+      let minDistance = Infinity;
+      let nearestIndex = 0;
+
+      for (let i = 0; i < remaining.length; i++) {
+        const point = remaining[i];
+        const dx = point.x - current.x;
+        const dy = point.y - current.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < minDistance) {
+          minDistance = distance;
+          nearestIndex = i;
+        }
+      }
+
+      sorted.push(remaining.splice(nearestIndex, 1)[0]);
+    }
+
+    return sorted;
+  }
+
+  /**
+   * Genera overlay trasparente con i perimetri delle forme (equivalente del metodo Python)
+   */
+  generateOverlay(canvas, leftPoints = null, rightPoints = null) {
+    const ctx = canvas.getContext('2d');
+    const overlayCanvas = document.createElement('canvas');
+    overlayCanvas.width = canvas.width;
+    overlayCanvas.height = canvas.height;
+    const overlayCtx = overlayCanvas.getContext('2d');
+
+    // Usa i punti forniti o quelli dell'ultimo processing
+    const leftDots = leftPoints || this.leftDots;
+    const rightDots = rightPoints || this.rightDots;
+
+    // Disegna forma sinistra (verde)
+    if (leftDots && leftDots.length >= 3) {
+      const sortedLeft = this.sortPointsByProximity([...leftDots]);
+
+      overlayCtx.fillStyle = 'rgba(0, 255, 0, 0.5)'; // Verde semi-trasparente
+      overlayCtx.strokeStyle = 'rgb(0, 255, 0)'; // Verde opaco per il bordo
+      overlayCtx.lineWidth = 3;
+
+      // Disegna poligono
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(sortedLeft[0].x, sortedLeft[0].y);
+      for (let i = 1; i < sortedLeft.length; i++) {
+        overlayCtx.lineTo(sortedLeft[i].x, sortedLeft[i].y);
+      }
+      overlayCtx.closePath();
+      overlayCtx.fill();
+      overlayCtx.stroke();
+
+      // Disegna vertici con etichette personalizzate per il lato sinistro
+      const leftLabels = ['LC1', 'LA0', 'LA', 'LC', 'LB'];
+      sortedLeft.forEach((point, i) => {
+        // Cerchio giallo per il vertice
+        overlayCtx.fillStyle = 'rgba(255, 255, 0, 1)';
+        overlayCtx.strokeStyle = 'rgb(0, 0, 0)';
+        overlayCtx.lineWidth = 1;
+        overlayCtx.beginPath();
+        overlayCtx.arc(point.x, point.y, 4, 0, 2 * Math.PI);
+        overlayCtx.fill();
+        overlayCtx.stroke();
+
+        // Etichetta
+        const label = leftLabels[i] || `L${i + 1}`;
+        overlayCtx.fillStyle = 'black';
+        overlayCtx.font = '12px Arial';
+        overlayCtx.fillText(label, point.x + 6, point.y - 6);
+      });
+    }
+
+    // Disegna forma destra (blu)
+    if (rightDots && rightDots.length >= 3) {
+      const sortedRight = this.sortPointsByProximity([...rightDots]);
+
+      overlayCtx.fillStyle = 'rgba(0, 0, 255, 0.5)'; // Blu semi-trasparente
+      overlayCtx.strokeStyle = 'rgb(0, 0, 255)'; // Blu opaco per il bordo
+      overlayCtx.lineWidth = 3;
+
+      // Disegna poligono
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(sortedRight[0].x, sortedRight[0].y);
+      for (let i = 1; i < sortedRight.length; i++) {
+        overlayCtx.lineTo(sortedRight[i].x, sortedRight[i].y);
+      }
+      overlayCtx.closePath();
+      overlayCtx.fill();
+      overlayCtx.stroke();
+
+      // Disegna vertici con etichette personalizzate per il lato destro
+      const rightLabels = ['RC1', 'RB', 'RC', 'RA', 'RA0'];
+      sortedRight.forEach((point, i) => {
+        // Cerchio giallo per il vertice
+        overlayCtx.fillStyle = 'rgba(255, 255, 0, 1)';
+        overlayCtx.strokeStyle = 'rgb(0, 0, 0)';
+        overlayCtx.lineWidth = 1;
+        overlayCtx.beginPath();
+        overlayCtx.arc(point.x, point.y, 4, 0, 2 * Math.PI);
+        overlayCtx.fill();
+        overlayCtx.stroke();
+
+        // Etichetta
+        const label = rightLabels[i] || `R${i + 1}`;
+        overlayCtx.fillStyle = 'black';
+        overlayCtx.font = '12px Arial';
+        overlayCtx.fillText(label, point.x + 6, point.y - 6);
+      });
+    }
+
+    return overlayCanvas;
+  }
+
+  /**
+   * Processa completamente l'immagine dal canvas corrente
+   */
+  processCanvasImage(canvas) {
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    // Rileva puntini verdi
+    const detectionResults = this.detectGreenDots(imageData);
+
+    if (detectionResults.total_dots < 6) {
+      return {
+        success: false,
+        error: `Trovati solo ${detectionResults.total_dots} puntini. Servono almeno 6 (3 per lato).`,
+        detection_results: detectionResults
+      };
+    }
+
+    // Dividi in gruppi
+    const { left, right } = this.divideDotsByVerticalCenter(
+      detectionResults.dots,
+      detectionResults.image_size[0]
+    );
+
+    if (left.length < 3 || right.length < 3) {
+      return {
+        success: false,
+        error: `Gruppi insufficienti: Sx=${left.length}, Dx=${right.length}. Servono almeno 3 per lato.`,
+        detection_results: detectionResults,
+        left_dots: left,
+        right_dots: right
+      };
+    }
+
+    // Ordina punti
+    const sortedLeft = this.sortPointsByProximity([...left]);
+    const sortedRight = this.sortPointsByProximity([...right]);
+
+    // Calcola statistiche base (area e perimetro)
+    const leftStats = this.calculateShapeStatistics(sortedLeft, "Sinistra");
+    const rightStats = this.calculateShapeStatistics(sortedRight, "Destra");
+
+    // Genera overlay
+    const overlay = this.generateOverlay(canvas, sortedLeft, sortedRight);
+
+    this.lastResults = {
+      success: true,
+      detection_results: detectionResults,
+      groups: {
+        Sx: sortedLeft,
+        Dx: sortedRight
+      },
+      coordinates: {
+        Sx: sortedLeft.map(p => [p.x, p.y]),
+        Dx: sortedRight.map(p => [p.x, p.y])
+      },
+      statistics: {
+        left: leftStats,
+        right: rightStats,
+        combined: {
+          total_vertices: sortedLeft.length + sortedRight.length,
+          total_area: leftStats.area + rightStats.area,
+          total_perimeter: leftStats.perimeter + rightStats.perimeter
+        }
+      },
+      overlay: overlay,
+      image_size: detectionResults.image_size
+    };
+
+    return this.lastResults;
+  }
+
+  /**
+   * Calcola le statistiche di una forma (area, perimetro, centro)
+   */
+  calculateShapeStatistics(points, label = "") {
+    if (!points || points.length < 3) {
+      return { label, vertices: 0, area: 0, perimeter: 0, center: { x: 0, y: 0 }, points: [] };
+    }
+
+    const area = this.calculatePolygonArea(points);
+    const perimeter = this.calculatePerimeter(points);
+    const centerX = points.reduce((sum, p) => sum + p.x, 0) / points.length;
+    const centerY = points.reduce((sum, p) => sum + p.y, 0) / points.length;
+
+    return {
+      label,
+      vertices: points.length,
+      area: Math.round(area * 100) / 100,
+      perimeter: Math.round(perimeter * 100) / 100,
+      center: { x: Math.round(centerX * 10) / 10, y: Math.round(centerY * 10) / 10 },
+      points
+    };
+  }
+
+  /**
+   * Calcola l'area di un poligono usando la formula Shoelace
+   */
+  calculatePolygonArea(points) {
+    if (points.length < 3) return 0;
+
+    let area = 0;
+    for (let i = 0; i < points.length; i++) {
+      const j = (i + 1) % points.length;
+      area += points[i].x * points[j].y;
+      area -= points[j].x * points[i].y;
+    }
+
+    return Math.abs(area) / 2;
+  }
+
+  /**
+   * Calcola il perimetro di un poligono
+   */
+  calculatePerimeter(points) {
+    if (points.length < 2) return 0;
+
+    let perimeter = 0;
+    for (let i = 0; i < points.length; i++) {
+      const j = (i + 1) % points.length;
+      const dx = points[j].x - points[i].x;
+      const dy = points[j].y - points[i].y;
+      perimeter += Math.sqrt(dx * dx + dy * dy);
+    }
+
+    return perimeter;
+  }
+}
+
+// Istanza globale del processore
+let eyebrowProcessor = new EyebrowProcessor();
+
+/**
+ * NUOVO FLUSSO - Funzione per il pulsante "Sopracciglio Sinistro"
+ * Replica il comportamento dell'app desktop:
+ * 1. Verifica prerequisiti (green dots + landmarks + misurazioni)
+ * 2. Crea overlay completo sull'immagine intera
+ * 3. Mostra anteprima temporanea (3 secondi)
+ * 4. Ritaglia e mostra finestra finale
+ */
+async function showLeftEyebrow() {
+  return await showEyebrowCorrectionWindow('left');
+}
+
+/**
+ * NUOVO FLUSSO - Funzione per il pulsante "Sopracciglio Destro"
+ * Replica il comportamento dell'app desktop
+ */
+async function showRightEyebrow() {
+  return await showEyebrowCorrectionWindow('right');
+}
+
+/**
+ * FLUSSO PRINCIPALE - Mostra finestra correzione sopracciglio
+ * Equivalente a show_eyebrow_correction_window() dell'app desktop
+ */
+async function showEyebrowCorrectionWindow(side) {
+  try {
+    console.log(`🚀 NUOVO FLUSSO: Correzione sopracciglio ${side}`);
+    
+    // STEP 1: Verifica prerequisiti
+    if (!hasGreenDotsAndMeasurements()) {
+      alert(
+        "Per utilizzare la correzione sopracciglio è necessario:\n" +
+        "1. Rilevare i punti verdi (GREEN DOTS)\n" +
+        "2. Avere almeno una misurazione nella tabella\n" +
+        "3. Calcolare l'asse di simmetria (pulsante ASSE)"
+      );
+      return null;
+    }
+
+    // STEP 2: Crea overlay sull'intera immagine con punti verdi originali + rossi riflessi
+    const fullImageWithOverlay = await createFullCanvasEyebrowOverlay(side);
+    if (!fullImageWithOverlay) {
+      alert("Impossibile creare overlay completo dell'immagine");
+      return null;
+    }
+
+    console.log(`✅ Overlay completo creato per ${side}`);
+
+    // STEP 3: Calcola bounding box per ritaglio
+    const bbox = getEyebrowBoundingBox(side, 0.5);
+    if (!bbox || bbox.width === 0 || bbox.height === 0) {
+      alert(`Bounding box non valido per sopracciglio ${side}`);
+      return null;
+    }
+
+    // STEP 4: Ritaglia l'immagine con overlay
+    const croppedImage = cropImageToBbox(fullImageWithOverlay, bbox);
+    console.log(`✅ Ritaglio completato: ${croppedImage.width}x${croppedImage.height}`);
+
+    // STEP 4b: Crea versione solo punti (senza sfondo) dell'immagine ritagliata
+    const croppedPointsOnly = createPointsOnlyCanvas(croppedImage, side, bbox);
+
+    // STEP 5: Mostra temporaneamente l'overlay completo sul canvas (3 secondi)
+    if (typeof updateStatus === 'function') {
+      updateStatus("🎨 Mostra overlay completo per 3 secondi, poi finestra ritaglio...");
+    } else if (typeof window.updateStatus === 'function') {
+      window.updateStatus("🎨 Mostra overlay completo per 3 secondi, poi finestra ritaglio...");
+    }
+    await showTempOverlayOnCanvas(fullImageWithOverlay);
+
+    // STEP 6: Dopo l'anteprima, mostra la finestra finale con SOLO PUNTI (overlay trasparente)
+    showCroppedEyebrowWindow(croppedPointsOnly, side);
+
+    return { success: true, side, bbox, croppedImage };
+
+  } catch (error) {
+    console.error(`❌ Errore nell'apertura finestra correzione ${side}:`, error);
+    alert(`Errore nell'apertura finestra correzione:\n${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * STEP 1: Verifica se sono disponibili green dots e misurazioni
+ * Equivalente a has_green_dots_and_measurements() dell'app desktop
+ */
+function hasGreenDotsAndMeasurements() {
+  // Verifica green dots
+  const hasGreenDots = (
+    window.greenDotsDetected &&
+    window.greenDotsData &&
+    window.greenDotsData.success &&
+    (window.greenDotsData.groups.Sx.length > 0 || window.greenDotsData.groups.Dx.length > 0)
+  );
+
+  // Verifica misurazioni nella tabella
+  const measurementsTable = document.getElementById('measurements-table');
+  const hasMeasurements = measurementsTable && measurementsTable.rows.length > 1;
+
+  // Verifica landmarks (necessari per asse di simmetria)
+  const hasLandmarks = currentLandmarks && currentLandmarks.length > 0;
+
+  console.log('📋 Verifica prerequisiti:', { hasGreenDots, hasMeasurements, hasLandmarks });
+
+  return hasGreenDots && hasMeasurements && hasLandmarks;
+}
+
+/**
+ * STEP 2: Calcola asse di simmetria facciale
+ * Equivalente a get_facial_symmetry_axis() dell'app desktop
+ * Usa landmarks MediaPipe: 9 (glabella) e 151 (mento)
+ */
+function getFacialSymmetryAxis() {
+  if (!currentLandmarks || currentLandmarks.length < 152) {
+    console.error('❌ Landmarks insufficienti per calcolo asse');
+    return null;
+  }
+
+  // MediaPipe landmark indices
+  const glabellaIdx = 9;   // Centro fronte (glabella)
+  const chinIdx = 151;      // Mento
+
+  const glabella = currentLandmarks[glabellaIdx];
+  const chin = currentLandmarks[chinIdx];
+
+  if (!glabella || !chin) {
+    console.error('❌ Landmarks asse non disponibili');
+    return null;
+  }
+
+  const axis = {
+    p1: { x: glabella.x, y: glabella.y },
+    p2: { x: chin.x, y: chin.y }
+  };
+
+  console.log(`🎯 Asse simmetria: Glabella(${axis.p1.x}, ${axis.p1.y}) → Mento(${axis.p2.x}, ${axis.p2.y})`);
+  return axis;
+}
+
+/**
+ * STEP 3: Riflette un punto rispetto all'asse di simmetria
+ * Equivalente a reflect_point_across_axis() dell'app desktop
+ */
+function reflectPointAcrossAxis(point, axis) {
+  const { x: px, y: py } = point;
+  const { p1, p2 } = axis;
+
+  // Vettore direzione dell'asse
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+
+  // Normalizza il vettore
+  const length = Math.sqrt(dx * dx + dy * dy);
+  if (length === 0) return point;
+
+  const dxNorm = dx / length;
+  const dyNorm = dy / length;
+
+  // Vettore dal punto di partenza dell'asse al punto da riflettere
+  const pxRel = px - p1.x;
+  const pyRel = py - p1.y;
+
+  // Proiezione del punto sull'asse
+  const dotProduct = pxRel * dxNorm + pyRel * dyNorm;
+  const projX = p1.x + dotProduct * dxNorm;
+  const projY = p1.y + dotProduct * dyNorm;
+
+  // Punto riflesso (simmetrico rispetto all'asse)
+  const reflectedX = 2 * projX - px;
+  const reflectedY = 2 * projY - py;
+
+  return { x: reflectedX, y: reflectedY };
+}
+
+/**
+ * STEP 4: Crea overlay completo sull'immagine canvas
+ * Equivalente a create_full_canvas_eyebrow_overlay() dell'app desktop
+ */
+async function createFullCanvasEyebrowOverlay(side) {
+  try {
+    console.log(`🎨 Creazione overlay canvas completo per lato ${side}`);
+
+    // Verifica prerequisiti
+    if (!hasGreenDotsAndMeasurements()) {
+      console.error('❌ Prerequisiti non soddisfatti per overlay');
+      return null;
+    }
+
+    // Calcola asse di simmetria
+    const axis = getFacialSymmetryAxis();
+    if (!axis) {
+      console.error('❌ Impossibile calcolare asse di simmetria');
+      return null;
+    }
+
+    // Ottieni canvas corrente
+    const mainCanvas = document.getElementById('main-canvas');
+    if (!mainCanvas) {
+      console.error('❌ Canvas non trovato');
+      return null;
+    }
+
+    // Crea nuovo canvas per overlay con sfondo
+    const overlayCanvas = document.createElement('canvas');
+    overlayCanvas.width = mainCanvas.width;
+    overlayCanvas.height = mainCanvas.height;
+    const ctx = overlayCanvas.getContext('2d');
+
+    // Copia immagine corrente come sfondo
+    ctx.drawImage(mainCanvas, 0, 0);
+
+    // Ottieni punti green dots
+    const greenDotsData = window.greenDotsData;
+    if (!greenDotsData || !greenDotsData.success) {
+      console.error('❌ Green dots non disponibili');
+      return null;
+    }
+
+    // Determina punti target (originali) e source (da riflettere)
+    let targetDots, sourceDots;
+    if (side === 'left') {
+      targetDots = greenDotsData.groups.Sx.slice(0, 5);  // Primi 5 punti sinistri
+      sourceDots = greenDotsData.groups.Dx.slice(0, 5);  // Primi 5 punti destri da riflettere
+    } else {
+      targetDots = greenDotsData.groups.Dx.slice(0, 5);  // Primi 5 punti destri
+      sourceDots = greenDotsData.groups.Sx.slice(0, 5);  // Primi 5 punti sinistri da riflettere
+    }
+
+    // Disegna punti VERDI originali (lato selezionato)
+    ctx.fillStyle = 'rgb(0, 255, 0)';
+    targetDots.forEach((dot, i) => {
+      ctx.beginPath();
+      ctx.arc(dot.x, dot.y, 1.5, 0, 2 * Math.PI);
+      ctx.fill();
+      console.log(`  ✅ Punto verde ${i + 1}: (${dot.x}, ${dot.y})`);
+    });
+
+    // Rifletti e disegna punti ROSSI (dal lato opposto)
+    ctx.fillStyle = 'rgb(255, 0, 0)';
+    sourceDots.forEach((dot, i) => {
+      const reflected = reflectPointAcrossAxis({ x: dot.x, y: dot.y }, axis);
+
+      // Verifica che il punto sia dentro i confini del canvas
+      if (reflected.x >= 0 && reflected.x < overlayCanvas.width &&
+          reflected.y >= 0 && reflected.y < overlayCanvas.height) {
+        ctx.beginPath();
+        ctx.arc(reflected.x, reflected.y, 1.5, 0, 2 * Math.PI);
+        ctx.fill();
+        console.log(`  ✅ Punto rosso riflesso ${i + 1}: (${dot.x}, ${dot.y}) → (${reflected.x}, ${reflected.y})`);
+      }
+    });
+
+    console.log(`🎨 Overlay creato: ${targetDots.length} punti verdi, ${sourceDots.length} punti rossi`);
+    return overlayCanvas;
+
+  } catch (error) {
+    console.error('❌ Errore creazione overlay canvas:', error);
+    return null;
+  }
+}
+
+/**
+ * STEP 4b: Crea canvas con immagine sopracciglio + punti overlay
+ */
+function createPointsOnlyCanvas(croppedCanvas, side, bbox) {
+  // Crea canvas delle stesse dimensioni
+  const pointsCanvas = document.createElement('canvas');
+  pointsCanvas.width = croppedCanvas.width;
+  pointsCanvas.height = croppedCanvas.height;
+  const ctx = pointsCanvas.getContext('2d');
+
+  // PRIMA: Disegna l'immagine ritagliata come sfondo
+  ctx.drawImage(croppedCanvas, 0, 0);
+  
+  // Ottieni punti e asse
+  const greenDotsData = window.greenDotsData;
+  const axis = getFacialSymmetryAxis();
+  
+  if (!greenDotsData || !axis) return croppedCanvas; // Fallback
+
+  // Determina punti target e source
+  let targetDots, sourceDots;
+  if (side === 'left') {
+    targetDots = greenDotsData.groups.Sx.slice(0, 5);
+    sourceDots = greenDotsData.groups.Dx.slice(0, 5);
+  } else {
+    targetDots = greenDotsData.groups.Dx.slice(0, 5);
+    sourceDots = greenDotsData.groups.Sx.slice(0, 5);
+  }
+
+  // Disegna punti VERDI (con coordinate relative al bbox)
+  ctx.fillStyle = 'rgb(0, 255, 0)';
+  targetDots.forEach(dot => {
+    const relX = dot.x - bbox.x;
+    const relY = dot.y - bbox.y;
+    if (relX >= 0 && relX < pointsCanvas.width && relY >= 0 && relY < pointsCanvas.height) {
+      ctx.beginPath();
+      ctx.arc(relX, relY, 1.5, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  });
+
+  // Disegna punti ROSSI riflessi (con coordinate relative al bbox)
+  ctx.fillStyle = 'rgb(255, 0, 0)';
+  sourceDots.forEach(dot => {
+    const reflected = reflectPointAcrossAxis({ x: dot.x, y: dot.y }, axis);
+    const relX = reflected.x - bbox.x;
+    const relY = reflected.y - bbox.y;
+    if (relX >= 0 && relX < pointsCanvas.width && relY >= 0 && relY < pointsCanvas.height) {
+      ctx.beginPath();
+      ctx.arc(relX, relY, 1.5, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  });
+
+  return pointsCanvas;
+}
+
+/**
+ * STEP 5: Calcola bounding box del sopracciglio per ritaglio
+ * Include sia i punti verdi originali che i punti rossi riflessi
+ */
+function getEyebrowBoundingBox(side, expandFactor = 0.5) {
+  const greenDotsData = window.greenDotsData;
+  if (!greenDotsData || !greenDotsData.success) return null;
+
+  const axis = getFacialSymmetryAxis();
+  if (!axis) return null;
+
+  // Ottieni punti verdi del lato selezionato
+  const greenDots = side === 'left' ? greenDotsData.groups.Sx : greenDotsData.groups.Dx;
+  if (!greenDots || greenDots.length === 0) return null;
+
+  // Ottieni punti da riflettere (lato opposto)
+  const dotsToReflect = side === 'left' ? greenDotsData.groups.Dx : greenDotsData.groups.Sx;
+  
+  // Calcola punti rossi riflessi
+  const redDots = dotsToReflect.slice(0, 5).map(dot => 
+    reflectPointAcrossAxis({ x: dot.x, y: dot.y }, axis)
+  );
+
+  // Combina tutti i punti (verdi + rossi)
+  const allPoints = [...greenDots.slice(0, 5), ...redDots];
+
+  // Calcola min/max su TUTTI i punti
+  let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity;
+  allPoints.forEach(dot => {
+    xMin = Math.min(xMin, dot.x);
+    yMin = Math.min(yMin, dot.y);
+    xMax = Math.max(xMax, dot.x);
+    yMax = Math.max(yMax, dot.y);
+  });
+
+  // Espandi bounding box
+  const width = xMax - xMin;
+  const height = yMax - yMin;
+  const expandWidth = width * expandFactor;
+  const expandHeight = height * expandFactor;
+
+  const bbox = {
+    x: Math.max(0, xMin - expandWidth),
+    y: Math.max(0, yMin - expandHeight),
+    width: width + 2 * expandWidth,
+    height: height + 2 * expandHeight
+  };
+
+  console.log(`📍 Bounding box (${side}):`, bbox, `| Punti verdi: ${greenDots.length}, Punti rossi: ${redDots.length}`);
+  return bbox;
+}
+
+/**
+ * STEP 6: Ritaglia immagine al bounding box
+ */
+function cropImageToBbox(sourceCanvas, bbox) {
+  const croppedCanvas = document.createElement('canvas');
+  croppedCanvas.width = bbox.width;
+  croppedCanvas.height = bbox.height;
+  const ctx = croppedCanvas.getContext('2d');
+
+  ctx.drawImage(
+    sourceCanvas,
+    bbox.x, bbox.y, bbox.width, bbox.height,
+    0, 0, bbox.width, bbox.height
+  );
+
+  return croppedCanvas;
+}
+
+/**
+ * STEP 7: Mostra overlay temporaneo sul canvas principale (3 secondi)
+ * Equivalente a show_temp_overlay_on_canvas() dell'app desktop
+ */
+async function showTempOverlayOnCanvas(overlayCanvas) {
+  return new Promise((resolve) => {
+    const mainCanvas = document.getElementById('main-canvas');
+    if (!mainCanvas) {
+      resolve();
+      return;
+    }
+
+    // Salva stato corrente
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = mainCanvas.width;
+    tempCanvas.height = mainCanvas.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(mainCanvas, 0, 0);
+
+    // Mostra overlay temporaneo
+    const ctx = mainCanvas.getContext('2d');
+    ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+    ctx.drawImage(overlayCanvas, 0, 0);
+    fabricCanvas.renderAll();
+
+    console.log('🎨 Overlay temporaneo mostrato sul canvas (3 secondi)');
+
+    // Ripristina dopo 3 secondi
+    setTimeout(() => {
+      ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+      ctx.drawImage(tempCanvas, 0, 0);
+      fabricCanvas.renderAll();
+      console.log('🔄 Immagine originale ripristinata');
+      resolve();
+    }, 3000);
+  });
+}
+
+/**
+ * STEP 8: Mostra finestra finale con immagine ritagliata
+ * Equivalente a _show_cropped_window_after_overlay() dell'app desktop
+ */
+function showCroppedEyebrowWindow(croppedCanvas, side) {
+  const sideName = side === 'left' ? 'Sinistro' : 'Destro';
+  const windowTitle = `Correzione Sopracciglio ${sideName}`;
+
+  // Crea finestra modale
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+  `;
+
+  const content = document.createElement('div');
+  content.style.cssText = `
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    width: 1200px;
+    height: 900px;
+    max-width: 95vw;
+    max-height: 95vh;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+  `;
+
+  // Titolo
+  const title = document.createElement('h2');
+  title.textContent = `🔍 ${windowTitle}`;
+  title.style.cssText = 'margin-bottom: 10px; text-align: center;';
+  content.appendChild(title);
+
+  // Legenda
+  const legend = document.createElement('div');
+  legend.innerHTML = `
+    <p style="margin: 10px 0;">
+      <span style="color: green; font-weight: bold;">🟢 Verde:</span> Punti originali del lato selezionato (SA, SA0, SC, SC1, SB)<br>
+      <span style="color: red; font-weight: bold;">🔴 Rosso:</span> Punti riflessi dal lato opposto rispetto all'asse di simmetria
+    </p>
+  `;
+  content.appendChild(legend);
+
+  // Container per l'immagine con scrolling
+  const imgContainer = document.createElement('div');
+  imgContainer.style.cssText = `
+    flex: 1;
+    overflow: auto;
+    text-align: center;
+    background: repeating-conic-gradient(#e0e0e0 0% 25%, #ffffff 0% 50%) 50% / 20px 20px;
+    padding: 40px;
+    border-radius: 4px;
+    margin: 10px 0;
+  `;
+
+  // Immagine ritagliata (ingrandita per migliore visibilità)
+  const img = document.createElement('img');
+  img.src = croppedCanvas.toDataURL();
+  img.style.cssText = `
+    max-width: none;
+    height: auto;
+    transform: scale(5);
+    transform-origin: center;
+    cursor: zoom-in;
+  `;
+  
+  // Click sull'immagine per zoom
+  let zoomed = false;
+  img.onclick = () => {
+    zoomed = !zoomed;
+    img.style.transform = zoomed ? 'scale(8)' : 'scale(5)';
+    img.style.cursor = zoomed ? 'zoom-out' : 'zoom-in';
+  };
+  
+  imgContainer.appendChild(img);
+  content.appendChild(imgContainer);
+
+  // Pulsanti
+  const buttonsDiv = document.createElement('div');
+  buttonsDiv.style.cssText = 'text-align: center; margin-top: 20px;';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = '💾 Salva Immagine';
+  saveBtn.className = 'btn btn-primary';
+  saveBtn.onclick = () => {
+    try {
+      const link = document.createElement('a');
+      link.download = `sopracciglio_${side}_${Date.now()}.png`;
+      link.href = croppedCanvas.toDataURL('image/png');
+      link.click();
+      
+      // Usa showToast se disponibile, altrimenti alert
+      if (typeof showToast === 'function') {
+        showToast('✅ Immagine salvata con successo', 'success');
+      } else if (typeof window.showToast === 'function') {
+        window.showToast('✅ Immagine salvata con successo', 'success');
+      } else {
+        console.log('✅ Immagine salvata:', link.download);
+      }
+    } catch (error) {
+      console.error('❌ Errore salvataggio immagine:', error);
+      alert('Errore durante il salvataggio dell\'immagine');
+    }
+  };
+  buttonsDiv.appendChild(saveBtn);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '❌ Chiudi';
+  closeBtn.className = 'btn btn-secondary';
+  closeBtn.style.marginLeft = '10px';
+  closeBtn.onclick = () => modal.remove();
+  buttonsDiv.appendChild(closeBtn);
+
+  content.appendChild(buttonsDiv);
+  modal.appendChild(content);
+  document.body.appendChild(modal);
+
+  // Chiudi con click fuori
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.remove();
+  };
+
+  // Aggiorna status se la funzione è disponibile
+  if (typeof updateStatus === 'function') {
+    updateStatus(`✅ Finestra correzione sopracciglio ${sideName.toLowerCase()} aperta - NUOVO FLUSSO`);
+  } else if (typeof window.updateStatus === 'function') {
+    window.updateStatus(`✅ Finestra correzione sopracciglio ${sideName.toLowerCase()} aperta - NUOVO FLUSSO`);
+  }
+  
+  console.log(`✅ Finestra correzione sopracciglio ${sideName} mostrata`);
+  console.log(`📊 Dimensioni immagine ritagliata: ${croppedCanvas.width}x${croppedCanvas.height}px`);
+}
+
+// Export globale per compatibilità browser
+window.showLeftEyebrow = showLeftEyebrow;
+window.showRightEyebrow = showRightEyebrow;
+window.showEyebrowCorrectionWindow = showEyebrowCorrectionWindow;
+window.EyebrowProcessor = EyebrowProcessor;
+window.eyebrowProcessor = eyebrowProcessor;
+
+// Export per compatibilità moduli
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    EyebrowProcessor,
+    showLeftEyebrow,
+    showRightEyebrow,
+    showEyebrowCorrectionWindow,
+    eyebrowProcessor
+  };
+}
+
+console.log("✅ Eyebrow Processor caricato - Pronto per elaborare sopracciglia!");
