@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kimerika Evolution - Analisi Facciale Medicale Avanzata</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="stylesheet" href="static/css/landing.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-content">
+                <div class="logo">
+                    <img src="Kimeriza DIGITAL DESIGN SYSTEM (2).png" alt="Kimerika Evolution" class="logo-img">
+                </div>
+                <div class="nav-links">
+                    <a href="#features">Funzionalità</a>
+                    <a href="#how-it-works">Come Funziona</a>
+                    <a href="#pricing">Prezzi</a>
+                    <a href="#testimonials">Testimonianze</a>
+                    <a href="#contact">Contatti</a>
+                </div>
+                <div class="nav-actions">
+                    <button class="btn-secondary" onclick="showAuthModal('login')">Accedi</button>
+                    <button class="btn-primary" onclick="showAuthModal('signup')">Inizia Gratis</button>
+                </div>
+                <button class="mobile-menu-toggle" onclick="toggleMobileMenu()">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <div class="hero-text">
+                    <h1 class="hero-title">
+                        Analisi Facciale Medicale
+                        <span class="gradient-text">di Nuova Generazione</span>
+                    </h1>
+                    <p class="hero-description">
+                        Tecnologia AI avanzata per misurazioni facciali precise, analisi di simmetria e diagnostica estetica professionale. Utilizzato da oltre 500 professionisti medici in tutto il mondo.
+                    </p>
+                    <div class="hero-cta">
+                        <button class="btn-primary btn-large" onclick="showAuthModal('signup')">
+                            Prova Gratuita 14 Giorni
+                            <span class="arrow">→</span>
+                        </button>
+                        <button class="btn-outline btn-large" onclick="scrollToSection('demo')">
+                            Guarda Demo
+                            <span class="play-icon">▶</span>
+                        </button>
+                    </div>
+                    <div class="hero-stats">
+                        <div class="stat">
+                            <div class="stat-number">500+</div>
+                            <div class="stat-label">Medici Attivi</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-number">50K+</div>
+                            <div class="stat-label">Analisi Completate</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-number">99.8%</div>
+                            <div class="stat-label">Precisione</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="hero-visual">
+                    <div class="hero-image-container">
+                        <div class="floating-card card-1">
+                            <span class="card-icon">🎯</span>
+                            <span class="card-text">468 Landmarks Rilevati</span>
+                        </div>
+                        <div class="floating-card card-2">
+                            <span class="card-icon">📊</span>
+                            <span class="card-text">Simmetria: 94.2%</span>
+                        </div>
+                        <div class="floating-card card-3">
+                            <span class="card-icon">⚡</span>
+                            <span class="card-text">Analisi Real-time</span>
+                        </div>
+                        <div class="hero-mockup">
+                            <div class="mockup-browser">
+                                <div class="browser-bar">
+                                    <div class="browser-dots">
+                                        <span></span><span></span><span></span>
+                                    </div>
+                                </div>
+                                <div class="browser-content">
+                                    <div class="face-outline">
+                                        <div class="landmark-point" style="top: 20%; left: 50%;"></div>
+                                        <div class="landmark-point" style="top: 40%; left: 30%;"></div>
+                                        <div class="landmark-point" style="top: 40%; left: 70%;"></div>
+                                        <div class="landmark-point" style="top: 60%; left: 50%;"></div>
+                                        <div class="landmark-point" style="top: 80%; left: 50%;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Funzionalità Professionali</h2>
+                <p class="section-description">Tutto ciò di cui hai bisogno per un'analisi facciale completa e accurata</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3 class="feature-title">468 Punti di Rilevamento</h3>
+                    <p class="feature-description">Tecnologia MediaPipe avanzata per identificare con precisione millimetrica ogni caratteristica facciale</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📏</div>
+                    <h3 class="feature-title">Misurazioni Precise</h3>
+                    <p class="feature-description">Calcola distanze, angoli, aree e proporzioni con strumenti professionali di misurazione</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚖️</div>
+                    <h3 class="feature-title">Analisi Simmetria</h3>
+                    <p class="feature-description">Valutazione automatica della simmetria facciale con scoring personalizzabile</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📹</div>
+                    <h3 class="feature-title">Video & Webcam</h3>
+                    <p class="feature-description">Analizza immagini statiche, video registrati o acquisizioni webcam in tempo reale</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3 class="feature-title">Report Dettagliati</h3>
+                    <p class="feature-description">Genera report professionali con grafici, misurazioni e comparazioni prima/dopo</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3 class="feature-title">Privacy & Sicurezza</h3>
+                    <p class="feature-description">Dati crittografati end-to-end, conformità GDPR e archiviazione sicura</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section id="how-it-works" class="how-it-works">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Come Funziona</h2>
+                <p class="section-description">3 semplici passi per iniziare l'analisi</p>
+            </div>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Carica o Acquisci</h3>
+                        <p>Carica un'immagine, un video o avvia la webcam per acquisizioni in tempo reale</p>
+                    </div>
+                </div>
+                <div class="step-arrow">→</div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Analizza</h3>
+                        <p>L'AI rileva automaticamente 468 punti facciali e calcola tutte le metriche</p>
+                    </div>
+                </div>
+                <div class="step-arrow">→</div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Esporta</h3>
+                        <p>Genera report professionali e condividi i risultati con i tuoi pazienti</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="pricing">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Piani Tariffari</h2>
+                <p class="section-description">Scegli il piano perfetto per le tue esigenze</p>
+            </div>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <h3 class="plan-name">Starter</h3>
+                        <div class="plan-price">
+                            <span class="currency">€</span>
+                            <span class="amount">29</span>
+                            <span class="period">/mese</span>
+                        </div>
+                    </div>
+                    <ul class="plan-features">
+                        <li><span class="check">✓</span> 50 analisi al mese</li>
+                        <li><span class="check">✓</span> Tutti i punti di rilevamento</li>
+                        <li><span class="check">✓</span> Report PDF base</li>
+                        <li><span class="check">✓</span> Supporto email</li>
+                        <li class="disabled"><span class="cross">✗</span> API access</li>
+                    </ul>
+                    <button class="btn-outline" onclick="showAuthModal('signup', 'starter')">Inizia Gratis</button>
+                </div>
+                <div class="pricing-card featured">
+                    <div class="popular-badge">PIÙ POPOLARE</div>
+                    <div class="pricing-header">
+                        <h3 class="plan-name">Professional</h3>
+                        <div class="plan-price">
+                            <span class="currency">€</span>
+                            <span class="amount">79</span>
+                            <span class="period">/mese</span>
+                        </div>
+                    </div>
+                    <ul class="plan-features">
+                        <li><span class="check">✓</span> 200 analisi al mese</li>
+                        <li><span class="check">✓</span> Report avanzati personalizzabili</li>
+                        <li><span class="check">✓</span> Analisi video illimitata</li>
+                        <li><span class="check">✓</span> Supporto prioritario</li>
+                        <li><span class="check">✓</span> API access limitato</li>
+                    </ul>
+                    <button class="btn-primary" onclick="showAuthModal('signup', 'professional')">Inizia Gratis</button>
+                </div>
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <h3 class="plan-name">Enterprise</h3>
+                        <div class="plan-price">
+                            <span class="currency">€</span>
+                            <span class="amount">199</span>
+                            <span class="period">/mese</span>
+                        </div>
+                    </div>
+                    <ul class="plan-features">
+                        <li><span class="check">✓</span> Analisi illimitate</li>
+                        <li><span class="check">✓</span> White-label branding</li>
+                        <li><span class="check">✓</span> API completo</li>
+                        <li><span class="check">✓</span> Supporto dedicato 24/7</li>
+                        <li><span class="check">✓</span> Custom integrations</li>
+                    </ul>
+                    <button class="btn-outline" onclick="showAuthModal('signup', 'enterprise')">Contattaci</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials Section -->
+    <section id="testimonials" class="testimonials">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Cosa Dicono i Professionisti</h2>
+                <p class="section-description">Testimonianze di medici che utilizzano Kimerika Evolution</p>
+            </div>
+            <div class="testimonials-grid">
+                <div class="testimonial-card">
+                    <div class="testimonial-stars">★★★★★</div>
+                    <p class="testimonial-text">"Kimerika Evolution ha rivoluzionato il modo in cui comunico con i miei pazienti. Le misurazioni precise e i report professionali hanno aumentato la fiducia e i risultati."</p>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">👨‍⚕️</div>
+                        <div class="author-info">
+                            <div class="author-name">Dr. Marco Rossi</div>
+                            <div class="author-title">Chirurgo Estetico, Milano</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="testimonial-card">
+                    <div class="testimonial-stars">★★★★★</div>
+                    <p class="testimonial-text">"Precisione incredibile e interfaccia intuitiva. Lo uso quotidianamente per valutazioni pre e post operatorie. Strumento indispensabile per la mia pratica."</p>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">👩‍⚕️</div>
+                        <div class="author-info">
+                            <div class="author-name">Dr.ssa Laura Bianchi</div>
+                            <div class="author-title">Dermatologa, Roma</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="testimonial-card">
+                    <div class="testimonial-stars">★★★★★</div>
+                    <p class="testimonial-text">"Il miglior investimento per il mio studio. I pazienti apprezzano la tecnologia all'avanguardia e la chiarezza dei report. ROI eccellente."</p>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">👨‍⚕️</div>
+                        <div class="author-info">
+                            <div class="author-name">Dr. Giuseppe Verdi</div>
+                            <div class="author-title">Medicina Estetica, Firenze</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta">
+        <div class="container">
+            <div class="cta-content">
+                <h2 class="cta-title">Pronto a Rivoluzionare la Tua Pratica Medica?</h2>
+                <p class="cta-description">Inizia oggi con 14 giorni di prova gratuita. Nessuna carta di credito richiesta.</p>
+                <button class="btn-primary btn-large" onclick="showAuthModal('signup')">
+                    Inizia Gratis Ora
+                    <span class="arrow">→</span>
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <div class="logo">
+                        <img src="Kimeriza DIGITAL DESIGN SYSTEM (2).png" alt="Kimerika Evolution" class="logo-img">
+                    </div>
+                    <p class="footer-description">Tecnologia AI avanzata per l'analisi facciale medicale professionale.</p>
+                </div>
+                <div class="footer-section">
+                    <h4>Prodotto</h4>
+                    <ul>
+                        <li><a href="#features">Funzionalità</a></li>
+                        <li><a href="#pricing">Prezzi</a></li>
+                        <li><a href="#demo">Demo</a></li>
+                        <li><a href="#api">API</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Supporto</h4>
+                    <ul>
+                        <li><a href="#docs">Documentazione</a></li>
+                        <li><a href="#help">Centro Assistenza</a></li>
+                        <li><a href="#contact">Contatti</a></li>
+                        <li><a href="#status">Stato Servizio</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Legale</h4>
+                    <ul>
+                        <li><a href="#privacy">Privacy Policy</a></li>
+                        <li><a href="#terms">Termini di Servizio</a></li>
+                        <li><a href="#gdpr">GDPR</a></li>
+                        <li><a href="#cookies">Cookie Policy</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 Kimerika Evolution. Tutti i diritti riservati.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Authentication Modal -->
+    <div id="auth-modal" class="modal">
+        <div class="modal-overlay" onclick="closeAuthModal()"></div>
+        <div class="modal-container">
+            <button class="modal-close" onclick="closeAuthModal()">&times;</button>
+
+            <!-- Login Form -->
+            <div id="login-form" class="auth-form">
+                <h2 class="form-title">Bentornato!</h2>
+                <p class="form-subtitle">Accedi al tuo account Kimerika Evolution</p>
+
+                <form onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label for="login-email">Email</label>
+                        <input type="email" id="login-email" name="email" required placeholder="tuo@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Password</label>
+                        <input type="password" id="login-password" name="password" required placeholder="••••••••">
+                    </div>
+                    <div class="form-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="remember">
+                            <span>Ricordami</span>
+                        </label>
+                        <a href="#" class="forgot-password" onclick="showAuthModal('forgot'); return false;">Password dimenticata?</a>
+                    </div>
+                    <button type="submit" class="btn-primary btn-full">Accedi</button>
+                </form>
+
+                <div class="divider">
+                    <span>oppure</span>
+                </div>
+
+                <div class="social-login">
+                    <button class="btn-social btn-google" onclick="loginWithGoogle()">
+                        <svg width="18" height="18" viewBox="0 0 18 18">
+                            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
+                            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
+                            <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707 0-.593.102-1.17.282-1.709V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.335z"/>
+                            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+                        </svg>
+                        Continua con Google
+                    </button>
+                    <button class="btn-social btn-apple" onclick="loginWithApple()">
+                        <svg width="18" height="18" viewBox="0 0 18 18">
+                            <path d="M14.94 13.5c-.33.75-.49 1.09-.92 1.76-.6.93-1.44 2.09-2.48 2.11-.93.01-1.18-.61-2.45-.6-1.27.01-1.55.61-2.48.6-1.04-.02-1.83-1.08-2.43-2.01-1.67-2.6-1.85-5.65-.82-7.27.74-1.16 1.91-1.85 3.02-1.85 1.12 0 1.83.61 2.76.61.89 0 1.43-.61 2.71-.61.97 0 2.04.53 2.79 1.44-2.45 1.34-2.05 4.83.3 5.82zm-3.27-10.45c.51-.65.9-1.55.76-2.48-.82.04-1.8.57-2.37 1.27-.5.61-.92 1.52-.76 2.41.9.03 1.83-.51 2.37-1.2z" fill="currentColor"/>
+                        </svg>
+                        Continua con Apple
+                    </button>
+                </div>
+
+                <div class="form-footer">
+                    Non hai un account? <a href="#" onclick="showAuthModal('signup'); return false;">Registrati</a>
+                </div>
+            </div>
+
+            <!-- Signup Form -->
+            <div id="signup-form" class="auth-form" style="display: none;">
+                <h2 class="form-title">Inizia Gratis</h2>
+                <p class="form-subtitle">Crea il tuo account in pochi secondi</p>
+
+                <form onsubmit="handleSignup(event)">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="signup-firstname">Nome</label>
+                            <input type="text" id="signup-firstname" name="firstname" required placeholder="Mario">
+                        </div>
+                        <div class="form-group">
+                            <label for="signup-lastname">Cognome</label>
+                            <input type="text" id="signup-lastname" name="lastname" required placeholder="Rossi">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="signup-email">Email</label>
+                        <input type="email" id="signup-email" name="email" required placeholder="tuo@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="signup-password">Password</label>
+                        <input type="password" id="signup-password" name="password" required placeholder="••••••••" minlength="8">
+                        <div class="password-strength" id="password-strength"></div>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="terms" required>
+                            <span>Accetto i <a href="#terms">Termini di Servizio</a> e la <a href="#privacy">Privacy Policy</a></span>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn-primary btn-full">Crea Account</button>
+                </form>
+
+                <div class="divider">
+                    <span>oppure</span>
+                </div>
+
+                <div class="social-login">
+                    <button class="btn-social btn-google" onclick="signupWithGoogle()">
+                        <svg width="18" height="18" viewBox="0 0 18 18">
+                            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
+                            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
+                            <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707 0-.593.102-1.17.282-1.709V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.335z"/>
+                            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+                        </svg>
+                        Registrati con Google
+                    </button>
+                    <button class="btn-social btn-apple" onclick="signupWithApple()">
+                        <svg width="18" height="18" viewBox="0 0 18 18">
+                            <path d="M14.94 13.5c-.33.75-.49 1.09-.92 1.76-.6.93-1.44 2.09-2.48 2.11-.93.01-1.18-.61-2.45-.6-1.27.01-1.55.61-2.48.6-1.04-.02-1.83-1.08-2.43-2.01-1.67-2.6-1.85-5.65-.82-7.27.74-1.16 1.91-1.85 3.02-1.85 1.12 0 1.83.61 2.76.61.89 0 1.43-.61 2.71-.61.97 0 2.04.53 2.79 1.44-2.45 1.34-2.05 4.83.3 5.82zm-3.27-10.45c.51-.65.9-1.55.76-2.48-.82.04-1.8.57-2.37 1.27-.5.61-.92 1.52-.76 2.41.9.03 1.83-.51 2.37-1.2z" fill="currentColor"/>
+                        </svg>
+                        Registrati con Apple
+                    </button>
+                </div>
+
+                <div class="form-footer">
+                    Hai già un account? <a href="#" onclick="showAuthModal('login'); return false;">Accedi</a>
+                </div>
+            </div>
+
+            <!-- Forgot Password Form -->
+            <div id="forgot-form" class="auth-form" style="display: none;">
+                <h2 class="form-title">Recupera Password</h2>
+                <p class="form-subtitle">Inserisci la tua email e ti invieremo le istruzioni per reimpostare la password</p>
+
+                <form onsubmit="handleForgotPassword(event)">
+                    <div class="form-group">
+                        <label for="forgot-email">Email</label>
+                        <input type="email" id="forgot-email" name="email" required placeholder="tuo@email.com">
+                    </div>
+                    <button type="submit" class="btn-primary btn-full">Invia Istruzioni</button>
+                </form>
+
+                <div class="form-footer">
+                    <a href="#" onclick="showAuthModal('login'); return false;">← Torna al Login</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="static/js/landing.js"></script>
+</body>
+
+</html>

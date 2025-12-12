@@ -111,6 +111,14 @@ class VoiceAssistant {
    */
   async processKeyword(keyword) {
     try {
+      // Prima controlla se è un comando per il report di analisi
+      if (typeof window.processReportVoiceCommand === 'function') {
+        const reportHandled = await window.processReportVoiceCommand(keyword);
+        if (reportHandled) {
+          return; // Il comando è stato gestito dal sistema di report
+        }
+      }
+
       const response = await fetch(`${this.apiUrl}/api/voice/process-keyword`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
