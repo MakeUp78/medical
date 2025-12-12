@@ -2281,6 +2281,79 @@ async def process_voice_keyword(request: VoiceKeywordCommand):
         message="Parola chiave non riconosciuta"
     )
 
+@app.post("/api/face-analysis/complete")
+async def complete_face_analysis(file: UploadFile = File(...)):
+    """
+    Esegue un'analisi visagistica completa usando face_analysis_module.py
+    Ritorna il report testuale completo dell'analisi.
+    """
+    try:
+        # Importa il modulo di analisi visagistica
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+        from face_analysis_module import FaceVisagismAnalyzer
+
+        print(f"🎯 Analisi visagistica completa richiesta per: {file.filename}")
+
+        # Leggi il file immagine
+        content = await file.read()
+        nparr = np.frombuffer(content, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if img is None:
+            raise HTTPException(status_code=400, detail="Impossibile decodificare l'immagine")
+
+        # Crea un file temporaneo per l'immagine
+        temp_dir = tempfile.mkdtemp()
+        temp_image_path = os.path.join(temp_dir, "analysis_image.jpg")
+        cv2.imwrite(temp_image_path, img)
+
+        # Output directory per i risultati
+        output_dir = os.path.join(temp_dir, "analysis_results")
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Inizializza l'analizzatore
+        analyzer = FaceVisagismAnalyzer()
+
+        # Esegui l'analisi completa
+        result = analyzer.analyze_face(temp_image_path, output_dir=output_dir)
+
+        # Genera il report testuale
+        report_text = analyzer.generate_text_report(result)
+
+        # Leggi le immagini debug generate e convertile in base64
+        debug_images_b64 = {}
+        for key, img_path in result['immagini_debug'].items():
+            if os.path.exists(img_path):
+                with open(img_path, 'rb') as f:
+                    img_data = f.read()
+                    debug_images_b64[key] = base64.b64encode(img_data).decode('utf-8')
+
+        # Cleanup dei file temporanei
+        import shutil
+        try:
+            shutil.rmtree(temp_dir)
+        except Exception as e:
+            print(f"⚠️ Warning: impossibile eliminare directory temporanea: {e}")
+
+        return {
+            "success": True,
+            "report": report_text,
+            "data": {
+                "forma_viso": result['forma_viso'],
+                "metriche_facciali": result['metriche_facciali'],
+                "caratteristiche_facciali": result['caratteristiche_facciali'],
+                "analisi_visagistica": result['analisi_visagistica'],
+                "analisi_espressiva": result['analisi_espressiva']
+            },
+            "debug_images": debug_images_b64,
+            "timestamp": result['timestamp']
+        }
+
+    except ImportError as e:
+        raise HTTPException(status_code=500, detail=f"Errore import modulo analisi: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore durante l'analisi completa: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
     import socket

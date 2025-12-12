@@ -1174,3 +1174,93 @@ body {
     color: #ffa500;
     font-weight: bold;
 }
+
+/* ========================================
+   ANALISI VISAGISTICA COMPLETA - Stili
+   ======================================== */
+
+/* Spinner di caricamento */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.spinner {
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid #667eea;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto;
+}
+
+/* Modal per analisi completa */
+#analysis-modal .modal-content {
+    background: #2b2b2b;
+    color: #ffffff;
+}
+
+#analysis-modal .modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px 20px;
+    cursor: move;
+    user-select: none;
+}
+
+#analysis-modal .modal-header h3 {
+    margin: 0;
+    flex: 1;
+    text-align: center;
+}
+
+#analysis-modal .modal-header:active {
+    cursor: grabbing;
+}
+
+#analysis-modal #report-content {
+    background: #1e1e1e;
+    color: #e0e0e0;
+    border: 1px solid #555;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+#analysis-modal #report-content::-webkit-scrollbar {
+    width: 10px;
+}
+
+#analysis-modal #report-content::-webkit-scrollbar-track {
+    background: #2b2b2b;
+}
+
+#analysis-modal #report-content::-webkit-scrollbar-thumb {
+    background: #667eea;
+    border-radius: 5px;
+}
+
+#analysis-modal #report-content::-webkit-scrollbar-thumb:hover {
+    background: #764ba2;
+}
+
+/* Immagini debug */
+#debug-images-container {
+    background: #353535;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #555;
+}
+
+#debug-images-grid img {
+    transition: transform 0.3s ease;
+    cursor: pointer;
+}
+
+#debug-images-grid img:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
+}

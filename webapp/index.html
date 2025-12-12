@@ -106,6 +106,9 @@
                             <button class="btn btn-measure" onclick="measureKeyDistances(event)">🔍 Distanze
                                 Chiave</button>
                             <button class="btn btn-measure" onclick="measureFacialSymmetry(event)">⚖️ Simmetria</button>
+                            <button class="btn btn-measure btn-primary" onclick="performCompleteAnalysis(event)" style="grid-column: 1 / -1; font-weight: bold; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                                🧬 ANALISI VISAGISTICA COMPLETA
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -408,6 +411,51 @@
         </div>
     </div>
 
+    <!-- Modal Analisi Visagistica Completa -->
+    <div id="analysis-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 90%; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <span style="opacity: 0.6; margin-right: 10px; font-size: 20px;">⋮⋮</span>
+                <h3>🧬 Analisi Visagistica Completa</h3>
+                <span class="close" onclick="closeAnalysisModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Loading spinner -->
+                <div id="analysis-loading" style="text-align: center; padding: 40px; display: none;">
+                    <div class="spinner" style="width: 60px; height: 60px; border: 5px solid #f3f3f3; border-top: 5px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+                    <p style="margin-top: 20px; font-size: 16px; color: #667eea;">Analisi in corso...</p>
+                </div>
+
+                <!-- Report completo -->
+                <div id="analysis-report" style="display: none;">
+                    <div style="margin-bottom: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                        <button class="btn btn-success" onclick="generateAnalysisPDF()" style="font-size: 16px; padding: 12px 24px;">
+                            📄 Genera PDF
+                        </button>
+                        <button class="btn btn-info" id="read-report-btn" onclick="toggleReportReading()" style="font-size: 16px; padding: 12px 24px;">
+                            🔊 Leggi Report
+                        </button>
+                        <button class="btn btn-secondary" onclick="closeAnalysisModal()" style="font-size: 16px; padding: 12px 24px;">
+                            ✖️ Chiudi
+                        </button>
+                    </div>
+
+                    <div id="report-content" style="background: #f9f9f9; padding: 20px; border-radius: 8px; font-family: 'Courier New', monospace; white-space: pre-wrap; line-height: 1.6; color: #333;">
+                        <!-- Il report verrà inserito qui -->
+                    </div>
+
+                    <!-- Immagini debug (opzionale) -->
+                    <div id="debug-images-container" style="margin-top: 30px; display: none;">
+                        <h4 style="margin-bottom: 15px;">📸 Immagini di Analisi</h4>
+                        <div id="debug-images-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
+                            <!-- Le immagini verranno inserite qui -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Status bar -->
     <div class="status-bar">
         <div class="status-text" id="status-text">Pronto</div>
@@ -449,6 +497,9 @@
     <!-- Fabric.js per canvas -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
 
+    <!-- jsPDF per generazione PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
     <script src="static/js/api-client.js?v=1.5"></script>
     <script src="static/js/face-detection.js?v=1.5"></script>
     <script src="static/js/measurements.js?v=2.0"></script>
@@ -456,6 +507,8 @@
     <script src="static/js/canvas.js?v=2.8"></script>
     <!-- NUOVO FILE PULITO - Correzione sopracciglia -->
     <script src="static/js/eyebrow-correction.js?v=2.6"></script>
+    <!-- Analisi Visagistica Completa -->
+    <script src="static/js/face-analysis-complete.js?v=1.0"></script>
     <script src="static/js/main.js?v=6.17"></script>
 
     <!-- Script di test per debug -->
