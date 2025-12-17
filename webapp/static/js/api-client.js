@@ -3,13 +3,13 @@
  * Gestisce la comunicazione con il server FastAPI
  */
 
-// Configurazione endpoint API
+// Configurazione endpoint API (usa percorso relativo per nginx proxy)
 const API_CONFIG = {
-  baseURL: 'http://127.0.0.1:8001',
+  baseURL: window.location.origin,
   endpoints: {
     analyze: '/api/analyze',
     batch: '/api/batch-analyze',
-    health: '/health',
+    health: '/api/health',
     config: '/api/config/validate',
     landmarks: '/api/landmarks/info',
     greenDotsAnalyze: '/api/green-dots/analyze',

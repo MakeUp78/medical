@@ -4,7 +4,7 @@
  */
 
 class VoiceAssistant {
-  constructor(apiUrl = 'http://127.0.0.1:8001') {
+  constructor(apiUrl = window.location.origin) {
     this.apiUrl = apiUrl;
     this.audioPlayer = new Audio();
     this.recognition = null;
@@ -288,8 +288,8 @@ class VoiceAssistant {
   }
 }
 
-// Crea istanza globale
-const voiceAssistant = new VoiceAssistant('http://127.0.0.1:8001');
+// Crea istanza globale (usa window.location.origin per percorso relativo)
+const voiceAssistant = new VoiceAssistant();
 
 // Export per uso in altri script
 if (typeof module !== 'undefined' && module.exports) {

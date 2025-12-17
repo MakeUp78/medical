@@ -26,16 +26,29 @@ class IsabellaVoiceAssistant:
         self.is_listening = False
         self.is_muted = False
         
-        # Setup riconoscimento vocale
-        self.recognizer = sr.Recognizer()
-        self.microphone = sr.Microphone()
+        # Setup riconoscimento vocale (solo se disponibile microfono)
+        self.recognizer = None
+        self.microphone = None
+        try:
+            self.recognizer = sr.Recognizer()
+            self.microphone = sr.Microphone()
+            print("✅ Microfono inizializzato")
+        except OSError as e:
+            print(f"⚠️ Microfono non disponibile (normale su server): {e}")
+            print("   Voice Assistant funzionerà solo per TTS (senza riconoscimento vocale)")
         
         # Setup sintesi vocale con edge-tts e pygame (ORIGINALE)
-        pygame.mixer.init()
+        try:
+            pygame.mixer.init()
+            print("✅ Audio mixer inizializzato")
+        except Exception as e:
+            print(f"⚠️ Audio mixer non disponibile (normale su server senza audio): {e}")
+            print("   I file audio verranno generati ma non riprodotti localmente")
         self.tts_voice = self.config.get("tts_voice", "it-IT-IsabellaNeural")
         
-        # Calibrazione microfono
-        self.calibrate_microphone()
+        # Calibrazione microfono (solo se disponibile)
+        if self.microphone:
+            self.calibrate_microphone()
         
         # GUI e funzioni dell'app
         self.canvas_app = None

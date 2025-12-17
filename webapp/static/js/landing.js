@@ -158,7 +158,7 @@ async function handleLogin(event) {
     submitBtn.disabled = true;
 
     try {
-        // Call API
+        // Call API tramite nginx proxy (percorso relativo)
         const response = await fetch('/api/auth/login', {
             method: 'POST',
             headers: {
@@ -236,7 +236,7 @@ async function handleSignup(event) {
     submitBtn.disabled = true;
 
     try {
-        // Call API
+        // Call API tramite nginx proxy
         const response = await fetch('/api/auth/signup', {
             method: 'POST',
             headers: {
@@ -302,7 +302,7 @@ async function handleForgotPassword(event) {
     submitBtn.disabled = true;
 
     try {
-        // Call API
+        // Call API tramite nginx proxy
         const response = await fetch('/api/auth/forgot-password', {
             method: 'POST',
             headers: {
@@ -342,14 +342,14 @@ async function handleForgotPassword(event) {
 function loginWithGoogle() {
     showNotification('Reindirizzamento a Google...', 'info');
 
-    // Redirect to Google OAuth
+    // Redirect to Google OAuth tramite nginx proxy
     window.location.href = '/api/auth/google/login';
 }
 
 function signupWithGoogle() {
     showNotification('Reindirizzamento a Google...', 'info');
 
-    // Add plan parameter if selected
+    // Add plan parameter if selected tramite nginx proxy
     const planParam = state.selectedPlan ? `?plan=${state.selectedPlan}` : '';
     window.location.href = `/api/auth/google/signup${planParam}`;
 }
@@ -357,14 +357,14 @@ function signupWithGoogle() {
 function loginWithApple() {
     showNotification('Reindirizzamento a Apple...', 'info');
 
-    // Redirect to Apple Sign In
+    // Redirect to Apple Sign In tramite nginx proxy
     window.location.href = '/api/auth/apple/login';
 }
 
 function signupWithApple() {
     showNotification('Reindirizzamento a Apple...', 'info');
 
-    // Add plan parameter if selected
+    // Add plan parameter if selected tramite nginx proxy
     const planParam = state.selectedPlan ? `?plan=${state.selectedPlan}` : '';
     window.location.href = `/api/auth/apple/signup${planParam}`;
 }
@@ -499,28 +499,28 @@ function checkAuth() {
     const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
 
     if (token) {
-        // Verify token with backend
+        // Verify token with backend tramite nginx proxy
         fetch('/api/auth/verify', {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
         })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                state.user = data.user;
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    state.user = data.user;
 
-                // Update UI for logged in user
-                updateNavForLoggedInUser();
-            } else {
-                // Invalid token, clear it
-                localStorage.removeItem('auth_token');
-                sessionStorage.removeItem('auth_token');
-            }
-        })
-        .catch(err => {
-            console.error('Auth verification error:', err);
-        });
+                    // Update UI for logged in user
+                    updateNavForLoggedInUser();
+                } else {
+                    // Invalid token, clear it
+                    localStorage.removeItem('auth_token');
+                    sessionStorage.removeItem('auth_token');
+                }
+            })
+            .catch(err => {
+                console.error('Auth verification error:', err);
+            });
     }
 }
 

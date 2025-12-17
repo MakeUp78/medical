@@ -40,7 +40,7 @@ async function performCompleteAnalysis(event) {
         formData.append('file', imageBlob, 'analysis_image.jpg');
 
         // Chiamata API
-        const response = await fetch('http://127.0.0.1:8001/api/face-analysis/complete', {
+        const response = await fetch(`${window.location.origin}/api/face-analysis/complete`, {
             method: 'POST',
             body: formData
         });
@@ -342,7 +342,7 @@ function generateAnalysisPDF() {
         doc.setFontSize(8);
         doc.setFont('helvetica', 'italic');
         doc.text('Analisi basata su evidenze scientifiche peer-reviewed',
-                 pageWidth / 2, pageHeight - 20, { align: 'center' });
+            pageWidth / 2, pageHeight - 20, { align: 'center' });
 
         // Nuova pagina per il contenuto
         doc.addPage();
@@ -428,29 +428,66 @@ function generateAnalysisPDF() {
                         const base64Data = debugImages[key];
                         const imgSrc = `data:image/jpeg;base64,${base64Data}`;
 
-                        // Calcola dimensioni immagine (mantieni aspect ratio)
-                        const maxImgWidth = maxWidth;
-                        const maxImgHeight = 80; // mm
-
-                        // Verifica se c'è spazio, altrimenti nuova pagina
-                        if (currentY + maxImgHeight + 20 > pageHeight - margin) {
-                            doc.addPage();
-                            currentY = margin;
-                        }
-
-                        // Aggiungi label dell'immagine
+                        // Aggiungi label dell'immagine prima di calcolare dimensioni
                         doc.setFont('helvetica', 'bold');
                         doc.setFontSize(9);
                         const imageLabel = key.replace(/_/g, ' ').toUpperCase();
-                        doc.text(imageLabel, margin, currentY);
-                        currentY += 6;
 
-                        // Aggiungi immagine
+                        // Aggiungi immagine con calcolo automatico aspect ratio
                         try {
-                            doc.addImage(imgSrc, 'JPEG', margin, currentY, maxImgWidth, maxImgHeight);
-                            currentY += maxImgHeight + 10;
+                            // Crea un elemento immagine temporaneo per ottenere dimensioni reali
+                            const img = new Image();
+                            img.src = imgSrc;
+
+                            // Calcola dimensioni mantenendo aspect ratio
+                            const maxImgWidth = maxWidth;
+                            const maxImgHeight = 100; // mm - limite massimo altezza
+
+                            // Ottieni dimensioni originali (approssimative dal base64)
+                            // jsPDF può calcolare automaticamente l'aspect ratio
+                            const imgProps = doc.getImageProperties(imgSrc);
+                            const imgWidth = imgProps.width;
+                            const imgHeight = imgProps.height;
+                            const aspectRatio = imgWidth / imgHeight;
+
+                            // Calcola dimensioni finali mantenendo aspect ratio
+                            let finalWidth = maxImgWidth;
+                            let finalHeight = maxImgWidth / aspectRatio;
+
+                            // Se l'altezza supera il massimo, ridimensiona in base all'altezza
+                            if (finalHeight > maxImgHeight) {
+                                finalHeight = maxImgHeight;
+                                finalWidth = maxImgHeight * aspectRatio;
+                            }
+
+                            // Verifica se c'è spazio, altrimenti nuova pagina
+                            if (currentY + finalHeight + 20 > pageHeight - margin) {
+                                doc.addPage();
+                                currentY = margin;
+                            }
+
+                            // Scrivi label
+                            doc.text(imageLabel, margin, currentY);
+                            currentY += 6;
+
+                            // Aggiungi immagine con dimensioni proporzionali
+                            doc.addImage(imgSrc, 'JPEG', margin, currentY, finalWidth, finalHeight);
+                            currentY += finalHeight + 10;
+
+                            console.log(`✅ Immagine ${imageLabel} aggiunta: ${finalWidth.toFixed(1)}mm x ${finalHeight.toFixed(1)}mm (ratio: ${aspectRatio.toFixed(2)})`);
+
                         } catch (error) {
                             console.error(`Errore aggiunta immagine ${key}:`, error);
+
+                            // Verifica se c'è spazio per il messaggio di errore
+                            if (currentY + 20 > pageHeight - margin) {
+                                doc.addPage();
+                                currentY = margin;
+                            }
+
+                            doc.text(imageLabel, margin, currentY);
+                            currentY += 6;
+
                             doc.setFont('courier', 'normal');
                             doc.setFontSize(8);
                             doc.text(`[Immagine ${imageLabel} non disponibile]`, margin, currentY);
@@ -941,7 +978,7 @@ function setupReportVoiceCommands() {
     }
 
     // Comando: "Leggi report"
-    window.voiceCommandHandlers['leggi report'] = async function() {
+    window.voiceCommandHandlers['leggi report'] = async function () {
         console.log('🎤 Comando vocale riconosciuto: Leggi report');
 
         if (!currentAnalysisReport) {
@@ -954,18 +991,18 @@ function setupReportVoiceCommands() {
     };
 
     // Comando: "STOP" o "Ferma"
-    window.voiceCommandHandlers['stop'] = function() {
+    window.voiceCommandHandlers['stop'] = function () {
         console.log('🎤 Comando vocale riconosciuto: STOP');
         stopReportReading();
     };
 
-    window.voiceCommandHandlers['ferma'] = function() {
+    window.voiceCommandHandlers['ferma'] = function () {
         console.log('🎤 Comando vocale riconosciuto: Ferma');
         stopReportReading();
     };
 
     // Comandi per selezione sezione (solo se in attesa di selezione)
-    window.voiceCommandHandlers['tutte'] = async function() {
+    window.voiceCommandHandlers['tutte'] = async function () {
         if (awaitingSectionSelection) {
             console.log('🎤 Comando vocale: Leggi tutte le sezioni');
             await readReportSection('tutte');
@@ -976,7 +1013,7 @@ function setupReportVoiceCommands() {
     for (let i = 1; i <= 8; i++) {
         if (i === 4) continue; // Salta sezione 4 (immagini)
 
-        window.voiceCommandHandlers[`sezione ${i}`] = async function() {
+        window.voiceCommandHandlers[`sezione ${i}`] = async function () {
             if (awaitingSectionSelection) {
                 console.log(`🎤 Comando vocale: Leggi sezione ${i}`);
                 await readReportSection(i.toString());

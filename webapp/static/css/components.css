@@ -62,7 +62,7 @@
 
 .eyebrow-stats h4 {
     margin: 0 0 8px 0;
-    font-size: 14px;
+    font-size: 16px; /* Aumentato da 14px a 16px */
     font-weight: 600;
     color: #495057;
     border-bottom: 1px solid #dee2e6;
@@ -74,7 +74,7 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 6px;
-    font-size: 12px;
+    font-size: 13px; /* Aumentato da 12px a 13px */
 }
 
 .stat-item {
@@ -95,7 +95,7 @@
     font-weight: 600;
     color: #495057;
     font-family: 'Courier New', monospace;
-    font-size: 11px;
+    font-size: 13px; /* Aumentato da 11px a 13px */
 }
 
 /* Pulsanti sopracciglia con colori specifici */
@@ -104,8 +104,8 @@
     border: none;
     color: white;
     font-weight: 600;
-    padding: 8px 12px;
-    font-size: 13px;
+    padding: 10px 14px; /* Aumentato padding */
+    font-size: 15px; /* Aumentato da 13px a 15px */
     display: flex;
     align-items: center;
     gap: 6px;
@@ -136,7 +136,7 @@
     border: 1px solid #bee5eb;
     border-radius: 4px;
     padding: 8px;
-    font-size: 12px;
+    font-size: 13px; /* Aumentato da 12px a 13px */
     color: #0c5460;
     text-align: center;
     margin-bottom: 8px;
@@ -229,9 +229,9 @@
     position: absolute;
     background: rgba(0,0,0,0.9);
     color: white;
-    padding: 4px 8px;
+    padding: 6px 10px; /* Aumentato padding */
     border-radius: 4px;
-    font-size: 11px;
+    font-size: 13px; /* Aumentato da 11px a 13px */
     pointer-events: none;
     z-index: 1000;
     white-space: nowrap;
@@ -343,9 +343,9 @@
 }
 
 .context-menu-item {
-    padding: 6px 12px;
+    padding: 8px 14px; /* Aumentato padding */
     cursor: pointer;
-    font-size: 11px;
+    font-size: 13px; /* Aumentato da 11px a 13px */
     color: white;
 }
 
@@ -366,7 +366,7 @@
 
 .form-label {
     display: block;
-    font-size: 11px;
+    font-size: 13px; /* Aumentato da 11px a 13px */
     font-weight: bold;
     margin-bottom: 4px;
     color: #ffffff;
@@ -374,12 +374,12 @@
 
 .form-input {
     width: 100%;
-    padding: 4px 8px;
+    padding: 6px 10px; /* Aumentato padding */
     background: #555555;
     border: 1px solid #777777;
     border-radius: 3px;
     color: white;
-    font-size: 11px;
+    font-size: 13px; /* Aumentato da 11px a 13px */
 }
 
 .form-input:focus {
@@ -390,12 +390,12 @@
 
 .form-select {
     width: 100%;
-    padding: 4px 8px;
+    padding: 6px 10px; /* Aumentato padding */
     background: #555555;
     border: 1px solid #777777;
     border-radius: 3px;
     color: white;
-    font-size: 11px;
+    font-size: 13px; /* Aumentato da 11px a 13px */
     cursor: pointer;
 }
 
@@ -405,7 +405,7 @@
     align-items: center;
     gap: 6px;
     cursor: pointer;
-    font-size: 11px;
+    font-size: 13px; /* Aumentato da 11px a 13px */
 }
 
 .custom-checkbox input[type="checkbox"] {
@@ -555,3 +555,169 @@
 
 .border { border: 1px solid #555555; }
 .border-radius { border-radius: 4px; }
+
+/* ========================================
+   VOICE ASSISTANT SIDEBAR STYLES
+   ======================================== */
+
+#voice-assistant-section {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%);
+    border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+#voice-assistant-section .section-header {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.3) 0%, rgba(118, 75, 162, 0.3) 100%);
+}
+
+#voice-assistant-section .toggle-btn {
+    color: #e0e0ff;
+}
+
+#voice-assistant-sidebar-content {
+    padding: 4px;
+}
+
+.voice-status-sidebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    background: rgba(102, 126, 234, 0.2);
+    border: 1px solid rgba(102, 126, 234, 0.4);
+    border-radius: 6px;
+    font-size: 14px; /* Aumentato da 12px a 14px */
+    color: #ffffff;
+}
+
+.status-indicator-sidebar {
+    font-size: 14px;
+    animation: pulse-sidebar 2s infinite;
+}
+
+.status-indicator-sidebar.active {
+    color: #4caf50;
+}
+
+.status-indicator-sidebar.listening {
+    color: #ff5722;
+    animation: pulse-sidebar 0.8s infinite;
+}
+
+@keyframes pulse-sidebar {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.6;
+        transform: scale(1.1);
+    }
+}
+
+.voice-controls-sidebar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.voice-controls-sidebar .btn {
+    width: 100%;
+}
+
+.voice-info-sidebar {
+    padding: 8px 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(102, 126, 234, 0.3);
+    border-radius: 6px;
+    font-size: 13px; /* Aumentato da 11px a 13px */
+    margin-bottom: 10px;
+    color: #e0e0e0;
+}
+
+#last-command-text-sidebar {
+    font-weight: 600;
+    color: #ffd700;
+}
+
+.voice-quick-messages-sidebar {
+    margin-bottom: 10px;
+}
+
+.quick-msg-title-sidebar {
+    font-size: 13px; /* Aumentato da 11px a 13px */
+    margin-bottom: 6px;
+    opacity: 0.9;
+    color: #e0e0e0;
+}
+
+.quick-msg-buttons-sidebar {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 4px;
+}
+
+.voice-commands-help-sidebar {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(102, 126, 234, 0.3);
+    border-radius: 6px;
+    padding: 8px;
+}
+
+.voice-commands-help-sidebar summary {
+    cursor: pointer;
+    font-size: 13px; /* Aumentato da 11px a 13px */
+    font-weight: 600;
+    padding: 4px;
+    list-style: none;
+    color: #e0e0ff;
+}
+
+.voice-commands-help-sidebar summary::-webkit-details-marker {
+    display: none;
+}
+
+.voice-commands-help-sidebar summary:hover {
+    color: #ffffff;
+}
+
+.commands-list-sidebar {
+    margin-top: 8px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.command-item-sidebar {
+    padding: 6px 8px; /* Aumentato padding */
+    background: rgba(102, 126, 234, 0.15);
+    border: 1px solid rgba(102, 126, 234, 0.25);
+    border-radius: 4px;
+    margin-bottom: 4px;
+    font-size: 12px; /* Aumentato da 10px a 12px */
+    color: #e0e0e0;
+}
+
+.command-item-sidebar strong {
+    color: #ffd700;
+    font-weight: 600;
+}
+
+/* Scrollbar personalizzata per comandi */
+.commands-list-sidebar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.commands-list-sidebar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+}
+
+.commands-list-sidebar::-webkit-scrollbar-thumb {
+    background: rgba(102, 126, 234, 0.5);
+    border-radius: 3px;
+}
+
+.commands-list-sidebar::-webkit-scrollbar-thumb:hover {
+    background: rgba(102, 126, 234, 0.7);
+}
