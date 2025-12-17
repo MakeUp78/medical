@@ -15,12 +15,13 @@ body {
     color: #ffffff;
     overflow: hidden;
     height: 100vh;
+    font-size: 14px; /* Base font-size aumentato */
 }
 
 /* Layout principale identico all'app desktop */
 .main-container {
     display: grid;
-    grid-template-columns: 480px 1fr 480px;
+    grid-template-columns: 550px 1fr 550px;
     height: calc(100vh - 30px); /* Spazio per status bar */
     background: #2b2b2b;
 }
@@ -31,8 +32,8 @@ body {
     border-right: 1px solid #555555;
     overflow-y: auto;
     padding: 6px;
-    width: 480px;
-    max-width: 480px;
+    width: 550px;
+    max-width: 550px;
 }
 
 .scrollable-controls {
@@ -41,7 +42,7 @@ body {
 
 /* Sezioni collassabili - replica esatta */
 .section {
-    margin-bottom: 2px;
+    margin-bottom: 4px; /* Aumentato da 2px */
     border: 1px solid #555555;
     border-radius: 4px;
     background: #404040;
@@ -51,7 +52,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 8px;
+    padding: 8px 10px; /* Aumentato padding da 4px 8px */
     background: #4a4a4a;
     border-bottom: 1px solid #555555;
     cursor: pointer;
@@ -62,16 +63,188 @@ body {
     background: #505050;
 }
 
+/* ========================================
+   SEZIONE UTENTE (NON COLLASSABILE)
+   ======================================== */
+
+.user-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 12px;
+    color: white;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.user-avatar {
+    font-size: 36px;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.user-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.user-name {
+    font-size: 16px;
+    font-weight: bold;
+    color: white;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user-role {
+    display: flex;
+    align-items: center;
+}
+
+.role-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.role-badge.admin {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    box-shadow: 0 2px 4px rgba(245, 87, 108, 0.4);
+}
+
+.role-badge.operator {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: white;
+    box-shadow: 0 2px 4px rgba(79, 172, 254, 0.4);
+}
+
+.btn-logout {
+    width: 100%;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-logout:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.btn-logout:active {
+    transform: translateY(0);
+}
+
+/* ========================================
+   COLORI DISTINTIVI SEZIONI SIDEBAR SINISTRA
+   ======================================== */
+
+/* 🎯 SORGENTE - Blu professionale (ora è la 2a perché la 1a è user-section) */
+.left-sidebar .section:nth-child(2) .section-header {
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    border-bottom: 2px solid #4a7bc8;
+}
+
+.left-sidebar .section:nth-child(2) .section-header:hover {
+    background: linear-gradient(135deg, #2a5298 0%, #3a6bc8 100%);
+}
+
+/* 📊 STATUS SISTEMA - Verde acqua */
+.left-sidebar .section:nth-child(3) .section-header {
+    background: linear-gradient(135deg, #0d7377 0%, #14919b 100%);
+    border-bottom: 2px solid #32c5d2;
+}
+
+.left-sidebar .section:nth-child(3) .section-header:hover {
+    background: linear-gradient(135deg, #14919b 0%, #1db2bf 100%);
+}
+
+/* 📏 MISURAZIONI PREDEFINITE - Arancione professionale */
+.left-sidebar .section:nth-child(4) .section-header {
+    background: linear-gradient(135deg, #d35400 0%, #e67e22 100%);
+    border-bottom: 2px solid #f39c12;
+}
+
+.left-sidebar .section:nth-child(4) .section-header:hover {
+    background: linear-gradient(135deg, #e67e22 0%, #f39c12 100%);
+}
+
+/* 🔍 RILEVAMENTI - Viola professionale */
+.left-sidebar .section:nth-child(5) .section-header {
+    background: linear-gradient(135deg, #6f42c1 0%, #8e44ad 100%);
+    border-bottom: 2px solid #a569bd;
+}
+
+.left-sidebar .section:nth-child(5) .section-header:hover {
+    background: linear-gradient(135deg, #8e44ad 0%, #a569bd 100%);
+}
+
+/* ⚖️ SCORING - Giallo/Oro */
+.left-sidebar .section:nth-child(6) .section-header {
+    background: linear-gradient(135deg, #b8860b 0%, #daa520 100%);
+    border-bottom: 2px solid #f1c40f;
+}
+
+.left-sidebar .section:nth-child(6) .section-header:hover {
+    background: linear-gradient(135deg, #daa520 0%, #f1c40f 100%);
+}
+
+/* ✂️ CORREZIONE SOPRACCIGLIA - Rosa professionale */
+.left-sidebar .section:nth-child(7) .section-header {
+    background: linear-gradient(135deg, #ad1457 0%, #d81b60 100%);
+    border-bottom: 2px solid #ec407a;
+}
+
+.left-sidebar .section:nth-child(7) .section-header:hover {
+    background: linear-gradient(135deg, #d81b60 0%, #ec407a 100%);
+}
+
+/* 🎤 ASSISTENTE VOCALE - Blu viola gradiente */
+.left-sidebar .section:nth-child(8) .section-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-bottom: 2px solid #8e79ea;
+}
+
+.left-sidebar .section:nth-child(8) .section-header:hover {
+    background: linear-gradient(135deg, #764ba2 0%, #8e79ea 100%);
+}
+
 .toggle-btn {
     background: none;
     border: none;
     color: #ffffff;
     font-weight: bold;
-    font-size: 12px;
+    font-size: 15px; /* Aumentato da 13px a 15px */
     cursor: pointer;
     flex: 1;
     text-align: left;
-    padding: 4px 0;
+    padding: 8px 0; /* Aumentato padding */
 }
 
 .icon {
@@ -92,15 +265,15 @@ body {
 
 /* Pulsanti - stile ttkbootstrap identico */
 .btn {
-    padding: 6px 12px;
+    padding: 10px 18px; /* Aumentato padding da 8px 16px */
     border: none;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: 15px; /* Aumentato da 13px a 15px */
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
     margin: 2px;
-    min-height: 28px;
+    min-height: 38px; /* Aumentato da 34px */
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -134,11 +307,11 @@ body {
 .btn-detection { background: #fd7e14; color: white; }
 .btn-eyebrow { background: #e83e8c; color: white; }
 .btn-preset { background: #6f42c1; color: white; }
-.btn-small { 
-    background: #6c757d; 
-    color: white; 
-    padding: 4px 8px;
-    font-size: 10px;
+.btn-small {
+    background: #6c757d;
+    color: white;
+    padding: 6px 10px; /* Aumentato padding */
+    font-size: 12px; /* Aumentato da 10px a 12px */
 }
 
 /* Griglia pulsanti 2x2 */
@@ -175,15 +348,15 @@ body {
 }
 
 .best-frame-info {
-    font-size: 8px;
+    font-size: 11px; /* Aumentato da 8px a 11px */
     color: #17a2b8;
     font-weight: bold;
-    padding: 2px 4px;
+    padding: 4px 6px; /* Aumentato padding */
     border: 1px solid #17a2b8;
     border-radius: 3px;
     background: #1a2332;
     word-wrap: break-word;
-    line-height: 1.2;
+    line-height: 1.3; /* Aumentato line-height */
 }
 
 /* Dashboard badges */
@@ -195,8 +368,8 @@ body {
 }
 
 .badge {
-    font-size: 9px;
-    padding: 6px 8px;
+    font-size: 12px; /* Aumentato da 9px a 12px */
+    padding: 8px 10px; /* Aumentato padding */
     border-radius: 4px;
     text-align: center;
     font-weight: bold;
@@ -209,10 +382,10 @@ body {
 
 /* Sistema scoring */
 .scoring-info {
-    font-size: 10px;
+    font-size: 13px; /* Aumentato da 10px a 13px */
     font-weight: bold;
     color: #28a745;
-    padding: 4px 8px;
+    padding: 6px 10px; /* Aumentato padding */
     background: #1a2e1a;
     border: 1px solid #28a745;
     border-radius: 3px;
@@ -232,8 +405,8 @@ body {
 }
 
 .slider-row label {
-    width: 70px;
-    font-size: 9px;
+    width: 80px; /* Aumentato da 70px */
+    font-size: 12px; /* Aumentato da 9px a 12px */
     font-weight: bold;
 }
 
@@ -269,8 +442,8 @@ body {
 }
 
 .value {
-    min-width: 40px;
-    font-size: 9px;
+    min-width: 45px; /* Aumentato da 40px */
+    font-size: 12px; /* Aumentato da 9px a 12px */
     font-weight: bold;
     color: #ffc107;
     text-align: center;
@@ -286,7 +459,7 @@ body {
 
 /* Info sopracciglia */
 .eyebrow-info {
-    font-size: 8px;
+    font-size: 12px; /* Aumentato da 8px a 12px */
     color: #6c757d;
     font-style: italic;
     margin-bottom: 6px;
@@ -320,14 +493,15 @@ body {
 }
 
 .tool-btn {
-    padding: 4px 8px;
+    padding: 8px 14px; /* Aumentato padding */
     background: #ffffff;
     border: 1px solid #cccccc;
     border-radius: 3px;
-    font-size: 10px;
+    font-size: 14px; /* Aumentato da 12px a 14px */
     cursor: pointer;
     color: #333333;
     transition: all 0.2s ease;
+    min-height: 36px; /* Aumentato da 32px */
 }
 
 .tool-btn:hover {
@@ -375,8 +549,8 @@ body {
     left: 4px;
     background: rgba(0,0,0,0.7);
     color: white;
-    padding: 2px 6px;
-    font-size: 10px;
+    padding: 4px 8px; /* Aumentato padding */
+    font-size: 12px; /* Aumentato da 10px a 12px */
     border-radius: 3px;
     pointer-events: none;
 }
@@ -387,15 +561,15 @@ body {
     border-left: 1px solid #555555;
     overflow-y: auto;
     padding: 6px;
-    width: 480px;
-    max-width: 480px;
+    width: 550px;
+    max-width: 550px;
 }
 
 .section-title {
     background: #4a4a4a;
     color: #ffffff;
-    padding: 6px 12px;
-    font-size: 11px;
+    padding: 8px 14px; /* Aumentato padding */
+    font-size: 14px; /* Aumentato da 11px a 14px */
     font-weight: bold;
     border-bottom: 1px solid #555555;
 }
@@ -502,7 +676,7 @@ body {
 
 .landmarks-page-info {
     color: #ccc;
-    font-size: 9px;
+    font-size: 12px; /* Aumentato da 9px a 12px */
     text-align: center;
     flex: 1;
 }
@@ -521,7 +695,7 @@ body {
 }
 
 .auto-scroll-label {
-    font-size: 10px;
+    font-size: 12px; /* Aumentato da 10px a 12px */
     display: flex;
     align-items: center;
     gap: 4px;
@@ -530,14 +704,14 @@ body {
 
 /* STATUS BAR */
 .status-bar {
-    height: 30px;
+    height: 32px; /* Aumentato da 30px */
     background: #2b2b2b;
     border-top: 1px solid #555555;
     display: flex;
     align-items: center;
     padding: 0 12px;
     color: #ffffff;
-    font-size: 11px;
+    font-size: 13px; /* Aumentato da 11px a 13px */
 }
 
 .status-text {

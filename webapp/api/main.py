@@ -94,17 +94,21 @@ def initialize_voice_assistant():
 async def lifespan(app: FastAPI):
     """Gestisce startup e shutdown dell'applicazione."""
     # Startup
+    print("🚀 Avvio inizializzazione...", flush=True)
     success = initialize_mediapipe()
     if success:
-        print("✅ MediaPipe inizializzato con successo")
+        print("✅ MediaPipe inizializzato con successo", flush=True)
     else:
-        print("❌ ERRORE: MediaPipe non disponibile - API NON FUNZIONERÀ")
+        print("❌ ERRORE: MediaPipe non disponibile - API NON FUNZIONERÀ", flush=True)
         raise RuntimeError("MediaPipe è OBBLIGATORIO - nessun fallback consentito")
     
     # Inizializza Voice Assistant (opzionale)
+    print("🔍 Inizializzazione Voice Assistant...", flush=True)
     voice_success = initialize_voice_assistant()
     if voice_success:
-        print("🎤 Voice Assistant disponibile")
+        print("🎤 Voice Assistant disponibile", flush=True)
+    else:
+        print("⚠️ Voice Assistant NON inizializzato", flush=True)
     
     yield
     

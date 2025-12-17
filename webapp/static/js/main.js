@@ -33,84 +33,85 @@ window.perpendicularLines = perpendicularLines;
 // SISTEMA DI AUTENTICAZIONE
 // ===================================
 
-const AUTH_SERVER_URL = 'http://localhost:5000';
+// Usa percorso relativo per funzionare tramite nginx proxy
+const AUTH_SERVER_URL = window.location.origin;
 
 /**
  * Verifica autenticazione all'avvio della pagina
  */
 async function checkAuthentication() {
-    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
 
-    if (!token) {
-        console.log('🔒 Nessun token trovato, redirect a landing.html');
-        window.location.href = '/landing.html';
-        return false;
+  if (!token) {
+    console.log('🔒 Nessun token trovato, redirect a landing.html');
+    window.location.href = '/landing.html';
+    return false;
+  }
+
+  try {
+    const response = await fetch(`${AUTH_SERVER_URL}/api/auth/verify`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const data = await response.json();
+
+    if (data.success && data.user) {
+      console.log('✅ Utente autenticato:', data.user.email);
+      updateUserUI(data.user);
+      return true;
+    } else {
+      console.log('❌ Token invalido, redirect a landing.html');
+      localStorage.removeItem('auth_token');
+      sessionStorage.removeItem('auth_token');
+      window.location.href = '/landing.html';
+      return false;
     }
-
-    try {
-        const response = await fetch(`${AUTH_SERVER_URL}/api/auth/verify`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
-
-        const data = await response.json();
-
-        if (data.success && data.user) {
-            console.log('✅ Utente autenticato:', data.user.email);
-            updateUserUI(data.user);
-            return true;
-        } else {
-            console.log('❌ Token invalido, redirect a landing.html');
-            localStorage.removeItem('auth_token');
-            sessionStorage.removeItem('auth_token');
-            window.location.href = '/landing.html';
-            return false;
-        }
-    } catch (error) {
-        console.error('❌ Errore verifica autenticazione:', error);
-        window.location.href = '/landing.html';
-        return false;
-    }
+  } catch (error) {
+    console.error('❌ Errore verifica autenticazione:', error);
+    window.location.href = '/landing.html';
+    return false;
+  }
 }
 
 /**
  * Aggiorna UI con dati utente
  */
 function updateUserUI(user) {
-    const userNameElement = document.getElementById('user-name');
-    const roleBadgeElement = document.getElementById('role-badge');
+  const userNameElement = document.getElementById('user-name');
+  const roleBadgeElement = document.getElementById('role-badge');
 
-    if (userNameElement) {
-        userNameElement.textContent = `${user.firstname} ${user.lastname}`;
-    }
+  if (userNameElement) {
+    userNameElement.textContent = `${user.firstname} ${user.lastname}`;
+  }
 
-    if (roleBadgeElement) {
-        const roleText = user.role === 'admin' ? 'Amministratore' : 'Operatore';
-        roleBadgeElement.textContent = roleText;
+  if (roleBadgeElement) {
+    const roleText = user.role === 'admin' ? 'Amministratore' : 'Operatore';
+    roleBadgeElement.textContent = roleText;
 
-        // Rimuovi tutte le classi role esistenti
-        roleBadgeElement.classList.remove('admin', 'operator');
+    // Rimuovi tutte le classi role esistenti
+    roleBadgeElement.classList.remove('admin', 'operator');
 
-        // Aggiungi la classe corretta
-        roleBadgeElement.classList.add(user.role);
-    }
+    // Aggiungi la classe corretta
+    roleBadgeElement.classList.add(user.role);
+  }
 
-    console.log('👤 UI utente aggiornata:', {
-        name: `${user.firstname} ${user.lastname}`,
-        role: user.role,
-        plan: user.plan
-    });
+  console.log('👤 UI utente aggiornata:', {
+    name: `${user.firstname} ${user.lastname}`,
+    role: user.role,
+    plan: user.plan
+  });
 }
 
 /**
  * Logout utente
  */
 function logout() {
-    console.log('👋 Logout utente');
-    localStorage.removeItem('auth_token');
-    sessionStorage.removeItem('auth_token');
-    window.location.href = '/landing.html';
+  console.log('👋 Logout utente');
+  localStorage.removeItem('auth_token');
+  sessionStorage.removeItem('auth_token');
+  window.location.href = '/landing.html';
 }
 
 // Esponi funzione logout globalmente per onclick
@@ -252,8 +253,8 @@ async function detectLandmarksSilent() {
       base64Image = fabricCanvas.toDataURL('image/jpeg', 0.9);
     }
 
-    // Chiama API
-    const response = await fetch('http://127.0.0.1:8001/api/analyze', {
+    // Chiama API tramite percorso relativo (nginx proxy)
+    const response = await fetch(`${window.location.origin}/api/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: base64Image })
@@ -3178,7 +3179,7 @@ function setupPerpendicularLineHandlers() {
   }
 
   // Crea nuovo handler
-  perpendicularLineHandler = function(e) {
+  perpendicularLineHandler = function (e) {
     const obj = e.target;
 
     console.log('🔄 object:moving event triggered', obj ? obj.type : 'no object', obj ? obj.isPerpendicularLine : false);
@@ -4720,10 +4721,10 @@ async function detectGreenDots() {
       });
     } else {
       console.log('⚠️ Fallback: chiamata API diretta');
-      // Fallback: chiamata diretta all'API
+      // Fallback: chiamata diretta all'API tramite percorso relativo
       const baseUrl = (typeof API_CONFIG !== 'undefined' && API_CONFIG?.baseURL)
         ? API_CONFIG.baseURL
-        : 'http://127.0.0.1:8001';
+        : window.location.origin;
       const apiUrl = `${baseUrl}/api/green-dots/analyze`;
       console.log('🌍 URL API Green Dots (fallback):', apiUrl);
       console.log('🔧 API_CONFIG disponibile:', typeof API_CONFIG !== 'undefined');
@@ -6629,19 +6630,19 @@ function syncGreenDotsOverlayWithViewport() {
 // ===================================
 
 window.addEventListener('DOMContentLoaded', async () => {
-    console.log('🚀 Inizializzazione applicazione Medical Face Analysis');
+  console.log('🚀 Inizializzazione applicazione Medical Face Analysis');
 
-    // STEP 1: Verifica autenticazione
-    const isAuthenticated = await checkAuthentication();
+  // STEP 1: Verifica autenticazione
+  const isAuthenticated = await checkAuthentication();
 
-    if (!isAuthenticated) {
-        console.log('❌ Autenticazione fallita, app non inizializzata');
-        return;
-    }
+  if (!isAuthenticated) {
+    console.log('❌ Autenticazione fallita, app non inizializzata');
+    return;
+  }
 
-    console.log('✅ Autenticazione completata, inizializzazione app...');
+  console.log('✅ Autenticazione completata, inizializzazione app...');
 
-    // STEP 2: Inizializza il resto dell'applicazione
-    // (il resto del codice di inizializzazione esistente continua qui)
+  // STEP 2: Inizializza il resto dell'applicazione
+  // (il resto del codice di inizializzazione esistente continua qui)
 });
 

@@ -8,7 +8,7 @@
     border-collapse: collapse;
     background: #404040;
     color: #ffffff;
-    font-size: 11px;
+    font-size: 13px; /* Aumentato da 11px a 13px */
     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
@@ -21,11 +21,11 @@
 }
 
 .data-table th {
-    padding: 4px 8px;
+    padding: 6px 10px; /* Aumentato padding */
     border: 1px solid #555555;
     text-align: left;
     font-weight: bold;
-    font-size: 10px;
+    font-size: 12px; /* Aumentato da 10px a 12px */
     color: #ffffff;
     background: #4a4a4a;
     user-select: none;
@@ -38,10 +38,10 @@
 
 /* Celle tabella */
 .data-table td {
-    padding: 2px 6px;
+    padding: 4px 8px; /* Aumentato padding */
     border: 1px solid #555555;
     text-align: left;
-    line-height: 1.2;
+    line-height: 1.3; /* Aumentato line-height */
     word-wrap: break-word;
     max-width: 120px;
 }
@@ -133,8 +133,8 @@
 /* TABELLA DEBUG - dimensioni compatte */
 .debug-table th,
 .debug-table td {
-    font-size: 9px;
-    padding: 1px 4px;
+    font-size: 11px; /* Aumentato da 9px a 11px */
+    padding: 3px 6px; /* Aumentato padding */
 }
 
 .debug-table th:nth-child(1), 
@@ -304,7 +304,7 @@
 /* Celle coordinate */
 .coordinate-cell {
     font-family: 'Courier New', monospace;
-    font-size: 10px;
+    font-size: 12px; /* Aumentato da 10px a 12px */
     text-align: right;
 }
 
@@ -365,7 +365,7 @@
     padding: 20px;
     color: #6c757d;
     font-style: italic;
-    font-size: 11px;
+    font-size: 13px; /* Aumentato da 11px a 13px */
 }
 
 .table-empty::before {
@@ -383,7 +383,7 @@
     padding: 8px;
     background: #4a4a4a;
     border-top: 1px solid #555555;
-    font-size: 10px;
+    font-size: 12px; /* Aumentato da 10px a 12px */
 }
 
 .pagination-info {
@@ -396,13 +396,13 @@
 }
 
 .pagination-btn {
-    padding: 2px 6px;
+    padding: 4px 8px; /* Aumentato padding */
     background: #555555;
     border: 1px solid #777777;
     border-radius: 2px;
     color: white;
     cursor: pointer;
-    font-size: 10px;
+    font-size: 12px; /* Aumentato da 10px a 12px */
 }
 
 .pagination-btn:hover {
@@ -430,12 +430,12 @@
 
 .filter-input {
     width: 100%;
-    padding: 2px 6px;
+    padding: 4px 8px; /* Aumentato padding */
     background: #555555;
     border: 1px solid #777777;
     border-radius: 2px;
     color: white;
-    font-size: 10px;
+    font-size: 12px; /* Aumentato da 10px a 12px */
 }
 
 .filter-input::placeholder {

@@ -41,7 +41,7 @@ function initializeFabricCanvas() {
     width: initialWidth,
     height: initialHeight,
     backgroundColor: '#f0f0f0',
-    selection: true,
+    selection: false, // Disabilita selezione multipla - gestita da canvas-modes.js
     preserveObjectStacking: true
   });
 
@@ -69,85 +69,26 @@ function initializeFabricCanvas() {
   // Aggiungi griglia di default
   drawGrid();
 
+  // Inizializza sistema modalità canvas (dopo che tutto è pronto)
+  setTimeout(() => {
+    if (typeof window.initializeCanvasModes === 'function') {
+      window.initializeCanvasModes();
+    } else {
+      console.warn('⚠️ initializeCanvasModes non disponibile');
+    }
+  }, 200);
+
   console.log('🎨 Canvas inizializzato correttamente');
 }
 
 function setupCanvasEventListeners() {
   if (!fabricCanvas) return;
 
-  // LISTENER GLOBALI MOUSE - gestiscono tutte le interazioni
-  let isPanningCanvas = false;
+  // NOTA: Gli event handlers principali (mouse:down, mouse:move, mouse:up) sono ora gestiti
+  // da canvas-modes.js per il sistema di modalità esclusiva.
+  // Qui manteniamo solo gli handler specifici per funzionalità legacy che non interferiscono.
 
-  // Mouse down - gestisce pan, misurazioni, selezione landmarks
-  fabricCanvas.on('mouse:down', function (e) {
-    console.log('🖱️ CANVAS.JS mouse:down', {
-      target: e.target?.type,
-      measurementMode: window.measurementMode,
-      landmarkSelectionMode: window.landmarkSelectionMode,
-      currentLandmarks: window.currentLandmarks?.length || 0,
-      handleLandmarkSelection: typeof window.handleLandmarkSelection
-    });
-
-    // 1. Pan canvas (se non c'è oggetto target)
-    if (!e.target && window.currentGreenDotsOverlay) {
-      isPanningCanvas = true;
-      console.log('🔄 Inizio pan canvas...');
-    }
-
-    // 2. Misurazioni (se measurementMode attivo)
-    if (window.measurementMode && e.e && window.currentLandmarks && window.currentLandmarks.length > 0) {
-      const pointer = fabricCanvas.getPointer(e.e);
-      console.log('📐 Modalità misurazione - click a', pointer);
-      if (typeof window.handleMeasurementLandmarkSelection === 'function') {
-        window.handleMeasurementLandmarkSelection(pointer.x, pointer.y);
-      } else {
-        console.error('❌ window.handleMeasurementLandmarkSelection non è una funzione!');
-      }
-    }
-
-    // 3. Selezione landmarks (se landmarkSelectionMode attivo)
-    if (window.landmarkSelectionMode && e.e && window.currentLandmarks && window.currentLandmarks.length > 0) {
-      const pointer = fabricCanvas.getPointer(e.e);
-      console.log('🎯 CANVAS.JS Modalità selezione landmark - click a', pointer);
-      if (typeof window.handleLandmarkSelection === 'function') {
-        window.handleLandmarkSelection(pointer.x, pointer.y);
-      } else {
-        console.error('❌ window.handleLandmarkSelection non è una funzione!');
-      }
-    }
-  });
-
-  // Mouse move - gestisce pan sync e hover landmarks
-  fabricCanvas.on('mouse:move', function (e) {
-    // 1. Sincronizza overlay durante pan
-    if (window.currentGreenDotsOverlay && isPanningCanvas) {
-      clearTimeout(window.panSyncTimeout);
-      window.panSyncTimeout = setTimeout(() => {
-        if (typeof syncGreenDotsOverlayWithViewport === 'function') {
-          syncGreenDotsOverlayWithViewport();
-        }
-      }, 16);
-    }
-
-    // 2. Hover effect per landmarks
-    if (window.landmarkSelectionMode && e.e && window.currentLandmarks && window.currentLandmarks.length > 0) {
-      const pointer = fabricCanvas.getPointer(e.e);
-      if (typeof window.highlightNearestLandmarkOnHover === 'function') {
-        window.highlightNearestLandmarkOnHover(pointer.x, pointer.y);
-      }
-    }
-  });
-
-  // Mouse up - gestisce fine pan
-  fabricCanvas.on('mouse:up', function (e) {
-    if (window.currentGreenDotsOverlay && isPanningCanvas) {
-      console.log('🔄 Fine pan canvas');
-      if (typeof syncGreenDotsOverlayWithViewport === 'function') {
-        syncGreenDotsOverlayWithViewport();
-      }
-    }
-    isPanningCanvas = false;
-  });
+  console.log('ℹ️ Event listeners canvas - delegati a canvas-modes.js');
 
   // Zoom con rotella mouse
   fabricCanvas.on('mouse:wheel', function (opt) {
@@ -230,21 +171,40 @@ function loadImageToCanvas(imageFile) {
       img.scale(sizing.scale);
 
       // Posiziona immagine utilizzando tutto lo spazio disponibile
+      // IMMAGINE COMPLETAMENTE NON INTERATTIVA
       img.set({
         left: sizing.left,
         top: sizing.top,
-        selectable: true,   // Abilita selezione per trasformazioni
-        evented: true,      // Abilita eventi per trasformazioni
-        lockUniScaling: true, // Mantieni proporzioni durante resize
-        cornerStyle: 'circle',
-        cornerSize: 10,
-        transparentCorners: false,
-        cornerColor: '#007bff'
+        selectable: false,      // DISABILITA selezione
+        evented: false,         // DISABILITA eventi
+        lockMovementX: true,
+        lockMovementY: true,
+        lockScalingX: true,
+        lockScalingY: true,
+        lockRotation: true,
+        hasControls: false,     // Nessun controllo
+        hasBorders: false,      // Nessun bordo
+        hoverCursor: 'default'  // Cursore normale
       });
 
       currentImage = img;
       fabricCanvas.add(img);
       fabricCanvas.sendToBack(img); // Immagine sempre dietro
+
+      // FORZA il blocco dell'immagine dopo l'aggiunta al canvas
+      img.selectable = false;
+      img.evented = false;
+      img.lockMovementX = true;
+      img.lockMovementY = true;
+      img.lockScalingX = true;
+      img.lockScalingY = true;
+      img.lockRotation = true;
+      img.hasControls = false;
+      img.hasBorders = false;
+
+      // Configura sincronizzazione overlay con trasformazioni immagine
+      setupImageTransformSync(img);
+
       fabricCanvas.renderAll();
 
       console.log('📷 Immagine caricata nel canvas con dimensioni ottimali');
@@ -341,54 +301,59 @@ function saveLandmarksAsNormalized(landmarks, imageWidth, imageHeight) {
     return normalized;
   });
 
+  // Sincronizza con window.originalLandmarks per main.js
+  window.originalLandmarks = originalLandmarks;
+
   console.log(`💾 Salvati ${originalLandmarks.length} landmark normalizzati (${normalizeWidth}x${normalizeHeight})`);
 }
 
 function transformLandmarksToCanvasCoords() {
   /**
-   * Trasforma i landmark normalizzati nelle coordinate attuali del canvas
-   * basandosi sulla posizione e scala correnti dell'immagine
+   * Trasforma landmark normalizzati usando il centro CORRETTO dell'immagine
    */
   if (!currentImage || !fabricCanvas || originalLandmarks.length === 0) {
     return [];
   }
 
-  // Usa le proprietà dirette dell'immagine per ottenere coordinate precise
-  const imageLeft = currentImage.left;
-  const imageTop = currentImage.top;
+  const angleRad = (currentImage.angle || 0) * Math.PI / 180;
+  const scaledW = currentImage.width * currentImage.scaleX;
+  const scaledH = currentImage.height * currentImage.scaleY;
 
-  // Ora tutto passa attraverso il flusso video uniforme
-  const imageWidth = currentImage.getScaledWidth();
-  const imageHeight = currentImage.getScaledHeight();
-
-  console.log(`🔧 Transform landmarks - Image pos: (${imageLeft}, ${imageTop}), size: ${imageWidth}x${imageHeight}`);
-  console.log(`🔧 currentImage properties:`, {
-    width: currentImage.width,
-    height: currentImage.height,
-    scaleX: currentImage.scaleX,
-    scaleY: currentImage.scaleY,
-    left: currentImage.left,
-    top: currentImage.top
-  });
+  // Centro EFFETTIVO dell'immagine (gestisce originX/originY di Fabric.js)
+  const center = currentImage.getCenterPoint();
 
   const transformedLandmarks = originalLandmarks.map((landmark, index) => {
+    // Coordinate relative al centro (prima di ruotare)
+    let relX = (landmark.x - 0.5) * scaledW;
+    let relY = (landmark.y - 0.5) * scaledH;
+
+    // Rotazione attorno al centro
+    if (angleRad !== 0) {
+      const cos = Math.cos(angleRad);
+      const sin = Math.sin(angleRad);
+      const rotX = relX * cos - relY * sin;
+      const rotY = relX * sin + relY * cos;
+      relX = rotX;
+      relY = rotY;
+    }
+
+    // Trasla usando il centro effettivo
     const transformed = {
-      x: imageLeft + (landmark.x * imageWidth),
-      y: imageTop + (landmark.y * imageHeight),
+      x: center.x + relX,
+      y: center.y + relY,
       z: landmark.z,
       visibility: landmark.visibility,
       index: index
     };
 
-    // Log solo i primi 3 landmark per non intasare la console
     if (index < 3) {
-      console.log(`🔄 Landmark ${index}: (${landmark.x}, ${landmark.y}) → (${transformed.x}, ${transformed.y})`);
+      console.log(`🔄 Landmark ${index}: (${landmark.x.toFixed(3)}, ${landmark.y.toFixed(3)}) → (${transformed.x.toFixed(1)}, ${transformed.y.toFixed(1)})`);
     }
 
     return transformed;
   });
 
-  console.log(`✅ Trasformati ${transformedLandmarks.length} landmarks`);
+  console.log(`✅ Trasformati ${transformedLandmarks.length} landmarks (angle: ${currentImage.angle || 0}°)`);
   return transformedLandmarks;
 }
 
@@ -406,8 +371,9 @@ function clearLandmarks() {
 function redrawLandmarks() {
   /**
    * Ridisegna i landmark usando le coordinate trasformate attuali
+   * dopo una modifica all'immagine (rotazione, scala, spostamento)
    */
-  if (!fabricCanvas || originalLandmarks.length === 0) return;
+  if (!fabricCanvas || !originalLandmarks || originalLandmarks.length === 0) return;
 
   // Verifica se i landmarks devono essere visibili
   const landmarksBtn = document.getElementById('landmarks-btn');
@@ -415,13 +381,15 @@ function redrawLandmarks() {
 
   if (!shouldShowLandmarks) return;
 
-  // Cancella landmark esistenti
+  console.log('🔄 Ridisegno landmarks dopo trasformazione immagine');
+
+  // Rimuovi landmarks precedenti
   clearLandmarks();
 
-  // Calcola nuove coordinate
+  // Trasforma usando la rotazione/scala/posizione CORRENTE dell'immagine
   const transformedLandmarks = transformLandmarksToCanvasCoords();
 
-  // Ridisegna con le nuove coordinate
+  // Disegna i punti trasformati
   drawLandmarkPoints(transformedLandmarks);
 }
 
@@ -457,12 +425,13 @@ function drawMediaPipeLandmarks(landmarks) {
 
   // Salva i landmark originali per future trasformazioni
   if (currentImage) {
-    // Ora tutto passa attraverso il flusso video uniforme, quindi usa sempre getScaledWidth
-    const currentWidth = currentImage.getScaledWidth();
-    const currentHeight = currentImage.getScaledHeight();
+    // Ottieni le dimensioni ORIGINALI dell'immagine (non scalate)
+    const element = currentImage.getElement ? currentImage.getElement() : currentImage._element;
+    const originalWidth = element ? (element.naturalWidth || element.width) : currentImage.width;
+    const originalHeight = element ? (element.naturalHeight || element.height) : currentImage.height;
 
-    console.log(`💾 Normalizzazione landmarks con dimensioni correnti: ${currentWidth}x${currentHeight}`);
-    saveLandmarksAsNormalized(landmarks, currentWidth, currentHeight);
+    console.log(`💾 Normalizzazione landmarks con dimensioni ORIGINALI: ${originalWidth}x${originalHeight}`);
+    saveLandmarksAsNormalized(landmarks, originalWidth, originalHeight);
   }
 
   // Rimuovi landmarks precedenti
@@ -547,6 +516,11 @@ function drawLandmarkPoints(transformedLandmarks) {
     const strokeColor = '#FFFFFF';
 
     // Crea il cerchio per il landmark
+    // IMPORTANTE: Se la modalità selezione o misurazione è attiva, rendi i landmarks cliccabili
+    const isSelectionMode = window.landmarkSelectionMode === true;
+    const isMeasureMode = window.measurementMode === true;
+    const isClickable = isSelectionMode || isMeasureMode;
+
     const circle = new fabric.Circle({
       left: landmark.x - circleRadius,
       top: landmark.y - circleRadius,
@@ -554,11 +528,12 @@ function drawLandmarkPoints(transformedLandmarks) {
       fill: fillColor,
       stroke: strokeColor,
       strokeWidth: strokeWidth,
-      selectable: false,
-      evented: false,
+      selectable: false,  // Mai selezionabile come oggetto Fabric
+      evented: isClickable,  // Cliccabile in modalità selezione o misurazione
       isLandmark: true,
       landmarkIndex: index,
-      landmarkType: 'mediapipe'
+      landmarkType: 'mediapipe',
+      hoverCursor: isClickable ? 'pointer' : 'default'
     });
 
     fabricCanvas.add(circle);
@@ -645,8 +620,10 @@ function clearLandmarks() {
   landmarks.forEach(landmark => fabricCanvas.remove(landmark));
 }
 
-// Rendi la funzione globalmente accessibile
+// Rendi le funzioni globalmente accessibili
 window.drawMediaPipeLandmarks = drawMediaPipeLandmarks;
+window.redrawLandmarks = redrawLandmarks;
+window.clearLandmarks = clearLandmarks;
 
 // Alias per compatibilità con api-client.js
 function drawLandmarksOnCanvas(landmarks) {
@@ -1051,4 +1028,73 @@ function redrawCanvas() {
   if (measurementLines.length > 0) {
     redrawAllMeasurements();
   }
+}
+
+// === SINCRONIZZAZIONE OVERLAY CON TRASFORMAZIONI IMMAGINE ===
+
+function setupImageTransformSync(img) {
+  /**
+   * Configura event listeners per sincronizzare gli overlay quando l'immagine viene trasformata
+   * Gli overlay includono: landmarks, asse simmetria, misurazioni, green dots
+   */
+  if (!img || !fabricCanvas) return;
+
+  console.log('🔄 Configurazione sincronizzazione overlay con trasformazioni immagine');
+
+  // Event: Immagine in movimento
+  fabricCanvas.on('object:moving', function(e) {
+    if (e.target === currentImage) {
+      console.log('🔄 Immagine in movimento...');
+      // Durante il movimento, aggiorna continuamente i landmarks
+      if (originalLandmarks && originalLandmarks.length > 0) {
+        redrawLandmarks();
+      }
+    }
+  });
+
+  // Event: Immagine in scala
+  fabricCanvas.on('object:scaling', function(e) {
+    if (e.target === currentImage) {
+      console.log('🔄 Immagine in scala...');
+      // Durante lo scaling, aggiorna continuamente i landmarks
+      if (originalLandmarks && originalLandmarks.length > 0) {
+        redrawLandmarks();
+      }
+    }
+  });
+
+  // Event: Immagine in rotazione
+  fabricCanvas.on('object:rotating', function(e) {
+    if (e.target === currentImage) {
+      console.log('🔄 Immagine in rotazione...');
+      // Durante la rotazione, aggiorna continuamente i landmarks
+      if (originalLandmarks && originalLandmarks.length > 0) {
+        redrawLandmarks();
+      }
+    }
+  });
+
+  // Event: Trasformazione completata (mouse up)
+  fabricCanvas.on('object:modified', function(e) {
+    if (e.target === currentImage) {
+      console.log('✅ Trasformazione immagine completata - sincronizzazione overlay');
+
+      // Ridisegna tutti gli overlay
+      if (originalLandmarks && originalLandmarks.length > 0) {
+        setTimeout(() => redrawLandmarks(), 50);
+      }
+
+      // Sincronizza green dots overlay se presente
+      if (window.currentGreenDotsOverlay && typeof syncGreenDotsOverlayWithViewport === 'function') {
+        setTimeout(() => syncGreenDotsOverlayWithViewport(), 100);
+      }
+
+      // Ridisegna misurazioni se presenti
+      if (typeof redrawAllMeasurementOverlays === 'function') {
+        setTimeout(() => redrawAllMeasurementOverlays(), 100);
+      }
+    }
+  });
+
+  console.log('✅ Sincronizzazione overlay configurata');
 }

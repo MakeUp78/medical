@@ -15,13 +15,18 @@ from functools import wraps
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
+
+# Carica variabili d'ambiente dal file .env
+load_dotenv()
 
 # OAuth libraries
 from authlib.integrations.flask_client import OAuth
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///kimerika.db'
+# Usa DATABASE_URL da .env, fallback a SQLite solo se non configurato
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///kimerika.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # JWT Configuration
