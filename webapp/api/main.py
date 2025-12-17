@@ -250,6 +250,9 @@ class VoiceCommandResponse(BaseModel):
 class VoiceMessageRequest(BaseModel):
     message_key: str  # Chiave del messaggio predefinito
 
+class VoiceWelcomeRequest(BaseModel):
+    user_name: str  # Nome dell'utente per personalizzare il messaggio
+
 class VoiceKeywordCommand(BaseModel):
     keyword: str  # Parola chiave pronunciata dall'utente
     
@@ -2237,6 +2240,55 @@ async def speak_predefined_message(request: VoiceMessageRequest):
         return {
             "success": True,
             "message": "Audio generato",
+            "audio": f"data:audio/mp3;base64,{audio_base64}",
+            "text": text
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore generazione audio: {str(e)}")
+
+@app.post("/api/voice/speak-welcome")
+async def speak_welcome_message(request: VoiceWelcomeRequest):
+    """Fa pronunciare un messaggio di benvenuto personalizzato con il nome dell'utente."""
+    if not VOICE_ASSISTANT_AVAILABLE or voice_assistant is None:
+        raise HTTPException(status_code=503, detail="Voice Assistant non disponibile")
+
+    # Messaggio di benvenuto personalizzato con il nome utente
+    user_name = request.user_name or "utente"
+    text = f"Ciao {user_name}, io sono Kimerika e ti aiuterò nelle progettazioni delle tue dermopigmentazioni."
+
+    try:
+        import edge_tts
+
+        voice = voice_assistant.config.get("tts_voice", "it-IT-IsabellaNeural")
+
+        # Crea file temporaneo
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        temp_path = temp_file.name
+        temp_file.close()
+
+        # Genera audio
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(temp_path)
+
+        # Leggi e codifica
+        with open(temp_path, 'rb') as f:
+            audio_data = f.read()
+
+        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+
+        # Elimina file temporaneo
+        import time
+        for i in range(5):
+            try:
+                os.unlink(temp_path)
+                break
+            except PermissionError:
+                if i < 4:
+                    time.sleep(0.1)
+
+        return {
+            "success": True,
+            "message": "Messaggio di benvenuto generato",
             "audio": f"data:audio/mp3;base64,{audio_base64}",
             "text": text
         }
