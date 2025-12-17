@@ -1,0 +1,403 @@
+/* ========================================
+   MOBILE RESPONSIVE STYLES
+   Responsive design per dispositivi mobili
+   ======================================== */
+
+/* Media Query per Tablet e dispositivi medi (max 1024px) */
+@media (max-width: 1024px) {
+    .main-container {
+        grid-template-columns: 300px 1fr 300px;
+    }
+
+    .left-sidebar,
+    .right-sidebar {
+        width: 300px;
+        max-width: 300px;
+    }
+}
+
+/* Media Query per dispositivi mobili (max 768px) */
+@media (max-width: 768px) {
+    /* Layout principale - passa a layout verticale mobile */
+    .main-container {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr auto;
+        height: 100vh;
+    }
+
+    /* Sidebar sinistra - sempre visibile in alto su mobile */
+    .left-sidebar {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        max-height: 40vh;
+        overflow-y: auto;
+        border-right: none;
+        border-bottom: 2px solid #555555;
+        order: 1;
+    }
+
+    /* Canvas centrale - area principale su mobile */
+    .canvas-container {
+        width: 100%;
+        height: auto;
+        min-height: 300px;
+        flex: 1;
+        border-left: none;
+        border-right: none;
+        order: 2;
+    }
+
+    /* Sidebar destra - sempre visibile in basso su mobile */
+    .right-sidebar {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        max-height: 30vh;
+        overflow-y: auto;
+        border-left: none;
+        border-top: 2px solid #555555;
+        order: 3;
+    }
+
+    /* Toolbar canvas - pulsanti più grandi su mobile */
+    .canvas-toolbar {
+        flex-wrap: wrap;
+        padding: 8px;
+        gap: 6px;
+    }
+
+    .tool-btn {
+        padding: 10px 12px;
+        font-size: 13px;
+        min-height: 40px;
+        flex: 1 1 auto;
+        min-width: 80px;
+    }
+
+    /* Sezioni collassabili - più grandi su mobile */
+    .section-header {
+        padding: 12px;
+    }
+
+    .toggle-btn {
+        font-size: 14px;
+        padding: 10px 0;
+    }
+
+    /* Pulsanti - più grandi e touch-friendly */
+    .btn {
+        padding: 12px 16px;
+        font-size: 14px;
+        min-height: 44px;
+        margin: 4px 2px;
+    }
+
+    /* Griglie pulsanti - una colonna su mobile */
+    .button-grid,
+    .detection-grid,
+    .eyebrow-buttons {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+
+    /* Misurazioni predefinite - due colonne compatte */
+    .predefined-buttons {
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+    }
+
+    /* Badge - layout verticale su mobile */
+    .badges-container {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+
+    .badge {
+        font-size: 13px;
+        padding: 10px;
+    }
+
+    /* Sezione utente - compatta su mobile */
+    .user-section {
+        padding: 12px;
+        margin-bottom: 10px;
+    }
+
+    .user-avatar {
+        font-size: 28px;
+        width: 40px;
+        height: 40px;
+    }
+
+    .user-name {
+        font-size: 15px;
+    }
+
+    /* Tabelle - scrollabili orizzontalmente */
+    .table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .data-table {
+        min-width: 100%;
+        font-size: 11px;
+    }
+
+    .data-table th,
+    .data-table td {
+        padding: 6px 4px;
+        white-space: nowrap;
+    }
+
+    /* Modal - adatta a schermo mobile */
+    .modal-content {
+        width: 95%;
+        max-width: 95%;
+        margin: 2% auto;
+        padding: 20px;
+        max-height: 96vh;
+    }
+
+    .modal-header h3 {
+        font-size: 16px;
+    }
+
+    /* Status bar - più alto per touch */
+    .status-bar {
+        height: 40px;
+        font-size: 12px;
+    }
+
+    /* Canvas wrapper - adattato per mobile */
+    .canvas-wrapper {
+        min-height: 250px;
+    }
+
+    #main-canvas {
+        max-width: 100%;
+        height: auto;
+    }
+
+    /* Info cursore - più grande su mobile */
+    .cursor-info {
+        font-size: 11px;
+        padding: 6px 10px;
+    }
+
+    /* Preset buttons - layout compatto */
+    .preset-buttons {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+
+    /* Controlli video - stack verticale */
+    .video-controls {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .video-controls .btn {
+        width: 100%;
+    }
+
+    /* Voice assistant sidebar - compatto su mobile */
+    .voice-controls-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .voice-controls-sidebar .btn {
+        width: 100%;
+    }
+
+    /* Scrollbar più sottile su mobile */
+    ::-webkit-scrollbar {
+        width: 8px;
+    }
+}
+
+/* Media Query per smartphone piccoli (max 480px) */
+@media (max-width: 480px) {
+    /* Font base più piccolo per smartphone */
+    body {
+        font-size: 12px;
+    }
+
+    /* Sidebar ancora più compatte */
+    .left-sidebar,
+    .right-sidebar {
+        max-height: 35vh;
+    }
+
+    /* Pulsanti più compatti */
+    .btn {
+        padding: 10px 12px;
+        font-size: 12px;
+        min-height: 40px;
+    }
+
+    .tool-btn {
+        padding: 8px 10px;
+        font-size: 11px;
+        min-height: 36px;
+        min-width: 70px;
+    }
+
+    /* Misurazioni predefinite - singola colonna su schermi molto piccoli */
+    .predefined-buttons {
+        grid-template-columns: 1fr;
+    }
+
+    /* Sezioni più compatte */
+    .section-header {
+        padding: 10px;
+    }
+
+    .toggle-btn {
+        font-size: 12px;
+    }
+
+    /* Tabelle ancora più compatte */
+    .data-table {
+        font-size: 10px;
+    }
+
+    .data-table th,
+    .data-table td {
+        padding: 4px 2px;
+    }
+
+    /* User section compatta */
+    .user-avatar {
+        font-size: 24px;
+        width: 35px;
+        height: 35px;
+    }
+
+    .user-name {
+        font-size: 13px;
+    }
+
+    .role-badge {
+        font-size: 10px;
+        padding: 3px 8px;
+    }
+
+    /* Badge più piccoli */
+    .badge {
+        font-size: 11px;
+        padding: 8px;
+    }
+
+    /* Modal full screen su smartphone */
+    .modal-content {
+        width: 100%;
+        max-width: 100%;
+        height: 100%;
+        max-height: 100vh;
+        margin: 0;
+        border-radius: 0;
+    }
+
+    /* Canvas toolbar compatto */
+    .canvas-toolbar {
+        padding: 6px;
+        min-height: 50px;
+    }
+
+    /* Sliders più grandi per tocco */
+    .slider {
+        height: 24px;
+    }
+
+    .slider::-webkit-slider-thumb,
+    .slider::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+    }
+}
+
+/* Landscape mode per smartphone */
+@media (max-width: 768px) and (orientation: landscape) {
+    .main-container {
+        grid-template-columns: 250px 1fr 250px;
+        grid-template-rows: 1fr;
+    }
+
+    .left-sidebar,
+    .right-sidebar {
+        max-height: 100vh;
+        height: 100%;
+    }
+
+    .canvas-container {
+        height: 100%;
+    }
+}
+
+/* Fix per dispositivi iOS */
+@supports (-webkit-touch-callout: none) {
+    /* iOS specific fixes */
+    .main-container {
+        height: -webkit-fill-available;
+    }
+
+    input, button, select, textarea {
+        -webkit-appearance: none;
+        border-radius: 0;
+    }
+
+    button {
+        border-radius: 8px;
+    }
+}
+
+/* Miglioramenti touch per tutti i dispositivi mobili */
+@media (hover: none) and (pointer: coarse) {
+    /* Aumenta area touch per tutti gli elementi interattivi */
+    button,
+    .btn,
+    .tool-btn,
+    a {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    /* Rimuovi hover effects su touch devices */
+    .btn:hover,
+    .tool-btn:hover,
+    .section-header:hover {
+        transform: none;
+        box-shadow: none;
+    }
+
+    /* Aggiungi feedback visivo al tap */
+    .btn:active,
+    .tool-btn:active {
+        opacity: 0.7;
+        transform: scale(0.98);
+    }
+}
+
+/* Print styles - nasconde elementi non necessari */
+@media print {
+    .left-sidebar,
+    .right-sidebar,
+    .canvas-toolbar,
+    .status-bar,
+    .modal {
+        display: none !important;
+    }
+
+    .canvas-container {
+        border: none;
+    }
+
+    .main-container {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+}
