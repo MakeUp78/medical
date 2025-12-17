@@ -253,6 +253,31 @@ class VoiceAssistant {
   }
 
   /**
+   * Fa parlare Isabella con messaggio di benvenuto personalizzato
+   */
+  async speakWelcome(userName) {
+    if (this.isMuted) return;
+
+    try {
+      const response = await fetch(`${this.apiUrl}/api/voice/speak-welcome`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_name: userName })
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.audio) {
+        console.log(`🔊 Kimerika: "${data.text}"`);
+        this.audioPlayer.src = data.audio;
+        await this.audioPlayer.play();
+      }
+    } catch (error) {
+      console.error('Errore TTS benvenuto:', error);
+    }
+  }
+
+  /**
    * Silenzia/riattiva audio
    */
   toggleMute() {

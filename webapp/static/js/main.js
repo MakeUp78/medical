@@ -75,12 +75,18 @@ async function checkAuthentication() {
   }
 }
 
+// Variabile globale per memorizzare il nome utente
+window.currentUserName = '';
+
 /**
  * Aggiorna UI con dati utente
  */
 function updateUserUI(user) {
   const userNameElement = document.getElementById('user-name');
   const roleBadgeElement = document.getElementById('role-badge');
+
+  // Salva il nome utente globalmente per l'assistente vocale
+  window.currentUserName = user.firstname || '';
 
   if (userNameElement) {
     userNameElement.textContent = `${user.firstname} ${user.lastname}`;
@@ -6642,7 +6648,16 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   console.log('✅ Autenticazione completata, inizializzazione app...');
 
-  // STEP 2: Inizializza il resto dell'applicazione
+  // STEP 2: Messaggio di benvenuto personalizzato
+  if (window.currentUserName && typeof voiceAssistant !== 'undefined') {
+    // Aspetta un piccolo ritardo per dare tempo all'interfaccia di caricarsi
+    setTimeout(() => {
+      voiceAssistant.speakWelcome(window.currentUserName);
+      console.log(`👋 Messaggio di benvenuto per ${window.currentUserName}`);
+    }, 1000);
+  }
+
+  // STEP 3: Inizializza il resto dell'applicazione
   // (il resto del codice di inizializzazione esistente continua qui)
 });
 
