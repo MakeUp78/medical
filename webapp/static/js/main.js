@@ -3,21 +3,118 @@
  * Replica comportamenti dell'app desktop
  */
 
-// 🚀 VERSION CHECK - main.js v6.5 - LEFT SIDEBAR FIX
-console.log('🚀🚀🚀 main.js v6.5 - LEFT SIDEBAR FIX! 🚀🚀🚀');
+// 🚀 VERSION CHECK - main.js v6.17 - AUTH SYSTEM + LEFT SIDEBAR FIX + CANVAS MODES
+console.log('🚀🚀🚀 main.js v6.17 - AUTH SYSTEM + LEFT SIDEBAR FIX + CANVAS MODES! 🚀🚀🚀');
 console.log('   ✅ Cerca CORREZIONE SOPRACCIGLIA nella LEFT sidebar (non right!)');
 console.log('   ✅ Debug dettagliato per trovare la sezione');
 console.log('   ✅ Ora il calcolo usa la distanza perpendicolare dalla linea di simmetria');
 console.log('   ✅ Non più solo distanza orizzontale (X)!');
+console.log('   ✅ Canvas modes system - immagine bloccata di default');
 console.log('   ℹ️ Se vedi ancora calcoli errati:');
 console.log('   1️⃣ Premi Ctrl+F5 per forzare reload');
 console.log('   2️⃣ Ripremi il pulsante GREEN DOTS per rigenerare la tabella');
+console.log('   ✅ window.toggleSection definita:', typeof window.toggleSection === 'function');
 
 // Variabili globali (controllo per evitare ridichiarazioni)
 if (typeof currentTool === 'undefined') var currentTool = 'selection';
 if (typeof isWebcamActive === 'undefined') var isWebcamActive = false;
 if (typeof currentImage === 'undefined') var currentImage = null;
 if (typeof currentLandmarks === 'undefined') var currentLandmarks = [];
+
+// Array per memorizzare le linee perpendicolari all'asse (posizioni normalizzate 0-1)
+if (typeof perpendicularLines === 'undefined') var perpendicularLines = [];
+
+// Esponi currentLandmarks globalmente
+window.currentLandmarks = currentLandmarks;
+window.currentImage = currentImage;
+window.perpendicularLines = perpendicularLines;
+
+// ===================================
+// SISTEMA DI AUTENTICAZIONE
+// ===================================
+
+const AUTH_SERVER_URL = 'http://localhost:5000';
+
+/**
+ * Verifica autenticazione all'avvio della pagina
+ */
+async function checkAuthentication() {
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+
+    if (!token) {
+        console.log('🔒 Nessun token trovato, redirect a landing.html');
+        window.location.href = '/landing.html';
+        return false;
+    }
+
+    try {
+        const response = await fetch(`${AUTH_SERVER_URL}/api/auth/verify`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.user) {
+            console.log('✅ Utente autenticato:', data.user.email);
+            updateUserUI(data.user);
+            return true;
+        } else {
+            console.log('❌ Token invalido, redirect a landing.html');
+            localStorage.removeItem('auth_token');
+            sessionStorage.removeItem('auth_token');
+            window.location.href = '/landing.html';
+            return false;
+        }
+    } catch (error) {
+        console.error('❌ Errore verifica autenticazione:', error);
+        window.location.href = '/landing.html';
+        return false;
+    }
+}
+
+/**
+ * Aggiorna UI con dati utente
+ */
+function updateUserUI(user) {
+    const userNameElement = document.getElementById('user-name');
+    const roleBadgeElement = document.getElementById('role-badge');
+
+    if (userNameElement) {
+        userNameElement.textContent = `${user.firstname} ${user.lastname}`;
+    }
+
+    if (roleBadgeElement) {
+        const roleText = user.role === 'admin' ? 'Amministratore' : 'Operatore';
+        roleBadgeElement.textContent = roleText;
+
+        // Rimuovi tutte le classi role esistenti
+        roleBadgeElement.classList.remove('admin', 'operator');
+
+        // Aggiungi la classe corretta
+        roleBadgeElement.classList.add(user.role);
+    }
+
+    console.log('👤 UI utente aggiornata:', {
+        name: `${user.firstname} ${user.lastname}`,
+        role: user.role,
+        plan: user.plan
+    });
+}
+
+/**
+ * Logout utente
+ */
+function logout() {
+    console.log('👋 Logout utente');
+    localStorage.removeItem('auth_token');
+    sessionStorage.removeItem('auth_token');
+    window.location.href = '/landing.html';
+}
+
+// Esponi funzione logout globalmente per onclick
+window.logout = logout;
 
 // === SISTEMA SEMPLIFICATO - LANDMARKS SEMPRE DISPONIBILI ===
 let landmarksAutoDetected = false;
@@ -33,24 +130,37 @@ let scoringWeights = {
 
 // Funzione globale per gestione sezioni (deve essere disponibile immediatamente)
 window.toggleSection = function (headerElement) {
+  console.log('🔧 toggleSection chiamata', headerElement);
+
   const section = headerElement.parentElement;
+  console.log('📦 Section element:', section);
+
   const content = section.querySelector('.section-content');
+  console.log('📄 Content element:', content);
+
   const icon = headerElement.querySelector('.icon');
+  console.log('🔽 Icon element:', icon);
+
+  if (!content) {
+    console.error('❌ Impossibile trovare .section-content');
+    return;
+  }
 
   const isExpanded = section.dataset.expanded === 'true';
+  console.log('📊 isExpanded:', isExpanded);
 
   if (isExpanded) {
     // Chiudi sezione
-    content.style.display = 'none';
+    content.style.setProperty('display', 'none', 'important');
     section.dataset.expanded = 'false';
-    icon.textContent = '►';
-    console.log('📁 Sezione chiusa:', headerElement.querySelector('.toggle-btn').textContent);
+    if (icon) icon.textContent = '►';
+    console.log('📁 Sezione chiusa:', headerElement.querySelector('.toggle-btn')?.textContent);
   } else {
     // Apri sezione
-    content.style.display = 'block';
+    content.style.setProperty('display', 'block', 'important');
     section.dataset.expanded = 'true';
-    icon.textContent = '▼';
-    console.log('📂 Sezione aperta:', headerElement.querySelector('.toggle-btn').textContent);
+    if (icon) icon.textContent = '▼';
+    console.log('📂 Sezione aperta:', headerElement.querySelector('.toggle-btn')?.textContent);
   }
 
   // Forza ridimensionamento canvas dopo cambi nel layout
@@ -175,6 +285,9 @@ async function detectLandmarksSilent() {
 
         return { x, y, z: lm.z || 0, visibility: lm.visibility || 1.0 };
       });
+
+      // Sincronizza con window.currentLandmarks
+      window.currentLandmarks = currentLandmarks;
 
       console.log(`🎯 Landmarks auto-rilevati: ${currentLandmarks.length}`);
       return true;
@@ -930,6 +1043,7 @@ async function runAutomaticVideoAnalysis(file) {
 
         if (result.landmarks && result.landmarks.length > 0) {
           currentLandmarks = result.landmarks;
+          window.currentLandmarks = currentLandmarks;
           console.log('💾 Salvati', result.landmarks.length, 'landmarks pre-analizzati dal video');
         } else {
           console.log('🔍 Rilevamento landmarks dal frame del video...');
@@ -1016,6 +1130,7 @@ async function runAutomaticVideoAnalysisActual(file) {
         // Se il video aveva landmarks preanalizzati, usali
         if (result.landmarks && result.landmarks.length > 0) {
           currentLandmarks = result.landmarks;
+          window.currentLandmarks = currentLandmarks;
           console.log('💾 Salvati', result.landmarks.length, 'landmarks pre-analizzati dal video');
         } else {
           // Altrimenti rileva landmarks dal frame risultante
@@ -1875,21 +1990,41 @@ function updateCanvasWithBestFrame(imageData) {
         img.scale(sizing.scale);
 
         // Posiziona l'immagine utilizzando tutto lo spazio disponibile
+        // IMMAGINE COMPLETAMENTE NON INTERATTIVA
         img.set({
           left: sizing.left,
           top: sizing.top,
-          selectable: true,   // Abilita selezione per trasformazioni
-          evented: true,      // Abilita eventi per trasformazioni
-          lockUniScaling: true, // Mantieni proporzioni durante resize
-          cornerStyle: 'circle',
-          cornerSize: 10,
-          transparentCorners: false,
-          cornerColor: '#007bff'
+          selectable: false,      // DISABILITA selezione
+          evented: false,         // DISABILITA eventi
+          lockMovementX: true,
+          lockMovementY: true,
+          lockScalingX: true,
+          lockScalingY: true,
+          lockRotation: true,
+          hasControls: false,     // Nessun controllo
+          hasBorders: false,      // Nessun bordo
+          hoverCursor: 'default'  // Cursore normale
         });
 
         // Aggiungi al canvas e metti in background
         fabricCanvas.add(img);
         fabricCanvas.sendToBack(img);
+
+        // FORZA il blocco dell'immagine dopo l'aggiunta al canvas
+        img.selectable = false;
+        img.evented = false;
+        img.lockMovementX = true;
+        img.lockMovementY = true;
+        img.lockScalingX = true;
+        img.lockScalingY = true;
+        img.lockRotation = true;
+        img.hasControls = false;
+        img.hasBorders = false;
+
+        // Configura sincronizzazione overlay (anche se immagine bloccata)
+        if (typeof setupImageTransformSync === 'function') {
+          setupImageTransformSync(img);
+        }
 
         // IMPORTANTE: Assegna currentImage per le funzioni che ne hanno bisogno
         currentImage = img;
@@ -2141,21 +2276,140 @@ async function saveBestFramesLocally(frames) {
 // === GESTIONE STRUMENTI CANVAS ===
 
 function setTool(tool) {
-  currentTool = tool;
+  console.log('🔧 setTool chiamato:', tool);
 
-  // Aggiorna pulsanti toolbar
-  document.querySelectorAll('.tool-btn').forEach(btn => {
-    btn.classList.remove('active');
-  });
+  // Gestione speciale per modalità MISURA
+  if (tool === 'measure') {
+    if (typeof window.toggleMeasureMode === 'function') {
+      window.toggleMeasureMode();
+    } else {
+      console.warn('⚠️ toggleMeasureMode non disponibile');
+    }
+    return;
+  }
 
-  document.querySelector(`[data-tool="${tool}"]`).classList.add('active');
+  // Per tutti gli altri tool, usa il nuovo sistema modalità
+  if (typeof window.setCanvasMode === 'function') {
+    window.setCanvasMode(tool);
+  } else {
+    // Fallback per compatibilità
+    currentTool = tool;
 
-  // Aggiorna cursore
-  updateCanvasCursor(tool);
-  updateModeBadge(tool);
+    // Aggiorna pulsanti toolbar
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+      btn.classList.remove('active');
+    });
 
-  console.log('🔧 Strumento selezionato:', tool);
+    const activeBtn = document.querySelector(`[data-tool="${tool}"]`);
+    if (activeBtn) {
+      activeBtn.classList.add('active');
+    }
+
+    // Aggiorna cursore
+    updateCanvasCursor(tool);
+    updateModeBadge(tool);
+  }
+
+  console.log('✅ Strumento selezionato:', tool);
 }
+
+// === ROTAZIONE IMMAGINE ===
+
+function rotateImageClockwise() {
+  /**
+   * Ruota l'immagine di 1 grado in senso orario
+   */
+  if (!currentImage) {
+    console.warn('⚠️ Nessuna immagine da ruotare');
+    return;
+  }
+
+  const currentAngle = currentImage.angle || 0;
+  const newAngle = currentAngle + 1;
+
+  currentImage.rotate(newAngle);
+  fabricCanvas.renderAll();
+
+  // Sincronizza TUTTI gli overlay
+  setTimeout(() => {
+    // Ridisegna landmarks se visibili
+    if (window.originalLandmarks && window.originalLandmarks.length > 0 && typeof window.redrawLandmarks === 'function') {
+      window.redrawLandmarks();
+    }
+
+    // Sincronizza green dots overlay
+    if (window.currentGreenDotsOverlay && typeof syncGreenDotsOverlayWithViewport === 'function') {
+      syncGreenDotsOverlayWithViewport();
+    }
+
+    // Ridisegna misurazioni
+    if (typeof redrawAllMeasurementOverlays === 'function') {
+      redrawAllMeasurementOverlays();
+    }
+
+    // Ridisegna asse di simmetria se presente
+    if (window.symmetryAxisVisible && typeof drawSymmetryAxis === 'function') {
+      drawSymmetryAxis();
+    }
+
+    // Ridisegna linee perpendicolari
+    if (typeof redrawPerpendicularLines === 'function') {
+      redrawPerpendicularLines();
+    }
+  }, 50);
+
+  console.log(`↻ Immagine ruotata: ${currentAngle}° → ${newAngle}°`);
+}
+
+function rotateImageCounterClockwise() {
+  /**
+   * Ruota l'immagine di 1 grado in senso antiorario
+   */
+  if (!currentImage) {
+    console.warn('⚠️ Nessuna immagine da ruotare');
+    return;
+  }
+
+  const currentAngle = currentImage.angle || 0;
+  const newAngle = currentAngle - 1;
+
+  currentImage.rotate(newAngle);
+  fabricCanvas.renderAll();
+
+  // Sincronizza TUTTI gli overlay
+  setTimeout(() => {
+    // Ridisegna landmarks se visibili
+    if (window.originalLandmarks && window.originalLandmarks.length > 0 && typeof window.redrawLandmarks === 'function') {
+      window.redrawLandmarks();
+    }
+
+    // Sincronizza green dots overlay
+    if (window.currentGreenDotsOverlay && typeof syncGreenDotsOverlayWithViewport === 'function') {
+      syncGreenDotsOverlayWithViewport();
+    }
+
+    // Ridisegna misurazioni
+    if (typeof redrawAllMeasurementOverlays === 'function') {
+      redrawAllMeasurementOverlays();
+    }
+
+    // Ridisegna asse di simmetria se presente
+    if (window.symmetryAxisVisible && typeof drawSymmetryAxis === 'function') {
+      drawSymmetryAxis();
+    }
+
+    // Ridisegna linee perpendicolari
+    if (typeof redrawPerpendicularLines === 'function') {
+      redrawPerpendicularLines();
+    }
+  }, 50);
+
+  console.log(`↺ Immagine ruotata: ${currentAngle}° → ${newAngle}°`);
+}
+
+// Rendi le funzioni globali
+window.rotateImageClockwise = rotateImageClockwise;
+window.rotateImageCounterClockwise = rotateImageCounterClockwise;
 
 function updateCanvasCursor(tool) {
   const canvas = document.getElementById('main-canvas');
@@ -2214,6 +2468,11 @@ let startX = 0;
 let startY = 0;
 
 function onCanvasMouseDown(e) {
+  // Non attivare il disegno se siamo in modalità misurazione o selezione landmarks
+  if (window.measurementMode || window.landmarkSelectionMode) {
+    return;
+  }
+
   isDrawing = true;
   const rect = e.target.getBoundingClientRect();
   startX = e.clientX - rect.left;
@@ -2230,13 +2489,20 @@ function onCanvasMouseMove(e) {
   // Aggiorna info cursore
   updateCursorInfo(x, y);
 
-  if (isDrawing) {
+  // Non disegnare se siamo in modalità misurazione o selezione landmarks
+  if (isDrawing && !window.measurementMode && !window.landmarkSelectionMode) {
     // Disegna in base allo strumento selezionato
     drawWithCurrentTool(startX, startY, x, y);
   }
 }
 
 function onCanvasMouseUp(e) {
+  // Non finalizzare il disegno se siamo in modalità misurazione o selezione landmarks
+  if (window.measurementMode || window.landmarkSelectionMode) {
+    isDrawing = false;
+    return;
+  }
+
   isDrawing = false;
   const rect = e.target.getBoundingClientRect();
   const endX = e.clientX - rect.left;
@@ -2459,43 +2725,49 @@ function updateCanvasDisplay() {
 
 function transformLandmarkCoordinate(landmark) {
   /**
-   * Trasforma le coordinate del landmark dall'immagine originale 
-   * alle coordinate scalate e centrate del canvas.
+   * Trasforma coordinate landmark usando il centro CORRETTO dell'immagine di Fabric.js
    */
-  if (!window.imageScale || !window.imageOffset) {
-    console.warn('⚠️ Informazioni di scala non disponibili, ricalcolo...');
-
-    // Prova a ricalcolare le informazioni di scala dall'immagine corrente
-    if (currentImage && fabricCanvas) {
-      recalculateImageTransformation();
-    }
-
-    // Se ancora non disponibili, usa coordinate originali
-    if (!window.imageScale || !window.imageOffset) {
-      console.error('❌ Impossibile calcolare trasformazione coordinate');
-      return landmark;
-    }
+  if (!currentImage || !fabricCanvas) {
+    return landmark;
   }
 
-  const transformed = {
-    x: landmark.x * window.imageScale + window.imageOffset.x,
-    y: landmark.y * window.imageScale + window.imageOffset.y,
+  // Dimensioni originali
+  const element = currentImage.getElement();
+  const originalWidth = element.naturalWidth || element.width;
+  const originalHeight = element.naturalHeight || element.height;
+
+  // Normalizza in 0-1
+  const normX = landmark.x / originalWidth;
+  const normY = landmark.y / originalHeight;
+
+  // Dimensioni scalate
+  const scaledW = currentImage.width * currentImage.scaleX;
+  const scaledH = currentImage.height * currentImage.scaleY;
+
+  // Coordinate relative al centro (prima di ruotare)
+  let relX = (normX - 0.5) * scaledW;
+  let relY = (normY - 0.5) * scaledH;
+
+  // Applica rotazione
+  const angleRad = (currentImage.angle || 0) * Math.PI / 180;
+  if (angleRad !== 0) {
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const rotX = relX * cos - relY * sin;
+    const rotY = relX * sin + relY * cos;
+    relX = rotX;
+    relY = rotY;
+  }
+
+  // Ottieni il centro EFFETTIVO dell'immagine (gestisce originX/originY)
+  const center = currentImage.getCenterPoint();
+
+  return {
+    x: center.x + relX,
+    y: center.y + relY,
     z: landmark.z || 0,
     visibility: landmark.visibility || 1.0
   };
-
-  // Debug dettagliato per trasformazione coordinate - SEMPRE ABILITATO
-  if (true) {  // Debug forzato sempre attivo
-    console.log(`🔄 TRASFORMAZIONE DETTAGLIATA:
-      Input: (${landmark.x.toFixed(1)}, ${landmark.y.toFixed(1)})
-      Scala: ${window.imageScale?.toFixed(4)}
-      Offset: (${window.imageOffset?.x?.toFixed(1)}, ${window.imageOffset?.y?.toFixed(1)})
-      Calcolo X: ${landmark.x.toFixed(1)} * ${window.imageScale?.toFixed(4)} + ${window.imageOffset?.x?.toFixed(1)} = ${transformed.x.toFixed(1)}
-      Calcolo Y: ${landmark.y.toFixed(1)} * ${window.imageScale?.toFixed(4)} + ${window.imageOffset?.y?.toFixed(1)} = ${transformed.y.toFixed(1)}
-      Output: (${transformed.x.toFixed(1)}, ${transformed.y.toFixed(1)})`);
-  }
-
-  return transformed;
 }
 
 function recalculateImageTransformation() {
@@ -2564,21 +2836,12 @@ function clearAllOverlays() {
 
 function clearLandmarks() {
   /**
-   * Pulisce tutti gli overlay di landmarks dal canvas.
-   * Chiamata da updateCanvasDisplay per gestire la visualizzazione condizionale.
+   * Pulisce SOLO i landmarks dal canvas, senza toccare asse o green dots
    */
   if (fabricCanvas) {
-    // Rimuovi tutti gli oggetti landmark dal canvas
+    // Rimuovi SOLO gli oggetti landmark dal canvas
     const landmarks = fabricCanvas.getObjects().filter(obj => obj.isLandmark);
     landmarks.forEach(landmark => fabricCanvas.remove(landmark));
-
-    // Rimuovi anche asse e green dots per pulizia completa
-    const axes = fabricCanvas.getObjects().filter(obj => obj.isSymmetryAxis);
-    axes.forEach(axis => fabricCanvas.remove(axis));
-
-    const dots = fabricCanvas.getObjects().filter(obj => obj.isGreenDot);
-    dots.forEach(dot => fabricCanvas.remove(dot));
-
     fabricCanvas.renderAll();
   }
 }
@@ -2590,6 +2853,9 @@ function drawSymmetryAxis() {
    * Landmarks MediaPipe: Glabella (9) e Philtrum (164)
    */
   console.log('📏 drawSymmetryAxis - Sistema Semplificato');
+
+  // PRIMA rimuovi l'asse precedente (se esiste)
+  clearSymmetryAxis();
 
   // Se non ci sono landmarks, prova auto-rilevamento
   if (!currentLandmarks || currentLandmarks.length === 0) {
@@ -2636,63 +2902,61 @@ function drawSymmetryAxis() {
     philtrum: { x: transformedPhiltrum.x.toFixed(1), y: transformedPhiltrum.y.toFixed(1) }
   });
 
-  // DEBUG: Mostra visivamente i punti usati per l'asse
-  const debugGlabella = new fabric.Circle({
-    left: transformedGlabella.x - 3,
-    top: transformedGlabella.y - 3,
-    radius: 3,
-    fill: '#00FF00',
-    stroke: '#000000',
-    strokeWidth: 1,
-    selectable: false,
-    evented: false,
-    isDebugPoint: true
-  });
+  // DEBUG: Cerchi di debug rimossi per evitare grafiche indesiderate
+  // const debugGlabella = new fabric.Circle({
+  //   left: transformedGlabella.x - 3,
+  //   top: transformedGlabella.y - 3,
+  //   radius: 3,
+  //   fill: '#00FF00',
+  //   stroke: '#000000',
+  //   strokeWidth: 1,
+  //   selectable: false,
+  //   evented: false,
+  //   isDebugPoint: true
+  // });
 
-  const debugPhiltrum = new fabric.Circle({
-    left: transformedPhiltrum.x - 3,
-    top: transformedPhiltrum.y - 3,
-    radius: 3,
-    fill: '#FFFF00',
-    stroke: '#000000',
-    strokeWidth: 1,
-    selectable: false,
-    evented: false,
-    isDebugPoint: true
-  });
+  // const debugPhiltrum = new fabric.Circle({
+  //   left: transformedPhiltrum.x - 3,
+  //   top: transformedPhiltrum.y - 3,
+  //   radius: 3,
+  //   fill: '#FFFF00',
+  //   stroke: '#000000',
+  //   strokeWidth: 1,
+  //   selectable: false,
+  //   evented: false,
+  //   isDebugPoint: true
+  // });
 
-  fabricCanvas.add(debugGlabella);
-  fabricCanvas.add(debugPhiltrum);
+  // fabricCanvas.add(debugGlabella);
+  // fabricCanvas.add(debugPhiltrum);
 
   if (!glabella || !philtrum) {
     console.warn('⚠️ Landmarks 9 o 164 non disponibili per l\'asse');
     return;
   }
 
-  // Calcola la direzione della linea usando le coordinate trasformate
+  // Calcola la direzione della linea usando le coordinate trasformate (già ruotate)
   const dx = transformedPhiltrum.x - transformedGlabella.x;
   const dy = transformedPhiltrum.y - transformedGlabella.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
 
-  // Estendi la linea per tutta l'altezza del canvas (come nell'app desktop)
+  // Normalizza la direzione
+  const dirX = dx / length;
+  const dirY = dy / length;
+
+  // Estendi la linea in entrambe le direzioni per coprire tutto il canvas
+  // Usa una lunghezza grande abbastanza da coprire qualsiasi rotazione
+  const canvasWidth = fabricCanvas.getWidth();
   const canvasHeight = fabricCanvas.getHeight();
+  const maxExtension = Math.sqrt(canvasWidth * canvasWidth + canvasHeight * canvasHeight);
 
-  let topX, topY, bottomX, bottomY;
+  // Punto superiore: estendi dalla glabella nella direzione opposta
+  const topX = transformedGlabella.x - dirX * maxExtension;
+  const topY = transformedGlabella.y - dirY * maxExtension;
 
-  if (Math.abs(dy) > 0.1) {
-    // Calcola i punti di estensione
-    // Punto in alto (y=0)
-    topX = transformedGlabella.x - (transformedGlabella.y * dx / dy);
-    topY = 0;
-
-    // Punto in basso (y=canvasHeight)  
-    bottomX = transformedGlabella.x + ((canvasHeight - transformedGlabella.y) * dx / dy);
-    bottomY = canvasHeight;
-  } else {
-    // Linea verticale se dy è troppo piccolo
-    topX = bottomX = transformedGlabella.x;
-    topY = 0;
-    bottomY = canvasHeight;
-  }
+  // Punto inferiore: estendi dal philtrum nella direzione principale
+  const bottomX = transformedPhiltrum.x + dirX * maxExtension;
+  const bottomY = transformedPhiltrum.y + dirY * maxExtension;
 
   // Crea linea asse con stile dell'app desktop
   const axisLine = new fabric.Line([topX, topY, bottomX, bottomY], {
@@ -2712,10 +2976,296 @@ function drawSymmetryAxis() {
 
 function clearSymmetryAxis() {
   if (fabricCanvas) {
-    const axes = fabricCanvas.getObjects().filter(obj => obj.isSymmetryAxis);
+    const axes = fabricCanvas.getObjects().filter(obj => obj.isSymmetryAxis || obj.isDebugPoint);
     axes.forEach(axis => fabricCanvas.remove(axis));
     fabricCanvas.renderAll();
+    console.log('🧹 Asse di simmetria rimosso');
   }
+}
+
+// Esponi funzioni asse di simmetria globalmente
+window.drawSymmetryAxis = drawSymmetryAxis;
+window.clearSymmetryAxis = clearSymmetryAxis;
+
+// === GESTIONE LINEE PERPENDICOLARI ALL'ASSE ===
+
+let isRedrawingLines = false; // Flag per evitare loop infiniti
+
+function addPerpendicularLine(normalizedPosition) {
+  /**
+   * Aggiunge una linea perpendicolare all'asse di simmetria
+   * normalizedPosition: posizione lungo l'asse (0=glabella, 1=philtrum, può essere <0 o >1)
+   */
+  perpendicularLines.push(normalizedPosition);
+  window.perpendicularLines = perpendicularLines;
+
+  // Crea SOLO la nuova linea, senza ridisegnare tutte le altre
+  createSinglePerpendicularLine(normalizedPosition);
+
+  console.log(`➕ Linea perpendicolare aggiunta: ${normalizedPosition.toFixed(3)}`);
+}
+
+function createSinglePerpendicularLine(normalizedPos) {
+  /**
+   * Crea una singola linea perpendicolare senza toccare le altre
+   */
+  if (!currentLandmarks || currentLandmarks.length === 0) return;
+  if (!currentLandmarks[9] || !currentLandmarks[164]) return;
+
+  const glabella = currentLandmarks[9];
+  const philtrum = currentLandmarks[164];
+
+  const transformedGlabella = transformLandmarkCoordinate(glabella);
+  const transformedPhiltrum = transformLandmarkCoordinate(philtrum);
+
+  // Direzione dell'asse
+  const dx = transformedPhiltrum.x - transformedGlabella.x;
+  const dy = transformedPhiltrum.y - transformedGlabella.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const axisX = dx / length;
+  const axisY = dy / length;
+
+  // Direzione perpendicolare (ruotata di 90°)
+  const perpX = -axisY;
+  const perpY = axisX;
+
+  // Lunghezza della linea perpendicolare (copre tutto il canvas)
+  const canvasWidth = fabricCanvas.getWidth();
+  const canvasHeight = fabricCanvas.getHeight();
+  const lineLength = Math.sqrt(canvasWidth * canvasWidth + canvasHeight * canvasHeight) * 2;
+
+  // Punto sull'asse
+  const pointX = transformedGlabella.x + axisX * normalizedPos * length;
+  const pointY = transformedGlabella.y + axisY * normalizedPos * length;
+
+  // Punti della linea perpendicolare
+  const x1 = pointX - perpX * lineLength / 2;
+  const y1 = pointY - perpY * lineLength / 2;
+  const x2 = pointX + perpX * lineLength / 2;
+  const y2 = pointY + perpY * lineLength / 2;
+
+  console.log(`📏 Creazione linea: normalizedPos=${normalizedPos.toFixed(3)}, center=(${pointX.toFixed(1)}, ${pointY.toFixed(1)})`);
+
+  const line = new fabric.Line([x1, y1, x2, y2], {
+    stroke: '#00FFFF',
+    strokeWidth: 2,
+    selectable: true,
+    evented: true,
+    lockRotation: true,
+    lockScalingX: true,
+    lockScalingY: true,
+    hasControls: false,
+    hasBorders: false,
+    isPerpendicularLine: true,
+    normalizedPosition: normalizedPos,
+    hoverCursor: 'move',
+    moveCursor: 'move',
+    perPixelTargetFind: true,
+    targetFindTolerance: 3 // Solo 3px di tolleranza
+  });
+
+  fabricCanvas.add(line);
+  console.log(`✅ Linea aggiunta al canvas - selectable: ${line.selectable}, evented: ${line.evented}`);
+
+  // Assicurati che l'handler sia attivo
+  setupPerpendicularLineHandlers();
+
+  fabricCanvas.renderAll();
+}
+
+function clearPerpendicularLines() {
+  /**
+   * Rimuove tutte le linee perpendicolari dal canvas
+   */
+  if (fabricCanvas) {
+    const lines = fabricCanvas.getObjects().filter(obj => obj.isPerpendicularLine);
+    lines.forEach(line => fabricCanvas.remove(line));
+    fabricCanvas.renderAll();
+  }
+}
+
+function redrawPerpendicularLines() {
+  /**
+   * Ridisegna tutte le linee perpendicolari seguendo l'asse di simmetria
+   */
+  if (!currentLandmarks || currentLandmarks.length === 0) return;
+  if (!currentLandmarks[9] || !currentLandmarks[164]) return;
+
+  isRedrawingLines = true; // Blocca l'event handler durante il ridisegno
+
+  // Disabilita TUTTI gli eventi di Fabric.js temporaneamente
+  fabricCanvas.off('object:moving');
+
+  clearPerpendicularLines();
+
+  const glabella = currentLandmarks[9];
+  const philtrum = currentLandmarks[164];
+
+  const transformedGlabella = transformLandmarkCoordinate(glabella);
+  const transformedPhiltrum = transformLandmarkCoordinate(philtrum);
+
+  // Direzione dell'asse
+  const dx = transformedPhiltrum.x - transformedGlabella.x;
+  const dy = transformedPhiltrum.y - transformedGlabella.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const axisX = dx / length;
+  const axisY = dy / length;
+
+  // Direzione perpendicolare (ruotata di 90°)
+  const perpX = -axisY;
+  const perpY = axisX;
+
+  // Lunghezza della linea perpendicolare (copre tutto il canvas)
+  const canvasWidth = fabricCanvas.getWidth();
+  const canvasHeight = fabricCanvas.getHeight();
+  const lineLength = Math.sqrt(canvasWidth * canvasWidth + canvasHeight * canvasHeight) * 2;
+
+  perpendicularLines.forEach((normalizedPos, index) => {
+    // Punto sull'asse
+    const pointX = transformedGlabella.x + axisX * normalizedPos * length;
+    const pointY = transformedGlabella.y + axisY * normalizedPos * length;
+
+    // Punti della linea perpendicolare
+    const x1 = pointX - perpX * lineLength / 2;
+    const y1 = pointY - perpY * lineLength / 2;
+    const x2 = pointX + perpX * lineLength / 2;
+    const y2 = pointY + perpY * lineLength / 2;
+
+    console.log(`📏 Creazione linea ${index}: normalizedPos=${normalizedPos.toFixed(3)}, center=(${pointX.toFixed(1)}, ${pointY.toFixed(1)})`);
+
+    const line = new fabric.Line([x1, y1, x2, y2], {
+      stroke: '#00FFFF',
+      strokeWidth: 2,
+      selectable: true,
+      evented: true,
+      lockRotation: true,
+      lockScalingX: true,
+      lockScalingY: true,
+      hasControls: false,
+      hasBorders: false, // Nessun bordo di selezione
+      isPerpendicularLine: true,
+      normalizedPosition: normalizedPos,
+      hoverCursor: 'move',
+      moveCursor: 'move',
+      perPixelTargetFind: true,
+      targetFindTolerance: 3 // Solo 3px di tolleranza
+    });
+
+    fabricCanvas.add(line);
+    console.log(`✅ Linea ${index} aggiunta al canvas - selectable: ${line.selectable}, evented: ${line.evented}`);
+  });
+
+  fabricCanvas.renderAll();
+
+  // Riabilita l'event handler
+  setupPerpendicularLineHandlers();
+  isRedrawingLines = false;
+}
+
+window.addPerpendicularLine = addPerpendicularLine;
+window.clearPerpendicularLines = clearPerpendicularLines;
+window.redrawPerpendicularLines = redrawPerpendicularLines;
+
+// Event handler per movimento linee perpendicolari
+let perpendicularLineHandler = null;
+
+function setupPerpendicularLineHandlers() {
+  if (!fabricCanvas) return;
+
+  // Rimuovi handler precedente se esiste
+  if (perpendicularLineHandler) {
+    fabricCanvas.off('object:moving', perpendicularLineHandler);
+  }
+
+  // Crea nuovo handler
+  perpendicularLineHandler = function(e) {
+    const obj = e.target;
+
+    console.log('🔄 object:moving event triggered', obj ? obj.type : 'no object', obj ? obj.isPerpendicularLine : false);
+
+    if (!obj || !obj.isPerpendicularLine) return;
+
+    // IGNORA se stiamo ridisegnando (evita loop infiniti)
+    if (isRedrawingLines) {
+      console.log('⏸️ Ignoring move - redrawing in progress');
+      return;
+    }
+
+    console.log('✅ Processing perpendicular line movement');
+
+    // Vincola il movimento solo lungo l'asse di simmetria
+    if (!currentLandmarks || !currentLandmarks[9] || !currentLandmarks[164]) return;
+
+    const glabella = currentLandmarks[9];
+    const philtrum = currentLandmarks[164];
+    const transGlab = transformLandmarkCoordinate(glabella);
+    const transPhil = transformLandmarkCoordinate(philtrum);
+
+    // Vettore dell'asse
+    const axisVecX = transPhil.x - transGlab.x;
+    const axisVecY = transPhil.y - transGlab.y;
+    const axisLength = Math.sqrt(axisVecX * axisVecX + axisVecY * axisVecY);
+    const axisNormX = axisVecX / axisLength;
+    const axisNormY = axisVecY / axisLength;
+
+    // Centro attuale della linea dopo il trascinamento - usa getCenterPoint per Fabric.js
+    const lineCenter = obj.getCenterPoint();
+    const lineCenterX = lineCenter.x;
+    const lineCenterY = lineCenter.y;
+
+    console.log(`📍 Linea trascinata a: (${lineCenterX.toFixed(1)}, ${lineCenterY.toFixed(1)})`);
+
+    // Proietta il centro della linea sull'asse
+    const clickVecX = lineCenterX - transGlab.x;
+    const clickVecY = lineCenterY - transGlab.y;
+    const projection = (clickVecX * axisVecX + clickVecY * axisVecY) / (axisLength * axisLength);
+    // NON clampare - permetti linee oltre i landmark
+    const newNormalizedPos = projection;
+
+    console.log(`📊 Proiezione: ${projection.toFixed(3)} (NON clampata)`);
+
+    // Calcola il punto esatto sull'asse
+    const pointOnAxisX = transGlab.x + axisNormX * newNormalizedPos * axisLength;
+    const pointOnAxisY = transGlab.y + axisNormY * newNormalizedPos * axisLength;
+
+    console.log(`📍 Punto sull'asse: (${pointOnAxisX.toFixed(1)}, ${pointOnAxisY.toFixed(1)})`);
+
+    // Direzione perpendicolare
+    const perpX = -axisNormY;
+    const perpY = axisNormX;
+
+    // Lunghezza della linea
+    const canvasWidth = fabricCanvas.getWidth();
+    const canvasHeight = fabricCanvas.getHeight();
+    const lineLength = Math.sqrt(canvasWidth * canvasWidth + canvasHeight * canvasHeight) * 2;
+
+    // Aggiorna direttamente le coordinate della linea
+    obj.set({
+      x1: pointOnAxisX - perpX * lineLength / 2,
+      y1: pointOnAxisY - perpY * lineLength / 2,
+      x2: pointOnAxisX + perpX * lineLength / 2,
+      y2: pointOnAxisY + perpY * lineLength / 2
+    });
+    obj.setCoords();
+
+    // Aggiorna la posizione normalizzata nell'array
+    const oldIndex = perpendicularLines.indexOf(obj.normalizedPosition);
+    if (oldIndex !== -1) {
+      perpendicularLines[oldIndex] = newNormalizedPos;
+      obj.normalizedPosition = newNormalizedPos;
+      window.perpendicularLines = perpendicularLines;
+    }
+
+    fabricCanvas.renderAll();
+  };
+
+  // Aggiungi l'handler al canvas
+  fabricCanvas.on('object:moving', perpendicularLineHandler);
+}
+
+// Chiama setup quando il canvas è pronto
+if (typeof fabricCanvas !== 'undefined' && fabricCanvas) {
+  setupPerpendicularLineHandlers();
 }
 
 function drawGreenDots() {
@@ -2902,24 +3452,17 @@ function drawGreenDotsOverlay(overlayBase64) {
 
 function enableImageMovement() {
   /**
-   * Abilita l'immagine per essere spostata e configura la sincronizzazione overlay
+   * DEPRECATA - Il movimento dell'immagine è ora gestito da canvas-modes.js
+   * Questa funzione è mantenuta per compatibilità ma NON riabilita più la selezione
    */
   if (!currentImage || !currentImage.isBackgroundImage) {
     console.warn('⚠️ Immagine non disponibile per abilitare movimento');
     return;
   }
 
-  // Abilita la selezione e movimento dell'immagine
-  currentImage.set({
-    selectable: true,
-    evented: true,
-    lockUniScaling: true,
-    cornerStyle: 'circle',
-    cornerSize: 8,
-    transparentCorners: false,
-    cornerColor: '#007bff',
-    borderColor: '#007bff'
-  });
+  // NON abilitare più la selezione - gestita da canvas-modes.js
+  // L'immagine deve rimanere SEMPRE bloccata a meno che non sia attivo il tool PAN
+  console.log('ℹ️ enableImageMovement chiamata - movimento gestito da canvas-modes.js');
 
   // Rimuovi event listeners precedenti per object events (NON mouse events - gestiti globalmente in canvas.js)
   fabricCanvas.off('object:moving');
@@ -3606,15 +4149,20 @@ function toggleAxis() {
 
   const isActive = btn.classList.contains('active');
 
+  // IMPORTANTE: Imposta la variabile globale per la rotazione
+  window.symmetryAxisVisible = isActive;
+
   if (isActive) {
     if (!currentLandmarks) {
       // Se non ci sono landmarks, calcola l'asse automaticamente
       calculateAxis();
     } else {
-      updateCanvasDisplay();
+      // Disegna l'asse di simmetria
+      drawSymmetryAxis();
     }
   } else {
-    updateCanvasDisplay();
+    // Rimuovi l'asse di simmetria
+    clearSymmetryAxis();
   }
 
   updateStatus(isActive ? 'Asse di simmetria attivo' : 'Asse di simmetria disattivo');
@@ -3693,16 +4241,12 @@ function toggleLandmarks() {
     window.landmarkSelectionMode = true;
     console.log('🖱️ Modalità selezione landmarks ATTIVA - clicca sui landmarks per aggiungerli alla tabella');
 
-    // Cambia cursore del canvas per indicare modalità selezione
-    if (fabricCanvas) {
-      fabricCanvas.defaultCursor = 'crosshair';
-      fabricCanvas.hoverCursor = 'crosshair';
-      fabricCanvas.selection = false; // Disabilita selezione multipla
-      fabricCanvas.forEachObject(obj => {
-        obj.selectable = false; // Disabilita selezione oggetti
-        obj.evented = false; // Disabilita eventi sugli oggetti
-      });
+    // Imposta cursore MANO (pointer) per modalità solo LANDMARKS
+    if (fabricCanvas && !window.measurementMode) {
+      fabricCanvas.defaultCursor = 'pointer';
+      fabricCanvas.hoverCursor = 'pointer';
       fabricCanvas.renderAll();
+      console.log('👆 Cursore impostato a MANO (pointer) per modalità LANDMARKS');
     }
 
     if (!currentLandmarks || currentLandmarks.length === 0) {
@@ -3710,13 +4254,12 @@ function toggleLandmarks() {
       console.log('🔍 Rilevamento landmarks necessario');
       detectLandmarks();
     } else {
-      // Se ci sono già, usa il nuovo sistema di drawing
-      console.log('✅ Landmarks disponibili, uso nuovo sistema di drawing');
-      if (typeof drawMediaPipeLandmarks === 'function') {
-        drawMediaPipeLandmarks(currentLandmarks);
+      // IMPORTANTE: Ridisegna i landmarks per renderli cliccabili
+      console.log('✅ Landmarks disponibili, ridisegno per renderli cliccabili');
+      if (typeof window.drawMediaPipeLandmarks === 'function') {
+        window.drawMediaPipeLandmarks(currentLandmarks);
       } else {
         console.warn('⚠️ drawMediaPipeLandmarks non disponibile');
-        updateCanvasDisplay();
       }
     }
   } else {
@@ -3724,22 +4267,18 @@ function toggleLandmarks() {
     window.landmarkSelectionMode = false;
     console.log('🖱️ Modalità selezione landmarks DISATTIVATA');
 
-    // Ripristina cursore normale del canvas
-    if (fabricCanvas) {
+    // Ripristina cursore default
+    if (fabricCanvas && !window.measurementMode) {
       fabricCanvas.defaultCursor = 'default';
       fabricCanvas.hoverCursor = 'move';
-      fabricCanvas.selection = true; // Riabilita selezione multipla
-      fabricCanvas.forEachObject(obj => {
-        obj.selectable = true; // Riabilita selezione oggetti
-        obj.evented = true; // Riabilita eventi sugli oggetti
-      });
       fabricCanvas.renderAll();
+      console.log('👆 Cursore ripristinato a DEFAULT');
     }
 
     // Nascondi landmarks
     console.log('❌ Nascondo landmarks');
-    if (typeof clearLandmarks === 'function') {
-      clearLandmarks();
+    if (typeof window.clearLandmarks === 'function') {
+      window.clearLandmarks();
     } else {
       // Fallback: rimuovi tutti i landmark objects
       if (fabricCanvas) {
@@ -3761,6 +4300,7 @@ function handleLandmarkSelection(canvasX, canvasY) {
   /**
    * Gestisce il click sul canvas per selezionare un landmark
    * Trova il landmark più vicino e lo aggiunge alla tabella
+   * IMPORTANTE: NO overlay grafici in questa modalità - solo tabella
    */
   if (!fabricCanvas) {
     console.warn('⚠️ fabricCanvas non disponibile');
@@ -3780,7 +4320,7 @@ function handleLandmarkSelection(canvasX, canvasY) {
       return;
     }
 
-    addLandmarkToTable(landmarkId, landmark);
+    addLandmarkToTable(landmarkId, landmark, false); // false = NO highlight grafico
     console.log(`✅ Landmark ${landmarkId} selezionato e aggiunto alla tabella`);
   } else {
     console.log('❌ Nessun landmark abbastanza vicino al click');
@@ -3830,9 +4370,15 @@ function findNearestLandmarkOnCanvas(canvasX, canvasY) {
   return nearestLandmark;
 }
 
-function addLandmarkToTable(landmarkId, landmark) {
+// Esponi la funzione globalmente per canvas-modes.js
+window.handleLandmarkSelection = handleLandmarkSelection;
+
+function addLandmarkToTable(landmarkId, landmark, showHighlight = false) {
   /**
    * Aggiunge un landmark alla tabella nella colonna destra
+   * @param {number} landmarkId - ID del landmark
+   * @param {object} landmark - Dati del landmark
+   * @param {boolean} showHighlight - Se true, mostra cerchio colorato sul canvas (default: false)
    */
   // Verifica se già selezionato
   if (window.selectedLandmarksForTable.includes(landmarkId)) {
@@ -3873,13 +4419,15 @@ function addLandmarkToTable(landmarkId, landmark) {
 
   tbody.appendChild(row);
 
-  // Evidenzia il landmark sul canvas
-  highlightSelectedLandmark(landmarkId, color);
+  // SOLO se richiesto esplicitamente, evidenzia il landmark sul canvas
+  if (showHighlight) {
+    highlightSelectedLandmark(landmarkId, color);
+  }
 
   // Apri automaticamente la sezione LANDMARKS se era chiusa
   openLandmarksSection();
 
-  console.log(`📍 Landmark ${landmarkId} (${landmarkName}) aggiunto: (${pixelX}, ${pixelY})`);
+  console.log(`📍 Landmark ${landmarkId} (${landmarkName}) aggiunto alla tabella${showHighlight ? ' con highlight' : ''}: (${pixelX}, ${pixelY})`);
 }
 
 function getLandmarkName(landmarkId) {
@@ -4327,10 +4875,12 @@ function getCanvasImageAsBase64() {
 
 function toggleMeasureMode() {
   /**
-   * Attiva/Disattiva la modalità misurazione.
-   * - Con 2 punti: calcola distanza
-   * - Con 3+ punti: calcola area poligono
+   * Attiva/Disattiva la modalità misurazione interattiva landmarks
+   * - 2 click: misura DISTANZA
+   * - 3+ click: misura AREA
+   * IMPORTANTE: Funziona SOLO se LANDMARKS è attivo
    */
+
   const btn = document.getElementById('measure-btn');
   if (!btn) {
     console.error('❌ Pulsante measure-btn non trovato!');
@@ -4347,16 +4897,16 @@ function toggleMeasureMode() {
     window.measurementMode = true;
     window.selectedLandmarksForMeasurement = [];
 
-    // Cambia cursore del canvas
+    // Cambia lo sfondo del pulsante in verde quando attivo (usa !important per override)
+    btn.style.setProperty('background', '#28a745', 'important');
+    btn.style.setProperty('background-color', '#28a745', 'important');
+
+    // Imposta cursore CROSSHAIR per modalità misurazione
     if (fabricCanvas) {
       fabricCanvas.defaultCursor = 'crosshair';
       fabricCanvas.hoverCursor = 'crosshair';
-      fabricCanvas.selection = false;
-      fabricCanvas.forEachObject(obj => {
-        obj.selectable = false;
-        obj.evented = false;
-      });
       fabricCanvas.renderAll();
+      console.log('🎯 Cursore impostato a CROSSHAIR per modalità MISURAZIONE');
     }
 
     // Verifica se ci sono landmarks
@@ -4375,16 +4925,33 @@ function toggleMeasureMode() {
     // Disattiva modalità misurazione
     window.measurementMode = false;
 
-    // Ripristina cursore
+    // Ripristina lo sfondo arancione originale (imposta esplicitamente con !important)
+    btn.style.setProperty('background', '#f97316', 'important');
+    btn.style.setProperty('background-color', '#f97316', 'important');
+
+    // Ripristina cursore in base alla modalità attiva
     if (fabricCanvas) {
-      fabricCanvas.defaultCursor = 'default';
-      fabricCanvas.hoverCursor = 'move';
-      fabricCanvas.selection = true;
-      fabricCanvas.forEachObject(obj => {
-        obj.selectable = true;
-        obj.evented = true;
-      });
+      if (window.landmarkSelectionMode) {
+        // Se LANDMARKS è ancora attivo, torna al cursore MANO
+        fabricCanvas.defaultCursor = 'pointer';
+        fabricCanvas.hoverCursor = 'pointer';
+        console.log('👆 Cursore ripristinato a MANO (pointer) - LANDMARKS ancora attivo');
+      } else {
+        // Altrimenti torna al cursore default
+        fabricCanvas.defaultCursor = 'default';
+        fabricCanvas.hoverCursor = 'move';
+        console.log('👆 Cursore ripristinato a DEFAULT');
+      }
+
+      // NON rendere selectable gli oggetti - i landmarks devono rimanere NON selezionabili
+      // Rimuoviamo completamente il codice che rendeva tutto selectable
       fabricCanvas.renderAll();
+    }
+
+    // Nascondi il pulsante "NUOVA MISURAZIONE" quando si disattiva la modalità misurazione
+    const completeBtn = document.getElementById('complete-measure-btn');
+    if (completeBtn) {
+      completeBtn.style.display = 'none';
     }
 
     updateStatus('Modalità misurazione disattivata');
@@ -4473,6 +5040,14 @@ function handleMeasurementLandmarkSelection(canvasX, canvasY) {
       calculatePolygonArea();
     }
 
+    // Mostra il pulsante "NUOVA MISURAZIONE" quando c'è almeno una misurazione valida (2+ punti)
+    if (numPoints >= 2) {
+      const completeBtn = document.getElementById('complete-measure-btn');
+      if (completeBtn) {
+        completeBtn.style.display = 'block';
+      }
+    }
+
     updateStatus(`📐 ${numPoints} punto/i selezionato/i per misurazione`);
   }
 }
@@ -4501,11 +5076,23 @@ function calculateDistance() {
     landmarks: [p1.id, p2.id]
   };
 
-  // Sostituisci completamente i risultati con solo questa distanza
-  window.measurementResults = [result];
+  // Inizializza array se non esiste
+  if (!window.measurementResults) {
+    window.measurementResults = [];
+  }
 
-  // Rimuovi overlay precedenti (linee e poligoni, ma non highlights)
-  removeMeasurementOverlaysExceptHighlights();
+  // Rimuovi la misurazione temporanea corrente se esiste (l'ultima aggiunta)
+  // Questo permette di aggiornare la misurazione in corso mentre si aggiungono punti
+  const lastResult = window.measurementResults[window.measurementResults.length - 1];
+  if (lastResult && !lastResult.completed) {
+    window.measurementResults.pop();
+    // Rimuovi overlay precedenti della misurazione temporanea
+    removeMeasurementOverlaysExceptHighlights();
+  }
+
+  // Aggiungi la nuova distanza come misurazione temporanea (non completata)
+  result.completed = false;
+  window.measurementResults.push(result);
 
   updateMeasurementsTable();
   drawMeasurementLine(p1, p2, distance);
@@ -4539,11 +5126,23 @@ function calculatePolygonArea() {
     landmarks: landmarkIds
   };
 
-  // Sostituisci completamente i risultati con solo questo poligono
-  window.measurementResults = [result];
+  // Inizializza array se non esiste
+  if (!window.measurementResults) {
+    window.measurementResults = [];
+  }
 
-  // Rimuovi overlay precedenti (linee e poligoni, ma non highlights)
-  removeMeasurementOverlaysExceptHighlights();
+  // Rimuovi la misurazione temporanea corrente se esiste (l'ultima aggiunta)
+  // Questo permette di aggiornare la misurazione in corso mentre si aggiungono punti
+  const lastResult = window.measurementResults[window.measurementResults.length - 1];
+  if (lastResult && !lastResult.completed) {
+    window.measurementResults.pop();
+    // Rimuovi overlay precedenti della misurazione temporanea
+    removeMeasurementOverlaysExceptHighlights();
+  }
+
+  // Aggiungi la nuova area come misurazione temporanea (non completata)
+  result.completed = false;
+  window.measurementResults.push(result);
 
   updateMeasurementsTable();
   drawMeasurementPolygon(points, area);
@@ -4565,14 +5164,24 @@ function updateMeasurementsTable() {
   tbody.innerHTML = '';
 
   // Aggiungi righe per ogni risultato
-  window.measurementResults.forEach(result => {
+  window.measurementResults.forEach((result) => {
     const row = document.createElement('tr');
+    const statusText = result.completed ? '✅ Completata' : '🔄 In corso...';
+    const statusClass = result.completed ? 'status-ok' : 'status-pending';
+
     row.innerHTML = `
       <td>${result.label}</td>
       <td><strong>${result.value}</strong></td>
       <td>${result.unit}</td>
-      <td><span class="status-ok">✅ Calcolato</span></td>
+      <td><span class="${statusClass}">${statusText}</span></td>
     `;
+
+    // Evidenzia la riga in corso con sfondo scuro e testo chiaro
+    if (!result.completed) {
+      row.style.backgroundColor = '#856404';
+      row.style.color = '#fff';
+    }
+
     tbody.appendChild(row);
   });
 
@@ -4646,12 +5255,75 @@ function clearAllMeasurementOverlays() {
     }
   }
 
+  // Nascondi il pulsante "NUOVA MISURAZIONE"
+  const completeBtn = document.getElementById('complete-measure-btn');
+  if (completeBtn) {
+    completeBtn.style.display = 'none';
+  }
+
   updateStatus('🧹 Misurazioni pulite - Riparti da zero');
   console.log('✅ Misurazioni pulite completamente');
 }
 
-// Esponi la funzione a window
+function completeMeasurement() {
+  /**
+   * Completa la misurazione corrente e prepara il sistema per una nuova misurazione.
+   * - Marca la misurazione corrente come completata
+   * - Reset dei punti selezionati per iniziare una nuova misurazione
+   * - Rimuove gli highlights temporanei
+   * - Mantiene tutte le misurazioni precedenti visibili nella tabella
+   */
+  console.log('✅ Completamento misurazione corrente...');
+
+  // Verifica se c'è una misurazione in corso
+  if (!window.measurementResults || window.measurementResults.length === 0) {
+    console.warn('⚠️ Nessuna misurazione da completare');
+    updateStatus('⚠️ Nessuna misurazione in corso');
+    return;
+  }
+
+  // Verifica se ci sono punti selezionati
+  if (!window.selectedLandmarksForMeasurement || window.selectedLandmarksForMeasurement.length === 0) {
+    console.warn('⚠️ Nessun punto selezionato per la misurazione');
+    updateStatus('⚠️ Seleziona almeno 2 punti per una misurazione');
+    return;
+  }
+
+  // Marca l'ultima misurazione come completata
+  const lastMeasurement = window.measurementResults[window.measurementResults.length - 1];
+  if (lastMeasurement && !lastMeasurement.completed) {
+    lastMeasurement.completed = true;
+    console.log(`✅ Misurazione completata: ${lastMeasurement.label} = ${lastMeasurement.value} ${lastMeasurement.unit}`);
+  }
+
+  // Reset punti selezionati per nuova misurazione
+  window.selectedLandmarksForMeasurement = [];
+
+  // Rimuovi solo gli highlights (cerchi colorati) ma mantieni linee/poligoni completati
+  if (fabricCanvas) {
+    const highlights = fabricCanvas.getObjects().filter(obj =>
+      obj.isMeasurement && obj.measurementType === 'highlight'
+    );
+    highlights.forEach(obj => fabricCanvas.remove(obj));
+    fabricCanvas.renderAll();
+  }
+
+  // Aggiorna tabella per mostrare lo stato "Completata"
+  updateMeasurementsTable();
+
+  // Nascondi il pulsante "NUOVA MISURAZIONE" fino al prossimo punto
+  const completeBtn = document.getElementById('complete-measure-btn');
+  if (completeBtn) {
+    completeBtn.style.display = 'none';
+  }
+
+  updateStatus('✅ Misurazione completata! Inizia una nuova misurazione selezionando i punti');
+  console.log('🔄 Pronto per nuova misurazione');
+}
+
+// Esponi le funzioni a window
 window.clearAllMeasurementOverlays = clearAllMeasurementOverlays;
+window.completeMeasurement = completeMeasurement;
 
 function highlightMeasurementLandmark(landmarkId, color) {
   /**
@@ -5442,6 +6114,7 @@ function testLandmarksWithFixedPoints() {
 
   // Imposta landmarks di test
   currentLandmarks = testLandmarks;
+  window.currentLandmarks = currentLandmarks;
 
   // Forza visualizzazione
   const btn = document.getElementById('landmarks-btn');
@@ -5950,4 +6623,25 @@ function syncGreenDotsOverlayWithViewport() {
   // Forza il re-rendering per assicurarsi che tutto sia sincronizzato
   fabricCanvas.renderAll();
 }
+
+// ===================================
+// INIZIALIZZAZIONE APP CON AUTH CHECK
+// ===================================
+
+window.addEventListener('DOMContentLoaded', async () => {
+    console.log('🚀 Inizializzazione applicazione Medical Face Analysis');
+
+    // STEP 1: Verifica autenticazione
+    const isAuthenticated = await checkAuthentication();
+
+    if (!isAuthenticated) {
+        console.log('❌ Autenticazione fallita, app non inizializzata');
+        return;
+    }
+
+    console.log('✅ Autenticazione completata, inizializzazione app...');
+
+    // STEP 2: Inizializza il resto dell'applicazione
+    // (il resto del codice di inizializzazione esistente continua qui)
+});
 
