@@ -16,15 +16,36 @@ const state = {
 function toggleMobileMenu() {
     const navLinks = document.querySelector('.nav-links');
     const navActions = document.querySelector('.nav-actions');
+    const menuToggle = document.querySelector('.mobile-menu-toggle');
 
     navLinks.classList.toggle('active');
     navActions.classList.toggle('active');
+    menuToggle.classList.toggle('active');
+
+    // Previeni scroll quando menu è aperto
+    if (navLinks.classList.contains('active')) {
+        document.body.style.overflow = 'hidden';
+    } else {
+        document.body.style.overflow = 'auto';
+    }
 }
 
 function scrollToSection(sectionId) {
     const section = document.getElementById(sectionId);
     if (section) {
         section.scrollIntoView({ behavior: 'smooth' });
+
+        // Chiudi menu mobile se aperto
+        const navLinks = document.querySelector('.nav-links');
+        const navActions = document.querySelector('.nav-actions');
+        const menuToggle = document.querySelector('.mobile-menu-toggle');
+
+        if (navLinks.classList.contains('active')) {
+            navLinks.classList.remove('active');
+            navActions.classList.remove('active');
+            menuToggle.classList.remove('active');
+            document.body.style.overflow = 'auto';
+        }
     }
 }
 
