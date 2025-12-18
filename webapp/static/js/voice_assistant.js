@@ -334,6 +334,31 @@ class VoiceAssistant {
       'clearCanvas': () => window.clearCanvas?.(),
       'analyzeLeftEyebrow': () => window.analyzeLeftEyebrow?.(),
       'analyzeRightEyebrow': () => window.analyzeRightEyebrow?.(),
+      'measureFacialSymmetry': () => {
+        console.log('🎯 Esecuzione comando measureFacialSymmetry');
+        const btn = document.querySelector('button[onclick*="measureFacialSymmetry"]');
+        console.log('measureFacialSymmetry - Pulsante trovato:', btn);
+        if (btn) {
+          console.log('✅ Click sul pulsante simmetria');
+          btn.click();
+          // Dopo 2 secondi, leggi il risultato della simmetria
+          setTimeout(() => {
+            if (window.lastSymmetryMessage) {
+              console.log('🔊 Pronuncia risultato simmetria:', window.lastSymmetryMessage);
+              voiceAssistant.speak(window.lastSymmetryMessage);
+            } else {
+              console.warn('⚠️ Nessun messaggio simmetria disponibile');
+            }
+          }, 2000);
+        } else {
+          console.warn('⚠️ Pulsante non trovato, provo funzione globale');
+          if (typeof window.measureFacialSymmetry === 'function') {
+            window.measureFacialSymmetry();
+          } else {
+            console.error('❌ Funzione measureFacialSymmetry non disponibile');
+          }
+        }
+      },
     };
 
     const func = actionMap[action];
