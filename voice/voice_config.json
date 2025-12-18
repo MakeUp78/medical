@@ -227,6 +227,46 @@
             },
             "confirmation": "Sistema attivo e funzionante",
             "enabled": true
+        },
+        {
+            "name": "Correzione Progettazione",
+            "patterns": [
+                "correggimi la progettazione",
+                "correggi progettazione",
+                "correzione progettazione",
+                "analizza progettazione"
+            ],
+            "action": {
+                "function": "analyze_eyebrow_design"
+            },
+            "confirmation": "Avvio analisi della progettazione sopraccigliare",
+            "enabled": true
+        },
+        {
+            "name": "Preferenza Destra",
+            "patterns": [
+                "preferenza destra",
+                "correzione destra",
+                "analizza preferenza destra"
+            ],
+            "action": {
+                "function": "show_left_eyebrow_with_voice"
+            },
+            "confirmation": "",
+            "enabled": true
+        },
+        {
+            "name": "Preferenza Sinistra",
+            "patterns": [
+                "preferenza sinistra",
+                "correzione sinistra",
+                "analizza preferenza sinistra"
+            ],
+            "action": {
+                "function": "show_right_eyebrow_with_voice"
+            },
+            "confirmation": "",
+            "enabled": true
         }
     ]
 }

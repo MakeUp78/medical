@@ -8913,6 +8913,30 @@ class CanvasApp:
         else:
             self.status_bar.config(text="❌ Sistema landmarks non disponibile")
 
+    def analyze_eyebrow_design(self):
+        """
+        Comando vocale: 'Kimerika, correggimi la progettazione'
+        Avvia l'analisi green dots e pronuncia il feedback sulla progettazione sopraccigliare.
+        Questa funzione viene chiamata dal voice assistant e delega il lavoro a JavaScript.
+        """
+        print("🔍 [Voice Command] Avvio analisi progettazione sopraccigliare")
+        
+        if self.current_image is None:
+            self.status_bar.config(text="❌ Carica prima un'immagine")
+            if hasattr(self, 'voice_assistant'):
+                self.voice_assistant.speak("Per favore, carica prima un'immagine")
+            return
+        
+        # La funzione JavaScript window.analyze_eyebrow_design si occuperà di:
+        # 1. Attivare i green dots
+        # 2. Aspettare i risultati
+        # 3. Analizzare i dati dalla tabella
+        # 4. Generare e pronunciare il feedback
+        
+        # Non è necessario fare altro qui - JavaScript gestisce tutto
+        print("✅ [Voice Command] Comando inoltrato a JavaScript")
+        self.status_bar.config(text="🔄 Analisi progettazione in corso...")
+
     def voice_which_eyebrow_bigger(self):
         """Comando vocale: analizza quale sopracciglio è più grande."""
         if self.current_image is None:

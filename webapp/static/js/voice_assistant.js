@@ -359,6 +359,36 @@ class VoiceAssistant {
           }
         }
       },
+      'analyze_eyebrow_design': () => {
+        console.log('🔍 Esecuzione comando analyze_eyebrow_design');
+        if (typeof window.analyze_eyebrow_design === 'function') {
+          console.log('✅ Chiamata funzione analyze_eyebrow_design');
+          window.analyze_eyebrow_design();
+        } else {
+          console.error('❌ Funzione analyze_eyebrow_design non disponibile');
+          voiceAssistant.speak('Funzione non disponibile');
+        }
+      },
+      'show_left_eyebrow_with_voice': () => {
+        console.log('🔍 Esecuzione comando show_left_eyebrow_with_voice (preferenza destra)');
+        if (typeof window.show_left_eyebrow_with_voice === 'function') {
+          console.log('✅ Chiamata funzione show_left_eyebrow_with_voice');
+          window.show_left_eyebrow_with_voice();
+        } else {
+          console.error('❌ Funzione show_left_eyebrow_with_voice non disponibile');
+          voiceAssistant.speak('Funzione non disponibile');
+        }
+      },
+      'show_right_eyebrow_with_voice': () => {
+        console.log('🔍 Esecuzione comando show_right_eyebrow_with_voice (preferenza sinistra)');
+        if (typeof window.show_right_eyebrow_with_voice === 'function') {
+          console.log('✅ Chiamata funzione show_right_eyebrow_with_voice');
+          window.show_right_eyebrow_with_voice();
+        } else {
+          console.error('❌ Funzione show_right_eyebrow_with_voice non disponibile');
+          voiceAssistant.speak('Funzione non disponibile');
+        }
+      },
     };
 
     const func = actionMap[action];

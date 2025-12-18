@@ -3815,7 +3815,10 @@ function generateSymmetryAnalysisRows(result) {
       const rightDistance = getPerpendicularDistanceFromLine(rightPoint[0], rightPoint[1], symmetryAxisData.lineOriginal);
 
       const fartherPoint = leftDistance > rightDistance ? leftLabels[leftIdx] : rightLabels[rightIdx];
+      const closerPoint = leftDistance > rightDistance ? rightLabels[rightIdx] : leftLabels[leftIdx];
       const maxDistance = Math.max(leftDistance, rightDistance);
+      const minDistance = Math.min(leftDistance, rightDistance);
+      const distanceDifference = Math.abs(leftDistance - rightDistance);
 
       // Calcola altezze (proiezione lungo l'asse) - valori Y più BASSI = più in alto
       const leftHeight = getProjectionAlongLine(leftPoint[0], leftPoint[1], symmetryAxisData.lineOriginal);
@@ -3826,16 +3829,18 @@ function generateSymmetryAnalysisRows(result) {
 
       console.log(`  📊 ${comparisonName}: L=${leftLabels[leftIdx]}(${leftPoint[0].toFixed(1)},${leftPoint[1].toFixed(1)}, dist⊥=${leftDistance.toFixed(1)}, h=${leftHeight.toFixed(1)}) vs R=${rightLabels[rightIdx]}(${rightPoint[0].toFixed(1)},${rightPoint[1].toFixed(1)}, dist⊥=${rightDistance.toFixed(1)}, h=${rightHeight.toFixed(1)}) → 🔴 ${fartherPoint} più lontano, ⬆️ ${higherPoint} più alto (diff=${heightDifference.toFixed(1)}px)`);
 
+      // Riga distanza dall'asse - formato più chiaro con entrambe le distanze
       rows += `<tr data-type="green-dots">
-        <td>⚖️ ${comparisonName}</td>
-        <td>🔴 ${fartherPoint} (${maxDistance.toFixed(1)}px)</td>
+        <td>⚖️ ${comparisonName} Distanza Asse</td>
+        <td>${leftLabels[leftIdx]}: ${leftDistance.toFixed(1)}px | ${rightLabels[rightIdx]}: ${rightDistance.toFixed(1)}px<br/>
+            <strong>🔴 ${fartherPoint} più esterno</strong> (+${distanceDifference.toFixed(1)}px)</td>
         <td>px</td>
         <td>✅ OK</td>
       </tr>`;
 
       rows += `<tr data-type="green-dots">
         <td>⬆️ ${comparisonName} Altezza</td>
-        <td>⬆️ ${higherPoint} (${heightDifference.toFixed(1)}px)</td>
+        <td>⬆️ ${higherPoint} più alto (${heightDifference.toFixed(1)}px)</td>
         <td>px</td>
         <td>✅ OK</td>
       </tr>`;
