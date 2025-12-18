@@ -452,7 +452,18 @@ def reset_password():
 def google_login():
     """Inizia Google OAuth login"""
     redirect_uri = url_for('google_callback', _external=True)
-    return google.authorize_redirect(redirect_uri)
+    # Passa lo stato per distinguere login da signup
+    return google.authorize_redirect(redirect_uri, state='login')
+
+
+@app.route('/api/auth/google/signup')
+def google_signup():
+    """Inizia Google OAuth signup (registrazione)"""
+    redirect_uri = url_for('google_callback', _external=True)
+    # Salva il piano selezionato nella sessione
+    plan = request.args.get('plan', 'starter')
+    session['selected_plan'] = plan
+    return google.authorize_redirect(redirect_uri, state='signup')
 
 
 @app.route('/api/auth/google/callback')
@@ -470,19 +481,30 @@ def google_callback():
         firstname = user_info.get('given_name', '')
         lastname = user_info.get('family_name', '')
 
+        # Recupera il piano selezionato dalla sessione
+        selected_plan = session.pop('selected_plan', 'starter')
+
         # Trova o crea utente
         user = User.query.filter_by(email=email).first()
 
         if not user:
             # Crea nuovo utente
+            # Imposta limiti in base al piano
+            if selected_plan == 'starter':
+                analyses_limit = 50
+            elif selected_plan == 'professional':
+                analyses_limit = 500
+            else:  # enterprise
+                analyses_limit = -1  # illimitato
+            
             user = User(
                 email=email,
                 firstname=firstname,
                 lastname=lastname,
                 google_id=google_id,
-                plan='starter',
+                plan=selected_plan,
                 trial_ends_at=datetime.datetime.utcnow() + datetime.timedelta(days=14),
-                analyses_limit=50
+                analyses_limit=analyses_limit
             )
             db.session.add(user)
         else:
@@ -500,6 +522,8 @@ def google_callback():
 
     except Exception as e:
         print(f"Google OAuth error: {e}")
+        import traceback
+        traceback.print_exc()
         return redirect('/?auth=error&message=Errore durante autenticazione Google')
 
 
@@ -511,7 +535,17 @@ def google_callback():
 def apple_login():
     """Inizia Apple Sign In"""
     redirect_uri = url_for('apple_callback', _external=True)
-    return apple.authorize_redirect(redirect_uri)
+    return apple.authorize_redirect(redirect_uri, state='login')
+
+
+@app.route('/api/auth/apple/signup')
+def apple_signup():
+    """Inizia Apple Sign In signup (registrazione)"""
+    redirect_uri = url_for('apple_callback', _external=True)
+    # Salva il piano selezionato nella sessione
+    plan = request.args.get('plan', 'starter')
+    session['selected_plan'] = plan
+    return apple.authorize_redirect(redirect_uri, state='signup')
 
 
 @app.route('/api/auth/apple/callback')
@@ -528,21 +562,32 @@ def apple_callback():
         apple_id = user_info.get('sub')
 
         # Apple non fornisce sempre nome, usa email come fallback
-        firstname = user_info.get('given_name', email.split('@')[0])
+        firstname = user_info.get('given_name', email.split('@')[0] if email else 'Utente')
         lastname = user_info.get('family_name', '')
+
+        # Recupera il piano selezionato dalla sessione
+        selected_plan = session.pop('selected_plan', 'starter')
 
         # Trova o crea utente
         user = User.query.filter_by(email=email).first()
 
         if not user:
+            # Imposta limiti in base al piano
+            if selected_plan == 'starter':
+                analyses_limit = 50
+            elif selected_plan == 'professional':
+                analyses_limit = 500
+            else:  # enterprise
+                analyses_limit = -1  # illimitato
+            
             user = User(
                 email=email,
                 firstname=firstname,
                 lastname=lastname,
                 apple_id=apple_id,
-                plan='starter',
+                plan=selected_plan,
                 trial_ends_at=datetime.datetime.utcnow() + datetime.timedelta(days=14),
-                analyses_limit=50
+                analyses_limit=analyses_limit
             )
             db.session.add(user)
         else:
@@ -559,6 +604,8 @@ def apple_callback():
 
     except Exception as e:
         print(f"Apple OAuth error: {e}")
+        import traceback
+        traceback.print_exc()
         return redirect('/?auth=error&message=Errore durante autenticazione Apple')
 
 

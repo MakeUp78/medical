@@ -9,7 +9,8 @@
     <link rel="stylesheet" href="static/css/landing.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
 </head>
 
 <body>
@@ -31,11 +32,14 @@
                     <button class="btn-secondary" onclick="showAuthModal('login')">Accedi</button>
                     <button class="btn-primary" onclick="showAuthModal('signup')">Inizia Gratis</button>
                 </div>
-                <button class="mobile-menu-toggle" onclick="toggleMobileMenu()">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                </button>
+                <div class="mobile-actions">
+                    <button class="btn-secondary mobile-login-btn" onclick="showAuthModal('login')">Accedi</button>
+                    <button class="mobile-menu-toggle" onclick="toggleMobileMenu()">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </button>
+                </div>
             </div>
         </div>
     </nav>
@@ -46,11 +50,13 @@
             <div class="hero-content">
                 <div class="hero-text">
                     <h1 class="hero-title">
-                        Analisi Facciale Medicale
-                        <span class="gradient-text">di Nuova Generazione</span>
+                        Progettazione Sopracciglia
+                        <span class="gradient-text">Veloce, Precisa e Divertente</span>
                     </h1>
                     <p class="hero-description">
-                        Tecnologia AI avanzata per misurazioni facciali precise, analisi di simmetria e diagnostica estetica professionale. Utilizzato da oltre 500 professionisti medici in tutto il mondo.
+                        Trasforma la fase più difficile del tuo lavoro in un'esperienza affascinante. Con Kimerika,
+                        l'analisi delle simmetrie delle sopracciglia diventa immediata e professionale.
+                        Incanta le tue clienti con tecnologia AI di precisione millimetrica.
                     </p>
                     <div class="hero-cta">
                         <button class="btn-primary btn-large" onclick="showAuthModal('signup')">
@@ -64,32 +70,32 @@
                     </div>
                     <div class="hero-stats">
                         <div class="stat">
-                            <div class="stat-number">500+</div>
-                            <div class="stat-label">Medici Attivi</div>
+                            <div class="stat-number">5 min</div>
+                            <div class="stat-label">Analisi Completa</div>
                         </div>
                         <div class="stat">
-                            <div class="stat-number">50K+</div>
-                            <div class="stat-label">Analisi Completate</div>
+                            <div class="stat-number">468</div>
+                            <div class="stat-label">Punti Rilevati</div>
                         </div>
                         <div class="stat">
-                            <div class="stat-number">99.8%</div>
-                            <div class="stat-label">Precisione</div>
+                            <div class="stat-number">100%</div>
+                            <div class="stat-label">Simmetria Perfetta</div>
                         </div>
                     </div>
                 </div>
                 <div class="hero-visual">
                     <div class="hero-image-container">
                         <div class="floating-card card-1">
-                            <span class="card-icon">🎯</span>
-                            <span class="card-text">468 Landmarks Rilevati</span>
+                            <span class="card-icon">✂️</span>
+                            <span class="card-text">Sopracciglia Analizzate</span>
                         </div>
                         <div class="floating-card card-2">
-                            <span class="card-icon">📊</span>
-                            <span class="card-text">Simmetria: 94.2%</span>
+                            <span class="card-icon">⚖️</span>
+                            <span class="card-text">Simmetria: 98.7%</span>
                         </div>
                         <div class="floating-card card-3">
                             <span class="card-icon">⚡</span>
-                            <span class="card-text">Analisi Real-time</span>
+                            <span class="card-text">Analisi in 30 secondi</span>
                         </div>
                         <div class="hero-mockup">
                             <div class="mockup-browser">
@@ -99,13 +105,7 @@
                                     </div>
                                 </div>
                                 <div class="browser-content">
-                                    <div class="face-outline">
-                                        <div class="landmark-point" style="top: 20%; left: 50%;"></div>
-                                        <div class="landmark-point" style="top: 40%; left: 30%;"></div>
-                                        <div class="landmark-point" style="top: 40%; left: 70%;"></div>
-                                        <div class="landmark-point" style="top: 60%; left: 50%;"></div>
-                                        <div class="landmark-point" style="top: 80%; left: 50%;"></div>
-                                    </div>
+                                    <img src="20251218033346.GIF" alt="Analisi Facciale in Azione" class="demo-gif">
                                 </div>
                             </div>
                         </div>
@@ -119,39 +119,51 @@
     <section id="features" class="features">
         <div class="container">
             <div class="section-header">
-                <h2 class="section-title">Funzionalità Professionali</h2>
-                <p class="section-description">Tutto ciò di cui hai bisogno per un'analisi facciale completa e accurata</p>
+                <h2 class="section-title">Progettazione Sopracciglia Rivoluzionaria</h2>
+                <p class="section-description">Dimentica ore di frustrazione cercando la simmetria perfetta.
+                    Kimerika lo fa per te in pochi istanti.
+                </p>
             </div>
             <div class="features-grid">
                 <div class="feature-card">
-                    <div class="feature-icon">🎯</div>
-                    <h3 class="feature-title">468 Punti di Rilevamento</h3>
-                    <p class="feature-description">Tecnologia MediaPipe avanzata per identificare con precisione millimetrica ogni caratteristica facciale</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">📏</div>
-                    <h3 class="feature-title">Misurazioni Precise</h3>
-                    <p class="feature-description">Calcola distanze, angoli, aree e proporzioni con strumenti professionali di misurazione</p>
+                    <div class="feature-icon">✂️</div>
+                    <h3 class="feature-title">Analisi Sopracciglia Immediata</h3>
+                    <p class="feature-description">Rileva automaticamente forma, lunghezza, spessore e posizione delle
+                        sopracciglia.
+                        Visualizza istantaneamente aree da correggere e punti critici per la simmetria perfetta.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">⚖️</div>
-                    <h3 class="feature-title">Analisi Simmetria</h3>
-                    <p class="feature-description">Valutazione automatica della simmetria facciale con scoring personalizzabile</p>
+                    <h3 class="feature-title">Simmetria in Tempo Reale</h3>
+                    <p class="feature-description">L'algoritmo AI calcola automaticamente l'asse centrale del viso e
+                        identifica ogni minima asimmetria. Rendi simmetriche le sopracciglia in modo veloce e
+                        divertente!</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3 class="feature-title">468 Punti di Precisione</h3>
+                    <p class="feature-description">Tecnologia MediaPipe con 468 landmark facciali per un'analisi
+                        millimetrica delle proporzioni del viso e delle sopracciglia rispetto ai tratti del volto.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📏</div>
+                    <h3 class="feature-title">Misurazioni Professionali</h3>
+                    <p class="feature-description">Distanza tra occhi, larghezza sopracciglia, angoli e proporzioni
+                        auree.
+                        Strumenti di misurazione che trasformano ogni progettazione in un lavoro scientifico.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎨</div>
+                    <h3 class="feature-title">Overlay e Correzioni Visive</h3>
+                    <p class="feature-description">Visualizza sovrimpressioni e guide simmetriche direttamente sul viso
+                        della cliente.
+                        Mostra in anteprima il risultato finale prima ancora di iniziare il trattamento.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">📹</div>
-                    <h3 class="feature-title">Video & Webcam</h3>
-                    <p class="feature-description">Analizza immagini statiche, video registrati o acquisizioni webcam in tempo reale</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">📊</div>
-                    <h3 class="feature-title">Report Dettagliati</h3>
-                    <p class="feature-description">Genera report professionali con grafici, misurazioni e comparazioni prima/dopo</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🔒</div>
-                    <h3 class="feature-title">Privacy & Sicurezza</h3>
-                    <p class="feature-description">Dati crittografati end-to-end, conformità GDPR e archiviazione sicura</p>
+                    <h3 class="feature-title">Webcam & Video Analisi</h3>
+                    <p class="feature-description">Lavora in tempo reale con la webcam o analizza foto e video.
+                        Perfetto per consultazioni da remoto o per seguire l'evoluzione del trattamento nel tempo.</p>
                 </div>
             </div>
         </div>
@@ -161,32 +173,106 @@
     <section id="how-it-works" class="how-it-works">
         <div class="container">
             <div class="section-header">
-                <h2 class="section-title">Come Funziona</h2>
-                <p class="section-description">3 semplici passi per iniziare l'analisi</p>
+                <h2 class="section-title">Dalla Frustrazione al Piacere in 3 Passi</h2>
+                <p class="section-description">La progettazione delle sopracciglia non è mai stata così semplice</p>
             </div>
             <div class="steps">
                 <div class="step">
                     <div class="step-number">1</div>
                     <div class="step-content">
-                        <h3>Carica o Acquisci</h3>
-                        <p>Carica un'immagine, un video o avvia la webcam per acquisizioni in tempo reale</p>
+                        <h3>Inquadra la Cliente</h3>
+                        <p>Scatta una foto, carica un'immagine o usa la webcam in tempo reale.
+                            Kimerika funziona con qualsiasi sorgente video.</p>
                     </div>
                 </div>
                 <div class="step-arrow">→</div>
                 <div class="step">
                     <div class="step-number">2</div>
                     <div class="step-content">
-                        <h3>Analizza</h3>
-                        <p>L'AI rileva automaticamente 468 punti facciali e calcola tutte le metriche</p>
+                        <h3>Analisi Automatica</h3>
+                        <p>In pochi secondi, l'AI rileva asse di simmetria, proporzioni del viso e
+                            caratteristiche delle sopracciglia con precisione millimetrica.</p>
                     </div>
                 </div>
                 <div class="step-arrow">→</div>
                 <div class="step">
                     <div class="step-number">3</div>
                     <div class="step-content">
-                        <h3>Esporta</h3>
-                        <p>Genera report professionali e condividi i risultati con i tuoi pazienti</p>
+                        <h3>Progetta con Sicurezza</h3>
+                        <p>Visualizza overlay simmetrici, misurazioni precise e guide visive.
+                            La tua cliente vede subito il progetto e si innamora del risultato!</p>
                     </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Benefits Section - NEW -->
+    <section class="benefits"
+        style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 80px 0; color: white;">
+        <div class="container">
+            <div class="section-header" style="color: white;">
+                <h2 class="section-title" style="color: white;">Perché le Professioniste Scelgono Kimerika</h2>
+                <p class="section-description" style="color: rgba(255,255,255,0.9);">
+                    Trasforma la fase più difficile in un momento magico per te e per le tue clienti
+                </p>
+            </div>
+            <div
+                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px; margin-top: 50px;">
+                <div
+                    style="background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); padding: 30px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.2);">
+                    <div style="font-size: 40px; margin-bottom: 15px;">⏱️</div>
+                    <h3 style="font-size: 22px; margin-bottom: 12px; font-weight: 600;">Risparmia Tempo Prezioso</h3>
+                    <p style="color: rgba(255,255,255,0.9); line-height: 1.6;">
+                        Da 20 minuti di tracciamento manuale a 2 minuti di analisi automatica.
+                        Più tempo per i trattamenti, meno tempo per le misurazioni.
+                    </p>
+                </div>
+                <div
+                    style="background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); padding: 30px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.2);">
+                    <div style="font-size: 40px; margin-bottom: 15px;">💎</div>
+                    <h3 style="font-size: 22px; margin-bottom: 12px; font-weight: 600;">Aumenta il Valore Percepito</h3>
+                    <p style="color: rgba(255,255,255,0.9); line-height: 1.6;">
+                        Le clienti vedono tecnologia avanzata, precisione scientifica e professionalità.
+                        Giustifica prezzi premium con analisi che impressionano.
+                    </p>
+                </div>
+                <div
+                    style="background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); padding: 30px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.2);">
+                    <div style="font-size: 40px; margin-bottom: 15px;">🎯</div>
+                    <h3 style="font-size: 22px; margin-bottom: 12px; font-weight: 600;">Elimina Errori e Contestazioni
+                    </h3>
+                    <p style="color: rgba(255,255,255,0.9); line-height: 1.6;">
+                        Con misurazioni millimetriche e documentazione fotografica, ogni progetto è
+                        perfetto e verificabile. Zero discussioni post-trattamento.
+                    </p>
+                </div>
+                <div
+                    style="background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); padding: 30px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.2);">
+                    <div style="font-size: 40px; margin-bottom: 15px;">😍</div>
+                    <h3 style="font-size: 22px; margin-bottom: 12px; font-weight: 600;">Clienti Più Soddisfatte</h3>
+                    <p style="color: rgba(255,255,255,0.9); line-height: 1.6;">
+                        Coinvolgi la cliente nell'analisi. Quando vede i dati scientifici e le
+                        guide simmetriche, si fida completamente e apprezza di più il risultato.
+                    </p>
+                </div>
+                <div
+                    style="background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); padding: 30px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.2);">
+                    <div style="font-size: 40px; margin-bottom: 15px;">🚀</div>
+                    <h3 style="font-size: 22px; margin-bottom: 12px; font-weight: 600;">Più Produttività</h3>
+                    <p style="color: rgba(255,255,255,0.9); line-height: 1.6;">
+                        Lavora più velocemente senza sacrificare la qualità. Gestisci più clienti
+                        al giorno mantenendo standard di eccellenza assoluta.
+                    </p>
+                </div>
+                <div
+                    style="background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); padding: 30px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.2);">
+                    <div style="font-size: 40px; margin-bottom: 15px;">🎨</div>
+                    <h3 style="font-size: 22px; margin-bottom: 12px; font-weight: 600;">Libertà Creativa</h3>
+                    <p style="color: rgba(255,255,255,0.9); line-height: 1.6;">
+                        Con la sicurezza delle misurazioni precise, puoi sperimentare stili diversi
+                        e personalizzare ogni progetto con la certezza di risultati perfetti.
+                    </p>
                 </div>
             </div>
         </div>
@@ -196,8 +282,8 @@
     <section id="pricing" class="pricing">
         <div class="container">
             <div class="section-header">
-                <h2 class="section-title">Piani Tariffari</h2>
-                <p class="section-description">Scegli il piano perfetto per le tue esigenze</p>
+                <h2 class="section-title">Piani Tariffari Semplici e Trasparenti</h2>
+                <p class="section-description">Investi in tecnologia che ripaga da subito. Nessun costo nascosto.</p>
             </div>
             <div class="pricing-grid">
                 <div class="pricing-card">
@@ -210,11 +296,12 @@
                         </div>
                     </div>
                     <ul class="plan-features">
-                        <li><span class="check">✓</span> 50 analisi al mese</li>
-                        <li><span class="check">✓</span> Tutti i punti di rilevamento</li>
-                        <li><span class="check">✓</span> Report PDF base</li>
+                        <li><span class="check">✓</span> 50 clienti al mese</li>
+                        <li><span class="check">✓</span> Analisi sopracciglia completa</li>
+                        <li><span class="check">✓</span> Rilevamento 468 punti</li>
+                        <li><span class="check">✓</span> Misurazioni simmetria</li>
                         <li><span class="check">✓</span> Supporto email</li>
-                        <li class="disabled"><span class="cross">✗</span> API access</li>
+                        <li class="disabled"><span class="cross">✗</span> Report PDF personalizzati</li>
                     </ul>
                     <button class="btn-outline" onclick="showAuthModal('signup', 'starter')">Inizia Gratis</button>
                 </div>
@@ -229,11 +316,12 @@
                         </div>
                     </div>
                     <ul class="plan-features">
-                        <li><span class="check">✓</span> 200 analisi al mese</li>
-                        <li><span class="check">✓</span> Report avanzati personalizzabili</li>
-                        <li><span class="check">✓</span> Analisi video illimitata</li>
+                        <li><span class="check">✓</span> 200 clienti al mese</li>
+                        <li><span class="check">✓</span> Report PDF con logo personalizzato</li>
+                        <li><span class="check">✓</span> Overlay e correzioni avanzate</li>
+                        <li><span class="check">✓</span> Analisi video e webcam illimitata</li>
+                        <li><span class="check">✓</span> Storico clienti</li>
                         <li><span class="check">✓</span> Supporto prioritario</li>
-                        <li><span class="check">✓</span> API access limitato</li>
                     </ul>
                     <button class="btn-primary" onclick="showAuthModal('signup', 'professional')">Inizia Gratis</button>
                 </div>
@@ -247,11 +335,12 @@
                         </div>
                     </div>
                     <ul class="plan-features">
-                        <li><span class="check">✓</span> Analisi illimitate</li>
-                        <li><span class="check">✓</span> White-label branding</li>
-                        <li><span class="check">✓</span> API completo</li>
+                        <li><span class="check">✓</span> Clienti illimitate</li>
+                        <li><span class="check">✓</span> Multi-postazione (fino a 5 utenti)</li>
+                        <li><span class="check">✓</span> White-label completo</li>
+                        <li><span class="check">✓</span> Database clienti cloud</li>
+                        <li><span class="check">✓</span> API per integrazioni</li>
                         <li><span class="check">✓</span> Supporto dedicato 24/7</li>
-                        <li><span class="check">✓</span> Custom integrations</li>
                     </ul>
                     <button class="btn-outline" onclick="showAuthModal('signup', 'enterprise')">Contattaci</button>
                 </div>
@@ -263,40 +352,46 @@
     <section id="testimonials" class="testimonials">
         <div class="container">
             <div class="section-header">
-                <h2 class="section-title">Cosa Dicono i Professionisti</h2>
-                <p class="section-description">Testimonianze di medici che utilizzano Kimerika Evolution</p>
+                <h2 class="section-title">Le Estetiste Professioniste Amano Kimerika</h2>
+                <p class="section-description">Scopri come Kimerika sta trasformando il lavoro sulle sopracciglia</p>
             </div>
             <div class="testimonials-grid">
                 <div class="testimonial-card">
                     <div class="testimonial-stars">★★★★★</div>
-                    <p class="testimonial-text">"Kimerika Evolution ha rivoluzionato il modo in cui comunico con i miei pazienti. Le misurazioni precise e i report professionali hanno aumentato la fiducia e i risultati."</p>
+                    <p class="testimonial-text">"Prima impiegavo 15-20 minuti solo per tracciare le simmetrie.
+                        Con Kimerika lo faccio in 2 minuti! Le mie clienti restano a bocca aperta vedendo
+                        l'analisi digitale del loro viso. È diventato il mio strumento numero uno!"</p>
                     <div class="testimonial-author">
-                        <div class="author-avatar">👨‍⚕️</div>
+                        <div class="author-avatar">💅</div>
                         <div class="author-info">
-                            <div class="author-name">Dr. Marco Rossi</div>
-                            <div class="author-title">Chirurgo Estetico, Milano</div>
+                            <div class="author-name">Giulia Fontana</div>
+                            <div class="author-title">Brow Artist, Milano</div>
                         </div>
                     </div>
                 </div>
                 <div class="testimonial-card">
                     <div class="testimonial-stars">★★★★★</div>
-                    <p class="testimonial-text">"Precisione incredibile e interfaccia intuitiva. Lo uso quotidianamente per valutazioni pre e post operatorie. Strumento indispensabile per la mia pratica."</p>
+                    <p class="testimonial-text">"Finalmente un'app che mi capisce! La ricerca della simmetria era
+                        il momento più stressante del trattamento. Ora è diventato il momento WOW per le clienti.
+                        In più, con le misurazioni precise, nessuna può più contestarmi il risultato!"</p>
                     <div class="testimonial-author">
-                        <div class="author-avatar">👩‍⚕️</div>
+                        <div class="author-avatar">✨</div>
                         <div class="author-info">
-                            <div class="author-name">Dr.ssa Laura Bianchi</div>
-                            <div class="author-title">Dermatologa, Roma</div>
+                            <div class="author-name">Sara Moretti</div>
+                            <div class="author-title">PMU Specialist, Roma</div>
                         </div>
                     </div>
                 </div>
                 <div class="testimonial-card">
                     <div class="testimonial-stars">★★★★★</div>
-                    <p class="testimonial-text">"Il miglior investimento per il mio studio. I pazienti apprezzano la tecnologia all'avanguardia e la chiarezza dei report. ROI eccellente."</p>
+                    <p class="testimonial-text">"Le mie clienti mi fanno i complimenti per la tecnologia!
+                        Kimerika mi ha fatto fare il salto di qualità: da estetista a consulente professionale.
+                        Il fatto che tutto sia scientifico e preciso aumenta enormemente la loro fiducia."</p>
                     <div class="testimonial-author">
-                        <div class="author-avatar">👨‍⚕️</div>
+                        <div class="author-avatar">👁️</div>
                         <div class="author-info">
-                            <div class="author-name">Dr. Giuseppe Verdi</div>
-                            <div class="author-title">Medicina Estetica, Firenze</div>
+                            <div class="author-name">Elena Russo</div>
+                            <div class="author-title">Beauty Specialist, Torino</div>
                         </div>
                     </div>
                 </div>
@@ -308,10 +403,12 @@
     <section class="cta">
         <div class="container">
             <div class="cta-content">
-                <h2 class="cta-title">Pronto a Rivoluzionare la Tua Pratica Medica?</h2>
-                <p class="cta-description">Inizia oggi con 14 giorni di prova gratuita. Nessuna carta di credito richiesta.</p>
+                <h2 class="cta-title">Trasforma le Sopracciglia in un'Arte Scientifica</h2>
+                <p class="cta-description">Basta frustrazioni con matite e righelli.
+                    Inizia oggi con 14 giorni di prova gratuita e scopri quanto può essere
+                    veloce, preciso e affascinante lavorare con Kimerika.</p>
                 <button class="btn-primary btn-large" onclick="showAuthModal('signup')">
-                    Inizia Gratis Ora
+                    Prova Gratis per 14 Giorni
                     <span class="arrow">→</span>
                 </button>
             </div>
@@ -326,7 +423,10 @@
                     <div class="logo">
                         <img src="Kimeriza DIGITAL DESIGN SYSTEM (2).png" alt="Kimerika Evolution" class="logo-img">
                     </div>
-                    <p class="footer-description">Tecnologia AI avanzata per l'analisi facciale medicale professionale.</p>
+                    <p class="footer-description">Tecnologia AI avanzata per la progettazione simmetrica delle
+                        sopracciglia.
+                        Rendi veloce e divertente ciò che prima era difficile e stressante.
+                    </p>
                 </div>
                 <div class="footer-section">
                     <h4>Prodotto</h4>
@@ -387,7 +487,8 @@
                             <input type="checkbox" name="remember">
                             <span>Ricordami</span>
                         </label>
-                        <a href="#" class="forgot-password" onclick="showAuthModal('forgot'); return false;">Password dimenticata?</a>
+                        <a href="#" class="forgot-password" onclick="showAuthModal('forgot'); return false;">Password
+                            dimenticata?</a>
                     </div>
                     <button type="submit" class="btn-primary btn-full">Accedi</button>
                 </form>
@@ -399,16 +500,22 @@
                 <div class="social-login">
                     <button class="btn-social btn-google" onclick="loginWithGoogle()">
                         <svg width="18" height="18" viewBox="0 0 18 18">
-                            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
-                            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
-                            <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707 0-.593.102-1.17.282-1.709V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.335z"/>
-                            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+                            <path fill="#4285F4"
+                                d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" />
+                            <path fill="#34A853"
+                                d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" />
+                            <path fill="#FBBC05"
+                                d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707 0-.593.102-1.17.282-1.709V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.335z" />
+                            <path fill="#EA4335"
+                                d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" />
                         </svg>
                         Continua con Google
                     </button>
-                    <button class="btn-social btn-apple" onclick="loginWithApple()">
+                    <button class="btn-social btn-apple" onclick="loginWithApple()" style="display: none;">
                         <svg width="18" height="18" viewBox="0 0 18 18">
-                            <path d="M14.94 13.5c-.33.75-.49 1.09-.92 1.76-.6.93-1.44 2.09-2.48 2.11-.93.01-1.18-.61-2.45-.6-1.27.01-1.55.61-2.48.6-1.04-.02-1.83-1.08-2.43-2.01-1.67-2.6-1.85-5.65-.82-7.27.74-1.16 1.91-1.85 3.02-1.85 1.12 0 1.83.61 2.76.61.89 0 1.43-.61 2.71-.61.97 0 2.04.53 2.79 1.44-2.45 1.34-2.05 4.83.3 5.82zm-3.27-10.45c.51-.65.9-1.55.76-2.48-.82.04-1.8.57-2.37 1.27-.5.61-.92 1.52-.76 2.41.9.03 1.83-.51 2.37-1.2z" fill="currentColor"/>
+                            <path
+                                d="M14.94 13.5c-.33.75-.49 1.09-.92 1.76-.6.93-1.44 2.09-2.48 2.11-.93.01-1.18-.61-2.45-.6-1.27.01-1.55.61-2.48.6-1.04-.02-1.83-1.08-2.43-2.01-1.67-2.6-1.85-5.65-.82-7.27.74-1.16 1.91-1.85 3.02-1.85 1.12 0 1.83.61 2.76.61.89 0 1.43-.61 2.71-.61.97 0 2.04.53 2.79 1.44-2.45 1.34-2.05 4.83.3 5.82zm-3.27-10.45c.51-.65.9-1.55.76-2.48-.82.04-1.8.57-2.37 1.27-.5.61-.92 1.52-.76 2.41.9.03 1.83-.51 2.37-1.2z"
+                                fill="currentColor" />
                         </svg>
                         Continua con Apple
                     </button>
@@ -441,13 +548,15 @@
                     </div>
                     <div class="form-group">
                         <label for="signup-password">Password</label>
-                        <input type="password" id="signup-password" name="password" required placeholder="••••••••" minlength="8">
+                        <input type="password" id="signup-password" name="password" required placeholder="••••••••"
+                            minlength="8">
                         <div class="password-strength" id="password-strength"></div>
                     </div>
                     <div class="form-group">
                         <label class="checkbox-label">
                             <input type="checkbox" name="terms" required>
-                            <span>Accetto i <a href="#terms">Termini di Servizio</a> e la <a href="#privacy">Privacy Policy</a></span>
+                            <span>Accetto i <a href="#terms">Termini di Servizio</a> e la <a href="#privacy">Privacy
+                                    Policy</a></span>
                         </label>
                     </div>
                     <button type="submit" class="btn-primary btn-full">Crea Account</button>
@@ -460,16 +569,22 @@
                 <div class="social-login">
                     <button class="btn-social btn-google" onclick="signupWithGoogle()">
                         <svg width="18" height="18" viewBox="0 0 18 18">
-                            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
-                            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
-                            <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707 0-.593.102-1.17.282-1.709V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.335z"/>
-                            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+                            <path fill="#4285F4"
+                                d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" />
+                            <path fill="#34A853"
+                                d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" />
+                            <path fill="#FBBC05"
+                                d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707 0-.593.102-1.17.282-1.709V4.958H.957C.347 6.173 0 7.548 0 9s.348 2.827.957 4.042l3.007-2.335z" />
+                            <path fill="#EA4335"
+                                d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" />
                         </svg>
                         Registrati con Google
                     </button>
-                    <button class="btn-social btn-apple" onclick="signupWithApple()">
+                    <button class="btn-social btn-apple" onclick="signupWithApple()" style="display: none;">
                         <svg width="18" height="18" viewBox="0 0 18 18">
-                            <path d="M14.94 13.5c-.33.75-.49 1.09-.92 1.76-.6.93-1.44 2.09-2.48 2.11-.93.01-1.18-.61-2.45-.6-1.27.01-1.55.61-2.48.6-1.04-.02-1.83-1.08-2.43-2.01-1.67-2.6-1.85-5.65-.82-7.27.74-1.16 1.91-1.85 3.02-1.85 1.12 0 1.83.61 2.76.61.89 0 1.43-.61 2.71-.61.97 0 2.04.53 2.79 1.44-2.45 1.34-2.05 4.83.3 5.82zm-3.27-10.45c.51-.65.9-1.55.76-2.48-.82.04-1.8.57-2.37 1.27-.5.61-.92 1.52-.76 2.41.9.03 1.83-.51 2.37-1.2z" fill="currentColor"/>
+                            <path
+                                d="M14.94 13.5c-.33.75-.49 1.09-.92 1.76-.6.93-1.44 2.09-2.48 2.11-.93.01-1.18-.61-2.45-.6-1.27.01-1.55.61-2.48.6-1.04-.02-1.83-1.08-2.43-2.01-1.67-2.6-1.85-5.65-.82-7.27.74-1.16 1.91-1.85 3.02-1.85 1.12 0 1.83.61 2.76.61.89 0 1.43-.61 2.71-.61.97 0 2.04.53 2.79 1.44-2.45 1.34-2.05 4.83.3 5.82zm-3.27-10.45c.51-.65.9-1.55.76-2.48-.82.04-1.8.57-2.37 1.27-.5.61-.92 1.52-.76 2.41.9.03 1.83-.51 2.37-1.2z"
+                                fill="currentColor" />
                         </svg>
                         Registrati con Apple
                     </button>
@@ -483,7 +598,8 @@
             <!-- Forgot Password Form -->
             <div id="forgot-form" class="auth-form" style="display: none;">
                 <h2 class="form-title">Recupera Password</h2>
-                <p class="form-subtitle">Inserisci la tua email e ti invieremo le istruzioni per reimpostare la password</p>
+                <p class="form-subtitle">Inserisci la tua email e ti invieremo le istruzioni per reimpostare la password
+                </p>
 
                 <form onsubmit="handleForgotPassword(event)">
                     <div class="form-group">
