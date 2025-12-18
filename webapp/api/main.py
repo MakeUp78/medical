@@ -2334,6 +2334,12 @@ async def process_voice_keyword(request: VoiceKeywordCommand):
         "analisi": {"action": "analyzeFace", "message": "Avvio analisi facciale"},
         "cancella": {"action": "clearCanvas", "message": "Pulizia canvas"},
         "pulisci": {"action": "clearCanvas", "message": "Pulizia canvas"},
+        # Comandi per simmetria facciale (con tutte le varianti: viso/volto/faccia)
+        "simmetria": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
+        "simmetrico": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
+        "simmetrica": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
+        "lato più grande": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
+        "quale lato": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
     }
     
     # Cerca match

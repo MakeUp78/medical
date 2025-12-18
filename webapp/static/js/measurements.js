@@ -107,6 +107,40 @@ function createAreaPolygon(points, label, color = '#FF6B35') {
   return polygon;
 }
 
+function createAreaPolygonDirect(transformedPoints, label, color = '#FF6B35') {
+  /**
+   * Crea un poligono per visualizzare un'area usando punti GIÀ TRASFORMATI
+   * @param {Array} transformedPoints - Array di punti già in coordinate canvas
+   * @param {string} label - Label dell'area
+   * @param {string} color - Colore del poligono
+   * @returns {fabric.Polygon} Il poligono creato
+   */
+  if (!fabricCanvas || !transformedPoints || transformedPoints.length < 3) {
+    console.error('❌ Parametri mancanti o insufficienti per createAreaPolygonDirect');
+    return null;
+  }
+
+  // I punti sono già trasformati, converti solo in formato Fabric.js
+  const fabricPoints = transformedPoints.map(p => ({ x: p.x, y: p.y }));
+
+  // Crea il poligono
+  const polygon = new fabric.Polygon(fabricPoints, {
+    fill: color + '40', // Trasparenza del 25%
+    stroke: color,
+    strokeWidth: 2,
+    selectable: false,
+    evented: false,
+    isAreaPolygon: true,
+    measurementType: label
+  });
+
+  // Aggiungi al canvas
+  fabricCanvas.add(polygon);
+  fabricCanvas.bringToFront(polygon);
+
+  return polygon;
+}
+
 function calculateCentroid(points) {
   // points: array di oggetti {x,y}
   if (!points || points.length === 0) return { x: 0, y: 0 };
@@ -636,13 +670,40 @@ function addMeasurementToTable(name, value, unit, measurementType = null) {
   }
 
   row.appendChild(typeCell);
+
+  // Gestisci sia valori numerici che stringhe
+  const valueFormatted = typeof value === 'number' ? value.toFixed(1) : value;
+
   row.innerHTML += `
-    <td>${value.toFixed(1)}</td>
+    <td>${valueFormatted}</td>
     <td>${unit}</td>
     <td>✅</td>
   `;
 
-  console.log(`✅ Misurazione aggiunta: ${name} = ${value.toFixed(1)} ${unit}`);
+  console.log(`✅ Misurazione aggiunta: ${name} = ${valueFormatted} ${unit}`);
+
+  // Apri automaticamente la sezione misurazioni se è chiusa
+  ensureMeasurementsSectionOpen();
+}
+
+function ensureMeasurementsSectionOpen() {
+  /**
+   * Apre automaticamente la sezione Misurazioni se è chiusa
+   */
+  const measurementsSection = document.querySelector('.right-sidebar .section[data-expanded="false"]');
+  if (measurementsSection) {
+    const sectionHeader = measurementsSection.querySelector('.section-header');
+    const sectionContent = measurementsSection.querySelector('.section-content');
+
+    if (sectionHeader && sectionContent && sectionContent.style.display === 'none') {
+      // Apri la sezione
+      measurementsSection.dataset.expanded = 'true';
+      sectionContent.style.display = 'block';
+      const icon = sectionHeader.querySelector('.icon');
+      if (icon) icon.textContent = '▼';
+      console.log('📂 Sezione Misurazioni aperta automaticamente');
+    }
+  }
 }
 
 function drawMeasurementLine(point1, point2, label) {
@@ -996,114 +1057,88 @@ function performFacialSymmetryMeasurement() {
       172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10
     ];
 
-    // Asse centrale del viso (usando punti anatomici centrali)
-    const noseTip = currentLandmarks[1];           // Punta del naso
-    const upperLip = currentLandmarks[12];         // Labbro superiore centro
-    const lowerLip = currentLandmarks[15];         // Labbro inferiore centro
-    const foreheadCenter = currentLandmarks[9];    // Centro fronte
+    // Asse centrale del viso - USA GLI STESSI LANDMARKS DI drawSymmetryAxis()
+    // Landmarks MediaPipe: Glabella (9) e Philtrum (164)
+    const glabella = currentLandmarks[9];   // Punto superiore: glabella (tra le sopracciglia)
+    const philtrum = currentLandmarks[164]; // Punto inferiore: philtrum (area naso-labbro)
 
-    if (!noseTip || !upperLip || !lowerLip || !foreheadCenter) {
+    if (!glabella || !philtrum) {
       showToast('Landmark centrali mancanti per calcolare l\'asse del viso', 'warning');
       return;
     }
 
-    // Calcola l'asse centrale X come media dei punti centrali
-    const faceCenterX = (noseTip.x + upperLip.x + lowerLip.x + foreheadCenter.x) / 4;
+    // Calcola l'asse centrale X come media tra glabella e philtrum (coordinate originali)
+    const faceCenterX = (glabella.x + philtrum.x) / 2;
 
-    console.log('⚖️ Asse centrale calcolato:', { faceCenterX, noseTipX: noseTip.x });
+    console.log('⚖️ Asse centrale calcolato (landmarks 9+164):', {
+      faceCenterX,
+      glabellaX: glabella.x,
+      philtrumX: philtrum.x
+    });
 
-    // Estrai tutti i landmark del contorno validi
-    const faceContourPoints = faceContourLandmarks
+    // === SEQUENZE SPECIFICHE DI LANDMARKS PER LE EMIFACCE ===
+    // Invece di filtrare tutti i punti, usiamo sequenze precise
+
+    // EMIFACCIA SINISTRA: landmarks dal 148 al 152 passando per il 10
+    // Sequenza: 10 (top) → 338 → ... → 152 (bottom lato sinistro)
+    const leftFaceLandmarkSequence = [
+      10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
+      397, 365, 379, 378, 400, 377, 152
+    ];
+
+    // EMIFACCIA DESTRA: landmarks dal 338 al 10 poi verso il 152
+    // Sequenza: 152 → 148 → ... → 10 (top lato destro)
+    const rightFaceLandmarkSequence = [
+      152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10
+    ];
+
+    // Trasforma i landmark dell'asse (STESSI di drawSymmetryAxis)
+    const transformedGlabella = window.transformLandmarkCoordinate(glabella);
+    const transformedPhiltrum = window.transformLandmarkCoordinate(philtrum);
+
+    // Calcola direzione dell'asse (stesso algoritmo di drawSymmetryAxis)
+    const dx = transformedPhiltrum.x - transformedGlabella.x;
+    const dy = transformedPhiltrum.y - transformedGlabella.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    const dirX = dx / length;
+    const dirY = dy / length;
+
+    // Estendi l'asse per trovare i punti top/bottom
+    const maxExtension = Math.sqrt(fabricCanvas.getWidth() ** 2 + fabricCanvas.getHeight() ** 2);
+    const axisTopX = transformedGlabella.x - dirX * maxExtension;
+    const axisTopY = transformedGlabella.y - dirY * maxExtension;
+    const axisBottomX = transformedPhiltrum.x + dirX * maxExtension;
+    const axisBottomY = transformedPhiltrum.y + dirY * maxExtension;
+
+    // Estrai e trasforma i landmarks delle emifacce
+    const leftFacePoints = leftFaceLandmarkSequence
       .map(i => currentLandmarks[i])
-      .filter(point => point && point.x !== undefined && point.y !== undefined);
+      .filter(p => p && p.x !== undefined && p.y !== undefined)
+      .map(p => window.transformLandmarkCoordinate(p));
 
-    if (faceContourPoints.length < 10) {
-      showToast('Landmark perimetrali insufficienti', 'warning');
+    const rightFacePoints = rightFaceLandmarkSequence
+      .map(i => currentLandmarks[i])
+      .filter(p => p && p.x !== undefined && p.y !== undefined)
+      .map(p => window.transformLandmarkCoordinate(p));
+
+    if (leftFacePoints.length < 5 || rightFacePoints.length < 5) {
+      showToast('Landmark delle emifacce insufficienti', 'warning');
       return;
     }
 
-    // === METODO MIGLIORATO PER DIVISIONE EMIFACCE ===
-
-    // Ordina tutti i punti del contorno per creare un percorso continuo
-    const centerPoint = {
-      x: faceCenterX,
-      y: (Math.min(...faceContourPoints.map(p => p.y)) + Math.max(...faceContourPoints.map(p => p.y))) / 2
-    };
-
-    // Ordina i punti del contorno in senso orario partendo dall'alto
-    const sortedContourPoints = faceContourPoints.sort((a, b) => {
-      const angleA = Math.atan2(a.y - centerPoint.y, a.x - centerPoint.x);
-      const angleB = Math.atan2(b.y - centerPoint.y, b.x - centerPoint.x);
-      return angleA - angleB;
-    });
-
-    // Punti dell'asse centrale più dettagliati
-    const detailedAxisPoints = [
-      { x: faceCenterX, y: Math.min(...faceContourPoints.map(p => p.y)) },      // Top fronte
-      { x: faceCenterX, y: foreheadCenter.y },                                   // Centro fronte  
-      { x: faceCenterX, y: (foreheadCenter.y + noseTip.y) / 2 },               // Tra fronte e naso
-      { x: faceCenterX, y: noseTip.y },                                         // Punta naso
-      { x: faceCenterX, y: (noseTip.y + upperLip.y) / 2 },                     // Tra naso e bocca
-      { x: faceCenterX, y: upperLip.y },                                        // Labbro superiore
-      { x: faceCenterX, y: lowerLip.y },                                        // Labbro inferiore
-      { x: faceCenterX, y: (lowerLip.y + Math.max(...faceContourPoints.map(p => p.y))) / 2 }, // Metà mento
-      { x: faceCenterX, y: Math.max(...faceContourPoints.map(p => p.y)) }       // Bottom mento
+    // === COSTRUZIONE POLIGONO EMIFACCIA SINISTRA ===
+    // Percorso: 10 (asse) → contorno sinistro → 152 (asse) → chiudi lungo asse
+    const leftFacePolygonSorted = [
+      ...leftFacePoints,                                          // Contorno da 10 a 152
+      { x: transformedPhiltrum.x, y: transformedPhiltrum.y }     // Philtrum (chiude sul 152)
     ];
 
-    // === COSTRUZIONE POLIGONO EMIFACCIA SINISTRA ===
-    const leftFacePolygon = [];
-
-    // Aggiungi punti dell'asse centrale
-    leftFacePolygon.push(...detailedAxisPoints);
-
-    // Aggiungi tutti i punti del contorno che appartengono all'emifaccia sinistra
-    for (const point of sortedContourPoints) {
-      if (point.x <= faceCenterX + 8) { // Tolleranza aumentata a 8 pixel
-        leftFacePolygon.push(point);
-      }
-    }
-
     // === COSTRUZIONE POLIGONO EMIFACCIA DESTRA ===  
-    const rightFacePolygon = [];
-
-    // Copia i punti dell'asse per evitare problemi con reverse()
-    const rightAxisPoints = [...detailedAxisPoints];
-    rightFacePolygon.push(...rightAxisPoints);
-
-    // Aggiungi tutti i punti del contorno che appartengono all'emifaccia destra
-    for (const point of sortedContourPoints) {
-      if (point.x >= faceCenterX - 8) { // Tolleranza aumentata a 8 pixel
-        rightFacePolygon.push(point);
-      }
-    }
-
-    // Aggiungi punti specifici della fronte destra per colmare il gap
-    const foreheadRightPoints = faceContourPoints.filter(p =>
-      p.x > faceCenterX - 15 && p.x < faceCenterX + 15 &&
-      p.y < foreheadCenter.y + 20 // Zona fronte
-    );
-    rightFacePolygon.push(...foreheadRightPoints);
-
-    // Rimuovi duplicati e riordina i poligoni per garantire continuità
-    const uniqueLeftPoints = leftFacePolygon.filter((point, index, arr) =>
-      index === 0 || !(arr[index - 1].x === point.x && arr[index - 1].y === point.y)
-    );
-
-    const uniqueRightPoints = rightFacePolygon.filter((point, index, arr) =>
-      index === 0 || !(arr[index - 1].x === point.x && arr[index - 1].y === point.y)
-    );
-
-    const leftFacePolygonSorted = uniqueLeftPoints.sort((a, b) => {
-      const angleA = Math.atan2(a.y - centerPoint.y, a.x - centerPoint.x);
-      const angleB = Math.atan2(b.y - centerPoint.y, b.x - centerPoint.x);
-      return angleA - angleB;
-    });
-
-    const rightFacePolygonSorted = uniqueRightPoints.sort((a, b) => {
-      const angleA = Math.atan2(a.y - centerPoint.y, a.x - centerPoint.x);
-      const angleB = Math.atan2(b.y - centerPoint.y, b.x - centerPoint.x);
-      return angleB - angleA;
-    });
+    // Percorso: 152 (asse) → contorno destro → 10 (asse) → chiudi lungo asse
+    const rightFacePolygonSorted = [
+      ...rightFacePoints,                                         // Contorno da 152 a 10
+      { x: transformedGlabella.x, y: transformedGlabella.y }     // Glabella (chiude sul 10)
+    ];
 
     console.log('⚖️ Poligoni emifacce migliorati:', {
       leftPoints: leftFacePolygonSorted.length,
@@ -1119,27 +1154,56 @@ function performFacialSymmetryMeasurement() {
       }
     });
 
-    // Calcola le aree delle emifacce con i poligoni migliorati
-    const leftFaceArea = calculatePolygonArea(leftFacePolygonSorted);
-    const rightFaceArea = calculatePolygonArea(rightFacePolygonSorted);
+    console.log('⚖️ Poligoni emifacce (coordinate trasformate):', {
+      leftPoints: leftFacePolygonSorted.length,
+      rightPoints: rightFacePolygonSorted.length,
+      sampleLeftPoint: leftFacePolygonSorted[0],
+      sampleRightPoint: rightFacePolygonSorted[0]
+    });
+
+    // Calcola le aree delle emifacce (già in coordinate trasformate/canvas = pixel²)
+    // Usa la funzione locale, non quella globale di main.js
+    const leftFaceAreaPixels = calculatePolygonAreaFromPoints(leftFacePolygonSorted);
+    const rightFaceAreaPixels = calculatePolygonAreaFromPoints(rightFacePolygonSorted);
+
+    // Converti da pixel² a mm² usando il pixel ratio globale
+    const pixelToMmRatio = window.pixelToMmRatio || 0.1; // Default se non definito
+    const leftFaceArea = leftFaceAreaPixels * pixelToMmRatio * pixelToMmRatio;
+    const rightFaceArea = rightFaceAreaPixels * pixelToMmRatio * pixelToMmRatio;
+
+    console.log('⚖️ Aree calcolate:', {
+      leftFaceAreaPixels: leftFaceAreaPixels,
+      rightFaceAreaPixels: rightFaceAreaPixels,
+      leftFaceArea: leftFaceArea,
+      rightFaceArea: rightFaceArea,
+      pixelToMmRatio: pixelToMmRatio,
+      leftFaceAreaType: typeof leftFaceArea,
+      rightFaceAreaType: typeof rightFaceArea
+    });
+
+    // Verifica che le aree siano valide numeri
+    if (typeof leftFaceArea !== 'number' || typeof rightFaceArea !== 'number' ||
+      isNaN(leftFaceArea) || isNaN(rightFaceArea) ||
+      leftFaceArea <= 0 || rightFaceArea <= 0) {
+      console.error('❌ Aree non valide:', { leftFaceArea, rightFaceArea });
+      showToast('Errore nel calcolo delle aree delle emifacce', 'error');
+      return;
+    }
 
     // Crea overlay visuali
     const overlayObjects = [];
 
-    // Poligono emifaccia SINISTRA con algoritmo migliorato
-    const leftFaceAreaPolygon = createAreaPolygon(leftFacePolygonSorted, 'Emifaccia Sinistra', '#FF6B35');
+    // Poligono emifaccia SINISTRA (punti già trasformati, non servono ulteriori trasformazioni)
+    const leftFaceAreaPolygon = createAreaPolygonDirect(leftFacePolygonSorted, 'Emifaccia Sinistra', '#FF6B35');
     if (leftFaceAreaPolygon) overlayObjects.push(leftFaceAreaPolygon);
 
-    // Poligono emifaccia DESTRA con algoritmo migliorato
-    const rightFaceAreaPolygon = createAreaPolygon(rightFacePolygonSorted, 'Emifaccia Destra', '#6B73FF');
+    // Poligono emifaccia DESTRA (punti già trasformati)
+    const rightFaceAreaPolygon = createAreaPolygonDirect(rightFacePolygonSorted, 'Emifaccia Destra', '#6B73FF');
     if (rightFaceAreaPolygon) overlayObjects.push(rightFaceAreaPolygon);
 
-    // Linea dell'asse centrale
+    // Linea dell'asse centrale (usa punti già calcolati)
     try {
-      const axisTop = window.transformLandmarkCoordinate(axisPoints[0]);
-      const axisBottom = window.transformLandmarkCoordinate(axisPoints[3]);
-
-      const axisLine = new fabric.Line([axisTop.x, axisTop.y, axisBottom.x, axisBottom.y], {
+      const axisLine = new fabric.Line([axisTopX, axisTopY, axisBottomX, axisBottomY], {
         stroke: '#FFFFFF',
         strokeWidth: 2,
         strokeDashArray: [10, 5],
@@ -1155,12 +1219,10 @@ function performFacialSymmetryMeasurement() {
       console.warn('Impossibile disegnare asse centrale:', e);
     }
 
-    // Etichette comparative
+    // Etichette comparative (punti già trasformati)
     try {
-      const transformedLeft = leftFacePolygonSorted.map(p => window.transformLandmarkCoordinate(p));
-      const transformedRight = rightFacePolygonSorted.map(p => window.transformLandmarkCoordinate(p));
-      const leftCentroid = calculateCentroid(transformedLeft);
-      const rightCentroid = calculateCentroid(transformedRight);
+      const leftCentroid = calculateCentroid(leftFacePolygonSorted);
+      const rightCentroid = calculateCentroid(rightFacePolygonSorted);
 
       // Calcola differenza percentuale
       const totalArea = leftFaceArea + rightFaceArea;
@@ -1235,18 +1297,52 @@ function performFacialSymmetryMeasurement() {
     // Salva overlay
     measurementOverlays.set('facialSymmetry', overlayObjects);
 
-    // Aggiungi alla tabella risultati
+    // Calcola differenza e percentuale
+    const totalArea = leftFaceArea + rightFaceArea;
+    const leftPercentage = (leftFaceArea / totalArea * 100);
+    const rightPercentage = (rightFaceArea / totalArea * 100);
+    const asymmetryPercent = Math.abs(leftPercentage - rightPercentage);
+    const asymmetryAbsolute = Math.abs(leftFaceArea - rightFaceArea);
+
+    // Determina quale lato è più grande e genera messaggio DETTAGLIATO
+    let biggerSideMessage = '';
+    let voiceMessage = '';
+    let resultDescription = '';
+
+    if (asymmetryPercent < 2) {
+      biggerSideMessage = 'Simmetria Eccellente';
+      resultDescription = 'Emifacce della cliente quasi perfettamente equilibrate';
+      voiceMessage = `Le emifacce della cliente sono quasi perfettamente equilibrate, con una differenza inferiore al 2%`;
+    } else if (leftFaceArea > rightFaceArea) {
+      biggerSideMessage = `Lato SINISTRO maggiore`;
+      resultDescription = `Il lato sinistro della cliente supera il destro del ${asymmetryPercent.toFixed(1)}%`;
+      voiceMessage = `Il lato sinistro della cliente è più grande del ${asymmetryPercent.toFixed(1)}% rispetto al destro`;
+    } else {
+      biggerSideMessage = `Lato DESTRO maggiore`;
+      resultDescription = `Il lato destro della cliente supera il sinistro del ${asymmetryPercent.toFixed(1)}%`;
+      voiceMessage = `Il lato destro della cliente è più grande del ${asymmetryPercent.toFixed(1)}% rispetto al sinistro`;
+    }
+
+    // Salva il messaggio VOCALE dettagliato
+    window.lastSymmetryMessage = voiceMessage;
+
+    // Aggiungi alla tabella MISURAZIONI con informazioni complete
     addMeasurementToTable('Area Emifaccia Sinistra', leftFaceArea, 'mm²');
     addMeasurementToTable('Area Emifaccia Destra', rightFaceArea, 'mm²');
-    addMeasurementToTable('Asimmetria Totale', Math.abs(leftFaceArea - rightFaceArea), 'mm²');
+    addMeasurementToTable('Differenza Assoluta', asymmetryAbsolute, 'mm²');
+    addMeasurementToTable('Differenza Percentuale', asymmetryPercent, '%');
+    addMeasurementToTable('Risultato Simmetria', resultDescription, '');
 
     console.log('⚖️ RISULTATI emifacce:', {
       leftFaceArea: leftFaceArea.toFixed(2),
       rightFaceArea: rightFaceArea.toFixed(2),
-      asymmetry: Math.abs(leftFaceArea - rightFaceArea).toFixed(2)
+      asymmetry: asymmetryAbsolute.toFixed(2),
+      asymmetryPercent: asymmetryPercent.toFixed(2),
+      biggerSide: biggerSideMessage,
+      description: resultDescription
     });
 
-    showToast(`Emifacce: S=${leftFaceArea.toFixed(1)}mm² | D=${rightFaceArea.toFixed(1)}mm²`, 'success');
+    showToast(resultDescription, 'success');
 
   } catch (error) {
     console.error('❌ Errore misurazione emifacce:', error);
@@ -1683,18 +1779,38 @@ function measureKeyDistances() {
 }
 
 // Funzione di supporto per calcolare area poligono
-function calculatePolygonArea(points) {
-  if (!points || points.length < 3) return 0;
+function calculatePolygonAreaFromPoints(points) {
+  /**
+   * Calcola l'area di un poligono usando la formula Shoelace (Gauss)
+   * @param {Array} points - Array di punti con proprietà x e y
+   * @returns {number} Area in unità quadrate
+   */
+  if (!points || points.length < 3) {
+    console.warn('⚠️ calculatePolygonAreaFromPoints: punti insufficienti', points?.length);
+    return 0;
+  }
 
   let area = 0;
   for (let i = 0; i < points.length; i++) {
     const j = (i + 1) % points.length;
-    if (points[i] && points[j]) {
+    if (points[i] && points[j] &&
+      typeof points[i].x === 'number' && typeof points[i].y === 'number' &&
+      typeof points[j].x === 'number' && typeof points[j].y === 'number') {
       area += points[i].x * points[j].y;
       area -= points[j].x * points[i].y;
+    } else {
+      console.warn('⚠️ Punto non valido al calcolo area:', { i, point_i: points[i], point_j: points[j] });
     }
   }
-  return Math.abs(area) / 2;
+
+  const result = Math.abs(area) / 2;
+  console.log(`📐 Area calcolata: ${result.toFixed(2)} px² da ${points.length} punti`);
+  return result;
+}
+
+// Mantieni anche il nome vecchio per compatibilità con altro codice
+function calculatePolygonArea(points) {
+  return calculatePolygonAreaFromPoints(points);
 }
 
 // === IMPLEMENTAZIONI MANCANTI ===
