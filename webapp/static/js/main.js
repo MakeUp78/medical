@@ -84,6 +84,7 @@ window.currentUserName = '';
 function updateUserUI(user) {
   const userNameElement = document.getElementById('user-name');
   const roleBadgeElement = document.getElementById('role-badge');
+  const avatarElement = document.getElementById('user-avatar-img');
 
   // Salva il nome utente globalmente per l'assistente vocale
   window.currentUserName = user.firstname || '';
@@ -103,10 +104,16 @@ function updateUserUI(user) {
     roleBadgeElement.classList.add(user.role);
   }
 
+  // Aggiorna avatar se presente
+  if (avatarElement && user.profile_image) {
+    avatarElement.src = user.profile_image + '?t=' + Date.now();
+  }
+
   console.log('👤 UI utente aggiornata:', {
     name: `${user.firstname} ${user.lastname}`,
     role: user.role,
-    plan: user.plan
+    plan: user.plan,
+    has_avatar: !!user.profile_image
   });
 }
 

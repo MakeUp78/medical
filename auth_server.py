@@ -77,6 +77,15 @@ class User(db.Model):
     # Usage tracking
     analyses_count = db.Column(db.Integer, default=0)
     analyses_limit = db.Column(db.Integer, default=50)  # Default starter limit
+    
+    # Profile image
+    profile_image = db.Column(db.String(255), nullable=True)  # Path to profile image
+    
+    # Additional profile info
+    phone = db.Column(db.String(20), nullable=True)
+    bio = db.Column(db.Text, nullable=True)
+    language = db.Column(db.String(5), default='it')  # Lingua preferita
+    notifications_enabled = db.Column(db.Boolean, default=True)
 
     def set_password(self, password):
         """Hash e salva password"""
@@ -98,9 +107,19 @@ class User(db.Model):
             'plan': self.plan,
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+            'last_login': self.last_login.isoformat() if self.last_login else None,
             'trial_ends_at': self.trial_ends_at.isoformat() if self.trial_ends_at else None,
+            'subscription_ends_at': self.subscription_ends_at.isoformat() if self.subscription_ends_at else None,
             'analyses_count': self.analyses_count,
-            'analyses_limit': self.analyses_limit
+            'analyses_limit': self.analyses_limit,
+            'profile_image': self.profile_image,
+            'phone': self.phone,
+            'bio': self.bio,
+            'language': self.language,
+            'notifications_enabled': self.notifications_enabled,
+            'has_google': self.google_id is not None,
+            'has_apple': self.apple_id is not None,
+            'has_password': self.password_hash is not None
         }
 
 
@@ -635,6 +654,14 @@ def update_profile(user):
             user.firstname = data['firstname'].strip()
         if 'lastname' in data:
             user.lastname = data['lastname'].strip()
+        if 'phone' in data:
+            user.phone = data['phone'].strip() if data['phone'] else None
+        if 'bio' in data:
+            user.bio = data['bio'].strip() if data['bio'] else None
+        if 'language' in data:
+            user.language = data['language']
+        if 'notifications_enabled' in data:
+            user.notifications_enabled = data['notifications_enabled']
 
         db.session.commit()
 
@@ -650,6 +677,256 @@ def update_profile(user):
         return jsonify({
             'success': False,
             'message': 'Errore durante aggiornamento'
+        }), 500
+
+
+@app.route('/api/user/change-password', methods=['POST'])
+@token_required
+def change_password(user):
+    """Cambia password utente"""
+    try:
+        data = request.get_json()
+        
+        current_password = data.get('current_password')
+        new_password = data.get('new_password')
+        
+        if not new_password:
+            return jsonify({
+                'success': False,
+                'message': 'Nuova password richiesta'
+            }), 400
+        
+        # Se l'utente ha una password (non OAuth only), verifica quella corrente
+        if user.password_hash:
+            if not current_password:
+                return jsonify({
+                    'success': False,
+                    'message': 'Password corrente richiesta'
+                }), 400
+            
+            if not user.check_password(current_password):
+                return jsonify({
+                    'success': False,
+                    'message': 'Password corrente non valida'
+                }), 401
+        
+        # Validazione nuova password
+        if len(new_password) < 8:
+            return jsonify({
+                'success': False,
+                'message': 'La password deve essere almeno 8 caratteri'
+            }), 400
+        
+        user.set_password(new_password)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Password aggiornata con successo'
+        })
+    
+    except Exception as e:
+        db.session.rollback()
+        print(f"Change password error: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Errore durante aggiornamento password'
+        }), 500
+
+
+@app.route('/api/user/upload-avatar', methods=['POST'])
+@token_required
+def upload_avatar(user):
+    """Upload immagine profilo"""
+    try:
+        if 'avatar' not in request.files:
+            return jsonify({
+                'success': False,
+                'message': 'Nessun file caricato'
+            }), 400
+        
+        file = request.files['avatar']
+        
+        if file.filename == '':
+            return jsonify({
+                'success': False,
+                'message': 'Nessun file selezionato'
+            }), 400
+        
+        # Verifica estensione
+        allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+        if '.' not in file.filename or file.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
+            return jsonify({
+                'success': False,
+                'message': 'Formato file non supportato. Usa: png, jpg, jpeg, gif, webp'
+            }), 400
+        
+        # Verifica dimensione (max 5MB)
+        file.seek(0, os.SEEK_END)
+        file_size = file.tell()
+        file.seek(0)
+        
+        if file_size > 5 * 1024 * 1024:  # 5MB
+            return jsonify({
+                'success': False,
+                'message': 'File troppo grande. Massimo 5MB'
+            }), 400
+        
+        # Salva file
+        upload_folder = os.path.join('webapp', 'static', 'avatars')
+        os.makedirs(upload_folder, exist_ok=True)
+        
+        # Nome file univoco
+        ext = file.filename.rsplit('.', 1)[1].lower()
+        filename = f"user_{user.id}_{secrets.token_hex(8)}.{ext}"
+        filepath = os.path.join(upload_folder, filename)
+        
+        file.save(filepath)
+        
+        # Elimina vecchia immagine se esiste
+        if user.profile_image:
+            old_path = os.path.join('webapp', user.profile_image.lstrip('/'))
+            if os.path.exists(old_path):
+                try:
+                    os.remove(old_path)
+                except:
+                    pass
+        
+        # Salva path nel database
+        user.profile_image = f"/static/avatars/{filename}"
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Avatar caricato con successo',
+            'profile_image': user.profile_image
+        })
+    
+    except Exception as e:
+        db.session.rollback()
+        print(f"Upload avatar error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': 'Errore durante upload avatar'
+        }), 500
+
+
+@app.route('/api/user/delete-avatar', methods=['DELETE'])
+@token_required
+def delete_avatar(user):
+    """Elimina immagine profilo"""
+    try:
+        if user.profile_image:
+            # Elimina file
+            filepath = os.path.join('webapp', user.profile_image.lstrip('/'))
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except:
+                    pass
+            
+            user.profile_image = None
+            db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Avatar eliminato'
+        })
+    
+    except Exception as e:
+        db.session.rollback()
+        print(f"Delete avatar error: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Errore durante eliminazione avatar'
+        }), 500
+
+
+@app.route('/api/user/subscription', methods=['GET'])
+@token_required
+def get_subscription(user):
+    """Ottieni dettagli abbonamento"""
+    now = datetime.datetime.utcnow()
+    
+    # Calcola stato trial
+    trial_active = user.trial_ends_at and user.trial_ends_at > now
+    trial_days_left = (user.trial_ends_at - now).days if trial_active else 0
+    
+    # Calcola stato subscription
+    subscription_active = user.subscription_ends_at and user.subscription_ends_at > now
+    subscription_days_left = (user.subscription_ends_at - now).days if subscription_active else 0
+    
+    # Definizione limiti per piano
+    plan_limits = {
+        'starter': {'analyses': 50, 'price': 0, 'name': 'Starter'},
+        'professional': {'analyses': 500, 'price': 29, 'name': 'Professional'},
+        'enterprise': {'analyses': -1, 'price': 99, 'name': 'Enterprise'}
+    }
+    
+    current_plan = plan_limits.get(user.plan, plan_limits['starter'])
+    
+    return jsonify({
+        'success': True,
+        'subscription': {
+            'plan': user.plan,
+            'plan_name': current_plan['name'],
+            'plan_price': current_plan['price'],
+            'trial_active': trial_active,
+            'trial_ends_at': user.trial_ends_at.isoformat() if user.trial_ends_at else None,
+            'trial_days_left': trial_days_left,
+            'subscription_active': subscription_active,
+            'subscription_ends_at': user.subscription_ends_at.isoformat() if user.subscription_ends_at else None,
+            'subscription_days_left': subscription_days_left,
+            'analyses_count': user.analyses_count,
+            'analyses_limit': user.analyses_limit,
+            'analyses_remaining': user.analyses_limit - user.analyses_count if user.analyses_limit > 0 else -1,
+            'can_analyze': (trial_active or subscription_active) and (user.analyses_limit == -1 or user.analyses_count < user.analyses_limit)
+        }
+    })
+
+
+@app.route('/api/user/delete-account', methods=['DELETE'])
+@token_required
+def delete_account(user):
+    """Elimina account utente"""
+    try:
+        data = request.get_json()
+        password = data.get('password')
+        
+        # Verifica password se l'utente ne ha una
+        if user.password_hash:
+            if not password or not user.check_password(password):
+                return jsonify({
+                    'success': False,
+                    'message': 'Password non valida'
+                }), 401
+        
+        # Elimina avatar se esiste
+        if user.profile_image:
+            filepath = os.path.join('webapp', user.profile_image.lstrip('/'))
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except:
+                    pass
+        
+        # Elimina utente
+        db.session.delete(user)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Account eliminato con successo'
+        })
+    
+    except Exception as e:
+        db.session.rollback()
+        print(f"Delete account error: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Errore durante eliminazione account'
         }), 500
 
 

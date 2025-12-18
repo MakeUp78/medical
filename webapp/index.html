@@ -25,7 +25,11 @@
                 <!-- Sezione UTENTE -->
                 <div class="user-section">
                     <div class="user-info">
-                        <div class="user-avatar">👤</div>
+                        <div class="user-avatar">
+                            <img id="user-avatar-img"
+                                src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23e0e0e0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40' fill='%23666'%3E👤%3C/text%3E%3C/svg%3E"
+                                alt="Avatar" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
+                        </div>
                         <div class="user-details">
                             <div class="user-name" id="user-name">Caricamento...</div>
                             <div class="user-role" id="user-role">
@@ -33,7 +37,13 @@
                             </div>
                         </div>
                     </div>
-                    <button class="btn-logout" onclick="logout()">Esci</button>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                        <button class="btn-profile" onclick="window.location.href='profile.html'"
+                            style="flex: 1; padding: 0.5rem; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;">
+                            👤 Profilo
+                        </button>
+                        <button class="btn-logout" onclick="logout()" style="flex: 1; padding: 0.5rem;">Esci</button>
+                    </div>
                 </div>
 
                 <!-- Sezione SORGENTE -->
@@ -124,7 +134,8 @@
                             <button class="btn btn-measure" onclick="measureKeyDistances(event)">🔍 Distanze
                                 Chiave</button>
                             <button class="btn btn-measure" onclick="measureFacialSymmetry(event)">⚖️ Simmetria</button>
-                            <button class="btn btn-measure btn-primary" onclick="performCompleteAnalysis(event)" style="grid-column: 1 / -1; font-weight: bold; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                            <button class="btn btn-measure btn-primary" onclick="performCompleteAnalysis(event)"
+                                style="grid-column: 1 / -1; font-weight: bold; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
                                 🧬 ANALISI VISAGISTICA COMPLETA
                             </button>
                         </div>
@@ -146,10 +157,13 @@
                             <button class="btn btn-detection" id="green-dots-btn" onclick="toggleGreenDots()">🟢 GREEN
                                 DOTS</button>
                             <!-- Wrapper per pulsanti misurazione affiancati -->
-                            <div class="btn btn-detection" style="padding: 0; display: flex; gap: 4px; background: transparent;">
-                                <button id="measure-btn" onclick="toggleMeasureMode()" style="flex: 1; background: #f97316; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-weight: 600; transition: all 0.2s;">📐
+                            <div class="btn btn-detection"
+                                style="padding: 0; display: flex; gap: 4px; background: transparent;">
+                                <button id="measure-btn" onclick="toggleMeasureMode()"
+                                    style="flex: 1; background: #f97316; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-weight: 600; transition: all 0.2s;">📐
                                     MISURA</button>
-                                <button id="complete-measure-btn" onclick="completeMeasurement()" style="display: none; flex: 1; background: #f97316; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-weight: 600; transition: all 0.2s;">✅
+                                <button id="complete-measure-btn" onclick="completeMeasurement()"
+                                    style="display: none; flex: 1; background: #f97316; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-weight: 600; transition: all 0.2s;">✅
                                     NUOVA</button>
                             </div>
                         </div>
@@ -244,12 +258,14 @@
 
                             <!-- Controlli principali -->
                             <div class="voice-controls-sidebar">
-                                <button class="btn btn-primary" id="toggle-listening-btn-sidebar" onclick="toggleVoiceListening()">
+                                <button class="btn btn-primary" id="toggle-listening-btn-sidebar"
+                                    onclick="toggleVoiceListening()">
                                     <span id="listening-icon-sidebar">🎤</span>
                                     <span id="listening-text-sidebar">Avvia Ascolto</span>
                                 </button>
 
-                                <button class="btn btn-secondary" id="toggle-mute-btn-sidebar" onclick="toggleVoiceMute()">
+                                <button class="btn btn-secondary" id="toggle-mute-btn-sidebar"
+                                    onclick="toggleVoiceMute()">
                                     <span id="mute-icon-sidebar">🔊</span>
                                     <span id="mute-text-sidebar">Muto</span>
                                 </button>
@@ -264,9 +280,12 @@
                             <div class="voice-quick-messages-sidebar">
                                 <div class="quick-msg-title-sidebar">Messaggi Rapidi:</div>
                                 <div class="quick-msg-buttons-sidebar">
-                                    <button class="btn btn-info btn-small" onclick="voiceAssistant.speakMessage('welcome')">👋 Benvenuto</button>
-                                    <button class="btn btn-info btn-small" onclick="voiceAssistant.speakMessage('axis_on')">📏 Asse On</button>
-                                    <button class="btn btn-info btn-small" onclick="voiceAssistant.speakMessage('landmarks_on')">🎯 Landmarks On</button>
+                                    <button class="btn btn-info btn-small"
+                                        onclick="voiceAssistant.speakMessage('welcome')">👋 Benvenuto</button>
+                                    <button class="btn btn-info btn-small"
+                                        onclick="voiceAssistant.speakMessage('axis_on')">📏 Asse On</button>
+                                    <button class="btn btn-info btn-small"
+                                        onclick="voiceAssistant.speakMessage('landmarks_on')">🎯 Landmarks On</button>
                                 </div>
                             </div>
 
@@ -311,14 +330,22 @@
         <div class="canvas-container">
             <!-- Toolbar strumenti -->
             <div class="canvas-toolbar">
-                <button class="tool-btn" data-tool="pan" onclick="setTool('pan')" title="Sposta vista canvas">✋ Pan</button>
-                <button class="tool-btn" data-tool="zoom-in" onclick="setTool('zoom-in')" title="Ingrandisci al click">🔍+ Zoom In</button>
-                <button class="tool-btn" data-tool="zoom-out" onclick="setTool('zoom-out')" title="Rimpicciolisci al click">🔍- Zoom Out</button>
-                <button class="tool-btn" onclick="rotateImageClockwise()" title="Ruota immagine 1° in senso orario">↻ Ruota ⟲</button>
-                <button class="tool-btn" onclick="rotateImageCounterClockwise()" title="Ruota immagine 1° in senso antiorario">↺ Ruota ⟳</button>
-                <button class="tool-btn" data-tool="line" onclick="setTool('line')" title="Disegna linea">📏 Linea</button>
-                <button class="tool-btn" onclick="clearAllMeasurementOverlays()" title="Pulisci tutte le misurazioni">📐 Pulisci Mis.</button>
-                <button class="tool-btn" onclick="clearCanvas()" title="Pulisci canvas completamente">🧹 Pulisci</button>
+                <button class="tool-btn" data-tool="pan" onclick="setTool('pan')" title="Sposta vista canvas">✋
+                    Pan</button>
+                <button class="tool-btn" data-tool="zoom-in" onclick="setTool('zoom-in')"
+                    title="Ingrandisci al click">🔍+ Zoom In</button>
+                <button class="tool-btn" data-tool="zoom-out" onclick="setTool('zoom-out')"
+                    title="Rimpicciolisci al click">🔍- Zoom Out</button>
+                <button class="tool-btn" onclick="rotateImageClockwise()" title="Ruota immagine 1° in senso orario">↻
+                    Ruota ⟲</button>
+                <button class="tool-btn" onclick="rotateImageCounterClockwise()"
+                    title="Ruota immagine 1° in senso antiorario">↺ Ruota ⟳</button>
+                <button class="tool-btn" data-tool="line" onclick="setTool('line')" title="Disegna linea">📏
+                    Linea</button>
+                <button class="tool-btn" onclick="clearAllMeasurementOverlays()" title="Pulisci tutte le misurazioni">📐
+                    Pulisci Mis.</button>
+                <button class="tool-btn" onclick="clearCanvas()" title="Pulisci canvas completamente">🧹
+                    Pulisci</button>
             </div>
 
             <!-- Canvas principale -->
@@ -512,32 +539,40 @@
             <div class="modal-body">
                 <!-- Loading spinner -->
                 <div id="analysis-loading" style="text-align: center; padding: 40px; display: none;">
-                    <div class="spinner" style="width: 60px; height: 60px; border: 5px solid #f3f3f3; border-top: 5px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+                    <div class="spinner"
+                        style="width: 60px; height: 60px; border: 5px solid #f3f3f3; border-top: 5px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;">
+                    </div>
                     <p style="margin-top: 20px; font-size: 16px; color: #667eea;">Analisi in corso...</p>
                 </div>
 
                 <!-- Report completo -->
                 <div id="analysis-report" style="display: none;">
-                    <div style="margin-bottom: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-                        <button class="btn btn-success" onclick="generateAnalysisPDF()" style="font-size: 16px; padding: 12px 24px;">
+                    <div
+                        style="margin-bottom: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                        <button class="btn btn-success" onclick="generateAnalysisPDF()"
+                            style="font-size: 16px; padding: 12px 24px;">
                             📄 Genera PDF
                         </button>
-                        <button class="btn btn-info" id="read-report-btn" onclick="toggleReportReading()" style="font-size: 16px; padding: 12px 24px;">
+                        <button class="btn btn-info" id="read-report-btn" onclick="toggleReportReading()"
+                            style="font-size: 16px; padding: 12px 24px;">
                             🔊 Leggi Report
                         </button>
-                        <button class="btn btn-secondary" onclick="closeAnalysisModal()" style="font-size: 16px; padding: 12px 24px;">
+                        <button class="btn btn-secondary" onclick="closeAnalysisModal()"
+                            style="font-size: 16px; padding: 12px 24px;">
                             ✖️ Chiudi
                         </button>
                     </div>
 
-                    <div id="report-content" style="background: #f9f9f9; padding: 20px; border-radius: 8px; font-family: 'Courier New', monospace; white-space: pre-wrap; line-height: 1.6; color: #333;">
+                    <div id="report-content"
+                        style="background: #f9f9f9; padding: 20px; border-radius: 8px; font-family: 'Courier New', monospace; white-space: pre-wrap; line-height: 1.6; color: #333;">
                         <!-- Il report verrà inserito qui -->
                     </div>
 
                     <!-- Immagini debug (opzionale) -->
                     <div id="debug-images-container" style="margin-top: 30px; display: none;">
                         <h4 style="margin-bottom: 15px;">📸 Immagini di Analisi</h4>
-                        <div id="debug-images-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
+                        <div id="debug-images-grid"
+                            style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
                             <!-- Le immagini verranno inserite qui -->
                         </div>
                     </div>

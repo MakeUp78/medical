@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Il Mio Profilo - Kimerika Evolution</title>
+    <link rel="stylesheet" href="static/css/profile.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+    <!-- Header -->
+    <header class="profile-header">
+        <div class="container">
+            <div class="header-content">
+                <a href="index.html" class="logo">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>Torna all'App</span>
+                </a>
+                <button class="logout-btn" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Esci
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="profile-main">
+        <div class="container">
+            <div class="profile-layout">
+                <!-- Sidebar -->
+                <aside class="profile-sidebar">
+                    <nav class="profile-nav">
+                        <button class="nav-item active" data-section="overview">
+                            <i class="fas fa-chart-line"></i>
+                            Panoramica
+                        </button>
+                        <button class="nav-item" data-section="personal">
+                            <i class="fas fa-user"></i>
+                            Dati Personali
+                        </button>
+                        <button class="nav-item" data-section="security">
+                            <i class="fas fa-lock"></i>
+                            Sicurezza
+                        </button>
+                        <button class="nav-item" data-section="subscription">
+                            <i class="fas fa-crown"></i>
+                            Abbonamento
+                        </button>
+                        <button class="nav-item" data-section="settings">
+                            <i class="fas fa-cog"></i>
+                            Impostazioni
+                        </button>
+                        <button class="nav-item danger" data-section="danger">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Zona Pericolosa
+                        </button>
+                    </nav>
+                </aside>
+
+                <!-- Content Area -->
+                <div class="profile-content">
+                    <!-- Overview Section -->
+                    <section id="overview-section" class="content-section active">
+                        <h1>
+                            <i class="fas fa-chart-line"></i>
+                            Panoramica Account
+                        </h1>
+
+                        <div class="profile-card">
+                            <div class="avatar-section">
+                                <div class="avatar-container">
+                                    <img id="avatar-preview"
+                                        src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23e0e0e0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40' fill='%23666'%3E👤%3C/text%3E%3C/svg%3E"
+                                        alt="Avatar"
+                                        onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%23e0e0e0%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-size=%2240%22 fill=%22%23666%22%3E%3F%3C/text%3E%3C/svg%3E'">
+                                    <div class="avatar-overlay">
+                                        <label for="avatar-upload" class="avatar-upload-btn">
+                                            <i class="fas fa-camera"></i>
+                                        </label>
+                                    </div>
+                                    <input type="file" id="avatar-upload" accept="image/*" style="display: none;">
+                                </div>
+                                <button class="delete-avatar-btn" id="delete-avatar-btn" style="display: none;">
+                                    <i class="fas fa-trash"></i>
+                                    Rimuovi foto
+                                </button>
+                            </div>
+                            <div class="profile-info">
+                                <h2 id="profile-name">Caricamento...</h2>
+                                <p id="profile-email"></p>
+                                <div class="profile-badges">
+                                    <span class="badge" id="plan-badge">Starter</span>
+                                    <span class="badge oauth-badge" id="google-badge" style="display: none;">
+                                        <i class="fab fa-google"></i> Google
+                                    </span>
+                                    <span class="badge oauth-badge" id="apple-badge" style="display: none;">
+                                        <i class="fab fa-apple"></i> Apple
+                                    </span>
+                                </div>
+                                <div class="profile-stats">
+                                    <div class="stat">
+                                        <span class="stat-label">Membro dal</span>
+                                        <span class="stat-value" id="member-since">-</span>
+                                    </div>
+                                    <div class="stat">
+                                        <span class="stat-label">Ultimo accesso</span>
+                                        <span class="stat-value" id="last-login">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="usage-card">
+                            <h3><i class="fas fa-chart-bar"></i> Utilizzo Analisi</h3>
+                            <div class="usage-progress">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="usage-progress"></div>
+                                </div>
+                                <p class="usage-text" id="usage-text">0 di 50 analisi utilizzate</p>
+                            </div>
+                            <div class="usage-details">
+                                <div class="usage-item">
+                                    <i class="fas fa-check-circle"></i>
+                                    <span id="analyses-done">0 analisi completate</span>
+                                </div>
+                                <div class="usage-item">
+                                    <i class="fas fa-hourglass-half"></i>
+                                    <span id="analyses-remaining">50 analisi rimanenti</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="trial-card" id="trial-card" style="display: none;">
+                            <div class="trial-icon">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="trial-info">
+                                <h3>Periodo di Prova Attivo</h3>
+                                <p id="trial-text">Ti restano 14 giorni di prova gratuita</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Personal Data Section -->
+                    <section id="personal-section" class="content-section">
+                        <h1>
+                            <i class="fas fa-user"></i>
+                            Dati Personali
+                        </h1>
+
+                        <div class="form-card">
+                            <form id="personal-form">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="firstname">Nome</label>
+                                        <input type="text" id="firstname" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="lastname">Cognome</label>
+                                        <input type="text" id="lastname" required>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="email-display">Email</label>
+                                    <input type="email" id="email-display" disabled>
+                                    <small>L'email non può essere modificata</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="phone">Telefono (opzionale)</label>
+                                    <input type="tel" id="phone" placeholder="+39 123 456 7890">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="bio">Bio (opzionale)</label>
+                                    <textarea id="bio" rows="4" placeholder="Parlaci di te..."></textarea>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save"></i>
+                                    Salva Modifiche
+                                </button>
+                            </form>
+                        </div>
+                    </section>
+
+                    <!-- Security Section -->
+                    <section id="security-section" class="content-section">
+                        <h1>
+                            <i class="fas fa-lock"></i>
+                            Sicurezza
+                        </h1>
+
+                        <div class="form-card">
+                            <h3>Cambia Password</h3>
+                            <form id="password-form">
+                                <div class="form-group" id="current-password-group">
+                                    <label for="current-password">Password Corrente</label>
+                                    <div class="password-input">
+                                        <input type="password" id="current-password" required>
+                                        <button type="button" class="toggle-password"
+                                            onclick="togglePassword('current-password')">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="new-password">Nuova Password</label>
+                                    <div class="password-input">
+                                        <input type="password" id="new-password" required minlength="8">
+                                        <button type="button" class="toggle-password"
+                                            onclick="togglePassword('new-password')">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
+                                    <div class="password-strength" id="password-strength"></div>
+                                    <small>Minimo 8 caratteri</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="confirm-password">Conferma Nuova Password</label>
+                                    <div class="password-input">
+                                        <input type="password" id="confirm-password" required minlength="8">
+                                        <button type="button" class="toggle-password"
+                                            onclick="togglePassword('confirm-password')">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-key"></i>
+                                    Aggiorna Password
+                                </button>
+                            </form>
+                        </div>
+
+                        <div class="form-card">
+                            <h3>Account Collegati</h3>
+                            <div class="connected-accounts">
+                                <div class="account-item" id="google-account">
+                                    <div class="account-icon google">
+                                        <i class="fab fa-google"></i>
+                                    </div>
+                                    <div class="account-info">
+                                        <h4>Google</h4>
+                                        <p class="not-connected">Non collegato</p>
+                                    </div>
+                                </div>
+                                <div class="account-item" id="apple-account">
+                                    <div class="account-icon apple">
+                                        <i class="fab fa-apple"></i>
+                                    </div>
+                                    <div class="account-info">
+                                        <h4>Apple</h4>
+                                        <p class="not-connected">Non collegato</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Subscription Section -->
+                    <section id="subscription-section" class="content-section">
+                        <h1>
+                            <i class="fas fa-crown"></i>
+                            Abbonamento
+                        </h1>
+
+                        <div class="subscription-card current-plan">
+                            <div class="plan-header">
+                                <h3>Piano Attuale</h3>
+                                <span class="plan-badge-large" id="current-plan-badge">Starter</span>
+                            </div>
+                            <div class="plan-details">
+                                <div class="plan-detail">
+                                    <i class="fas fa-calendar-check"></i>
+                                    <div>
+                                        <strong>Stato</strong>
+                                        <p id="subscription-status">Attivo</p>
+                                    </div>
+                                </div>
+                                <div class="plan-detail">
+                                    <i class="fas fa-clock"></i>
+                                    <div>
+                                        <strong>Scadenza</strong>
+                                        <p id="subscription-expiry">-</p>
+                                    </div>
+                                </div>
+                                <div class="plan-detail">
+                                    <i class="fas fa-chart-line"></i>
+                                    <div>
+                                        <strong>Analisi Disponibili</strong>
+                                        <p id="subscription-analyses">50 al mese</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="plans-grid">
+                            <div class="plan-option">
+                                <div class="plan-name">Starter</div>
+                                <div class="plan-price">Gratuito</div>
+                                <ul class="plan-features">
+                                    <li><i class="fas fa-check"></i> 50 analisi al mese</li>
+                                    <li><i class="fas fa-check"></i> Funzionalità base</li>
+                                    <li><i class="fas fa-check"></i> Supporto email</li>
+                                </ul>
+                                <button class="btn btn-outline" disabled>Piano Attuale</button>
+                            </div>
+
+                            <div class="plan-option featured">
+                                <div class="popular-badge">Più Popolare</div>
+                                <div class="plan-name">Professional</div>
+                                <div class="plan-price">€29<span>/mese</span></div>
+                                <ul class="plan-features">
+                                    <li><i class="fas fa-check"></i> 500 analisi al mese</li>
+                                    <li><i class="fas fa-check"></i> Tutte le funzionalità</li>
+                                    <li><i class="fas fa-check"></i> Supporto prioritario</li>
+                                    <li><i class="fas fa-check"></i> Report avanzati</li>
+                                </ul>
+                                <button class="btn btn-primary" onclick="upgradePlan('professional')">
+                                    <i class="fas fa-arrow-up"></i>
+                                    Upgrade
+                                </button>
+                            </div>
+
+                            <div class="plan-option">
+                                <div class="plan-name">Enterprise</div>
+                                <div class="plan-price">€99<span>/mese</span></div>
+                                <ul class="plan-features">
+                                    <li><i class="fas fa-check"></i> Analisi illimitate</li>
+                                    <li><i class="fas fa-check"></i> Tutte le funzionalità</li>
+                                    <li><i class="fas fa-check"></i> Supporto 24/7</li>
+                                    <li><i class="fas fa-check"></i> API dedicata</li>
+                                    <li><i class="fas fa-check"></i> Manager dedicato</li>
+                                </ul>
+                                <button class="btn btn-primary" onclick="upgradePlan('enterprise')">
+                                    <i class="fas fa-arrow-up"></i>
+                                    Upgrade
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Settings Section -->
+                    <section id="settings-section" class="content-section">
+                        <h1>
+                            <i class="fas fa-cog"></i>
+                            Impostazioni
+                        </h1>
+
+                        <div class="form-card">
+                            <h3>Preferenze</h3>
+                            <form id="settings-form">
+                                <div class="form-group">
+                                    <label for="language">Lingua</label>
+                                    <select id="language">
+                                        <option value="it">Italiano</option>
+                                        <option value="en">English</option>
+                                        <option value="es">Español</option>
+                                        <option value="fr">Français</option>
+                                        <option value="de">Deutsch</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <div class="toggle-setting">
+                                        <div>
+                                            <strong>Notifiche Email</strong>
+                                            <p>Ricevi aggiornamenti via email</p>
+                                        </div>
+                                        <label class="toggle">
+                                            <input type="checkbox" id="notifications" checked>
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save"></i>
+                                    Salva Preferenze
+                                </button>
+                            </form>
+                        </div>
+                    </section>
+
+                    <!-- Danger Zone Section -->
+                    <section id="danger-section" class="content-section">
+                        <h1>
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Zona Pericolosa
+                        </h1>
+
+                        <div class="danger-card">
+                            <h3>Elimina Account</h3>
+                            <p>Una volta eliminato, non sarà possibile recuperare il tuo account. Questa azione è
+                                permanente e irreversibile.</p>
+                            <button class="btn btn-danger" onclick="showDeleteAccountModal()">
+                                <i class="fas fa-trash-alt"></i>
+                                Elimina Definitivamente
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Delete Account Modal -->
+    <div id="delete-account-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-exclamation-triangle"></i> Conferma Eliminazione Account</h2>
+                <button class="close-modal" onclick="closeDeleteAccountModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p><strong>Attenzione:</strong> Questa azione è irreversibile!</p>
+                <p>Tutti i tuoi dati, inclusi:</p>
+                <ul>
+                    <li>Profilo personale</li>
+                    <li>Analisi effettuate</li>
+                    <li>Preferenze</li>
+                </ul>
+                <p>Saranno permanentemente eliminati.</p>
+
+                <div class="form-group" id="delete-password-group">
+                    <label for="delete-password">Inserisci la tua password per confermare</label>
+                    <input type="password" id="delete-password" placeholder="Password">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDeleteAccountModal()">Annulla</button>
+                <button class="btn btn-danger" onclick="confirmDeleteAccount()">
+                    <i class="fas fa-trash-alt"></i>
+                    Elimina Definitivamente
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <script src="static/js/profile.js"></script>
+</body>
+
+</html>

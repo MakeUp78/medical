@@ -1226,6 +1226,7 @@ body {
 
   .hero-title {
     font-size: 32px;
+    margin-top: 40px;
   }
 
   .hero-description {
@@ -1271,12 +1272,12 @@ body {
   }
 
   .card-2 {
-    top: 45%;
+    top: 35%;
     right: 5%;
   }
 
   .card-3 {
-    bottom: 5%;
+    bottom: 15%;
     left: 5%;
   }
 
@@ -1403,6 +1404,7 @@ body {
 
   .hero-title {
     font-size: 26px;
+    margin-top: 30px;
   }
 
   .hero-description {
