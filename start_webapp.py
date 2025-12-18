@@ -229,7 +229,7 @@ def find_free_port(start_port=3000, max_attempts=10):
     for port in range(start_port, start_port + max_attempts):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('localhost', port))
+                s.bind(('0.0.0.0', port))
             return port
         except OSError:
             continue
@@ -248,8 +248,8 @@ def start_web_server():
             return
         
         # Crea server HTTP
-        with socketserver.TCPServer(("127.0.0.1", port), WebHandler) as httpd:
-            url = f"http://127.0.0.1:{port}"
+        with socketserver.TCPServer(("0.0.0.0", port), WebHandler) as httpd:
+            url = f"http://localhost:{port}"
             
             print("🌐 Frontend Web Server Medical Facial Analysis")
             print("=" * 50)

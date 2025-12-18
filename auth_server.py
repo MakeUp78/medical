@@ -709,7 +709,7 @@ if __name__ == '__main__':
 
     print("🚀 Kimerika Evolution Auth Server")
     print("=" * 50)
-    print("📡 Server running on http://localhost:5000")
+    print("📡 Server running on http://0.0.0.0:5000 (tutte le interfacce)")
     print("🔐 API Base URL: http://localhost:5000/api")
     print("")
     print("Endpoints disponibili:")
@@ -724,4 +724,4 @@ if __name__ == '__main__':
     print("  GET  /api/user/usage - Statistiche utilizzo")
     print("")
 
-    app.run(debug=True, port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5000)

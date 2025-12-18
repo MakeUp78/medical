@@ -2301,24 +2301,39 @@ async def process_voice_keyword(request: VoiceKeywordCommand):
     keyword = request.keyword.lower().strip()
     
     # Mappa parole chiave -> azioni frontend
+    # IMPORTANTE: pattern più specifici PRIMA per evitare conflitti
     keyword_map = {
+        # Stop webcam - PRIMA di "webcam" (senza message per evitare doppio feedback)
+        "ferma webcam": {"action": "stopWebcam"},
+        "stop webcam": {"action": "stopWebcam"},
+        "chiudi webcam": {"action": "stopWebcam"},
+        "disattiva webcam": {"action": "stopWebcam"},
+        "spegni webcam": {"action": "stopWebcam"},
+        "ferma camera": {"action": "stopWebcam"},
+        "stop camera": {"action": "stopWebcam"},
+        "chiudi camera": {"action": "stopWebcam"},
+        # Start webcam - DOPO stop (senza message per evitare doppio feedback)
+        "avvia webcam": {"action": "startWebcam"},
+        "avvia camera": {"action": "startWebcam"},
+        "attiva webcam": {"action": "startWebcam"},
+        "accendi webcam": {"action": "startWebcam"},
+        "apri webcam": {"action": "startWebcam"},
+        "webcam": {"action": "startWebcam"},
+        # Altri comandi
+        "carica immagine": {"action": "loadImage", "message": "Apertura caricamento immagine"},
+        "carica video": {"action": "loadVideo", "message": "Apertura caricamento video"},
+        "punti verdi": {"action": "toggleGreenDots", "message": "Attivazione/disattivazione punti verdi"},
+        "sopracciglio sinistro": {"action": "analyzeLeftEyebrow", "message": "Analisi sopracciglio sinistro"},
+        "sopracciglio destro": {"action": "analyzeRightEyebrow", "message": "Analisi sopracciglio destro"},
         "asse": {"action": "toggleAxis", "message": "Attivazione/disattivazione asse di simmetria"},
         "landmarks": {"action": "toggleLandmarks", "message": "Attivazione/disattivazione landmarks"},
-        "punti verdi": {"action": "toggleGreenDots", "message": "Attivazione/disattivazione punti verdi"},
         "verde": {"action": "toggleGreenDots", "message": "Attivazione/disattivazione punti verdi"},
-        "webcam": {"action": "startWebcam", "message": "Avvio webcam"},
-        "ferma webcam": {"action": "stopWebcam", "message": "Stop webcam"},
-        "stop webcam": {"action": "stopWebcam", "message": "Stop webcam"},
-        "carica immagine": {"action": "loadImage", "message": "Apertura caricamento immagine"},
         "immagine": {"action": "loadImage", "message": "Apertura caricamento immagine"},
-        "carica video": {"action": "loadVideo", "message": "Apertura caricamento video"},
         "video": {"action": "loadVideo", "message": "Apertura caricamento video"},
         "analizza": {"action": "analyzeFace", "message": "Avvio analisi facciale"},
         "analisi": {"action": "analyzeFace", "message": "Avvio analisi facciale"},
         "cancella": {"action": "clearCanvas", "message": "Pulizia canvas"},
         "pulisci": {"action": "clearCanvas", "message": "Pulizia canvas"},
-        "sopracciglio sinistro": {"action": "analyzeLeftEyebrow", "message": "Analisi sopracciglio sinistro"},
-        "sopracciglio destro": {"action": "analyzeRightEyebrow", "message": "Analisi sopracciglio destro"},
     }
     
     # Cerca match
@@ -2328,7 +2343,7 @@ async def process_voice_keyword(request: VoiceKeywordCommand):
                 success=True,
                 keyword=keyword,
                 action=value["action"],
-                message=value["message"]
+                message=value.get("message", "")
             )
     
     return VoiceKeywordResponse(
@@ -2420,7 +2435,7 @@ if __name__ == "__main__":
             try:
                 # Testa se la porta è disponibile
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind(('localhost', port))
+                    s.bind(('0.0.0.0', port))
                 return port
             except OSError:
                 continue
@@ -2430,10 +2445,10 @@ if __name__ == "__main__":
         # Forza la porta 8001 per compatibilità con il client
         target_port = 8001
         print(f"🚀 Avvio server API sulla porta {target_port}")
-        print(f"📡 Server disponibile su: http://127.0.0.1:{target_port}")
-        print(f"📚 Documentazione API: http://127.0.0.1:{target_port}/docs")
+        print(f"📡 Server disponibile su: http://0.0.0.0:{target_port} (tutte le interfacce)")
+        print(f"📚 Documentazione API: http://localhost:{target_port}/docs")
         print("🛑 Premi Ctrl+C per fermare il server\n")
-        uvicorn.run(app, host="127.0.0.1", port=target_port, log_level="info")
+        uvicorn.run(app, host="0.0.0.0", port=target_port, log_level="info")
     except KeyboardInterrupt:
         print("\n🛑 Server fermato dall'utente")
     except Exception as e:

@@ -1546,13 +1546,17 @@ function stopWebcam() {
 
 async function connectWebcamWebSocket() {
   try {
-    // Connessione diretta al server WebSocket sulla porta 8765
-    const wsUrl = 'ws://localhost:8765';
+    // Connessione al server WebSocket tramite Nginx proxy
+    // Usa il protocollo corretto in base a HTTP/HTTPS
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const hostname = window.location.hostname;
+    const wsUrl = `${protocol}//${hostname}/ws`;
 
+    console.log(`🔗 Connessione WebSocket a: ${wsUrl}`);
     webcamWebSocket = new WebSocket(wsUrl);
 
     webcamWebSocket.onopen = function () {
-      console.log('🔌 WebSocket connesso direttamente alla porta 8765');
+      console.log('🔌 WebSocket connesso alla porta 8765');
       updateStatus('WebSocket connesso - Avvio sessione...');
 
       // Avvia sessione con protocollo corretto del server 8765

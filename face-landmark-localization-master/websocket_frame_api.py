@@ -459,7 +459,7 @@ async def handle_websocket(websocket):
 
 async def main():
     """Avvia il server WebSocket"""
-    host = "localhost"
+    host = "0.0.0.0"  # Ascolta su tutte le interfacce di rete
     port = 8765
     
     logger.info(f"Avvio server WebSocket su {host}:{port}")

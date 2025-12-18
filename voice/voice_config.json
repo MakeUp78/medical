@@ -1,9 +1,6 @@
 {
     "activation_keywords": [
-        "simmètra",
-        "simmetra",
-        "symmetra",
-        "simetra"
+        "kimerika"
     ],
     "language": "it-IT",
     "tts_voice": "it-IT-IsabellaNeural",
@@ -48,6 +45,24 @@
                 "function": "start_webcam"
             },
             "confirmation": "Attivazione webcam",
+            "enabled": true
+        },
+        {
+            "name": "Ferma Webcam",
+            "patterns": [
+                "ferma webcam",
+                "stop webcam",
+                "chiudi webcam",
+                "disattiva webcam",
+                "spegni webcam",
+                "ferma camera",
+                "stop camera",
+                "chiudi camera"
+            ],
+            "action": {
+                "function": "stop_webcam"
+            },
+            "confirmation": "Disattivazione webcam",
             "enabled": true
         },
         {

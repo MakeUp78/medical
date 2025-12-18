@@ -1030,6 +1030,12 @@ function setupReportVoiceCommands() {
 async function processReportVoiceCommand(transcript) {
     const command = transcript.toLowerCase().trim();
 
+    // IMPORTANTE: Escludi comandi che contengono "webcam" o "camera" per evitare conflitti
+    if (command.includes('webcam') || command.includes('camera')) {
+        console.log(`⚠️ Comando "${command}" contiene webcam/camera - skip report processing`);
+        return false;
+    }
+
     // Cerca match nei comandi disponibili
     for (const [keyword, handler] of Object.entries(window.voiceCommandHandlers || {})) {
         if (command.includes(keyword)) {
