@@ -104,6 +104,11 @@ ENV/
 env.bak/
 venv.bak/
 
+# OAuth sensitive files
+apple_client_secret.txt
+*.p8
+AuthKey_*.p8
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -136,3 +141,6 @@ dmypy.json
 *.webp
 best_frontal_frame.png
 facial_analysis.log
+# OAuth sensitive files
+client_secret_*.json
+GOOGLE_OAUTH_REDIRECT_URIS.md
