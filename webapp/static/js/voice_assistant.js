@@ -11,6 +11,24 @@ class VoiceAssistant {
     this.isListening = false;
     this.isMuted = false;
 
+    // Nuovo sistema: ascolto passivo/attivo
+    this.listeningMode = "inactive";  // Può essere: "inactive", "passive", "active"
+    this.activationKeyword = "kimerika";
+    // Varianti fonetiche per il riconoscimento italiano (K→C, K→CH, K→G, etc.)
+    this.activationKeywordVariants = [
+      "kimerika", "chimerica", "cimerica", "kimerica", "chimerika",
+      "kimeryka", "chimeryka", "cimeryka", "gimerica", "ghimerica",
+      "gimeryka", "ghimeryka", "kimeriga", "chimeriga", "cimeriga",
+      "kim erika", "chi merica", "ci merica", "gi merica",
+      // Varianti problematiche riconosciute dal browser
+      "in america", "in merica", "america", "merica", "ameryka"
+    ];
+    this.activeListeningDuration = 4000;  // 4 secondi in ms
+    this.silenceThreshold = 3000;  // 3 secondi di pausa
+    this.lastSpeechTime = null;
+    this.lastHeardPhrase = "";
+    this.activeTimeout = null;
+
     // Inizializza riconoscimento vocale (Web Speech API)
     this.initSpeechRecognition();
   }
@@ -31,7 +49,7 @@ class VoiceAssistant {
     this.recognition.lang = 'it-IT';
     this.recognition.continuous = true;  // Ascolto continuo
     this.recognition.interimResults = false;  // Solo risultati finali
-    this.recognition.maxAlternatives = 1;
+    this.recognition.maxAlternatives = 3;  // Più alternative per migliore matching
 
     // Event: risultato riconosciuto
     this.recognition.onresult = (event) => {
@@ -62,7 +80,7 @@ class VoiceAssistant {
   }
 
   /**
-   * Avvia ascolto continuo per parole chiave
+   * Avvia ascolto in modalità PASSIVA (ascolta solo "KIMERIKA")
    */
   startListening() {
     if (!this.recognition) {
@@ -72,9 +90,12 @@ class VoiceAssistant {
 
     try {
       this.isListening = true;
+      this.listeningMode = "passive";
+      this.lastHeardPhrase = "";
       this.recognition.start();
-      console.log('🎤 Ascolto vocale avviato');
-      this.speak('Ascolto attivato. Pronuncia le tue parole chiave.');
+      console.log('🎤 Ascolto vocale avviato in modalità PASSIVA');
+      this.updateUI();
+      // Non chiamiamo speak() qui per evitare autoplay error
       return true;
     } catch (error) {
       console.error('Errore avvio ascolto:', error);
@@ -88,9 +109,16 @@ class VoiceAssistant {
   stopListening() {
     if (this.recognition && this.isListening) {
       this.isListening = false;
+      this.listeningMode = "inactive";
+      this.lastHeardPhrase = "";
+      if (this.activeTimeout) {
+        clearTimeout(this.activeTimeout);
+        this.activeTimeout = null;
+      }
       this.recognition.stop();
       console.log('🎤 Ascolto vocale fermato');
-      this.speak('Ascolto disattivato.');
+      this.updateUI();
+      // Non chiamiamo speak() qui per evitare problemi
     }
   }
 
@@ -107,38 +135,144 @@ class VoiceAssistant {
   }
 
   /**
-   * Processa parola chiave riconosciuta
+   * Verifica similarit\u00e0 fonetica tra due stringhe (algoritmo Levenshtein semplificato)
+   */
+  isSimilarPhonetically(str1, str2, maxDistance = 3) {
+    const s1 = str1.toLowerCase().replace(/\s+/g, '');
+    const s2 = str2.toLowerCase().replace(/\s+/g, '');
+
+    if (s1 === s2) return true;
+    if (Math.abs(s1.length - s2.length) > maxDistance) return false;
+
+    let distance = 0;
+    const maxLen = Math.max(s1.length, s2.length);
+
+    for (let i = 0; i < maxLen; i++) {
+      if (s1[i] !== s2[i]) distance++;
+      if (distance > maxDistance) return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Processa parola chiave riconosciuta con sistema passivo/attivo
    */
   async processKeyword(keyword) {
+    let keywordLower = keyword.toLowerCase();
+
+    // PRE-PROCESSING: Correggi errori comuni di riconoscimento
+    keywordLower = keywordLower.replace(/in america/gi, 'kimerika');
+    keywordLower = keywordLower.replace(/in merica/gi, 'kimerika');
+    keywordLower = keywordLower.replace(/\bamerica\b/gi, 'kimerika');
+    keywordLower = keywordLower.replace(/\bmerica\b/gi, 'kimerika');
+
+    // MODALITÀ PASSIVA: Ascolta solo "KIMERIKA" + eventuale comando
+    if (this.listeningMode === "passive") {
+      this.lastHeardPhrase = `🔵 PASSIVO: ${keyword} → ${keywordLower}`;
+      console.log(`🔵 [PASSIVO] Riconosciuto: '${keyword}' → Pre-processed: '${keywordLower}'`);
+      this.updateUI();
+
+      // Controlla se ha detto "KIMERIKA" (con varianti fonetiche E similarit\u00e0)
+      let foundVariant = this.activationKeywordVariants.find(variant => keywordLower.includes(variant));
+
+      // Se non trovato esatto, prova con similarit\u00e0 fonetica
+      if (!foundVariant) {
+        const words = keywordLower.split(/\s+/);
+        for (const word of words) {
+          if (this.isSimilarPhonetically(word, "kimerika", 2) ||
+            this.isSimilarPhonetically(word, "chimerica", 2)) {
+            foundVariant = word;
+            console.log(`\ud83d\udd0d Trovata variante simile: '${word}'`);
+            break;
+          }
+        }
+      }
+
+      if (foundVariant) {
+        console.log(`✅ PAROLA CHIAVE RILEVATA: '${foundVariant.toUpperCase()}' → ATTIVAZIONE`);
+
+        // Estrae il comando dalla stessa frase (es: "KIMERIKA avvia webcam" → "avvia webcam")
+        const commandPart = keywordLower.replace(foundVariant, "").trim();
+
+        if (commandPart) {
+          // Ha detto KIMERIKA + COMANDO nella stessa frase → esegui subito
+          console.log(`🟢 [ATTIVO] Comando immediato: '${commandPart}'`);
+          this.lastHeardPhrase = `🟢 ATTIVO: ${commandPart}`;
+          this.listeningMode = "active";
+          this.lastSpeechTime = Date.now();
+          this.updateUI();
+
+          // Processa il comando immediatamente
+          await this.executeVoiceCommand(commandPart);
+
+          // Torna in modalità passiva dopo l'esecuzione
+          setTimeout(() => {
+            this.listeningMode = "passive";
+            this.lastHeardPhrase = "";
+            this.updateUI();
+          }, 1000);
+        } else {
+          // Ha detto solo KIMERIKA → entra in modalità attiva per 4 secondi
+          this.listeningMode = "active";
+          this.lastSpeechTime = Date.now();
+          console.log(`🟢 [ATTIVO] Modalità ascolto ATTIVO per ${this.activeListeningDuration / 1000} secondi`);
+          this.updateUI();
+
+          // Imposta timeout per tornare passivo
+          this.setActiveTimeout();
+        }
+      }
+      return;
+    }
+
+    // MODALITÀ ATTIVA: Processa comandi vocali
+    if (this.listeningMode === "active") {
+      this.lastHeardPhrase = `🟢 ATTIVO: ${keyword}`;
+      console.log(`🟢 [ATTIVO] Comando riconosciuto: '${keyword}'`);
+      this.lastSpeechTime = Date.now();
+      this.updateUI();
+
+      // Resetta timeout
+      this.setActiveTimeout();
+
+      // Esegui il comando
+      await this.executeVoiceCommand(keywordLower);
+    }
+  }
+
+  /**
+   * Esegue un comando vocale (metodo estratto per riuso)
+   */
+  async executeVoiceCommand(commandText) {
     try {
       // Prima controlla se è un comando per il report di analisi
       if (typeof window.processReportVoiceCommand === 'function') {
-        const reportHandled = await window.processReportVoiceCommand(keyword);
+        const reportHandled = await window.processReportVoiceCommand(commandText);
         if (reportHandled) {
-          return; // Il comando è stato gestito dal sistema di report
+          return;
         }
       }
 
       const response = await fetch(`${this.apiUrl}/api/voice/process-keyword`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword: keyword })
+        body: JSON.stringify({ keyword: commandText })
       });
 
       const data = await response.json();
 
       if (data.success && data.action) {
         console.log(`✅ Azione riconosciuta: ${data.action}`);
-
-        // Esegui azione corrispondente
         this.executeAction(data.action);
-
-        // Conferma vocale
-        if (data.message) {
+        // Feedback vocale solo se esplicitamente fornito dal backend
+        // (evita doppio feedback con toast delle funzioni)
+        if (data.message && data.message.trim()) {
+          console.log(`🔊 Feedback vocale: ${data.message}`);
           this.speak(data.message);
         }
       } else {
-        console.log(`❌ Parola chiave non riconosciuta: "${keyword}"`);
+        console.log(`❌ Parola chiave non riconosciuta: "${commandText}"`);
       }
     } catch (error) {
       console.error('Errore processamento keyword:', error);
@@ -150,6 +284,13 @@ class VoiceAssistant {
    */
   executeAction(action) {
     console.log(`🎯 Esecuzione azione: ${action}`);
+
+    // DEBUG: Verifica azione ricevuta
+    if (action === 'stopWebcam') {
+      console.log('⚠️ AZIONE STOP WEBCAM RILEVATA');
+    } else if (action === 'startWebcam') {
+      console.log('⚠️ AZIONE START WEBCAM RILEVATA');
+    }
 
     // Mappa azioni -> funzioni globali della webapp
     const actionMap = {
@@ -220,7 +361,12 @@ class VoiceAssistant {
 
       if (data.success && data.audio) {
         this.audioPlayer.src = data.audio;
-        await this.audioPlayer.play();
+        try {
+          await this.audioPlayer.play();
+        } catch (playError) {
+          // Gestisci errore autoplay silenziosamente
+          console.log('ℹ️ Audio non riprodotto (autoplay bloccato dal browser)');
+        }
       }
     } catch (error) {
       console.error('Errore TTS:', error);
@@ -245,7 +391,11 @@ class VoiceAssistant {
       if (data.success && data.audio) {
         console.log(`🔊 Isabella: "${data.text}"`);
         this.audioPlayer.src = data.audio;
-        await this.audioPlayer.play();
+        try {
+          await this.audioPlayer.play();
+        } catch (playError) {
+          console.log('ℹ️ Audio non riprodotto (autoplay bloccato dal browser)');
+        }
       }
     } catch (error) {
       console.error('Errore TTS messaggio:', error);
@@ -270,7 +420,11 @@ class VoiceAssistant {
       if (data.success && data.audio) {
         console.log(`🔊 Kimerika: "${data.text}"`);
         this.audioPlayer.src = data.audio;
-        await this.audioPlayer.play();
+        try {
+          await this.audioPlayer.play();
+        } catch (playError) {
+          console.log('ℹ️ Audio non riprodotto (autoplay bloccato dal browser)');
+        }
       }
     } catch (error) {
       console.error('Errore TTS benvenuto:', error);
@@ -283,6 +437,61 @@ class VoiceAssistant {
   toggleMute() {
     this.isMuted = !this.isMuted;
     return this.isMuted;
+  }
+
+  /**
+   * Imposta timeout per tornare in modalità passiva
+   */
+  setActiveTimeout() {
+    if (this.activeTimeout) {
+      clearTimeout(this.activeTimeout);
+    }
+
+    this.activeTimeout = setTimeout(() => {
+      if (this.listeningMode === "active") {
+        console.log(`🔵 Timeout ascolto attivo (${this.activeListeningDuration / 1000}s) - torno PASSIVO`);
+        this.listeningMode = "passive";
+        this.lastHeardPhrase = "";
+        this.updateUI();
+      }
+    }, this.activeListeningDuration);
+  }
+
+  /**
+   * Aggiorna l'interfaccia utente con lo stato corrente
+   */
+  updateUI() {
+    const statusIndicator = document.getElementById('status-indicator-sidebar');
+    const statusText = document.getElementById('status-text-sidebar');
+    const lastCommandText = document.getElementById('last-command-text-sidebar');
+
+    if (!statusIndicator || !statusText) return;
+
+    // Aggiorna stato
+    if (!this.isListening) {
+      statusIndicator.textContent = '🔴';
+      statusIndicator.className = 'status-indicator-sidebar inactive';
+      statusText.textContent = 'Spento';
+    } else if (this.listeningMode === "passive") {
+      statusIndicator.textContent = '🔵';
+      statusIndicator.className = 'status-indicator-sidebar passive';
+      statusText.textContent = `PASSIVO (di' '${this.activationKeyword.toUpperCase()}')`;
+    } else if (this.listeningMode === "active") {
+      statusIndicator.textContent = '🟢';
+      statusIndicator.className = 'status-indicator-sidebar active';
+      statusText.textContent = 'ATTIVO (ascolto comandi)';
+    }
+
+    // Aggiorna ultima frase ascoltata
+    if (lastCommandText) {
+      if (this.lastHeardPhrase) {
+        lastCommandText.textContent = this.lastHeardPhrase;
+        lastCommandText.style.color = 'black';
+      } else {
+        lastCommandText.textContent = 'Nessuno';
+        lastCommandText.style.color = 'gray';
+      }
+    }
   }
 
   /**

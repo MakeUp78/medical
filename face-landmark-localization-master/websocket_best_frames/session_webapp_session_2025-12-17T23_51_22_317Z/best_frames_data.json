@@ -1,0 +1,280 @@
+{
+  "metadata": {
+    "session_id": "webapp_session_2025-12-17T23_51_22_317Z",
+    "total_frames_processed": 22,
+    "best_frames_saved": 10,
+    "session_completed": "2025-12-17 23:51:33",
+    "scoring_criteria": {
+      "pose_weight": 0.6,
+      "size_weight": 0.3,
+      "position_weight": 0.1
+    },
+    "scoring_description": {
+      "pose": "Frontality quality (pitch, yaw, roll) - TOP PRIORITY",
+      "size": "Face size (prefers LARGER faces 30-45% of frame)",
+      "position": "Face centering (both horizontal and vertical)"
+    }
+  },
+  "frames": [
+    {
+      "filename": "frame_01.jpg",
+      "rank": 1,
+      "total_score": 72.79,
+      "timestamp": 1766015492.3378954,
+      "pose": {
+        "pitch": 4.94,
+        "yaw": -1.31,
+        "roll": 172.48
+      },
+      "face_bbox": {
+        "x_min": 226,
+        "x_max": 444,
+        "y_min": 179,
+        "y_max": 438
+      },
+      "score_breakdown": {
+        "pose_score": 89.13,
+        "size_score": 36.64,
+        "position_score": 83.27,
+        "face_ratio": 0.1832,
+        "center_distance_x": 0.0472,
+        "center_distance_y": 0.2873,
+        "total_center_distance": 0.1673
+      }
+    },
+    {
+      "filename": "frame_02.jpg",
+      "rank": 2,
+      "total_score": 71.84,
+      "timestamp": 1766015493.3441546,
+      "pose": {
+        "pitch": -8.54,
+        "yaw": -1.5,
+        "roll": 175.19
+      },
+      "face_bbox": {
+        "x_min": 227,
+        "x_max": 445,
+        "y_min": 183,
+        "y_max": 442
+      },
+      "score_breakdown": {
+        "pose_score": 87.68,
+        "size_score": 36.7,
+        "position_score": 82.15,
+        "face_ratio": 0.1835,
+        "center_distance_x": 0.0514,
+        "center_distance_y": 0.3056,
+        "total_center_distance": 0.1785
+      }
+    },
+    {
+      "filename": "frame_03.jpg",
+      "rank": 3,
+      "total_score": 71.09,
+      "timestamp": 1766015487.8477032,
+      "pose": {
+        "pitch": 12.84,
+        "yaw": -0.02,
+        "roll": 176.15
+      },
+      "face_bbox": {
+        "x_min": 230,
+        "x_max": 449,
+        "y_min": 201,
+        "y_max": 457
+      },
+      "score_breakdown": {
+        "pose_score": 87.23,
+        "size_score": 36.42,
+        "position_score": 78.25,
+        "face_ratio": 0.1821,
+        "center_distance_x": 0.0627,
+        "center_distance_y": 0.3724,
+        "total_center_distance": 0.2175
+      }
+    },
+    {
+      "filename": "frame_04.jpg",
+      "rank": 4,
+      "total_score": 70.62,
+      "timestamp": 1766015484.3531084,
+      "pose": {
+        "pitch": 0.02,
+        "yaw": 2.6,
+        "roll": 163.88
+      },
+      "face_bbox": {
+        "x_min": 223,
+        "x_max": 450,
+        "y_min": 191,
+        "y_max": 443
+      },
+      "score_breakdown": {
+        "pose_score": 85.51,
+        "size_score": 37.3,
+        "position_score": 81.22,
+        "face_ratio": 0.1865,
+        "center_distance_x": 0.0532,
+        "center_distance_y": 0.3223,
+        "total_center_distance": 0.1878
+      }
+    },
+    {
+      "filename": "frame_05.jpg",
+      "rank": 5,
+      "total_score": 70.08,
+      "timestamp": 1766015484.8484907,
+      "pose": {
+        "pitch": -13.04,
+        "yaw": 2.16,
+        "roll": 175.85
+      },
+      "face_bbox": {
+        "x_min": 222,
+        "x_max": 458,
+        "y_min": 185,
+        "y_max": 442
+      },
+      "score_breakdown": {
+        "pose_score": 83.46,
+        "size_score": 39.56,
+        "position_score": 81.37,
+        "face_ratio": 0.1978,
+        "center_distance_x": 0.0645,
+        "center_distance_y": 0.3081,
+        "total_center_distance": 0.1863
+      }
+    },
+    {
+      "filename": "frame_06.jpg",
+      "rank": 6,
+      "total_score": 69.7,
+      "timestamp": 1766015485.3416836,
+      "pose": {
+        "pitch": 10.4,
+        "yaw": -3.34,
+        "roll": 173.97
+      },
+      "face_bbox": {
+        "x_min": 215,
+        "x_max": 456,
+        "y_min": 184,
+        "y_max": 443
+      },
+      "score_breakdown": {
+        "pose_score": 82.47,
+        "size_score": 40,
+        "position_score": 82.14,
+        "face_ratio": 0.2031,
+        "center_distance_x": 0.0507,
+        "center_distance_y": 0.3064,
+        "total_center_distance": 0.1786
+      }
+    },
+    {
+      "filename": "frame_07.jpg",
+      "rank": 7,
+      "total_score": 69.48,
+      "timestamp": 1766015491.8417377,
+      "pose": {
+        "pitch": 6.14,
+        "yaw": -2.91,
+        "roll": 169.4
+      },
+      "face_bbox": {
+        "x_min": 226,
+        "x_max": 444,
+        "y_min": 178,
+        "y_max": 435
+      },
+      "score_breakdown": {
+        "pose_score": 83.65,
+        "size_score": 36.43,
+        "position_score": 83.58,
+        "face_ratio": 0.1821,
+        "center_distance_x": 0.0486,
+        "center_distance_y": 0.2797,
+        "total_center_distance": 0.1642
+      }
+    },
+    {
+      "filename": "frame_08.jpg",
+      "rank": 8,
+      "total_score": 68.64,
+      "timestamp": 1766015488.3415935,
+      "pose": {
+        "pitch": -14.8,
+        "yaw": -1.78,
+        "roll": 173.63
+      },
+      "face_bbox": {
+        "x_min": 211,
+        "x_max": 447,
+        "y_min": 199,
+        "y_max": 458
+      },
+      "score_breakdown": {
+        "pose_score": 81.23,
+        "size_score": 39.69,
+        "position_score": 80.01,
+        "face_ratio": 0.1985,
+        "center_distance_x": 0.0292,
+        "center_distance_y": 0.3706,
+        "total_center_distance": 0.1999
+      }
+    },
+    {
+      "filename": "frame_09.jpg",
+      "rank": 9,
+      "total_score": 68.63,
+      "timestamp": 1766015482.8449037,
+      "pose": {
+        "pitch": 3.5,
+        "yaw": -3.63,
+        "roll": 172.57
+      },
+      "face_bbox": {
+        "x_min": 229,
+        "x_max": 439,
+        "y_min": 233,
+        "y_max": 453
+      },
+      "score_breakdown": {
+        "pose_score": 86.63,
+        "size_score": 30.11,
+        "position_score": 76.12,
+        "face_ratio": 0.1506,
+        "center_distance_x": 0.0464,
+        "center_distance_y": 0.4312,
+        "total_center_distance": 0.2388
+      }
+    },
+    {
+      "filename": "frame_10.jpg",
+      "rank": 10,
+      "total_score": 68.16,
+      "timestamp": 1766015483.3397648,
+      "pose": {
+        "pitch": 3.3,
+        "yaw": -4.15,
+        "roll": 170.81
+      },
+      "face_bbox": {
+        "x_min": 222,
+        "x_max": 427,
+        "y_min": 217,
+        "y_max": 449
+      },
+      "score_breakdown": {
+        "pose_score": 84.83,
+        "size_score": 30.96,
+        "position_score": 79.73,
+        "face_ratio": 0.1548,
+        "center_distance_x": 0.0163,
+        "center_distance_y": 0.3892,
+        "total_center_distance": 0.2027
+      }
+    }
+  ]
+}

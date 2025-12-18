@@ -26,6 +26,14 @@ class IsabellaVoiceAssistant:
         self.is_listening = False
         self.is_muted = False
         
+        # Nuovo sistema: ascolto passivo/attivo
+        self.listening_mode = "inactive"  # Può essere: "inactive", "passive", "active"
+        self.activation_keyword = "kimerika"
+        self.active_listening_duration = 4  # secondi
+        self.silence_threshold = 3  # secondi di pausa prima di tornare passivo
+        self.last_speech_time = None
+        self.last_heard_phrase = ""  # Per mostrare nella GUI
+        
         # Setup riconoscimento vocale (solo se disponibile microfono)
         self.recognizer = None
         self.microphone = None
@@ -137,35 +145,80 @@ class IsabellaVoiceAssistant:
             print(f"🔊 Isabella: {text}")
     
     def listen_for_activation(self):
-        """Ascolta continuamente per parole di attivazione"""
+        """
+        Nuovo sistema di ascolto con tre stati:
+        - inactive: Non ascolta (microfono spento)
+        - passive: Ascolta solo per la parola "KIMERIKA"
+        - active: Processa comandi vocali (per 4 secondi o fino a 3 sec di pausa)
+        """
+        print("🎤 Sistema di ascolto avviato in modalità PASSIVA")
+        self.listening_mode = "passive"
+        
         while self.is_active:
             try:
-                with self.microphone as source:
-                    # Timeout appropriato per frasi complete
-                    audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=5)
-                
-                text = self.recognizer.recognize_google(audio, language=self.config["language"])
-                text_lower = text.lower()
-                print(f"🎤 Riconosciuto: '{text}' -> '{text_lower}'")
-                
-                # Controlla parole di attivazione
-                for keyword in self.config["activation_keywords"]:
-                    if keyword in text_lower:
-                        # Rimuovi parola di attivazione dal comando
-                        command = text_lower.replace(keyword, "").strip()
-                        print(f"✅ Attivazione rilevata con '{keyword}', comando estratto: '{command}'")
-                        if command:
-                            self.process_command(command)
-                        else:
-                            self.speak("Ti ascolto! Dimmi cosa devo fare.")
-                        break
+                # MODALITÀ PASSIVA: Ascolta solo per "KIMERIKA"
+                if self.listening_mode == "passive":
+                    try:
+                        with self.microphone as source:
+                            audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=3)
                         
-            except sr.WaitTimeoutError:
-                # Timeout normale, continua ad ascoltare
-                continue
-            except sr.UnknownValueError:
-                # Non ha capito, continua ad ascoltare
-                continue
+                        text = self.recognizer.recognize_google(audio, language=self.config["language"])
+                        text_lower = text.lower()
+                        self.last_heard_phrase = f"🔵 PASSIVO: {text}"
+                        print(f"🔵 [PASSIVO] Riconosciuto: '{text}'")
+                        
+                        # Controlla se ha detto "KIMERIKA"
+                        if self.activation_keyword in text_lower:
+                            print(f"✅ PAROLA CHIAVE RILEVATA: '{self.activation_keyword.upper()}'")
+                            self.listening_mode = "active"
+                            self.last_speech_time = time.time()
+                            self.speak("Ti ascolto!")
+                            print(f"🟢 [ATTIVO] Modalità ascolto ATTIVO per {self.active_listening_duration} secondi")
+                            
+                    except sr.WaitTimeoutError:
+                        continue
+                    except sr.UnknownValueError:
+                        continue
+                
+                # MODALITÀ ATTIVA: Processa comandi vocali
+                elif self.listening_mode == "active":
+                    try:
+                        # Controlla timeout (4 secondi dall'ultima frase)
+                        elapsed = time.time() - self.last_speech_time
+                        if elapsed > self.active_listening_duration:
+                            print(f"⏱️ Timeout ascolto attivo ({self.active_listening_duration}s) - torno PASSIVO")
+                            self.listening_mode = "passive"
+                            continue
+                        
+                        # Ascolta con timeout più breve per rilevare pause
+                        with self.microphone as source:
+                            audio = self.recognizer.listen(
+                                source, 
+                                timeout=self.silence_threshold,  # 3 secondi di silenzio = pausa
+                                phrase_time_limit=5
+                            )
+                        
+                        text = self.recognizer.recognize_google(audio, language=self.config["language"])
+                        text_lower = text.lower()
+                        self.last_heard_phrase = f"🟢 ATTIVO: {text}"
+                        print(f"🟢 [ATTIVO] Comando riconosciuto: '{text}'")
+                        
+                        # Aggiorna timestamp ultima frase
+                        self.last_speech_time = time.time()
+                        
+                        # Processa il comando
+                        self.process_command(text_lower)
+                        
+                    except sr.WaitTimeoutError:
+                        # Pausa di 3+ secondi rilevata - torna passivo
+                        print(f"🔵 Pausa rilevata ({self.silence_threshold}s) - torno PASSIVO")
+                        self.listening_mode = "passive"
+                        continue
+                    except sr.UnknownValueError:
+                        # Non ha capito ma aggiorna timestamp
+                        self.last_speech_time = time.time()
+                        continue
+                        
             except Exception as e:
                 print(f"Errore ascolto: {e}")
                 time.sleep(1)
@@ -219,10 +272,11 @@ class IsabellaVoiceAssistant:
             self.speak("Si è verificato un errore durante l'esecuzione del comando.")
     
     def start(self):
-        """Avvia l'assistente vocale"""
+        """Avvia l'assistente vocale in modalità PASSIVA"""
         if not self.is_active:
             self.is_active = True
-            self.speak("Assistente vocale Simmètra attivato.")
+            self.listening_mode = "passive"
+            self.speak(f"Assistente vocale attivato in modalità passiva. Pronuncia '{self.activation_keyword.upper()}' per attivare i comandi.")
             
             # Avvia thread per ascolto in background
             self.listen_thread = threading.Thread(target=self.listen_for_activation, daemon=True)
@@ -235,6 +289,7 @@ class IsabellaVoiceAssistant:
         """Ferma l'assistente vocale"""
         if self.is_active:
             self.is_active = False
+            self.listening_mode = "inactive"
             self.speak("Assistente vocale disattivato.")
             
             # Aggiorna GUI immediatamente
@@ -318,6 +373,16 @@ class IsabellaVoiceAssistant:
         self.status_label = ttk.Label(self.gui_frame, text="Spento", foreground="red")
         self.status_label.pack(pady=2)
         
+        # Label per mostrare l'ultima frase ascoltata
+        self.phrase_label = ttk.Label(
+            self.gui_frame,
+            text="Nessuna frase rilevata",
+            wraplength=250,
+            foreground="gray",
+            font=('Arial', 9, 'italic')
+        )
+        self.phrase_label.pack(pady=5, padx=5)
+        
         # Pulsante mute
         self.mute_btn = ttk.Button(
             self.gui_frame,
@@ -340,16 +405,29 @@ class IsabellaVoiceAssistant:
         self.update_gui_status()
     
     def update_gui_status(self):
-        """Aggiorna lo stato visivo della GUI"""
+        """Aggiorna lo stato visivo della GUI con indicazione modalità ascolto"""
         if self.gui_frame is None:
             return
             
         if self.is_active:
             self.toggle_btn.config(text="Spegni Assistente")
-            self.status_label.config(text="Attivo", foreground="green")
+            # Mostra lo stato di ascolto
+            if self.listening_mode == "passive":
+                self.status_label.config(text="🔵 PASSIVO (di' 'KIMERIKA')", foreground="blue")
+            elif self.listening_mode == "active":
+                self.status_label.config(text="🟢 ATTIVO (ascolto comandi)", foreground="green")
+            else:
+                self.status_label.config(text="Attivo", foreground="green")
         else:
             self.toggle_btn.config(text="Attiva Assistente")
             self.status_label.config(text="Spento", foreground="red")
+        
+        # Aggiorna frase ascoltata
+        if hasattr(self, 'phrase_label'):
+            if self.last_heard_phrase:
+                self.phrase_label.config(text=self.last_heard_phrase, foreground="black")
+            else:
+                self.phrase_label.config(text="Nessuna frase rilevata", foreground="gray")
         
         if self.is_muted:
             self.mute_btn.config(text="Riattiva Voce")
