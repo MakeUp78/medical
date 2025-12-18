@@ -2340,6 +2340,21 @@ async def process_voice_keyword(request: VoiceKeywordCommand):
         "simmetrica": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
         "lato più grande": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
         "quale lato": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
+        # Comando per correzione progettazione sopraccigliare
+        "correggimi la progettazione": {"action": "analyze_eyebrow_design", "message": "Avvio analisi della progettazione sopraccigliare"},
+        "correggi progettazione": {"action": "analyze_eyebrow_design", "message": "Avvio analisi della progettazione sopraccigliare"},
+        "correzione progettazione": {"action": "analyze_eyebrow_design", "message": "Avvio analisi della progettazione sopraccigliare"},
+        "analizza progettazione": {"action": "analyze_eyebrow_design", "message": "Avvio analisi della progettazione sopraccigliare"},
+        # Comando per preferenza destra (correzione sopracciglio sinistro)
+        "preferenza destra": {"action": "show_left_eyebrow_with_voice", "message": ""},
+        "preferenza a destra": {"action": "show_left_eyebrow_with_voice", "message": ""},
+        "correzione destra": {"action": "show_left_eyebrow_with_voice", "message": ""},
+        "correzione a destra": {"action": "show_left_eyebrow_with_voice", "message": ""},
+        # Comando per preferenza sinistra (correzione sopracciglio destro)
+        "preferenza sinistra": {"action": "show_right_eyebrow_with_voice", "message": ""},
+        "preferenza a sinistra": {"action": "show_right_eyebrow_with_voice", "message": ""},
+        "correzione sinistra": {"action": "show_right_eyebrow_with_voice", "message": ""},
+        "correzione a sinistra": {"action": "show_right_eyebrow_with_voice", "message": ""},
     }
     
     # Cerca match

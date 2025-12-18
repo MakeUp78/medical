@@ -234,9 +234,9 @@
                         </div>
 
                         <div class="eyebrow-buttons">
-                            <button class="btn btn-eyebrow" onclick="showLeftEyebrow()">✂️ Sopracciglio
-                                Sinistro</button>
-                            <button class="btn btn-eyebrow" onclick="showRightEyebrow()">✂️ Sopracciglio Destro</button>
+                            <button class="btn btn-eyebrow" onclick="showLeftEyebrow()">✂️ Preferenza
+                                Destra</button>
+                            <button class="btn btn-eyebrow" onclick="showRightEyebrow()">✂️ Preferenza Sinistra</button>
                         </div>
                     </div>
                 </div>
@@ -750,6 +750,12 @@
             window.toggleAxis = function () {
                 if (originalToggleAxis) originalToggleAxis();
 
+                // Non emettere feedback vocale se siamo in modalità suppress
+                if (window.suppressVoiceFeedback) {
+                    console.log('🔇 [ASSE] Feedback vocale soppresso (suppressVoiceFeedback attivo)');
+                    return;
+                }
+
                 const axisBtn = document.getElementById('axis-btn');
                 if (axisBtn && axisBtn.classList.contains('active')) {
                     voiceAssistant.speakMessage('axis_on');
@@ -762,6 +768,12 @@
             const originalToggleLandmarks = window.toggleLandmarks;
             window.toggleLandmarks = function () {
                 if (originalToggleLandmarks) originalToggleLandmarks();
+
+                // Non emettere feedback vocale se siamo in modalità suppress
+                if (window.suppressVoiceFeedback) {
+                    console.log('🔇 [LANDMARKS] Feedback vocale soppresso (suppressVoiceFeedback attivo)');
+                    return;
+                }
 
                 const landmarksBtn = document.getElementById('landmarks-btn');
                 if (landmarksBtn && landmarksBtn.classList.contains('active')) {
@@ -776,12 +788,702 @@
             window.toggleGreenDots = function () {
                 if (originalToggleGreenDots) originalToggleGreenDots();
 
+                // Non emettere feedback vocale se siamo in modalità suppress (es: durante analisi progettazione)
+                if (window.suppressVoiceFeedback) {
+                    console.log('🔇 [GREEN DOTS] Feedback vocale soppresso (suppressVoiceFeedback attivo)');
+                    return;
+                }
+
                 const greenDotsBtn = document.getElementById('green-dots-btn');
                 if (greenDotsBtn && greenDotsBtn.classList.contains('active')) {
                     voiceAssistant.speakMessage('green_dots_on');
                 } else {
                     voiceAssistant.speakMessage('green_dots_off');
                 }
+            };
+
+            // Funzione per comando vocale "preferenza destra" - analizza spostamenti sopracciglio sinistro
+            window.show_left_eyebrow_with_voice = async function () {
+                console.log('🎯 [PREFERENZA DESTRA] Inizio analisi preferenza destra');
+                console.log('🔍 [PREFERENZA DESTRA] Verifica funzioni disponibili:', {
+                    showLeftEyebrow: typeof window.showLeftEyebrow,
+                    voiceAssistant: typeof voiceAssistant,
+                    greenDotsDetected: !!window.greenDotsDetected
+                });
+
+                // Verifica prerequisiti
+                if (!window.greenDotsDetected || !window.greenDotsData?.success) {
+                    console.error('❌ [PREFERENZA DESTRA] Green dots non rilevati');
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('Prima devi rilevare i punti verdi con il pulsante green dots');
+                    }
+                    return;
+                }
+
+                // Step 1: Apri il popup della correzione sopracciglio sinistro
+                if (typeof window.showLeftEyebrow === 'function') {
+                    console.log('📊 [PREFERENZA DESTRA] Apertura popup correzione...');
+                    try {
+                        window.showLeftEyebrow();
+                        console.log('✅ [PREFERENZA DESTRA] Popup aperto con successo');
+                    } catch (error) {
+                        console.error('❌ [PREFERENZA DESTRA] Errore apertura popup:', error);
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('Errore apertura finestra correzione');
+                        }
+                        return;
+                    }
+
+                    // Step 2: Aspetta che il popup sia aperto (breve delay)
+                    await new Promise(resolve => setTimeout(resolve, 800));
+
+                    // Step 3: Analizza gli spostamenti dalla tabella
+                    console.log('📏 [PREFERENZA DESTRA] Analisi spostamenti dalla tabella...');
+                    const instructions = window.analyzeLeftEyebrowMovements();
+
+                    if (instructions) {
+                        console.log('🔊 [PREFERENZA DESTRA] Pronuncia indicazioni:', instructions);
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak(instructions);
+                        }
+                    } else {
+                        console.error('❌ [PREFERENZA DESTRA] Impossibile generare indicazioni');
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('Non ho trovato abbastanza dati per generare le indicazioni');
+                        }
+                    }
+                } else {
+                    console.error('❌ [PREFERENZA DESTRA] Funzione showLeftEyebrow non disponibile');
+                    console.error('    window.showLeftEyebrow:', window.showLeftEyebrow);
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('Funzione correzione non disponibile');
+                    }
+                }
+            };
+
+            // Funzione per analizzare gli spostamenti necessari del sopracciglio sinistro
+            window.analyzeLeftEyebrowMovements = function () {
+                console.log('📊 [MOVIMENTI SX] Analisi movimenti sopracciglio sinistro');
+
+                const measurementsTable = document.getElementById('measurements-data');
+                if (!measurementsTable) {
+                    console.error('❌ [MOVIMENTI SX] Tabella misurazioni non trovata');
+                    return null;
+                }
+
+                const rows = measurementsTable.querySelectorAll('tr[data-type="green-dots"]');
+                if (rows.length === 0) {
+                    console.error('❌ [MOVIMENTI SX] Nessun dato green dots trovato');
+                    return null;
+                }
+
+                // Mappa per raccogliere i dati: punto -> {horizontal, vertical}
+                const movements = {
+                    'LA': { horizontal: 0, vertical: 0 },
+                    'LA0': { horizontal: 0, vertical: 0 },
+                    'LC1': { horizontal: 0, vertical: 0 },
+                    'LB': { horizontal: 0, vertical: 0 },
+                    'LC': { horizontal: 0, vertical: 0 }
+                };
+
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length < 2) return;
+
+                    const label = cells[0].textContent.trim();
+                    const value = cells[1].textContent.trim();
+
+                    // Estrai le distanze e determina gli spostamenti
+                    // Formato: "LA: 40.2px | RA: 40.9px RA più esterno (+0.7px)"
+
+                    // LA vs RA - Distanza Asse (orizzontale)
+                    if (label.includes('LA vs RA') && label.includes('Distanza Asse')) {
+                        const laMatch = value.match(/LA:\s*([\d.]+)px/);
+                        const raMatch = value.match(/RA:\s*([\d.]+)px/);
+                        if (laMatch && raMatch) {
+                            const laDist = parseFloat(laMatch[1]);
+                            const raDist = parseFloat(raMatch[1]);
+                            movements['LA'].horizontal = raDist - laDist; // positivo = spostare più esterno
+                        }
+                    }
+
+                    // LA vs RA - Altezza (verticale)
+                    if (label.includes('LA vs RA') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            // Se RA più alto, LA deve salire (negativo)
+                            movements['LA'].vertical = value.includes('RA più alto') ? -pixels : pixels;
+                        }
+                    }
+
+                    // LA0 vs RA0 - Distanza Asse
+                    if (label.includes('LA0 vs RA0') && label.includes('Distanza Asse')) {
+                        const la0Match = value.match(/LA0:\s*([\d.]+)px/);
+                        const ra0Match = value.match(/RA0:\s*([\d.]+)px/);
+                        if (la0Match && ra0Match) {
+                            const la0Dist = parseFloat(la0Match[1]);
+                            const ra0Dist = parseFloat(ra0Match[1]);
+                            movements['LA0'].horizontal = ra0Dist - la0Dist;
+                        }
+                    }
+
+                    // LC1 vs RC1 - Distanza Asse
+                    if (label.includes('LC1 vs RC1') && label.includes('Distanza Asse')) {
+                        const lc1Match = value.match(/LC1:\s*([\d.]+)px/);
+                        const rc1Match = value.match(/RC1:\s*([\d.]+)px/);
+                        if (lc1Match && rc1Match) {
+                            const lc1Dist = parseFloat(lc1Match[1]);
+                            const rc1Dist = parseFloat(rc1Match[1]);
+                            movements['LC1'].horizontal = rc1Dist - lc1Dist;
+                        }
+                    }
+
+                    // LC1 vs RC1 - Altezza
+                    if (label.includes('LC1 vs RC1') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            movements['LC1'].vertical = value.includes('RC1 più alto') ? -pixels : pixels;
+                        }
+                    }
+
+                    // LB vs RB - Distanza Asse
+                    if (label.includes('LB vs RB') && label.includes('Distanza Asse')) {
+                        const lbMatch = value.match(/LB:\s*([\d.]+)px/);
+                        const rbMatch = value.match(/RB:\s*([\d.]+)px/);
+                        if (lbMatch && rbMatch) {
+                            const lbDist = parseFloat(lbMatch[1]);
+                            const rbDist = parseFloat(rbMatch[1]);
+                            movements['LB'].horizontal = rbDist - lbDist;
+                        }
+                    }
+
+                    // LB vs RB - Altezza
+                    if (label.includes('LB vs RB') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            movements['LB'].vertical = value.includes('RB più alto') ? -pixels : pixels;
+                        }
+                    }
+
+                    // LC vs RC - Distanza Asse
+                    if (label.includes('LC vs RC') && label.includes('Distanza Asse')) {
+                        const lcMatch = value.match(/LC:\s*([\d.]+)px/);
+                        const rcMatch = value.match(/RC:\s*([\d.]+)px/);
+                        if (lcMatch && rcMatch) {
+                            const lcDist = parseFloat(lcMatch[1]);
+                            const rcDist = parseFloat(rcMatch[1]);
+                            movements['LC'].horizontal = rcDist - lcDist;
+                        }
+                    }
+
+                    // LC vs RC - Altezza
+                    if (label.includes('LC vs RC') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            movements['LC'].vertical = value.includes('RC più alto') ? -pixels : pixels;
+                        }
+                    }
+                });
+
+                console.log('📏 [MOVIMENTI SX] Movimenti calcolati:', movements);
+
+                // Genera le istruzioni vocali nell'ordine richiesto: LA, LA0, LC1, LB, LC
+                const pointsOrder = ['LA', 'LA0', 'LC1', 'LB', 'LC'];
+                let instructions = '';
+                let instructionCount = 0;
+
+                pointsOrder.forEach((point, index) => {
+                    const move = movements[point];
+                    const parts = [];
+
+                    // Movimento verticale
+                    if (Math.abs(move.vertical) > 0.5) {
+                        const intensity = getIntensity(Math.abs(move.vertical));
+                        const direction = move.vertical < 0 ? 'più in alto' : 'più in basso';
+                        parts.push(`${intensity}${direction}`);
+                    }
+
+                    // Movimento orizzontale
+                    if (Math.abs(move.horizontal) > 0.5) {
+                        const intensity = getIntensity(Math.abs(move.horizontal));
+                        const direction = move.horizontal > 0 ? 'più esternamente' : 'più internamente';
+                        parts.push(`${intensity}${direction}`);
+                    }
+
+                    // Determina il connettore in base alla posizione nell'istruzione
+                    const connector = instructionCount === 0 ? 'Sposta' : 'sposta';
+
+                    if (parts.length > 0) {
+                        instructions += `${connector} ${point} ${parts.join(' e ')}. `;
+                        instructionCount++;
+                    } else {
+                        // Anche se non ci sono movimenti, menziona il punto
+                        instructions += `${connector} ${point} è già posizionato correttamente. `;
+                        instructionCount++;
+                    }
+                });
+
+                return instructions.trim() || null;
+            };
+
+            // Funzione per comando vocale "preferenza sinistra" - analizza spostamenti sopracciglio destro
+            window.show_right_eyebrow_with_voice = async function () {
+                console.log('🎯 [PREFERENZA SINISTRA] Inizio analisi preferenza sinistra');
+                console.log('🔍 [PREFERENZA SINISTRA] Verifica funzioni disponibili:', {
+                    showRightEyebrow: typeof window.showRightEyebrow,
+                    voiceAssistant: typeof voiceAssistant,
+                    greenDotsDetected: !!window.greenDotsDetected
+                });
+
+                // Verifica prerequisiti
+                if (!window.greenDotsDetected || !window.greenDotsData?.success) {
+                    console.error('❌ [PREFERENZA SINISTRA] Green dots non rilevati');
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('Prima devi rilevare i punti verdi con il pulsante green dots');
+                    }
+                    return;
+                }
+
+                // Step 1: Apri il popup della correzione sopracciglio destro
+                if (typeof window.showRightEyebrow === 'function') {
+                    console.log('📊 [PREFERENZA SINISTRA] Apertura popup correzione...');
+                    try {
+                        window.showRightEyebrow();
+                        console.log('✅ [PREFERENZA SINISTRA] Popup aperto con successo');
+                    } catch (error) {
+                        console.error('❌ [PREFERENZA SINISTRA] Errore apertura popup:', error);
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('Errore apertura finestra correzione');
+                        }
+                        return;
+                    }
+
+                    // Step 2: Aspetta che il popup sia aperto (breve delay)
+                    await new Promise(resolve => setTimeout(resolve, 800));
+
+                    // Step 3: Analizza gli spostamenti dalla tabella
+                    console.log('📏 [PREFERENZA SINISTRA] Analisi spostamenti dalla tabella...');
+                    const instructions = window.analyzeRightEyebrowMovements();
+
+                    if (instructions) {
+                        console.log('🔊 [PREFERENZA SINISTRA] Pronuncia indicazioni:', instructions);
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak(instructions);
+                        }
+                    } else {
+                        console.error('❌ [PREFERENZA SINISTRA] Impossibile generare indicazioni');
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('Non ho trovato abbastanza dati per generare le indicazioni');
+                        }
+                    }
+                } else {
+                    console.error('❌ [PREFERENZA SINISTRA] Funzione showRightEyebrow non disponibile');
+                    console.error('    window.showRightEyebrow:', window.showRightEyebrow);
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('Funzione correzione non disponibile');
+                    }
+                }
+            };
+
+            // Funzione per analizzare gli spostamenti necessari del sopracciglio destro
+            window.analyzeRightEyebrowMovements = function () {
+                console.log('📊 [MOVIMENTI DX] Analisi movimenti sopracciglio destro');
+
+                const measurementsTable = document.getElementById('measurements-data');
+                if (!measurementsTable) {
+                    console.error('❌ [MOVIMENTI DX] Tabella misurazioni non trovata');
+                    return null;
+                }
+
+                const rows = measurementsTable.querySelectorAll('tr[data-type="green-dots"]');
+                if (rows.length === 0) {
+                    console.error('❌ [MOVIMENTI DX] Nessun dato green dots trovato');
+                    return null;
+                }
+
+                // Mappa per raccogliere i dati: punto -> {horizontal, vertical}
+                const movements = {
+                    'RA': { horizontal: 0, vertical: 0 },
+                    'RA0': { horizontal: 0, vertical: 0 },
+                    'RC1': { horizontal: 0, vertical: 0 },
+                    'RB': { horizontal: 0, vertical: 0 },
+                    'RC': { horizontal: 0, vertical: 0 }
+                };
+
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length < 2) return;
+
+                    const label = cells[0].textContent.trim();
+                    const value = cells[1].textContent.trim();
+
+                    // RA vs LA - Distanza Asse (orizzontale) - inverso rispetto a LA
+                    if (label.includes('LA vs RA') && label.includes('Distanza Asse')) {
+                        const laMatch = value.match(/LA:\s*([\d.]+)px/);
+                        const raMatch = value.match(/RA:\s*([\d.]+)px/);
+                        if (laMatch && raMatch) {
+                            const laDist = parseFloat(laMatch[1]);
+                            const raDist = parseFloat(raMatch[1]);
+                            movements['RA'].horizontal = laDist - raDist; // positivo = spostare più esterno
+                        }
+                    }
+
+                    // RA vs LA - Altezza (verticale)
+                    if (label.includes('LA vs RA') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            // Se LA più alto, RA deve salire (negativo)
+                            movements['RA'].vertical = value.includes('LA più alto') ? -pixels : pixels;
+                        }
+                    }
+
+                    // RA0 vs LA0 - Distanza Asse
+                    if (label.includes('LA0 vs RA0') && label.includes('Distanza Asse')) {
+                        const la0Match = value.match(/LA0:\s*([\d.]+)px/);
+                        const ra0Match = value.match(/RA0:\s*([\d.]+)px/);
+                        if (la0Match && ra0Match) {
+                            const la0Dist = parseFloat(la0Match[1]);
+                            const ra0Dist = parseFloat(ra0Match[1]);
+                            movements['RA0'].horizontal = la0Dist - ra0Dist;
+                        }
+                    }
+
+                    // RC1 vs LC1 - Distanza Asse
+                    if (label.includes('LC1 vs RC1') && label.includes('Distanza Asse')) {
+                        const lc1Match = value.match(/LC1:\s*([\d.]+)px/);
+                        const rc1Match = value.match(/RC1:\s*([\d.]+)px/);
+                        if (lc1Match && rc1Match) {
+                            const lc1Dist = parseFloat(lc1Match[1]);
+                            const rc1Dist = parseFloat(rc1Match[1]);
+                            movements['RC1'].horizontal = lc1Dist - rc1Dist;
+                        }
+                    }
+
+                    // RC1 vs LC1 - Altezza
+                    if (label.includes('LC1 vs RC1') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            movements['RC1'].vertical = value.includes('LC1 più alto') ? -pixels : pixels;
+                        }
+                    }
+
+                    // RB vs LB - Distanza Asse
+                    if (label.includes('LB vs RB') && label.includes('Distanza Asse')) {
+                        const lbMatch = value.match(/LB:\s*([\d.]+)px/);
+                        const rbMatch = value.match(/RB:\s*([\d.]+)px/);
+                        if (lbMatch && rbMatch) {
+                            const lbDist = parseFloat(lbMatch[1]);
+                            const rbDist = parseFloat(rbMatch[1]);
+                            movements['RB'].horizontal = lbDist - rbDist;
+                        }
+                    }
+
+                    // RB vs LB - Altezza
+                    if (label.includes('LB vs RB') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            movements['RB'].vertical = value.includes('LB più alto') ? -pixels : pixels;
+                        }
+                    }
+
+                    // RC vs LC - Distanza Asse
+                    if (label.includes('LC vs RC') && label.includes('Distanza Asse')) {
+                        const lcMatch = value.match(/LC:\s*([\d.]+)px/);
+                        const rcMatch = value.match(/RC:\s*([\d.]+)px/);
+                        if (lcMatch && rcMatch) {
+                            const lcDist = parseFloat(lcMatch[1]);
+                            const rcDist = parseFloat(rcMatch[1]);
+                            movements['RC'].horizontal = lcDist - rcDist;
+                        }
+                    }
+
+                    // RC vs LC - Altezza
+                    if (label.includes('LC vs RC') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            movements['RC'].vertical = value.includes('LC più alto') ? -pixels : pixels;
+                        }
+                    }
+                });
+
+                console.log('📏 [MOVIMENTI DX] Movimenti calcolati:', movements);
+
+                // Genera le istruzioni vocali nell'ordine richiesto: RA, RA0, RC1, RB, RC
+                const pointsOrder = ['RA', 'RA0', 'RC1', 'RB', 'RC'];
+                let instructions = '';
+                let instructionCount = 0;
+
+                pointsOrder.forEach((point, index) => {
+                    const move = movements[point];
+                    const parts = [];
+
+                    // Movimento verticale
+                    if (Math.abs(move.vertical) > 0.5) {
+                        const intensity = getIntensity(Math.abs(move.vertical));
+                        const direction = move.vertical < 0 ? 'più in alto' : 'più in basso';
+                        parts.push(`${intensity}${direction}`);
+                    }
+
+                    // Movimento orizzontale
+                    if (Math.abs(move.horizontal) > 0.5) {
+                        const intensity = getIntensity(Math.abs(move.horizontal));
+                        const direction = move.horizontal > 0 ? 'più esternamente' : 'più internamente';
+                        parts.push(`${intensity}${direction}`);
+                    }
+
+                    // Determina il connettore in base alla posizione nell'istruzione
+                    const connector = instructionCount === 0 ? 'Sposta' : 'sposta';
+
+                    if (parts.length > 0) {
+                        instructions += `${connector} ${point} ${parts.join(' e ')}. `;
+                        instructionCount++;
+                    } else {
+                        // Anche se non ci sono movimenti, menziona il punto
+                        instructions += `${connector} ${point} è già posizionato correttamente. `;
+                        instructionCount++;
+                    }
+                });
+
+                return instructions.trim() || null;
+            };
+
+            // Funzione helper per determinare l'intensità dello spostamento
+            function getIntensity(pixels) {
+                if (pixels < 2) return '';
+                if (pixels < 5) return 'leggermente ';
+                if (pixels < 10) return '';
+                if (pixels < 20) return 'molto ';
+                return 'molto ';
+            }
+
+            // Funzione per analizzare la progettazione sopraccigliare
+            window.analyze_eyebrow_design = async function () {
+                console.log('🔍 [ANALISI PROGETTAZIONE] Inizio analisi progettazione sopraccigliare');
+
+                // Flag per disabilitare feedback vocali automatici durante questa operazione
+                window.suppressVoiceFeedback = true;
+
+                // Step 0: Verifica se ci sono già dati disponibili nella tabella
+                const measurementsTable = document.getElementById('measurements-data');
+                let existingGreenDotsRows = measurementsTable ? measurementsTable.querySelectorAll('tr[data-type="green-dots"]') : [];
+
+                console.log('📊 [ANALISI PROGETTAZIONE] Righe green dots esistenti:', existingGreenDotsRows.length);
+
+                // Step 1: Se non ci sono dati o il pulsante non è attivo, esegui analisi green dots
+                const greenDotsBtn = document.getElementById('green-dots-btn');
+                const needsAnalysis = existingGreenDotsRows.length === 0 ||
+                    !greenDotsBtn ||
+                    !greenDotsBtn.classList.contains('active');
+
+                if (needsAnalysis) {
+                    console.log('🟢 [ANALISI PROGETTAZIONE] Esecuzione analisi green dots necessaria...');
+
+                    // Attiva il pulsante se non lo è già
+                    if (greenDotsBtn && !greenDotsBtn.classList.contains('active')) {
+                        greenDotsBtn.classList.add('active');
+                        console.log('✅ [ANALISI PROGETTAZIONE] Pulsante green dots attivato');
+                    }
+
+                    // Chiama direttamente detectGreenDots() invece di toggleGreenDots()
+                    if (typeof detectGreenDots === 'function') {
+                        console.log('🔄 [ANALISI PROGETTAZIONE] Chiamata detectGreenDots()...');
+                        await detectGreenDots();
+                    } else {
+                        console.error('❌ [ANALISI PROGETTAZIONE] detectGreenDots non disponibile');
+                        window.suppressVoiceFeedback = false;
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('Errore: funzione green dots non disponibile');
+                        }
+                        return;
+                    }
+
+                    // Step 2: Aspetta che i risultati siano disponibili (max 5 secondi)
+                    console.log('⏳ [ANALISI PROGETTAZIONE] Attesa risultati green dots...');
+                    let attempts = 0;
+                    const maxAttempts = 50; // 5 secondi con check ogni 100ms
+
+                    const waitForResults = () => {
+                        return new Promise((resolve) => {
+                            const checkResults = () => {
+                                const table = document.getElementById('measurements-data');
+                                const rows = table ? table.querySelectorAll('tr[data-type="green-dots"]') : [];
+
+                                console.log(`🔄 [ANALISI PROGETTAZIONE] Check ${attempts + 1}/${maxAttempts}: trovate ${rows.length} righe green dots`);
+
+                                if (rows.length > 0 || attempts >= maxAttempts) {
+                                    resolve(rows.length > 0);
+                                } else {
+                                    attempts++;
+                                    setTimeout(checkResults, 100);
+                                }
+                            };
+                            checkResults();
+                        });
+                    };
+
+                    const resultsAvailable = await waitForResults();
+
+                    // Riabilita feedback vocali
+                    window.suppressVoiceFeedback = false;
+
+                    if (!resultsAvailable) {
+                        console.error('❌ [ANALISI PROGETTAZIONE] Timeout: risultati green dots non disponibili');
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('Non sono riuscita a ottenere i risultati dell\'analisi');
+                        }
+                        return;
+                    }
+                } else {
+                    console.log('✅ [ANALISI PROGETTAZIONE] Dati già disponibili, uso quelli esistenti');
+                    // Riabilita feedback vocali subito
+                    window.suppressVoiceFeedback = false;
+                }
+
+                // Step 3: Analizza i dati dalla tabella
+                console.log('📊 [ANALISI PROGETTAZIONE] Analisi dati dalla tabella...');
+                const feedback = analyzeEyebrowDesignFromTable();
+
+                if (feedback) {
+                    console.log('✅ [ANALISI PROGETTAZIONE] Feedback generato:', feedback);
+                    // Step 4: L'assistente pronuncia il feedback usando speak() per testo personalizzato
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        console.log('🔊 [ANALISI PROGETTAZIONE] Invio feedback a voice assistant');
+                        voiceAssistant.speak(feedback);
+                    } else {
+                        console.error('❌ [ANALISI PROGETTAZIONE] voiceAssistant.speak non disponibile');
+                    }
+                } else {
+                    console.error('❌ [ANALISI PROGETTAZIONE] Impossibile generare feedback');
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('Non ho trovato abbastanza dati per l\'analisi');
+                    }
+                }
+            };
+
+            // Funzione per analizzare i dati dalla tabella misurazioni
+            window.analyzeEyebrowDesignFromTable = function () {
+                console.log('📊 Analisi dati tabella misurazioni');
+
+                const measurementsTable = document.getElementById('measurements-data');
+                if (!measurementsTable) {
+                    console.error('❌ Tabella misurazioni non trovata');
+                    return null;
+                }
+
+                const rows = measurementsTable.querySelectorAll('tr[data-type="green-dots"]');
+                if (rows.length === 0) {
+                    console.error('❌ Nessun dato green dots trovato');
+                    return null;
+                }
+
+                console.log(`📋 Trovate ${rows.length} righe di dati green dots`);
+
+                // Estrai i dati rilevanti
+                let externalEyebrow = null; // Quale sopracciglio inizia più esternamente (punto A più lontano dall'asse)
+                let higherEyebrow = null; // Quale sopracciglio è più alto (punto C1)
+                let longerTail = null; // Quale ha la coda più lunga (punto B)
+                let thickerEyebrow = null; // Quale è più spesso (area)
+
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length < 2) return;
+
+                    const label = cells[0].textContent.trim();
+                    const value = cells[1].textContent.trim();
+
+                    console.log(`   📝 ${label}: ${value}`);
+
+                    // Analisi punto A (distanza dall'asse) - Il punto PIÙ LONTANO inizia più esternamente
+                    if (label.includes('LA vs RA') && label.includes('Distanza Asse')) {
+                        // Cerca "LA più esterno" o "RA più esterno" nel nuovo formato
+                        if (value.includes('LA più esterno')) {
+                            externalEyebrow = 'sinistro'; // LA più lontano = sopracciglio sinistro inizia più esternamente
+                        } else if (value.includes('RA più esterno')) {
+                            externalEyebrow = 'destro'; // RA più lontano = sopracciglio destro inizia più esternamente
+                        }
+                    }
+
+                    // Analisi punto C1 (altezza)
+                    if (label.includes('LC1 vs RC1') && label.includes('Altezza')) {
+                        if (value.includes('LC1')) {
+                            higherEyebrow = 'sinistro';
+                        } else if (value.includes('RC1')) {
+                            higherEyebrow = 'destro';
+                        }
+                    }
+
+                    // Analisi punto B (coda più lunga) - Il punto PIÙ LONTANO dall'asse ha la coda più lunga
+                    if (label.includes('LB vs RB') && label.includes('Distanza Asse')) {
+                        // Cerca "LB più esterno" o "RB più esterno" nel nuovo formato
+                        if (value.includes('LB più esterno')) {
+                            longerTail = 'sinistro'; // LB più lontano = coda sinistra più lunga
+                        } else if (value.includes('RB più esterno')) {
+                            longerTail = 'destro'; // RB più lontano = coda destra più lunga
+                        }
+                    }
+
+                    // Analisi area (spessore)
+                    if ((label.includes('Poligono Sinistro') || label.includes('Poligono Destro')) && value.includes('MAGGIORE')) {
+                        if (label.includes('Sinistro')) {
+                            thickerEyebrow = 'sinistro';
+                        } else if (label.includes('Destro')) {
+                            thickerEyebrow = 'destro';
+                        }
+                    }
+                });
+
+                console.log('🔍 Risultati analisi:', {
+                    externalEyebrow,
+                    higherEyebrow,
+                    longerTail,
+                    thickerEyebrow
+                });
+
+                // Genera il feedback testuale
+                if (!externalEyebrow || !higherEyebrow || !longerTail || !thickerEyebrow) {
+                    console.warn('⚠️ Alcuni dati mancanti per generare feedback completo');
+                }
+
+                // Costruisci la frase seguendo esattamente il formato richiesto
+                let feedback = '';
+
+                // 1. Quale sopracciglio inizia più esternamente (punto A più lontano dall'asse)
+                if (externalEyebrow === 'destro') {
+                    feedback += 'Il sopracciglio alla tua destra inizia più esternamente. ';
+                } else if (externalEyebrow === 'sinistro') {
+                    feedback += 'Il sopracciglio alla tua sinistra inizia più esternamente. ';
+                }
+
+                // 2. Quale sopracciglio è più alto (C1)
+                if (higherEyebrow === 'sinistro') {
+                    feedback += 'Il sopracciglio alla tua sinistra è più alto rispetto l\'altro. ';
+                } else if (higherEyebrow === 'destro') {
+                    feedback += 'Il sopracciglio alla tua destra è più alto rispetto l\'altro. ';
+                }
+
+                // 3. Quale ha la coda più lunga (B)
+                if (longerTail === 'sinistro') {
+                    feedback += 'La coda del sopracciglio alla tua sinistra è più lunga. ';
+                } else if (longerTail === 'destro') {
+                    feedback += 'La coda del sopracciglio alla tua destra è più lunga. ';
+                }
+
+                // 4. Quale è più spesso (area)
+                if (thickerEyebrow === 'sinistro') {
+                    feedback += 'Ed infine il sopracciglio sinistro è più spesso.';
+                } else if (thickerEyebrow === 'destro') {
+                    feedback += 'Ed infine il sopracciglio destro è più spesso.';
+                }
+
+                return feedback || null;
             };
 
             // ANALISI - Volto
