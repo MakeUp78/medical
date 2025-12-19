@@ -60,112 +60,61 @@
                             <button class="btn btn-success" onclick="startWebcam()">📹 Avvia Webcam</button>
                             <button class="btn btn-warning" onclick="stopWebcam()">⏹️ Stop Webcam</button>
                         </div>
-
-                        <!-- Info frame corrente -->
-                        <div class="status-info-frame">
-                            <div class="best-frame-info" id="best-frame-info">
-                                Nessun frame analizzato
-                            </div>
-                        </div>
                     </div>
                 </div>
 
-                <!-- Sezione STATUS SISTEMA -->
+                <!-- Sezione ANALISI (unione di Rilevamenti + Misurazioni Predefinite) -->
                 <div class="section" data-expanded="false">
                     <div class="section-header" onclick="toggleSection(this)">
-                        <button class="toggle-btn">📊 STATUS SISTEMA</button>
+                        <button class="toggle-btn">🔬 ANALISI</button>
                         <span class="icon">►</span>
                     </div>
                     <div class="section-content" style="display: none;">
-                        <!-- Dashboard badges organizzati in griglia -->
-                        <div class="badges-container">
-                            <div class="badge api-badge" id="api-status">
-                                🌐 API: connecting...
-                            </div>
-                            <div class="badge webcam-badge" id="webcam-badge">
-                                📹 Webcam: Disconnessa
-                            </div>
-                            <div class="badge landmarks-badge" id="landmarks-badge">
-                                🎯 Landmarks: 0
-                            </div>
-                            <div class="badge quality-badge" id="quality-badge">
-                                ⭐ Qualità: N/A
-                            </div>
-                            <div class="badge mode-badge" id="mode-badge">
-                                🔧 Modalità: Selezione
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                        <!-- Griglia unificata 2 colonne - tutti pulsanti arancioni stessa dimensione -->
+                        <div class="analysis-buttons">
+                            <!-- Pulsanti Rilevamenti -->
+                            <button class="btn btn-analysis" id="axis-btn" onclick="toggleAxis()">📏 Asse</button>
+                            <button class="btn btn-analysis" id="landmarks-btn" onclick="toggleLandmarks()">🎯
+                                Landmarks</button>
+                            <button class="btn btn-analysis" id="measure-btn" onclick="toggleMeasureMode()">📐
+                                Misura</button>
 
-                <!-- Sezione MISURAZIONI PREDEFINITE -->
-                <div class="section" data-expanded="false">
-                    <div class="section-header" onclick="toggleSection(this)">
-                        <button class="toggle-btn">📏 MISURAZIONI PREDEFINITE</button>
-                        <span class="icon">►</span>
-                    </div>
-                    <div class="section-content" style="display: none;">
-                        <!-- Griglia 4 colonne per compattezza -->
-                        <div class="predefined-buttons">
-                            <button class="btn btn-measure" onclick="measureFaceWidth(event)">📐 Larghezza Viso</button>
-                            <button class="btn btn-measure" onclick="measureFaceHeight(event)">📏 Altezza Viso</button>
-                            <button class="btn btn-measure" onclick="measureEyeDistance(event)">👁️ Distanza
+                            <!-- Pulsanti Misurazioni Predefinite -->
+                            <button class="btn btn-analysis" onclick="measureFaceWidth(event)">📐 Larghezza
+                                Viso</button>
+                            <button class="btn btn-analysis" onclick="measureFaceHeight(event)">📏 Altezza Viso</button>
+                            <button class="btn btn-analysis" onclick="measureEyeDistance(event)">👁️ Distanza
                                 Occhi</button>
-                            <button class="btn btn-measure" onclick="measureNoseWidth(event)">👃 Larghezza Naso</button>
-                            <button class="btn btn-measure" onclick="measureNoseHeight(event)">📏 Altezza Naso</button>
-                            <button class="btn btn-measure" onclick="measureMouthWidth(event)">👄 Larghezza
+                            <button class="btn btn-analysis" onclick="measureNoseWidth(event)">👃 Larghezza
+                                Naso</button>
+                            <button class="btn btn-analysis" onclick="measureNoseHeight(event)">📏 Altezza Naso</button>
+                            <button class="btn btn-analysis" onclick="measureMouthWidth(event)">👄 Larghezza
                                 Bocca</button>
-                            <button class="btn btn-measure" onclick="measureEyebrowAreas(event)">✂️ Aree
+                            <button class="btn btn-analysis" onclick="measureEyebrowAreas(event)">✂️ Aree
                                 Sopracciglia</button>
-
-                            <!-- NUOVE FUNZIONI AGGIUNTE PER PARITÀ CON APP DESKTOP -->
-                            <button class="btn btn-measure" onclick="measureEyeAreas(event)">👁️ Aree Occhi</button>
-                            <button class="btn btn-measure" onclick="measureCheekWidth(event)">😊 Larghezza
+                            <button class="btn btn-analysis" onclick="measureEyeAreas(event)">👁️ Aree Occhi</button>
+                            <button class="btn btn-analysis" onclick="measureCheekWidth(event)">😊 Larghezza
                                 Guance</button>
-                            <button class="btn btn-measure" onclick="measureForeheadWidth(event)">🤔 Larghezza
+                            <button class="btn btn-analysis" onclick="measureForeheadWidth(event)">🤔 Larghezza
                                 Fronte</button>
-                            <button class="btn btn-measure" onclick="measureChinWidth(event)">😮 Larghezza
+                            <button class="btn btn-analysis" onclick="measureChinWidth(event)">😮 Larghezza
                                 Mento</button>
-                            <button class="btn btn-measure" onclick="measureFaceProfile(event)">👤 Profilo Viso</button>
-                            <button class="btn btn-measure" onclick="measureNoseAngle(event)">👃 Angolo Naso</button>
-                            <button class="btn btn-measure" onclick="measureMouthAngle(event)">👄 Angolo Bocca</button>
-                            <button class="btn btn-measure" onclick="measureFaceProportions(event)">📏
+                            <button class="btn btn-analysis" onclick="measureFaceProfile(event)">👤 Profilo
+                                Viso</button>
+                            <button class="btn btn-analysis" onclick="measureNoseAngle(event)">👃 Angolo Naso</button>
+                            <button class="btn btn-analysis" onclick="measureMouthAngle(event)">👄 Angolo Bocca</button>
+                            <button class="btn btn-analysis" onclick="measureFaceProportions(event)">📏
                                 Proporzioni</button>
-                            <button class="btn btn-measure" onclick="measureKeyDistances(event)">🔍 Distanze
+                            <button class="btn btn-analysis" onclick="measureKeyDistances(event)">🔍 Distanze
                                 Chiave</button>
-                            <button class="btn btn-measure" onclick="measureFacialSymmetry(event)">⚖️ Simmetria</button>
-                            <button class="btn btn-measure btn-primary" onclick="performCompleteAnalysis(event)"
-                                style="grid-column: 1 / -1; font-weight: bold; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                            <button class="btn btn-analysis" onclick="measureFacialSymmetry(event)">⚖️
+                                Simmetria</button>
+
+                            <!-- Pulsante Analisi Completa - occupa tutta la larghezza -->
+                            <button class="btn btn-analysis btn-analysis-complete"
+                                onclick="performCompleteAnalysis(event)">
                                 🧬 ANALISI VISAGISTICA COMPLETA
                             </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Sezione RILEVAMENTI -->
-                <div class="section" data-expanded="false">
-                    <div class="section-header" onclick="toggleSection(this)">
-                        <button class="toggle-btn">🔍 RILEVAMENTI</button>
-                        <span class="icon">►</span>
-                    </div>
-                    <div class="section-content" style="display: none;">
-                        <!-- Griglia 2x2 per pulsanti rilevamenti -->
-                        <div class="detection-grid">
-                            <button class="btn btn-detection" id="axis-btn" onclick="toggleAxis()">📏 ASSE</button>
-                            <button class="btn btn-detection" id="landmarks-btn" onclick="toggleLandmarks()">🎯
-                                LANDMARKS</button>
-                            <button class="btn btn-detection" id="green-dots-btn" onclick="toggleGreenDots()">🟢 GREEN
-                                DOTS</button>
-                            <!-- Wrapper per pulsanti misurazione affiancati -->
-                            <div class="btn btn-detection"
-                                style="padding: 0; display: flex; gap: 4px; background: transparent;">
-                                <button id="measure-btn" onclick="toggleMeasureMode()"
-                                    style="flex: 1; background: #f97316; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-weight: 600; transition: all 0.2s;">📐
-                                    MISURA</button>
-                                <button id="complete-measure-btn" onclick="completeMeasurement()"
-                                    style="display: none; flex: 1; background: #f97316; color: white; border: none; border-radius: 8px; padding: 12px; cursor: pointer; font-weight: 600; transition: all 0.2s;">✅
-                                    NUOVA</button>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -222,20 +171,21 @@
                     </div>
                 </div>
 
-                <!-- Sezione CORREZIONE SOPRACCIGLIA -->
+                <!-- Sezione CORREZIONE PROGETTAZIONE -->
                 <div class="section" data-expanded="false">
                     <div class="section-header" onclick="toggleSection(this)">
-                        <button class="toggle-btn">✂️ CORREZIONE SOPRACCIGLIA</button>
+                        <button class="toggle-btn">✂️ CORREZIONE PROGETTAZIONE</button>
                         <span class="icon">►</span>
                     </div>
                     <div class="section-content" style="display: none;">
                         <div class="eyebrow-info">
-                            💡 Ritaglio sopracciglia + overlay
+                            Quale sopracciglio piace di più alla cliente? Quello alla tua DESTRA o alla tua SINISTRA?
                         </div>
 
                         <div class="eyebrow-buttons">
-                            <button class="btn btn-eyebrow" onclick="showLeftEyebrow()">✂️ Preferenza
-                                Destra</button>
+                            <button class="btn btn-analysis" id="green-dots-btn" onclick="toggleGreenDots()">🟢 Green
+                                Dots</button>
+                            <button class="btn btn-eyebrow" onclick="showLeftEyebrow()">✂️ Preferenza Destra</button>
                             <button class="btn btn-eyebrow" onclick="showRightEyebrow()">✂️ Preferenza Sinistra</button>
                         </div>
                     </div>
@@ -380,6 +330,25 @@
         <!-- SIDEBAR DESTRA identica alla colonna destra dell'app -->
         <div class="right-sidebar">
 
+            <!-- Anteprima - PRIMA POSIZIONE -->
+            <div class="section" data-expanded="false">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <button class="toggle-btn">📹 ANTEPRIMA</button>
+                    <span class="icon">►</span>
+                </div>
+                <div class="section-content webcam-preview-content" style="display: none;">
+                    <canvas id="webcam-preview-canvas"></canvas>
+                    <div id="webcam-preview-info">Anteprima non attiva</div>
+
+                    <!-- Monitor debug websocket -->
+                    <div class="status-info-frame">
+                        <div class="best-frame-info" id="best-frame-info">
+                            Nessun frame analizzato
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Sezione Misurazioni -->
             <div class="section" data-expanded="false">
                 <div class="section-header" onclick="toggleSection(this)">
@@ -442,7 +411,7 @@
                 </div>
             </div>
 
-            <!-- Sezione Debug -->
+            <!-- Debug Analysis - ORA SOTTO -->
             <div class="section" data-expanded="true">
                 <div class="section-header" onclick="toggleSection(this)">
                     <button class="toggle-btn">🐛 DEBUG ANALYSIS</button>
@@ -472,21 +441,9 @@
                         <button class="btn btn-small" onclick="ensureSidebarSectionsVisible()"
                             title="Ripristina visibilità sezioni" style="display: none;">🔧 Ripristina UI</button>
                         <label class="auto-scroll-label" style="display: none;">
-                            <input type="checkbox" id="auto-scroll" checked> Auto
+                            <input type="checkbox" id="auto-scroll"> Auto
                         </label>
                     </div>
-                </div>
-            </div>
-
-            <!-- Anteprima Webcam nella colonna destra -->
-            <div class="section" data-expanded="false">
-                <div class="section-header" onclick="toggleSection(this)">
-                    <button class="toggle-btn">📹 ANTEPRIMA WEBCAM</button>
-                    <span class="icon">►</span>
-                </div>
-                <div class="section-content webcam-preview-content" style="display: none;">
-                    <canvas id="webcam-preview-canvas"></canvas>
-                    <div id="webcam-preview-info">Anteprima webcam non attiva</div>
                 </div>
             </div>
         </div>
@@ -651,7 +608,7 @@
     <script src="static/js/eyebrow-correction.js?v=1766016205.6"></script>
     <!-- Analisi Visagistica Completa -->
     <script src="static/js/face-analysis-complete.js?v=1766016205"></script>
-    <script src="static/js/main.js?v=1766016205"></script>
+    <script src="static/js/main.js?v=1766115621"></script>
 
     <!-- Script di test per debug -->
     <script>

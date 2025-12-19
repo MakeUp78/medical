@@ -518,14 +518,28 @@ async function handleVideoLoad(file) {
       duration: video.duration
     });
 
-    // PROCESSO 1: Anteprima live del video
+    // Imposta video per riproduzione singola (NO LOOP)
+    video.loop = false;
+
+    // Handler per fermare quando finisce
+    video.addEventListener('ended', () => {
+      console.log('🎬 Video terminato - fermo anteprima');
+      stopLivePreview();
+    });
+
+    // PROCESSO UNICO: Setup anteprima + elaborazione
     openWebcamSection();
     showWebcamPreview(video);
-    startLivePreview(video); // Anteprima continua del video
 
-    // PROCESSO 2: Elaborazione server
+    // Aspetta WebSocket PRIMA di avviare il video
     await connectWebcamWebSocket();
-    startVideoFrameProcessing(video, file.name);
+
+    // Ora avvia il video e l'anteprima
+    video.play().then(() => {
+      console.log('▶️ Video avviato - play singolo');
+      startLivePreview(video); // Anteprima continua
+      startVideoFrameProcessing(video, file.name); // Elaborazione frame
+    }).catch(e => console.error('Errore play video:', e));
 
     showToast('Video in elaborazione - stesso sistema della webcam', 'success');
 
@@ -1483,6 +1497,10 @@ async function startWebcam() {
       video.onloadedmetadata = resolve;
     });
 
+    // IMPORTANTE: Avvia la riproduzione del video prima di disegnarlo sul canvas
+    await video.play();
+    console.log('▶️ Webcam video play avviato');
+
     // Mantieni canvas centrale visibile per mostrare i migliori frame
     const canvas = document.getElementById('main-canvas');
     canvas.style.display = 'block';
@@ -1552,51 +1570,55 @@ function stopWebcam() {
 }
 
 async function connectWebcamWebSocket() {
-  try {
-    // Connessione al server WebSocket tramite Nginx proxy
-    // Usa il protocollo corretto in base a HTTP/HTTPS
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const hostname = window.location.hostname;
-    const wsUrl = `${protocol}//${hostname}/ws`;
+  return new Promise((resolve, reject) => {
+    try {
+      // Connessione al server WebSocket tramite Nginx proxy
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const hostname = window.location.hostname;
+      const wsUrl = `${protocol}//${hostname}/ws`;
 
-    console.log(`🔗 Connessione WebSocket a: ${wsUrl}`);
-    webcamWebSocket = new WebSocket(wsUrl);
+      console.log(`🔗 Connessione WebSocket a: ${wsUrl}`);
+      webcamWebSocket = new WebSocket(wsUrl);
 
-    webcamWebSocket.onopen = function () {
-      console.log('🔌 WebSocket connesso alla porta 8765');
-      updateStatus('WebSocket connesso - Avvio sessione...');
+      webcamWebSocket.onopen = function () {
+        console.log('🔌 WebSocket connesso alla porta 8765');
+        updateStatus('WebSocket connesso - Avvio sessione...');
 
-      // Avvia sessione con protocollo corretto del server 8765
-      const startMessage = {
-        action: 'start_session',
-        session_id: `webapp_session_${new Date().toISOString().replace(/[:.]/g, '_')}`
+        // Avvia sessione
+        const startMessage = {
+          action: 'start_session',
+          session_id: `webapp_session_${new Date().toISOString().replace(/[:.]/g, '_')}`
+        };
+        webcamWebSocket.send(JSON.stringify(startMessage));
+
+        console.log('✅ WebSocket pronto per l\'invio dei frame');
+        resolve(); // Risolvi promise quando connesso
       };
-      webcamWebSocket.send(JSON.stringify(startMessage));
-    };
 
-    webcamWebSocket.onmessage = function (event) {
-      try {
-        const data = JSON.parse(event.data);
-        handleWebSocketMessage(data);
-      } catch (error) {
-        console.error('Errore parsing messaggio WebSocket:', error);
-      }
-    };
+      webcamWebSocket.onmessage = function (event) {
+        try {
+          const data = JSON.parse(event.data);
+          handleWebSocketMessage(data);
+        } catch (error) {
+          console.error('Errore parsing messaggio WebSocket:', error);
+        }
+      };
 
-    webcamWebSocket.onclose = function () {
-      console.log('🔌 WebSocket webcam disconnesso');
-      webcamWebSocket = null;
-    };
+      webcamWebSocket.onclose = function () {
+        console.log('🔌 WebSocket disconnesso');
+        webcamWebSocket = null;
+      };
 
-    webcamWebSocket.onerror = function (error) {
-      console.error('Errore WebSocket webcam:', error);
-      showToast('Errore connessione server', 'error');
-    };
+      webcamWebSocket.onerror = function (error) {
+        console.error('Errore WebSocket:', error);
+        reject(error);
+      };
 
-  } catch (error) {
-    console.error('Errore connessione WebSocket:', error);
-    throw error;
-  }
+    } catch (error) {
+      console.error('Errore connessione WebSocket:', error);
+      reject(error);
+    }
+  });
 }
 
 function disconnectWebcamWebSocket() {
@@ -1646,7 +1668,7 @@ function openWebcamSection() {
   const webcamSections = document.querySelectorAll('.section');
   webcamSections.forEach(section => {
     const btn = section.querySelector('.toggle-btn');
-    if (btn && btn.textContent.includes('ANTEPRIMA WEBCAM')) {
+    if (btn && btn.textContent.includes('ANTEPRIMA')) {
       const content = section.querySelector('.section-content');
       const icon = section.querySelector('.icon');
 
@@ -1670,31 +1692,20 @@ function showWebcamPreview(video) {
   });
 
   if (previewCanvas && video) {
-    // FORZA TOTALE la visualizzazione del canvas
-    previewCanvas.style.cssText = 'display: block !important; visibility: visible !important; width: 320px !important; height: 240px !important; border: 3px solid lime !important;';
+    // Mostra il canvas
     previewCanvas.classList.add('active');
+    previewCanvas.style.display = 'block';
 
     // Forza anche il contenitore parent
     const container = previewCanvas.parentElement;
     if (container) {
-      container.style.cssText = 'display: block !important; max-height: 1000px !important; padding: 6px !important; visibility: visible !important;';
+      container.style.display = 'block';
+      container.style.visibility = 'visible';
     }
 
-    // Test: colora tutto il canvas di rosso per vedere se è visibile
-    const ctx = previewCanvas.getContext('2d');
-    previewCanvas.width = 320;
-    previewCanvas.height = 240;
-    ctx.fillStyle = 'red';
-    ctx.fillRect(0, 0, 320, 240);
-    ctx.fillStyle = 'white';
-    ctx.font = '16px Arial';
-    ctx.fillText('CANVAS ATTIVO', 80, 120);
-
-    console.log('🎨 Canvas forzato visibile:', {
+    console.log('🎨 Canvas pronto per anteprima:', {
       display: previewCanvas.style.display,
       visibility: previewCanvas.style.visibility,
-      offsetWidth: previewCanvas.offsetWidth,
-      offsetHeight: previewCanvas.offsetHeight,
       classList: previewCanvas.classList.toString()
     });
 
@@ -1745,11 +1756,7 @@ function startLivePreview(video) {
     srcObject: !!video?.srcObject
   });
 
-  // Test immediato
-  console.log('🧪 Test immediato rendering...');
-  renderLivePreview(video);
-
-  // Loop per anteprima live continua (30 FPS per iniziare)
+  // Loop per anteprima live continua (30 FPS) - NO render immediato per evitare scatto
   window.livePreviewId = setInterval(() => {
     if (video && video.videoWidth > 0) {
       renderLivePreview(video);
@@ -1760,7 +1767,7 @@ function startLivePreview(video) {
         readyState: video?.readyState
       });
     }
-  }, 33); // 30 FPS inizialmente
+  }, 33); // 30 FPS
 }
 
 function renderLivePreview(video) {
@@ -1800,10 +1807,10 @@ function renderLivePreview(video) {
       console.log('🎥 RENDER DEBUG:', debugInfo);
     }
 
-    // Calcola dimensioni
+    // Calcola dimensioni dinamiche basate sul container e aspect ratio del video
     const containerWidth = previewCanvas.parentElement.offsetWidth - 16;
     const aspectRatio = video.videoWidth / video.videoHeight;
-    const canvasWidth = Math.min(containerWidth, 320);
+    const canvasWidth = containerWidth; // Usa tutta la larghezza disponibile
     const canvasHeight = canvasWidth / aspectRatio;
 
     // Imposta dimensioni canvas
@@ -1812,13 +1819,7 @@ function renderLivePreview(video) {
     previewCanvas.style.width = canvasWidth + 'px';
     previewCanvas.style.height = canvasHeight + 'px';
 
-    // Verifica lo stato del video prima del disegno
-    if (video.paused) {
-      console.warn('⚠️ Video è in pausa - forzo play');
-      video.play().catch(e => console.log('Play fallito:', e));
-    }
-
-    // DISEGNA SEMPRE il frame corrente del video
+    // DISEGNA il frame corrente del video (senza forzare play ogni volta!)
     try {
       ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
 
@@ -1949,6 +1950,42 @@ function updateFrameProcessingStats(data) {
       Ultimo score: ${(data.current_score || 0).toFixed(3)}<br>
       Volti rilevati: ${data.faces_detected || 0}
     `;
+  }
+
+  // Notifica audio per frame con score > 95
+  if (data.current_score && data.current_score > 95) {
+    playHighScoreSound();
+    console.log(`🔔 Frame con score ${data.current_score.toFixed(2)} - suono riprodotto`);
+  }
+}
+
+// Variabile per throttling suono
+let lastSoundTime = 0;
+
+function playHighScoreSound() {
+  // Throttle: max 1 suono ogni 500ms
+  const now = Date.now();
+  if (now - lastSoundTime < 500) return;
+  lastSoundTime = now;
+
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.frequency.value = 800; // Frequenza acuta
+    oscillator.type = 'sine';
+
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.2);
+  } catch (e) {
+    console.error('Errore riproduzione suono:', e);
   }
 }
 
@@ -2145,11 +2182,11 @@ function updateDebugTable(bestFrames) {
 
     console.log(`📊 Tabella debug aggiornata con ${bestFrames.length} frame`);
 
-    // Scroll automatico alla tabella se abilitato
-    const autoScroll = document.getElementById('auto-scroll');
-    if (autoScroll && autoScroll.checked) {
-      debugTableBody.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }
+    // Scroll automatico DISABILITATO - la colonna rimane in alto
+    // const autoScroll = document.getElementById('auto-scroll');
+    // if (autoScroll && autoScroll.checked) {
+    //   debugTableBody.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    // }
 
   } catch (error) {
     console.error('Errore aggiornamento tabella debug:', error);
