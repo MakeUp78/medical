@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo Tabella Unificata</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #667eea;
+        }
+
+        .description {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #aaa;
+            line-height: 1.6;
+        }
+
+        /* Tabs */
+        .unified-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            padding: 8px;
+            background: #1f1f1f;
+            border-radius: 6px;
+        }
+
+        .unified-tab {
+            flex: 1;
+            padding: 10px 16px;
+            background: #404040;
+            color: #ffffff;
+            border: 1px solid #555555;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+
+        .unified-tab:hover {
+            background: #4a4a4a;
+            border-color: #666666;
+            transform: translateY(-1px);
+        }
+
+        .unified-tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: #764ba2;
+            color: #ffffff;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        /* Tabella */
+        .table-container {
+            overflow-x: auto;
+            border-radius: 4px;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #404040;
+            color: #ffffff;
+            font-size: 13px;
+        }
+
+        .data-table thead {
+            background: #4a4a4a;
+        }
+
+        .data-table th {
+            padding: 10px;
+            border: 1px solid #555555;
+            text-align: left;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .data-table td {
+            padding: 8px;
+            border: 1px solid #555555;
+            text-align: left;
+        }
+
+        .data-table tbody tr:nth-child(even) {
+            background: #3a3a3a;
+        }
+
+        .data-table tbody tr:hover {
+            background: #4a4a4a;
+        }
+
+        /* Controlli */
+        .unified-controls {
+            margin-top: 12px;
+            padding: 10px;
+            background: #1f1f1f;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 6px 12px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: #764ba2;
+        }
+
+        /* Animazione */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        #unified-table-body tr {
+            animation: fadeIn 0.3s ease;
+        }
+
+        .color-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin: 0 auto;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .status-ok {
+            color: #4caf50;
+        }
+
+        .status-pending {
+            color: #ff9800;
+        }
+
+        .info-box {
+            background: #333;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+
+        .info-box h3 {
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+
+        .info-box ul {
+            margin-left: 20px;
+            line-height: 1.8;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>📊 Demo Tabella Unificata</h1>
+
+        <div class="description">
+            <p>Questa demo mostra come le tre tabelle separate (MISURAZIONI, LANDMARKS, DEBUG) sono state unificate in
+                un'unica interfaccia con tabs.</p>
+        </div>
+
+        <div class="info-box">
+            <h3>✨ Caratteristiche</h3>
+            <ul>
+                <li>🎨 <strong>Design unificato</strong> - Una sola tabella per tutti i dati</li>
+                <li>🔄 <strong>Sincronizzazione automatica</strong> - I dati si aggiornano in tempo reale</li>
+                <li>📱 <strong>Interfaccia intuitiva</strong> - Tabs facili da usare</li>
+                <li>💾 <strong>Nessun dato perso</strong> - Tutti i dati vengono preservati</li>
+            </ul>
+        </div>
+
+        <!-- Demo della tabella unificata -->
+        <div class="unified-tabs">
+            <button class="unified-tab active" onclick="switchTab('measurements')">
+                📏 Misurazioni
+            </button>
+            <button class="unified-tab" onclick="switchTab('landmarks')">
+                🎯 Landmarks
+            </button>
+            <button class="unified-tab" onclick="switchTab('debug')">
+                🐛 Debug
+            </button>
+        </div>
+
+        <div class="table-container">
+            <table class="data-table" id="unified-table">
+                <thead id="unified-table-head">
+                    <!-- Header dinamico -->
+                </thead>
+                <tbody id="unified-table-body">
+                    <!-- Dati dinamici -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Dati di esempio
+        const sampleData = {
+            measurements: [
+                { type: 'Distanza Inter-pupillare', value: '65.3', unit: 'mm', status: '✅ Completata', statusClass: 'status-ok' },
+                { type: 'Larghezza Viso', value: '145.2', unit: 'mm', status: '✅ Completata', statusClass: 'status-ok' },
+                { type: 'Altezza Viso', value: '195.8', unit: 'mm', status: '🔄 In corso...', statusClass: 'status-pending' },
+                { type: 'Larghezza Naso', value: '35.7', unit: 'mm', status: '✅ Completata', statusClass: 'status-ok' }
+            ],
+            landmarks: [
+                { id: 33, name: 'Left Eye Outer Corner', x: '123.4', y: '256.8', color: 'hsl(137, 70%, 50%)' },
+                { id: 133, name: 'Left Eye Inner Corner', x: '156.2', y: '258.3', color: 'hsl(274, 70%, 50%)' },
+                { id: 362, name: 'Right Eye Outer Corner', x: '234.7', y: '255.1', color: 'hsl(45, 70%, 50%)' },
+                { id: 263, name: 'Right Eye Inner Corner', x: '201.9', y: '257.6', color: 'hsl(182, 70%, 50%)' },
+                { id: 0, name: 'Lip Top Center', x: '178.5', y: '342.1', color: 'hsl(319, 70%, 50%)' }
+            ],
+            debug: [
+                { frame: 1, time: '0.0s', score: '0.87', yaw: '-5.3°', pitch: '2.1°', roll: '0.8°', status: '✅ OK' },
+                { frame: 2, time: '0.5s', score: '0.92', yaw: '-4.1°', pitch: '1.8°', roll: '0.5°', status: '✅ OK' },
+                { frame: 3, time: '1.0s', score: '0.95', yaw: '-2.3°', pitch: '0.9°', roll: '0.2°', status: '✅ OK' },
+                { frame: 4, time: '1.5s', score: '0.89', yaw: '-3.7°', pitch: '1.5°', roll: '0.6°', status: '✅ OK' }
+            ]
+        };
+
+        let currentTab = 'measurements';
+
+        function switchTab(tabName) {
+            currentTab = tabName;
+
+            // Aggiorna tabs attivi
+            document.querySelectorAll('.unified-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // Aggiorna contenuto
+            updateTable();
+        }
+
+        function updateTable() {
+            const thead = document.getElementById('unified-table-head');
+            const tbody = document.getElementById('unified-table-body');
+            const controls = document.getElementById('unified-controls');
+
+            switch (currentTab) {
+                case 'measurements':
+                    thead.innerHTML = `
+                        <tr>
+                            <th>📏 Tipo Misurazione</th>
+                            <th>📊 Valore</th>
+                            <th>📐 Unità</th>
+                            <th>✅ Stato</th>
+                        </tr>
+                    `;
+                    tbody.innerHTML = sampleData.measurements.map(m => `
+                        <tr>
+                            <td>${m.type}</td>
+                            <td><strong>${m.value}</strong></td>
+                            <td>${m.unit}</td>
+                            <td><span class="${m.statusClass}">${m.status}</span></td>
+                        </tr>
+                    `).join('');
+                    controls.innerHTML = '<span style="color: #aaa;">Nessun controllo aggiuntivo</span>';
+                    break;
+
+                case 'landmarks':
+                    thead.innerHTML = `
+                        <tr>
+                            <th>🎨</th>
+                            <th>ID</th>
+                            <th>Nome</th>
+                            <th>X</th>
+                            <th>Y</th>
+                        </tr>
+                    `;
+                    tbody.innerHTML = sampleData.landmarks.map(l => `
+                        <tr>
+                            <td><div class="color-indicator" style="background: ${l.color};"></div></td>
+                            <td>${l.id}</td>
+                            <td>${l.name}</td>
+                            <td>${l.x}</td>
+                            <td>${l.y}</td>
+                        </tr>
+                    `).join('');
+                    controls.innerHTML = '<span style="color: #aaa;">Nessun controllo aggiuntivo</span>';
+                    break;
+
+                case 'debug':
+                    thead.innerHTML = `
+                        <tr>
+                            <th>Frame</th>
+                            <th>Tempo</th>
+                            <th>Score</th>
+                            <th>Yaw</th>
+                            <th>Pitch</th>
+                            <th>Roll</th>
+                            <th>Stato</th>
+                        </tr>
+                    `;
+                    tbody.innerHTML = sampleData.debug.map(d => `
+                        <tr>
+                            <td>${d.frame}</td>
+                            <td>${d.time}</td>
+                            <td>${d.score}</td>
+                            <td>${d.yaw}</td>
+                            <td>${d.pitch}</td>
+                            <td>${d.roll}</td>
+                            <td>${d.status}</td>
+                        </tr>
+                    `).join('');
+                    controls.innerHTML = '<span style="color: #aaa;">Nessun controllo aggiuntivo</span>';
+                    break;
+            }
+        }
+
+        // Inizializza al caricamento
+        updateTable();
+    </script>
+</body>
+
+</html>

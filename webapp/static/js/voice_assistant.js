@@ -389,6 +389,23 @@ class VoiceAssistant {
           voiceAssistant.speak('Funzione non disponibile');
         }
       },
+      'estimate_age': () => {
+        console.log('🎂 Esecuzione comando estimate_age');
+        const btn = document.querySelector('button[onclick*="estimateAge"]');
+        console.log('estimateAge - Pulsante trovato:', btn);
+        if (btn) {
+          console.log('✅ Click sul pulsante stima età');
+          btn.click();
+        } else {
+          console.warn('⚠️ Pulsante stima età non trovato, provo funzione globale');
+          if (typeof window.estimateAge === 'function') {
+            window.estimateAge();
+          } else {
+            console.error('❌ Funzione estimateAge non disponibile');
+            voiceAssistant.speak('Funzione stima età non disponibile');
+          }
+        }
+      },
     };
 
     const func = actionMap[action];

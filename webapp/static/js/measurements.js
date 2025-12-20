@@ -1869,4 +1869,183 @@ function performKeyDistancesMeasurement() {
   showToast('Misurazione distanze chiave - In sviluppo', 'info');
 }
 
+// === STIMA ETÀ ===
+
+async function estimateAge(event) {
+  const button = event ? event.target : document.querySelector('[onclick*="estimateAge"]');
+
+  if (!button) {
+    console.error('❌ Pulsante Stima Età non trovato');
+    showToast('Errore: pulsante non trovato', 'error');
+    return;
+  }
+
+  // Verifica che ci sia un'immagine caricata sul canvas
+  const currentImage = fabricCanvas ? fabricCanvas.getObjects().find(obj => obj.isBackgroundImage) : null;
+  if (!currentImage) {
+    showToast('⚠️ Carica prima un\'immagine', 'warning');
+    return;
+  }
+
+  // Disabilita il pulsante durante l'elaborazione
+  button.disabled = true;
+  button.textContent = '⏳ Analisi in corso...';
+
+  try {
+    // Ottieni l'immagine dal canvas Fabric.js (più affidabile)
+    const imageDataUrl = fabricCanvas.toDataURL({
+      format: 'jpeg',
+      quality: 0.95
+    });
+
+    if (!imageDataUrl) {
+      throw new Error('Impossibile estrarre immagine dal canvas');
+    }
+
+    console.log('📤 Invio richiesta stima età...');
+
+    // Chiamata API
+    const response = await fetch('/api/estimate-age', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        image: imageDataUrl
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Errore nella richiesta');
+    }
+
+    const result = await response.json();
+
+    if (result.success && result.age) {
+      const confidence = result.confidence || 'unknown';
+      const method = result.method || 'unknown';
+      const ratios = result.ratios || {};
+
+      console.log('✅ Età stimata:', result.age, 'anni', result);
+
+      // Interpreta i ratios in modo user-friendly
+      let faceShapeDescription = '';
+      let ageRangeDescription = '';
+
+      if (ratios.face_ratio) {
+        if (ratios.face_ratio > 2.6) {
+          faceShapeDescription = 'Viso allungato (tipico di visi giovani)';
+        } else if (ratios.face_ratio > 2.3) {
+          faceShapeDescription = 'Viso proporzionato';
+        } else if (ratios.face_ratio > 2.0) {
+          faceShapeDescription = 'Viso equilibrato (tipico di età matura)';
+        } else {
+          faceShapeDescription = 'Viso squadrato (tipico di età avanzata)';
+        }
+      }
+
+      // Determina range età
+      if (result.age < 25) {
+        ageRangeDescription = 'Giovane adulto';
+      } else if (result.age < 35) {
+        ageRangeDescription = 'Adulto giovane';
+      } else if (result.age < 50) {
+        ageRangeDescription = 'Adulto';
+      } else if (result.age < 65) {
+        ageRangeDescription = 'Adulto maturo';
+      } else {
+        ageRangeDescription = 'Senior';
+      }
+
+      // Aggiungi i dati alla tabella measurements-data
+      const measurementsTable = document.getElementById('measurements-data');
+      if (measurementsTable) {
+        // Rimuovi eventuali righe precedenti di stima età
+        const existingRows = measurementsTable.querySelectorAll('[data-measurement="age-estimate"]');
+        existingRows.forEach(row => row.remove());
+
+        // Aggiungi nuova riga con dati età
+        const newRow = document.createElement('tr');
+        newRow.setAttribute('data-measurement', 'age-estimate');
+        newRow.innerHTML = `
+          <td>🎂 Età Stimata</td>
+          <td><strong>${result.age}</strong></td>
+          <td>anni</td>
+          <td><span class="badge badge-success">✅ Completato</span></td>
+        `;
+        measurementsTable.insertBefore(newRow, measurementsTable.firstChild);
+
+        // Aggiungi riga per range età
+        const rangeRow = document.createElement('tr');
+        rangeRow.setAttribute('data-measurement', 'age-estimate');
+        rangeRow.innerHTML = `
+          <td>👤 Categoria</td>
+          <td>${ageRangeDescription}</td>
+          <td>-</td>
+          <td><span class="badge badge-info">ℹ️ Info</span></td>
+        `;
+        measurementsTable.insertBefore(rangeRow, measurementsTable.children[1]);
+
+        // Aggiungi riga per forma viso se disponibile
+        if (faceShapeDescription) {
+          const shapeRow = document.createElement('tr');
+          shapeRow.setAttribute('data-measurement', 'age-estimate');
+          shapeRow.innerHTML = `
+            <td>👁️ Forma Viso</td>
+            <td>${faceShapeDescription}</td>
+            <td>-</td>
+            <td><span class="badge badge-info">ℹ️ Info</span></td>
+          `;
+          measurementsTable.insertBefore(shapeRow, measurementsTable.children[2]);
+        }
+      }
+
+      // Espandi sezione DATI ANALISI se chiusa
+      // Trova la sezione specifica cercando il pulsante con testo "📊 DATI ANALISI"
+      const dataSectionButton = Array.from(document.querySelectorAll('.toggle-btn'))
+        .find(btn => btn.textContent.includes('DATI ANALISI'));
+
+      if (dataSectionButton) {
+        const dataSection = dataSectionButton.closest('.section');
+        if (dataSection && dataSection.dataset.expanded === 'false') {
+          const header = dataSection.querySelector('.section-header');
+          if (header && typeof window.toggleSection === 'function') {
+            console.log('🔓 Espando sezione DATI ANALISI automaticamente');
+            window.toggleSection(header);
+          }
+        } else {
+          console.log('📊 Sezione DATI ANALISI già aperta');
+        }
+      } else {
+        console.warn('⚠️ Pulsante DATI ANALISI non trovato');
+      }
+
+      // Switcha alla tab Misurazioni
+      if (typeof window.switchUnifiedTab === 'function') {
+        window.switchUnifiedTab('measurements');
+      }
+
+      // Lettura vocale del risultato (solo età, senza confidenza)
+      const voiceMessage = `Età stimata: ${result.age} anni. ${ageRangeDescription}.`;
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+        voiceAssistant.speak(voiceMessage);
+      }
+
+      // Toast breve di conferma
+      showToast('✅ Stima età completata', 'success', 2000);
+    } else {
+      throw new Error('Risposta non valida dal server');
+    }
+
+  } catch (error) {
+    console.error('❌ Errore stima età:', error);
+    showToast(`❌ Errore: ${error.message}`, 'error');
+  } finally {
+    // Ripristina il pulsante
+    button.disabled = false;
+    button.textContent = '🎂 Stima Età';
+  }
+}
+
 // === FINE DEL FILE ===

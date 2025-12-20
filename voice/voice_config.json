@@ -267,6 +267,23 @@
             },
             "confirmation": "",
             "enabled": true
+        },
+        {
+            "name": "Stima Età",
+            "patterns": [
+                "quanti anni dimostra questo viso",
+                "stima età",
+                "quanti anni ha",
+                "che età ha",
+                "età stimata",
+                "analizza età",
+                "calcola età"
+            ],
+            "action": {
+                "function": "estimate_age"
+            },
+            "confirmation": "Avvio analisi età del volto",
+            "enabled": true
         }
     ]
 }

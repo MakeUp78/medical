@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Test Funzione openUnifiedAnalysisSection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+
+        .section {
+            background: #2a2a2a;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+
+        .section-header {
+            padding: 10px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .toggle-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 16px;
+        }
+
+        .section-content {
+            padding: 10px;
+            display: none;
+        }
+
+        .test-btn {
+            margin: 20px 0;
+            padding: 15px 30px;
+            font-size: 18px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .test-btn:hover {
+            background: #764ba2;
+        }
+
+        #console-output {
+            background: #000;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .log-line {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🧪 Test Funzione openUnifiedAnalysisSection()</h1>
+
+    <p>Questo test verifica se la funzione riesce a trovare e aprire la sezione DATI ANALISI.</p>
+
+    <button class="test-btn" onclick="testFunction()">
+        🚀 Test Funzione
+    </button>
+
+    <button class="test-btn" onclick="clearConsole()">
+        🧹 Pulisci Console
+    </button>
+
+    <h2>📋 Console Output:</h2>
+    <div id="console-output"></div>
+
+    <h2>📊 Sezioni Simulate:</h2>
+
+    <!-- Sezione 1 -->
+    <div class="section">
+        <div class="section-header">
+            <button class="toggle-btn">📹 ANTEPRIMA</button>
+            <span class="icon">►</span>
+        </div>
+        <div class="section-content">
+            Contenuto anteprima
+        </div>
+    </div>
+
+    <!-- Sezione 2 - TARGET -->
+    <div class="section" data-expanded="false">
+        <div class="section-header">
+            <button class="toggle-btn">📊 DATI ANALISI</button>
+            <span class="icon">►</span>
+        </div>
+        <div class="section-content" style="display: none;">
+            <p>✅ QUESTA È LA SEZIONE TARGET!</p>
+            <p>Se la funzione funziona, questa sezione si apre automaticamente.</p>
+        </div>
+    </div>
+
+    <!-- Sezione 3 -->
+    <div class="section">
+        <div class="section-header">
+            <button class="toggle-btn">🔬 ANALISI</button>
+            <span class="icon">►</span>
+        </div>
+        <div class="section-content">
+            Contenuto analisi
+        </div>
+    </div>
+
+    <script>
+        // Override console.log per mostrare nell'HTML
+        const originalLog = console.log;
+        const originalError = console.error;
+        const consoleOutput = document.getElementById('console-output');
+
+        function addLog(message, type = 'log') {
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            line.style.color = type === 'error' ? '#ff6b6b' : type === 'success' ? '#51cf66' : '#aaa';
+            line.textContent = message;
+            consoleOutput.appendChild(line);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+
+        console.log = function (...args) {
+            originalLog.apply(console, args);
+            addLog(args.join(' '), 'log');
+        };
+
+        console.error = function (...args) {
+            originalError.apply(console, args);
+            addLog(args.join(' '), 'error');
+        };
+
+        function clearConsole() {
+            consoleOutput.innerHTML = '';
+        }
+
+        // LA FUNZIONE DA TESTARE
+        function openUnifiedAnalysisSection() {
+            console.log('🔴 [UNIFIED v2.0] FUNZIONE CHIAMATA!');
+
+            try {
+                const allSections = document.querySelectorAll('.section');
+                console.log(`🔍 [UNIFIED] Trovate ${allSections.length} sezioni totali`);
+
+                let targetSection = null;
+                let targetContent = null;
+                let targetIcon = null;
+
+                allSections.forEach((section, index) => {
+                    const btn = section.querySelector('.toggle-btn');
+                    if (btn) {
+                        const text = btn.textContent || btn.innerText || '';
+                        console.log(`   [${index}] Pulsante: "${text.trim()}"`);
+
+                        if (text.includes('DATI ANALISI') || text.includes('📊')) {
+                            targetSection = section;
+                            targetContent = section.querySelector('.section-content');
+                            targetIcon = section.querySelector('.icon');
+                            console.log(`🎯 [UNIFIED] TROVATA sezione target all'indice ${index}!`);
+                        }
+                    }
+                });
+
+                if (!targetSection) {
+                    console.error('❌ [UNIFIED] SEZIONE NON TROVATA!');
+                    return;
+                }
+
+                if (targetContent) {
+                    const wasHidden = targetContent.style.display === 'none';
+                    targetContent.style.display = 'block';
+                    if (targetIcon) targetIcon.textContent = '▼';
+                    targetSection.setAttribute('data-expanded', 'true');
+
+                    console.log('✅ [UNIFIED] Sezione APERTA! (era nascosta: ' + wasHidden + ')');
+                } else {
+                    console.error('❌ [UNIFIED] section-content non trovato');
+                }
+
+            } catch (error) {
+                console.error('❌ [UNIFIED] ERRORE: ' + error.message);
+            }
+        }
+
+        function testFunction() {
+            clearConsole();
+            console.log('='.repeat(50));
+            console.log('🧪 AVVIO TEST');
+            console.log('='.repeat(50));
+            openUnifiedAnalysisSection();
+            console.log('='.repeat(50));
+            console.log('🏁 TEST COMPLETATO');
+            console.log('='.repeat(50));
+        }
+
+        // Test automatico al caricamento
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('✅ Pagina caricata');
+            console.log('📝 Clicca il pulsante "Test Funzione" per testare');
+        });
+    </script>
+</body>
+
+</html>
