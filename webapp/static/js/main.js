@@ -4960,90 +4960,7 @@ function getCanvasImageAsBase64() {
   }
 }
 
-function toggleMeasureMode() {
-  /**
-   * Attiva/Disattiva la modalità misurazione interattiva landmarks
-   * - 2 click: misura DISTANZA
-   * - 3+ click: misura AREA
-   * IMPORTANTE: Funziona SOLO se LANDMARKS è attivo
-   */
-
-  const btn = document.getElementById('measure-btn');
-  if (!btn) {
-    console.error('❌ Pulsante measure-btn non trovato!');
-    return;
-  }
-
-  btn.classList.toggle('active');
-  const isActive = btn.classList.contains('active');
-
-  console.log('📐 Toggle Modalità Misurazione:', isActive);
-
-  if (isActive) {
-    // Attiva modalità misurazione
-    window.measurementMode = true;
-    window.selectedLandmarksForMeasurement = [];
-
-    // Cambia lo sfondo del pulsante in verde quando attivo (usa !important per override)
-    btn.style.setProperty('background', '#28a745', 'important');
-    btn.style.setProperty('background-color', '#28a745', 'important');
-
-    // Imposta cursore CROSSHAIR per modalità misurazione
-    if (fabricCanvas) {
-      fabricCanvas.defaultCursor = 'crosshair';
-      fabricCanvas.hoverCursor = 'crosshair';
-      fabricCanvas.renderAll();
-      console.log('🎯 Cursore impostato a CROSSHAIR per modalità MISURAZIONE');
-    }
-
-    // Verifica se ci sono landmarks
-    if (!currentLandmarks || currentLandmarks.length === 0) {
-      console.log('🔍 Rilevamento landmarks necessario');
-      detectLandmarks();
-    } else {
-      console.log('✅ Landmarks disponibili per misurazione');
-      if (typeof drawMediaPipeLandmarks === 'function') {
-        drawMediaPipeLandmarks(currentLandmarks);
-      }
-    }
-
-    updateStatus('📐 Modalità misurazione attiva - Clicca sui landmarks (2 punti=distanza, 3+=area)');
-  } else {
-    // Disattiva modalità misurazione
-    window.measurementMode = false;
-
-    // Ripristina lo sfondo arancione originale (imposta esplicitamente con !important)
-    btn.style.setProperty('background', '#f97316', 'important');
-    btn.style.setProperty('background-color', '#f97316', 'important');
-
-    // Ripristina cursore in base alla modalità attiva
-    if (fabricCanvas) {
-      if (window.landmarkSelectionMode) {
-        // Se LANDMARKS è ancora attivo, torna al cursore MANO
-        fabricCanvas.defaultCursor = 'pointer';
-        fabricCanvas.hoverCursor = 'pointer';
-        console.log('👆 Cursore ripristinato a MANO (pointer) - LANDMARKS ancora attivo');
-      } else {
-        // Altrimenti torna al cursore default
-        fabricCanvas.defaultCursor = 'default';
-        fabricCanvas.hoverCursor = 'move';
-        console.log('👆 Cursore ripristinato a DEFAULT');
-      }
-
-      // NON rendere selectable gli oggetti - i landmarks devono rimanere NON selezionabili
-      // Rimuoviamo completamente il codice che rendeva tutto selectable
-      fabricCanvas.renderAll();
-    }
-
-    // Nascondi il pulsante "NUOVA MISURAZIONE" quando si disattiva la modalità misurazione
-    const completeBtn = document.getElementById('complete-measure-btn');
-    if (completeBtn) {
-      completeBtn.style.display = 'none';
-    }
-
-    updateStatus('Modalità misurazione disattivata');
-  }
-}
+// toggleMeasureMode() rimosso - usa la versione in canvas-modes.js
 
 // === GESTIONE SHORTCUTS ===
 
@@ -5124,7 +5041,7 @@ function handleMeasurementLandmarkSelection(canvasX, canvasY) {
     if (numPoints === 2) {
       calculateDistance();
     } else if (numPoints >= 3) {
-      calculatePolygonArea();
+      calculatePolygonAreaFromSelection();
     }
 
     // Mostra il pulsante "NUOVA MISURAZIONE" quando c'è almeno una misurazione valida (2+ punti)
@@ -5187,7 +5104,7 @@ function calculateDistance() {
   console.log(`📏 Distanza calcolata: ${distance.toFixed(2)} px`);
 }
 
-function calculatePolygonArea() {
+function calculatePolygonAreaFromSelection() {
   /**
    * Calcola l'area del poligono formato dai punti selezionati usando la formula Shoelace.
    */
@@ -6812,12 +6729,16 @@ function updateUnifiedTableForMeasurements(tableHead, tableBody) {
     </tr>
   `;
 
-  // Copia i dati dalla tabella originale
-  const originalTableBody = document.getElementById('measurements-data');
-  if (originalTableBody) {
-    tableBody.innerHTML = originalTableBody.innerHTML;
-  } else {
-    tableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nessuna misurazione disponibile</td></tr>';
+  // NON sovrascrivere il contenuto se ci sono già dati
+  // (le nuove misurazioni vengono aggiunte direttamente in unified-table-body)
+  if (tableBody.children.length === 0) {
+    // Solo se vuoto, copia dalla tabella originale per retrocompatibilità
+    const originalTableBody = document.getElementById('measurements-data');
+    if (originalTableBody && originalTableBody.children.length > 0) {
+      tableBody.innerHTML = originalTableBody.innerHTML;
+    } else {
+      tableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nessuna misurazione disponibile</td></tr>';
+    }
   }
 
   console.log('✅ Tabella unificata aggiornata: Misurazioni');

@@ -1,10 +1,11 @@
 # Webapp Backend API (FastAPI) - Versione Semplificata
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 from typing import List, Optional, Dict, Any, Tuple
 from contextlib import asynccontextmanager
 import cv2
@@ -124,6 +125,15 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Middleware per disabilitare cache completamente
+class NoCacheMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
 # CORS per comunicazione con frontend
 app.add_middleware(
     CORSMiddleware,
@@ -132,6 +142,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Aggiungi middleware no-cache
+app.add_middleware(NoCacheMiddleware)
 
 # Monta i file statici della webapp
 webapp_dir = os.path.join(os.path.dirname(__file__), '..')
@@ -2209,7 +2222,7 @@ async def get_voice_messages():
         "landmarks_off": "Landmarks disattivati.",
         "green_dots_on": "Rilevamento punti verdi attivato.",
         "green_dots_off": "Rilevamento punti verdi disattivato.",
-        "measurement_started": "Misurazione avviata. Seleziona i punti richiesti.",
+        "measurement_started": "Misurazione in corso.",
         "error": "Si è verificato un errore. Riprova.",
         "command_not_recognized": "Comando non riconosciuto. Prova a ripetere."
     }
@@ -2236,7 +2249,7 @@ async def speak_predefined_message(request: VoiceMessageRequest):
         "landmarks_off": "Landmarks disattivati.",
         "green_dots_on": "Rilevamento punti verdi attivato.",
         "green_dots_off": "Rilevamento punti verdi disattivato.",
-        "measurement_started": "Misurazione avviata. Seleziona i punti richiesti.",
+        "measurement_started": "Misurazione in corso.",
         "error": "Si è verificato un errore. Riprova.",
         "command_not_recognized": "Comando non riconosciuto. Prova a ripetere."
     }

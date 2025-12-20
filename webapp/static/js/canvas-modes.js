@@ -149,7 +149,7 @@ function setupCanvasModesHandlers() {
     console.log('🎯 Configurazione handlers modalità canvas...');
 
     // === MOUSE DOWN ===
-    fabricCanvas.on('mouse:down', function(opt) {
+    fabricCanvas.on('mouse:down', function (opt) {
         const evt = opt.e;
         const pointer = fabricCanvas.getPointer(evt);
         const target = opt.target;
@@ -181,7 +181,7 @@ function setupCanvasModesHandlers() {
             return; // Non processare ulteriori eventi
         }
 
-        switch(currentCanvasMode) {
+        switch (currentCanvasMode) {
             case 'pan':
                 handlePanStart(opt, pointer);
                 break;
@@ -221,7 +221,7 @@ function setupCanvasModesHandlers() {
     });
 
     // === MOUSE MOVE ===
-    fabricCanvas.on('mouse:move', function(opt) {
+    fabricCanvas.on('mouse:move', function (opt) {
         if (currentCanvasMode === 'pan' && isPanning) {
             handlePanMove(opt);
         } else if ((currentCanvasMode === 'line' || currentCanvasMode === 'rectangle' || currentCanvasMode === 'circle') && canvasModeIsDrawing) {
@@ -230,7 +230,7 @@ function setupCanvasModesHandlers() {
     });
 
     // === MOUSE UP ===
-    fabricCanvas.on('mouse:up', function(opt) {
+    fabricCanvas.on('mouse:up', function (opt) {
         if (currentCanvasMode === 'pan' && isPanning) {
             handlePanEnd(opt);
         } else if ((currentCanvasMode === 'line' || currentCanvasMode === 'rectangle' || currentCanvasMode === 'circle') && canvasModeIsDrawing) {
@@ -364,7 +364,7 @@ function handleDrawStart(opt, pointer) {
     console.log(`✏️ Inizio disegno ${currentCanvasMode} da`, canvasModeDrawStart);
 
     // Crea oggetto temporaneo in base al tool
-    switch(currentCanvasMode) {
+    switch (currentCanvasMode) {
         case 'line':
             // LINEA PERPENDICOLARE ALL'ASSE DI SIMMETRIA
             // Verifica che l'asse di simmetria sia presente
@@ -448,7 +448,7 @@ function handleDrawMove(opt) {
     const pointer = fabricCanvas.getPointer(opt.e);
 
     // Aggiorna oggetto in base al tool
-    switch(currentCanvasMode) {
+    switch (currentCanvasMode) {
         case 'line':
             // Linea orizzontale gestita direttamente, non serve mouse move
             return;
@@ -493,13 +493,43 @@ function handleDrawEnd(opt) {
 function toggleMeasureMode() {
     measureModeActive = !measureModeActive;
 
-    const measureBtn = document.querySelector('[data-tool="measure"]');
+    const measureBtn = document.getElementById('measure-btn');
     const selectionBtn = document.querySelector('[data-tool="selection"]');
 
+    console.log('🔧 toggleMeasureMode chiamato!', {
+        measureModeActive,
+        measureBtn: measureBtn ? 'trovato' : 'NON TROVATO',
+        btnText: measureBtn ? measureBtn.innerHTML : 'N/A',
+        hasActive: measureBtn ? measureBtn.classList.contains('active') : 'N/A'
+    });
+
     if (measureModeActive) {
-        // Attiva misura
-        measureBtn.classList.add('active');
-        selectionBtn.disabled = false; // Abilita selezione
+        // Attiva misura - PULISCI tutto prima di iniziare una nuova misurazione
+        console.log('🔧 Attivazione modalità misura - Pulizia misurazioni precedenti');
+
+        // Pulisci punti selezionati e overlay
+        if (window.selectedLandmarksForMeasurement) {
+            window.selectedLandmarksForMeasurement = [];
+        }
+
+        // Rimuovi tutti gli overlay di misurazione dal canvas
+        if (typeof fabricCanvas !== 'undefined' && fabricCanvas) {
+            const measurementObjects = fabricCanvas.getObjects().filter(obj => obj.isMeasurement);
+            measurementObjects.forEach(obj => fabricCanvas.remove(obj));
+            fabricCanvas.renderAll();
+            console.log('🧹 Rimossi', measurementObjects.length, 'overlay di misurazione');
+        }
+
+        if (measureBtn) {
+            measureBtn.classList.add('active');
+            measureBtn.innerHTML = '🏁 Fine Misura';
+            console.log('✅ Pulsante aggiornato:', measureBtn.innerHTML, measureBtn.className);
+        } else {
+            console.error('❌ Pulsante measure-btn NON TROVATO nel DOM!');
+        }
+        if (selectionBtn) {
+            selectionBtn.disabled = false; // Abilita selezione
+        }
 
         // Imposta modalità selezione automaticamente
         setCanvasMode('selection');
@@ -511,15 +541,73 @@ function toggleMeasureMode() {
 
         console.log('📐 Modalità MISURA attivata → Selezione abilitata');
     } else {
-        // Disattiva misura
-        measureBtn.classList.remove('active');
-        selectionBtn.disabled = true; // Disabilita selezione
+        // Disattiva misura - invia i dati alla tabella unificata
+        console.log('🔧 Disattivazione misura, window.measurementResults:', window.measurementResults);
+
+        if (window.measurementResults && window.measurementResults.length > 0) {
+            // Marca TUTTE le misurazioni come completate quando si clicca "Fine Misura"
+            window.measurementResults.forEach(m => {
+                if (!m.completed) {
+                    m.completed = true;
+                    console.log('✅ Misurazione marcata come completata:', m.label);
+                }
+            });
+
+            const completedMeasurements = window.measurementResults.filter(m => m.completed);
+            console.log('🔧 Misurazioni completate:', completedMeasurements.length);
+
+            if (completedMeasurements.length > 0) {
+                // Espandi sezione DATI ANALISI prima di aggiungere i dati
+                console.log('🔧 Verifico se ensureMeasurementsSectionOpen esiste:', typeof ensureMeasurementsSectionOpen);
+
+                if (typeof ensureMeasurementsSectionOpen === 'function') {
+                    console.log('🔧 Chiamo ensureMeasurementsSectionOpen()');
+                    ensureMeasurementsSectionOpen();
+                } else if (typeof window.ensureMeasurementsSectionOpen === 'function') {
+                    console.log('🔧 Chiamo window.ensureMeasurementsSectionOpen()');
+                    window.ensureMeasurementsSectionOpen();
+                } else {
+                    console.error('❌ ensureMeasurementsSectionOpen NON TROVATA!');
+                }
+
+                // Aggiungi ogni misurazione completata alla tabella unificata
+                completedMeasurements.forEach(result => {
+                    console.log('🔧 Aggiungo misurazione:', result.label, result.value, result.unit);
+                    if (typeof addMeasurementToTable === 'function') {
+                        addMeasurementToTable(result.label, result.value, result.unit, 'manual-measurement');
+                    } else if (typeof window.addMeasurementToTable === 'function') {
+                        window.addMeasurementToTable(result.label, result.value, result.unit, 'manual-measurement');
+                    } else {
+                        console.error('❌ addMeasurementToTable NON TROVATA!');
+                    }
+                });
+                // Pulisci i risultati dopo averli inviati
+                window.measurementResults = [];
+                // Aggiorna anche la vecchia tabella
+                if (typeof updateMeasurementsTable === 'function') {
+                    updateMeasurementsTable();
+                }
+            }
+        } else {
+            console.warn('⚠️ Nessuna misurazione da inviare alla tabella');
+        }
+
+        if (measureBtn) {
+            measureBtn.classList.remove('active');
+            measureBtn.innerHTML = '📐 Misura';
+            console.log('✅ Pulsante ripristinato:', measureBtn.innerHTML, measureBtn.className);
+        } else {
+            console.error('❌ Pulsante measure-btn NON TROVATO quando disattivo!');
+        }
+        if (selectionBtn) {
+            selectionBtn.disabled = true; // Disabilita selezione
+        }
 
         // Torna a modalità null
         setCanvasMode(null);
         updateCanvasCursor('default');
 
-        console.log('📐 Modalità MISURA disattivata → Selezione disabilitata');
+        console.log('📐 Modalità MISURA disattivata → Dati inviati alla tabella');
     }
 
     // Aggiorna variabile globale per compatibilità con codice esistente

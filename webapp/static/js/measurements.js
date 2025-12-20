@@ -3,10 +3,20 @@
  * Auto-rilevamento landmarks + Calcoli immediati
  */
 
+function calculateDistanceBetweenPoints(point1, point2) {
+  if (!point1 || !point2) return 0;
+  if (typeof point1.x === 'undefined' || typeof point2.x === 'undefined') return 0;
+  if (typeof point1.y === 'undefined' || typeof point2.y === 'undefined') return 0;
+
+  const dx = point2.x - point1.x;
+  const dy = point2.y - point1.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 // Configurazione globale misurazioni
 const MEASUREMENT_CONFIG = {
   precision: 1,
-  defaultUnit: 'mm',
+  defaultUnit: 'px',
   colors: ['#FF6B35', '#F7931E', '#FFD23F', '#06FFA5', '#118AB2', '#073B4C']
 };
 
@@ -314,20 +324,11 @@ function measureFaceWidth(event) {
 }
 
 function performFaceWidthMeasurement() {
-  console.log('📐 ===== INIZIO PERFORMFACEWIDTHMEASUREMENT =====');
-  console.log('📐 Stato landmarks:', {
-    currentLandmarks: !!currentLandmarks,
-    length: currentLandmarks?.length || 0,
-    primi3: currentLandmarks?.slice(0, 3) || 'none'
-  });
-
-  // === SISTEMA SEMPLIFICATO ===
   if (!currentLandmarks || currentLandmarks.length === 0) {
-    console.log('🔍 Nessun landmark - Tentativo auto-rilevamento...');
     showToast('Rilevamento landmarks per misurazione...', 'info');
     autoDetectLandmarksOnImageChange().then(success => {
       if (success) {
-        performFaceWidthMeasurement(); // Richiama se stesso
+        performFaceWidthMeasurement();
       } else {
         showToast('Impossibile rilevare landmarks per la misurazione', 'error');
       }
@@ -336,33 +337,122 @@ function performFaceWidthMeasurement() {
   }
 
   try {
-    // Usa zigomi per misura più precisa della larghezza del viso
-    const leftCheekbone = currentLandmarks[447];  // Zigomo sinistro
-    const rightCheekbone = currentLandmarks[227]; // Zigomo destro
+    const leftCheekbone = currentLandmarks[447];
+    const rightCheekbone = currentLandmarks[227];
+    const glabella = currentLandmarks[9];
+    const philtrum = currentLandmarks[164];
 
-    if (leftCheekbone && rightCheekbone) {
-      console.log('📐 Misurazione larghezza viso (zigomi):', {
-        leftCheekbone: { x: leftCheekbone.x.toFixed(1), y: leftCheekbone.y.toFixed(1) },
-        rightCheekbone: { x: rightCheekbone.x.toFixed(1), y: rightCheekbone.y.toFixed(1) }
-      });
+    if (!leftCheekbone || !rightCheekbone || !glabella || !philtrum) {
+      showToast('Landmark del viso non rilevati correttamente', 'error');
+      return;
+    }
 
-      const distance = calculateDistance(leftCheekbone, rightCheekbone);
+    if (leftCheekbone && rightCheekbone && glabella && philtrum) {
+
+      // Calcola asse centrale
+      const faceCenterX = (glabella.x + philtrum.x) / 2;
+
+      // Punto di intersezione sull'asse centrale (altezza media degli zigomi)
+      const cheekboneY = (leftCheekbone.y + rightCheekbone.y) / 2;
+      const centerPoint = { x: faceCenterX, y: cheekboneY };
+
+      // Calcola distanze da centro a ogni zigomo
+      const leftDistance = calculateDistanceBetweenPoints(centerPoint, leftCheekbone);
+      const rightDistance = calculateDistanceBetweenPoints(centerPoint, rightCheekbone);
+      const totalWidth = calculateDistanceBetweenPoints(leftCheekbone, rightCheekbone);
+
+      if (!leftDistance || !rightDistance || !totalWidth || isNaN(leftDistance) || isNaN(rightDistance) || isNaN(totalWidth)) {
+        showToast('Errore nel calcolo delle distanze', 'error');
+        return;
+      }
+
+      // Determina quale lato è più largo
+      const difference = Math.abs(leftDistance - rightDistance);
+      const percentDiff = (difference / Math.max(leftDistance, rightDistance) * 100);
+
+      let comparisonText = '';
+      let voiceMessage = '';
+
+      if (percentDiff < 2) {
+        comparisonText = 'Larghezze equilibrate';
+        voiceMessage = `Larghezza viso ${totalWidth.toFixed(0)} pixel. I due lati sono equilibrati.`;
+      } else if (leftDistance > rightDistance) {
+        comparisonText = `Lato sinistro più largo di ${difference.toFixed(1)}px (+${percentDiff.toFixed(1)}%)`;
+        voiceMessage = `Larghezza viso ${totalWidth.toFixed(0)} pixel. Il lato sinistro è più largo di ${difference.toFixed(0)} pixel.`;
+      } else {
+        comparisonText = `Lato destro più largo di ${difference.toFixed(1)}px (+${percentDiff.toFixed(1)}%)`;
+        voiceMessage = `Larghezza viso ${totalWidth.toFixed(0)} pixel. Il lato destro è più largo di ${difference.toFixed(0)} pixel.`;
+      }
 
       // Crea gli oggetti overlay
       const overlayObjects = [];
 
-      // Disegna linea e aggiungi alla lista overlay
+      // Disegna linea principale
       const measurementLine = createMeasurementLine(leftCheekbone, rightCheekbone, 'Larghezza Viso', '#FF6B35');
       overlayObjects.push(measurementLine);
+
+      // Disegna linee dai lati al centro
+      const leftToCenter = createMeasurementLine(leftCheekbone, centerPoint, 'Lato Sinistro', '#FF9B35');
+      const rightToCenter = createMeasurementLine(rightCheekbone, centerPoint, 'Lato Destro', '#FF9B35');
+      overlayObjects.push(leftToCenter, rightToCenter);
+
+      // Disegna asse centrale
+      try {
+        const transformedGlabella = window.transformLandmarkCoordinate(glabella);
+        const transformedPhiltrum = window.transformLandmarkCoordinate(philtrum);
+
+        const dx = transformedPhiltrum.x - transformedGlabella.x;
+        const dy = transformedPhiltrum.y - transformedGlabella.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const dirX = dx / length;
+        const dirY = dy / length;
+
+        const maxExtension = Math.sqrt(fabricCanvas.getWidth() ** 2 + fabricCanvas.getHeight() ** 2);
+        const axisTopX = transformedGlabella.x - dirX * maxExtension;
+        const axisTopY = transformedGlabella.y - dirY * maxExtension;
+        const axisBottomX = transformedPhiltrum.x + dirX * maxExtension;
+        const axisBottomY = transformedPhiltrum.y + dirY * maxExtension;
+
+        const axisLine = new fabric.Line([axisTopX, axisTopY, axisBottomX, axisBottomY], {
+          stroke: '#FFFFFF',
+          strokeWidth: 1,
+          strokeDashArray: [5, 3],
+          selectable: false,
+          evented: false,
+          isMeasurementLabel: true
+        });
+
+        fabricCanvas.add(axisLine);
+        overlayObjects.push(axisLine);
+        fabricCanvas.sendToBack(axisLine);
+      } catch (e) {
+        console.warn('Impossibile disegnare asse centrale:', e);
+      }
 
       // Salva overlay per questa misurazione
       measurementOverlays.set('faceWidth', overlayObjects);
 
-      // Aggiungi alla tabella
-      addMeasurementToTable('Larghezza Viso', distance, 'mm', 'faceWidth');
-      showToast(`Larghezza viso: ${distance.toFixed(1)} mm`, 'success');
+      // Aggiungi alla tabella - ESPANDI LA SEZIONE
+      ensureMeasurementsSectionOpen();
+      addMeasurementToTable('Larghezza Viso Totale', totalWidth, 'px', 'faceWidth');
+      addMeasurementToTable('Larghezza Lato Sinistro', leftDistance, 'px');
+      addMeasurementToTable('Larghezza Lato Destro', rightDistance, 'px');
+      addMeasurementToTable('Differenza Lati', difference, 'px');
+      addMeasurementToTable('Valutazione Simmetria', comparisonText, '');
+
+      // Feedback vocale
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+        voiceAssistant.speak(voiceMessage);
+      }
+
+      console.log('📐 Larghezza viso completata:', {
+        totalWidth: totalWidth.toFixed(1),
+        leftDistance: leftDistance.toFixed(1),
+        rightDistance: rightDistance.toFixed(1),
+        difference: difference.toFixed(1)
+      });
     } else {
-      showToast('Landmarks degli zigomi non trovati', 'warning');
+      showToast('Landmarks degli zigomi o asse centrale non trovati', 'warning');
     }
   } catch (error) {
     console.error('Errore misurazione larghezza viso:', error);
@@ -395,7 +485,7 @@ function performFaceHeightMeasurement() {
   try {
     // Usa landmark più precisi per l'altezza del viso
     const topForehead = currentLandmarks[10];    // Centro fronte superiore
-    const bottomChin = currentLandmarks[175];    // Punto più basso del mento
+    const bottomChin = currentLandmarks[152];    // Punto più basso del mento (più accurato del 175)
 
     if (topForehead && bottomChin) {
       console.log('📏 Misurazione altezza viso (fronte-mento):', {
@@ -403,19 +493,84 @@ function performFaceHeightMeasurement() {
         bottomChin: { x: bottomChin.x.toFixed(1), y: bottomChin.y.toFixed(1) }
       });
 
-      const distance = calculateDistance(topForehead, bottomChin);
+      const height = calculateDistanceBetweenPoints(topForehead, bottomChin);
 
-      // Crea gli oggetti overlay
-      const overlayObjects = [];
-      const measurementLine = createMeasurementLine(topForehead, bottomChin, 'Altezza Viso', '#F7931E');
-      overlayObjects.push(measurementLine);
+      // Calcola anche la larghezza per il rapporto
+      const leftCheekbone = currentLandmarks[447];
+      const rightCheekbone = currentLandmarks[227];
 
-      // Salva overlay per questa misurazione
-      measurementOverlays.set('faceHeight', overlayObjects);
+      if (leftCheekbone && rightCheekbone) {
+        const width = calculateDistanceBetweenPoints(leftCheekbone, rightCheekbone);
+        const ratio = height / width;
 
-      // Aggiungi alla tabella
-      addMeasurementToTable('Altezza Viso', distance, 'mm', 'faceHeight');
-      showToast(`Altezza viso: ${distance.toFixed(1)} mm`, 'success');
+        // Valutazione descrittiva basata sul rapporto altezza/larghezza
+        let evaluation = '';
+        let voiceMessage = '';
+
+        if (ratio < 1.2) {
+          evaluation = 'Viso poco allungato (tendente al largo)';
+          voiceMessage = `Altezza viso ${height.toFixed(0)} pixel. Il viso risulta poco allungato, con proporzioni tendenti al largo.`;
+        } else if (ratio >= 1.2 && ratio < 1.35) {
+          evaluation = 'Viso moderatamente allungato';
+          voiceMessage = `Altezza viso ${height.toFixed(0)} pixel. Il viso presenta un allungamento moderato, con proporzioni equilibrate.`;
+        } else if (ratio >= 1.35 && ratio < 1.5) {
+          evaluation = 'Viso correttamente allungato';
+          voiceMessage = `Altezza viso ${height.toFixed(0)} pixel. Il viso è correttamente allungato, con proporzioni armoniose.`;
+        } else if (ratio >= 1.5 && ratio < 1.65) {
+          evaluation = 'Viso notevolmente allungato';
+          voiceMessage = `Altezza viso ${height.toFixed(0)} pixel. Il viso risulta notevolmente allungato.`;
+        } else {
+          evaluation = 'Viso molto allungato';
+          voiceMessage = `Altezza viso ${height.toFixed(0)} pixel. Il viso risulta molto allungato, con proporzioni verticali marcate.`;
+        }
+
+        // Crea gli oggetti overlay
+        const overlayObjects = [];
+
+        // Linea principale altezza
+        const measurementLine = createMeasurementLine(topForehead, bottomChin, 'Altezza Viso', '#F7931E');
+        overlayObjects.push(measurementLine);
+
+        // Aggiungi linea larghezza di riferimento
+        const widthLine = createMeasurementLine(leftCheekbone, rightCheekbone, 'Larghezza Riferimento', '#FFD23F');
+        overlayObjects.push(widthLine);
+
+        // Salva overlay per questa misurazione
+        measurementOverlays.set('faceHeight', overlayObjects);
+
+        // Aggiungi alla tabella - ESPANDI LA SEZIONE
+        ensureMeasurementsSectionOpen();
+        addMeasurementToTable('Altezza Viso', height, 'px', 'faceHeight');
+        addMeasurementToTable('Larghezza Viso (rif.)', width, 'px');
+        addMeasurementToTable('Rapporto Altezza/Larghezza', ratio.toFixed(2), '');
+        addMeasurementToTable('Valutazione Proporzioni', evaluation, '');
+
+        // Feedback vocale
+        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+          voiceAssistant.speak(voiceMessage);
+        }
+
+        console.log('📏 Altezza viso completata:', {
+          height: height.toFixed(1),
+          width: width.toFixed(1),
+          ratio: ratio.toFixed(2),
+          evaluation: evaluation
+        });
+      } else {
+        // Fallback se non ci sono i landmark della larghezza
+        const overlayObjects = [];
+        const measurementLine = createMeasurementLine(topForehead, bottomChin, 'Altezza Viso', '#F7931E');
+        overlayObjects.push(measurementLine);
+        measurementOverlays.set('faceHeight', overlayObjects);
+
+        ensureMeasurementsSectionOpen();
+        addMeasurementToTable('Altezza Viso', height, 'px', 'faceHeight');
+
+        const simpleMessage = `Altezza viso ${height.toFixed(0)} pixel.`;
+        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+          voiceAssistant.speak(simpleMessage);
+        }
+      }
     } else {
       showToast('Landmarks della fronte o del mento non trovati', 'warning');
     }
@@ -431,15 +586,11 @@ function measureEyeDistance(event) {
 }
 
 function performEyeDistanceMeasurement() {
-  console.log('👁️ Misurazione distanza occhi...');
-
-  // === SISTEMA SEMPLIFICATO ===
   if (!currentLandmarks || currentLandmarks.length === 0) {
-    console.log('🔍 Nessun landmark - Tentativo auto-rilevamento...');
     showToast('Rilevamento landmarks per misurazione...', 'info');
     autoDetectLandmarksOnImageChange().then(success => {
       if (success) {
-        measureEyeDistance(); // Richiama se stesso
+        performEyeDistanceMeasurement();
       } else {
         showToast('Impossibile rilevare landmarks per la misurazione', 'error');
       }
@@ -448,31 +599,71 @@ function performEyeDistanceMeasurement() {
   }
 
   try {
-    // Usa angoli interni degli occhi per misurazione corretta della distanza interpupillare
-    const leftEyeInnerCorner = currentLandmarks[133];  // Angolo interno occhio sinistro
-    const rightEyeInnerCorner = currentLandmarks[362]; // Angolo interno occhio destro
+    const leftEyeInnerCorner = currentLandmarks[133];
+    const rightEyeInnerCorner = currentLandmarks[362];
+    const glabella = currentLandmarks[9];
+    const philtrum = currentLandmarks[164];
 
-    if (leftEyeInnerCorner && rightEyeInnerCorner) {
-      console.log('👁️ Misurazione distanza occhi (angoli interni):', {
-        leftEyeInner: { x: leftEyeInnerCorner.x.toFixed(1), y: leftEyeInnerCorner.y.toFixed(1) },
-        rightEyeInner: { x: rightEyeInnerCorner.x.toFixed(1), y: rightEyeInnerCorner.y.toFixed(1) }
-      });
+    if (!leftEyeInnerCorner || !rightEyeInnerCorner || !glabella || !philtrum) {
+      showToast('Landmark degli occhi non rilevati correttamente', 'error');
+      return;
+    }
 
-      const distance = calculateDistance(leftEyeInnerCorner, rightEyeInnerCorner);
+    // Calcola asse centrale
+    const faceCenterX = (glabella.x + philtrum.x) / 2;
+    const eyeY = (leftEyeInnerCorner.y + rightEyeInnerCorner.y) / 2;
+    const centerPoint = { x: faceCenterX, y: eyeY };
 
-      // Crea gli oggetti overlay
-      const overlayObjects = [];
-      const measurementLine = createMeasurementLine(leftEyeInnerCorner, rightEyeInnerCorner, 'Distanza Interpupillare', '#FFD23F');
-      overlayObjects.push(measurementLine);
+    // Calcola distanze da centro a ogni angolo interno
+    const leftDistance = calculateDistanceBetweenPoints(centerPoint, leftEyeInnerCorner);
+    const rightDistance = calculateDistanceBetweenPoints(centerPoint, rightEyeInnerCorner);
+    const totalDistance = calculateDistanceBetweenPoints(leftEyeInnerCorner, rightEyeInnerCorner);
 
-      // Salva overlay per questa misurazione
-      measurementOverlays.set('eyeDistance', overlayObjects);
+    if (!leftDistance || !rightDistance || !totalDistance || isNaN(leftDistance) || isNaN(rightDistance) || isNaN(totalDistance)) {
+      showToast('Errore nel calcolo delle distanze', 'error');
+      return;
+    }
 
-      // Aggiungi alla tabella
-      addMeasurementToTable('Distanza Interpupillare', distance, 'mm', 'eyeDistance');
-      showToast(`Distanza interpupillare: ${distance.toFixed(1)} mm`, 'success');
+    // Determina quale occhio è più vicino al centro
+    const difference = Math.abs(leftDistance - rightDistance);
+    const percentDiff = (difference / Math.max(leftDistance, rightDistance) * 100);
+
+    let comparisonText = '';
+    let voiceMessage = '';
+
+    if (percentDiff < 2) {
+      comparisonText = 'Occhi equidistanti dal centro';
+      voiceMessage = `Distanza angoli interni ${totalDistance.toFixed(0)} pixel. Gli occhi sono equidistanti.`;
+    } else if (leftDistance < rightDistance) {
+      comparisonText = `Occhio sinistro più vicino di ${difference.toFixed(1)}px (-${percentDiff.toFixed(1)}%)`;
+      voiceMessage = `Distanza angoli interni ${totalDistance.toFixed(0)} pixel. L'occhio sinistro è più vicino al centro di ${difference.toFixed(0)} pixel.`;
     } else {
-      showToast('Landmarks degli angoli interni degli occhi non trovati', 'warning');
+      comparisonText = `Occhio destro più vicino di ${difference.toFixed(1)}px (-${percentDiff.toFixed(1)}%)`;
+      voiceMessage = `Distanza angoli interni ${totalDistance.toFixed(0)} pixel. L'occhio destro è più vicino al centro di ${difference.toFixed(0)} pixel.`;
+    }
+
+    // Crea overlay
+    const overlayObjects = [];
+    const measurementLine = createMeasurementLine(leftEyeInnerCorner, rightEyeInnerCorner, 'Distanza Occhi', '#FFD23F');
+    overlayObjects.push(measurementLine);
+
+    const leftToCenter = createMeasurementLine(leftEyeInnerCorner, centerPoint, 'Sin', '#FFD93F');
+    const rightToCenter = createMeasurementLine(rightEyeInnerCorner, centerPoint, 'Dex', '#FFD93F');
+    overlayObjects.push(leftToCenter, rightToCenter);
+
+    measurementOverlays.set('eyeDistance', overlayObjects);
+
+    // Aggiungi a tabella - ESPANDI LA SEZIONE
+    ensureMeasurementsSectionOpen();
+    addMeasurementToTable('Distanza Angoli Interni Occhi', totalDistance, 'px', 'eyeDistance');
+    addMeasurementToTable('Distanza Occhio Sinistro', leftDistance, 'px');
+    addMeasurementToTable('Distanza Occhio Destro', rightDistance, 'px');
+    addMeasurementToTable('Differenza Distanze', difference, 'px');
+    addMeasurementToTable('Valutazione Simmetria', comparisonText, '');
+
+    // Feedback vocale
+    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+      voiceAssistant.speak(voiceMessage);
     }
   } catch (error) {
     console.error('Errore misurazione distanza occhi:', error);
@@ -513,7 +704,7 @@ function performNoseWidthMeasurement() {
         rightWing: { x: rightNoseWing.x.toFixed(1), y: rightNoseWing.y.toFixed(1) }
       });
 
-      const distance = calculateDistance(leftNoseWing, rightNoseWing);
+      const distance = calculateDistanceBetweenPoints(leftNoseWing, rightNoseWing);
 
       // Crea gli oggetti overlay
       const overlayObjects = [];
@@ -562,27 +753,115 @@ function performMouthWidthMeasurement() {
     const leftMouthCorner = currentLandmarks[61];   // Angolo sinistro bocca
     const rightMouthCorner = currentLandmarks[291]; // Angolo destro bocca
 
-    if (leftMouthCorner && rightMouthCorner) {
+    // Punto centrale del viso (glabella e philtrum per asse simmetria)
+    const glabella = currentLandmarks[9];
+    const philtrum = currentLandmarks[164];
+
+    if (leftMouthCorner && rightMouthCorner && glabella && philtrum) {
       console.log('👄 Misurazione larghezza bocca (angoli):', {
         leftCorner: { x: leftMouthCorner.x.toFixed(1), y: leftMouthCorner.y.toFixed(1) },
         rightCorner: { x: rightMouthCorner.x.toFixed(1), y: rightMouthCorner.y.toFixed(1) }
       });
 
-      const distance = calculateDistance(leftMouthCorner, rightMouthCorner);
+      // Calcola asse centrale
+      const faceCenterX = (glabella.x + philtrum.x) / 2;
+
+      // Punto di intersezione sull'asse centrale (altezza bocca)
+      const mouthY = (leftMouthCorner.y + rightMouthCorner.y) / 2;
+      const centerPoint = { x: faceCenterX, y: mouthY };
+
+      // Calcola distanze da centro a ogni angolo
+      const leftDistance = calculateDistanceBetweenPoints(centerPoint, leftMouthCorner);
+      const rightDistance = calculateDistanceBetweenPoints(centerPoint, rightMouthCorner);
+      const totalWidth = calculateDistanceBetweenPoints(leftMouthCorner, rightMouthCorner);
+
+      // Determina quale lato è più largo
+      const difference = Math.abs(leftDistance - rightDistance);
+      const percentDiff = (difference / Math.max(leftDistance, rightDistance) * 100);
+
+      let comparisonText = '';
+      let voiceMessage = '';
+
+      if (percentDiff < 2) {
+        comparisonText = 'Larghezze equilibrate';
+        voiceMessage = `Larghezza bocca ${totalWidth.toFixed(0)} pixel. I due lati sono equilibrati.`;
+      } else if (leftDistance > rightDistance) {
+        comparisonText = `Lato sinistro più largo di ${difference.toFixed(1)}mm (+${percentDiff.toFixed(1)}%)`;
+        voiceMessage = `Larghezza bocca ${totalWidth.toFixed(0)} pixel. Il lato sinistro è più largo di ${difference.toFixed(0)} pixel.`;
+      } else {
+        comparisonText = `Lato destro più largo di ${difference.toFixed(1)}mm (+${percentDiff.toFixed(1)}%)`;
+        voiceMessage = `Larghezza bocca ${totalWidth.toFixed(0)} pixel. Il lato destro è più largo di ${difference.toFixed(0)} pixel.`;
+      }
 
       // Crea gli oggetti overlay
       const overlayObjects = [];
+
+      // Disegna linea principale
       const measurementLine = createMeasurementLine(leftMouthCorner, rightMouthCorner, 'Larghezza Bocca', '#118AB2');
       overlayObjects.push(measurementLine);
+
+      // Disegna linee dai lati al centro
+      const leftToCenter = createMeasurementLine(leftMouthCorner, centerPoint, 'Lato Sinistro', '#3DABC2');
+      const rightToCenter = createMeasurementLine(rightMouthCorner, centerPoint, 'Lato Destro', '#3DABC2');
+      overlayObjects.push(leftToCenter, rightToCenter);
+
+      // Disegna asse centrale
+      try {
+        const transformedGlabella = window.transformLandmarkCoordinate(glabella);
+        const transformedPhiltrum = window.transformLandmarkCoordinate(philtrum);
+
+        const dx = transformedPhiltrum.x - transformedGlabella.x;
+        const dy = transformedPhiltrum.y - transformedGlabella.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const dirX = dx / length;
+        const dirY = dy / length;
+
+        const maxExtension = Math.sqrt(fabricCanvas.getWidth() ** 2 + fabricCanvas.getHeight() ** 2);
+        const axisTopX = transformedGlabella.x - dirX * maxExtension;
+        const axisTopY = transformedGlabella.y - dirY * maxExtension;
+        const axisBottomX = transformedPhiltrum.x + dirX * maxExtension;
+        const axisBottomY = transformedPhiltrum.y + dirY * maxExtension;
+
+        const axisLine = new fabric.Line([axisTopX, axisTopY, axisBottomX, axisBottomY], {
+          stroke: '#FFFFFF',
+          strokeWidth: 1,
+          strokeDashArray: [5, 3],
+          selectable: false,
+          evented: false,
+          isMeasurementLabel: true
+        });
+
+        fabricCanvas.add(axisLine);
+        overlayObjects.push(axisLine);
+        fabricCanvas.sendToBack(axisLine);
+      } catch (e) {
+        console.warn('Impossibile disegnare asse centrale:', e);
+      }
 
       // Salva overlay per questa misurazione
       measurementOverlays.set('mouthWidth', overlayObjects);
 
-      // Aggiungi alla tabella
-      addMeasurementToTable('Larghezza Bocca', distance, 'mm', 'mouthWidth');
-      showToast(`Larghezza bocca: ${distance.toFixed(1)} mm`, 'success');
+      // Aggiungi alla tabella - ESPANDI LA SEZIONE
+      ensureMeasurementsSectionOpen();
+      addMeasurementToTable('Larghezza Bocca Totale', totalWidth, 'px', 'mouthWidth');
+      addMeasurementToTable('Larghezza Lato Sinistro', leftDistance, 'px');
+      addMeasurementToTable('Larghezza Lato Destro', rightDistance, 'px');
+      addMeasurementToTable('Differenza Lati', difference, 'px');
+      addMeasurementToTable('Valutazione Simmetria', comparisonText, '');
+
+      // Feedback vocale
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+        voiceAssistant.speak(voiceMessage);
+      }
+
+      console.log('👄 Larghezza bocca completata:', {
+        totalWidth: totalWidth.toFixed(1),
+        leftDistance: leftDistance.toFixed(1),
+        rightDistance: rightDistance.toFixed(1),
+        difference: difference.toFixed(1)
+      });
     } else {
-      showToast('Landmarks degli angoli della bocca non trovati', 'warning');
+      showToast('Landmarks degli angoli della bocca o asse centrale non trovati', 'warning');
     }
   } catch (error) {
     console.error('Errore misurazione larghezza bocca:', error);
@@ -623,7 +902,7 @@ function performNoseHeightMeasurement() {
         tip: { x: noseTip.x.toFixed(1), y: noseTip.y.toFixed(1) }
       });
 
-      const distance = calculateDistance(noseBridge, noseTip);
+      const distance = calculateDistanceBetweenPoints(noseBridge, noseTip);
 
       // Crea gli oggetti overlay
       const overlayObjects = [];
@@ -648,21 +927,14 @@ function performNoseHeightMeasurement() {
 // === FUNZIONI SUPPORTO ===
 
 function addMeasurementToTable(name, value, unit, measurementType = null) {
-  // Aggiunge misurazione alla tabella risultati
-  const measurementsTable = document.getElementById('measurements-table');
-  if (!measurementsTable) {
-    console.error('❌ Tabella misurazioni non trovata');
+  // Aggiunge misurazione alla TABELLA UNIFICATA
+  const unifiedTableBody = document.getElementById('unified-table-body');
+  if (!unifiedTableBody) {
+    console.error('❌ Tabella unificata non trovata');
     return;
   }
 
-  // Trova il tbody o crea se non esiste
-  let tbody = measurementsTable.querySelector('tbody');
-  if (!tbody) {
-    tbody = document.createElement('tbody');
-    measurementsTable.appendChild(tbody);
-  }
-
-  const row = tbody.insertRow();
+  const row = unifiedTableBody.insertRow();
   const typeCell = document.createElement('td');
   typeCell.textContent = name;
   if (measurementType) {
@@ -688,21 +960,73 @@ function addMeasurementToTable(name, value, unit, measurementType = null) {
 
 function ensureMeasurementsSectionOpen() {
   /**
-   * Apre automaticamente la sezione Misurazioni se è chiusa
+   * Apre automaticamente la sezione DATI ANALISI e switcha al tab Misurazioni
    */
-  const measurementsSection = document.querySelector('.right-sidebar .section[data-expanded="false"]');
+  console.log('🔧 ensureMeasurementsSectionOpen() chiamata');
+
+  // Trova la sezione DATI ANALISI
+  const sections = document.querySelectorAll('.right-sidebar .section');
+  let measurementsSection = null;
+
+  for (const section of sections) {
+    const header = section.querySelector('.section-header');
+    if (header && header.textContent.includes('DATI ANALISI')) {
+      measurementsSection = section;
+      break;
+    }
+  }
+
+  console.log('🔧 Sezione trovata:', measurementsSection ? 'SI' : 'NO');
+
   if (measurementsSection) {
-    const sectionHeader = measurementsSection.querySelector('.section-header');
     const sectionContent = measurementsSection.querySelector('.section-content');
 
-    if (sectionHeader && sectionContent && sectionContent.style.display === 'none') {
-      // Apri la sezione
+    // Apri la sezione se è chiusa
+    if (measurementsSection.dataset.expanded === 'false' || sectionContent.style.display === 'none') {
       measurementsSection.dataset.expanded = 'true';
       sectionContent.style.display = 'block';
-      const icon = sectionHeader.querySelector('.icon');
+      const icon = measurementsSection.querySelector('.icon');
       if (icon) icon.textContent = '▼';
-      console.log('📂 Sezione Misurazioni aperta automaticamente');
+      console.log('📂 Sezione DATI ANALISI aperta automaticamente');
+    } else {
+      console.log('📂 Sezione DATI ANALISI già aperta');
     }
+
+    // Switcha al tab Misurazioni se esiste la funzione
+    if (typeof switchUnifiedTab === 'function') {
+      try {
+        // Assicurati che il tab sia impostato correttamente
+        window.unifiedTableCurrentTab = 'measurements';
+
+        // Imposta l'header della tabella se non è già impostato
+        const tableHead = document.getElementById('unified-table-head');
+        if (tableHead && tableHead.children.length === 0) {
+          tableHead.innerHTML = `
+            <tr>
+              <th>📏 Tipo Misurazione</th>
+              <th>📊 Valore</th>
+              <th>📐 Unità</th>
+              <th>✅ Stato</th>
+            </tr>
+          `;
+        }
+
+        // Attiva visivamente il tab
+        document.querySelectorAll('.unified-tab').forEach(tab => {
+          if (tab.dataset.tab === 'measurements') {
+            tab.classList.add('active');
+          } else {
+            tab.classList.remove('active');
+          }
+        });
+
+        console.log('📊 Switchato al tab Misurazioni');
+      } catch (e) {
+        console.warn('Impossibile switchare al tab:', e);
+      }
+    }
+  } else {
+    console.warn('⚠️ Sezione DATI ANALISI non trovata');
   }
 }
 
@@ -794,7 +1118,7 @@ function drawMeasurementLine(point1, point2, label) {
   const midX = (transformedPoint1.x + transformedPoint2.x) / 2;
   const midY = (transformedPoint1.y + transformedPoint2.y) / 2;
 
-  const distance = calculateDistance(point1, point2);
+  const distance = calculateDistanceBetweenPoints(point1, point2);
   const labelText = new fabric.Text(`${distance.toFixed(1)} mm`, {
     left: midX,
     top: midY - 10,
@@ -815,15 +1139,7 @@ function drawMeasurementLine(point1, point2, label) {
 }
 
 // transformLandmarkCoordinate è definita in main.js
-
-function calculateDistance(point1, point2) {
-  // Calcola distanza euclidea tra due punti (coordinate raw)
-  if (!point1 || !point2) return 0;
-
-  const dx = point2.x - point1.x;
-  const dy = point2.y - point1.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
+// calculateDistance è definita all'inizio del file
 
 function getRandomMeasurementColor() {
   const colors = MEASUREMENT_CONFIG?.colors || ['#FF6B35', '#F7931E', '#FFD23F', '#06FFA5', '#118AB2', '#073B4C'];
@@ -857,11 +1173,7 @@ function measureEyeAreas(event) {
 }
 
 function performEyeAreasMeasurement() {
-  console.log('👁️ Misurazione aree occhi...');
-
-  // === SISTEMA SEMPLIFICATO ===
   if (!currentLandmarks || currentLandmarks.length === 0) {
-    console.log('🔍 Nessun landmark - Tentativo auto-rilevamento...');
     showToast('Rilevamento landmarks per misurazione...', 'info');
     autoDetectLandmarksOnImageChange().then(success => {
       if (success) {
@@ -875,6 +1187,18 @@ function performEyeAreasMeasurement() {
 
   try {
     clearPreviousMeasurements();
+
+    // Verifica che fabricCanvas sia disponibile
+    if (!fabricCanvas || typeof fabricCanvas === 'undefined') {
+      showToast('Canvas non inizializzato. Riprova.', 'error');
+      return;
+    }
+
+    // Verifica che window.transformLandmarkCoordinate esista
+    if (!window.transformLandmarkCoordinate || typeof window.transformLandmarkCoordinate !== 'function') {
+      showToast('Funzione di trasformazione coordinate non disponibile', 'error');
+      return;
+    }
 
     // Contorno preciso occhio sinistro secondo MediaPipe Face Mesh
     const leftEyeContour = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246];
@@ -951,17 +1275,35 @@ function performEyeAreasMeasurement() {
       // Salva overlay per questa misurazione
       measurementOverlays.set('eyeAreas', overlayObjects);
 
-      addMeasurementToTable('Area Occhio Sinistro', leftArea, 'mm²');
-      addMeasurementToTable('Area Occhio Destro', rightArea, 'mm²');
+      // Determina quale occhio è più grande
+      const areaDifference = Math.abs(leftArea - rightArea);
+      const percentDiff = (areaDifference / Math.max(leftArea, rightArea) * 100);
 
-      console.log('👁️ Aree occhi calcolate:', {
-        leftArea: leftArea.toFixed(2),
-        rightArea: rightArea.toFixed(2),
-        leftPoints: leftEyePoints.length,
-        rightPoints: rightEyePoints.length
-      });
+      let comparisonText = '';
+      let voiceMessage = '';
 
-      showToast(`Aree occhi calcolate: S=${leftArea.toFixed(1)}mm², D=${rightArea.toFixed(1)}mm²`, 'success');
+      if (percentDiff < 3) {
+        comparisonText = 'Occhi di dimensioni equilibrate';
+        voiceMessage = `Area occhio sinistro ${leftArea.toFixed(0)} pixel quadrati, occhio destro ${rightArea.toFixed(0)} pixel quadrati. Gli occhi hanno dimensioni equilibrate.`;
+      } else if (leftArea > rightArea) {
+        comparisonText = `Occhio sinistro più grande di ${areaDifference.toFixed(1)}px² (+${percentDiff.toFixed(1)}%)`;
+        voiceMessage = `L'occhio sinistro è più grande, con un'area di ${leftArea.toFixed(0)} pixel quadrati, rispetto ai ${rightArea.toFixed(0)} dell'occhio destro.`;
+      } else {
+        comparisonText = `Occhio destro più grande di ${areaDifference.toFixed(1)}px² (+${percentDiff.toFixed(1)}%)`;
+        voiceMessage = `L'occhio destro è più grande, con un'area di ${rightArea.toFixed(0)} pixel quadrati, rispetto ai ${leftArea.toFixed(0)} dell'occhio sinistro.`;
+      }
+
+      // Aggiungi alla tabella - ESPANDI LA SEZIONE
+      ensureMeasurementsSectionOpen();
+      addMeasurementToTable('Area Occhio Sinistro', leftArea, 'px²');
+      addMeasurementToTable('Area Occhio Destro', rightArea, 'px²');
+      addMeasurementToTable('Differenza Aree', areaDifference, 'px²');
+      addMeasurementToTable('Valutazione Dimensioni', comparisonText, '');
+
+      // Feedback vocale
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+        voiceAssistant.speak(voiceMessage);
+      }
     } else {
       showToast('Landmark insufficienti per calcolare le aree degli occhi', 'warning');
     }
@@ -1006,7 +1348,7 @@ function performForeheadWidthMeasurement() {
         rightTemple: { x: rightTemple.x.toFixed(1), y: rightTemple.y.toFixed(1) }
       });
 
-      const distance = calculateDistance(leftTemple, rightTemple);
+      const distance = calculateDistanceBetweenPoints(leftTemple, rightTemple);
 
       // Crea gli oggetti overlay
       const overlayObjects = [];
@@ -1166,7 +1508,7 @@ function performFacialSymmetryMeasurement() {
     const leftFaceAreaPixels = calculatePolygonAreaFromPoints(leftFacePolygonSorted);
     const rightFaceAreaPixels = calculatePolygonAreaFromPoints(rightFacePolygonSorted);
 
-    // Converti da pixel² a mm² usando il pixel ratio globale
+    // Converti da pixel² a px² usando il pixel ratio globale
     const pixelToMmRatio = window.pixelToMmRatio || 0.1; // Default se non definito
     const leftFaceArea = leftFaceAreaPixels * pixelToMmRatio * pixelToMmRatio;
     const rightFaceArea = rightFaceAreaPixels * pixelToMmRatio * pixelToMmRatio;
@@ -1240,7 +1582,7 @@ function performFacialSymmetryMeasurement() {
       }
 
       // Etichette per ciascuna emifaccia
-      const labelLeft = new fabric.Text(`${leftFaceArea.toFixed(1)}mm²\n(${leftPercentage.toFixed(1)}%)`, {
+      const labelLeft = new fabric.Text(`${leftFaceArea.toFixed(1)}px²\n(${leftPercentage.toFixed(1)}%)`, {
         left: leftCentroid.x - 30,
         top: leftCentroid.y - 20,
         fontSize: 11,
@@ -1252,7 +1594,7 @@ function performFacialSymmetryMeasurement() {
         isMeasurementLabel: true
       });
 
-      const labelRight = new fabric.Text(`${rightFaceArea.toFixed(1)}mm²\n(${rightPercentage.toFixed(1)}%)`, {
+      const labelRight = new fabric.Text(`${rightFaceArea.toFixed(1)}px²\n(${rightPercentage.toFixed(1)}%)`, {
         left: rightCentroid.x - 30,
         top: rightCentroid.y - 20,
         fontSize: 11,
@@ -1327,11 +1669,16 @@ function performFacialSymmetryMeasurement() {
     window.lastSymmetryMessage = voiceMessage;
 
     // Aggiungi alla tabella MISURAZIONI con informazioni complete
-    addMeasurementToTable('Area Emifaccia Sinistra', leftFaceArea, 'mm²');
-    addMeasurementToTable('Area Emifaccia Destra', rightFaceArea, 'mm²');
-    addMeasurementToTable('Differenza Assoluta', asymmetryAbsolute, 'mm²');
+    addMeasurementToTable('Area Emifaccia Sinistra', leftFaceArea, 'px²');
+    addMeasurementToTable('Area Emifaccia Destra', rightFaceArea, 'px²');
+    addMeasurementToTable('Differenza Assoluta', asymmetryAbsolute, 'px²');
     addMeasurementToTable('Differenza Percentuale', asymmetryPercent, '%');
     addMeasurementToTable('Risultato Simmetria', resultDescription, '');
+
+    // Feedback vocale
+    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+      voiceAssistant.speak(voiceMessage);
+    }
 
     console.log('⚖️ RISULTATI emifacce:', {
       leftFaceArea: leftFaceArea.toFixed(2),
@@ -1380,7 +1727,7 @@ function performCheekWidthMeasurement() {
     const rightCheek = currentLandmarks[425]; // Guancia destra
 
     if (leftCheek && rightCheek) {
-      const distance = calculateDistance(leftCheek, rightCheek);
+      const distance = calculateDistanceBetweenPoints(leftCheek, rightCheek);
 
       // Crea gli oggetti overlay
       const overlayObjects = [];
@@ -1408,10 +1755,7 @@ function measureEyebrowAreas(event) {
 }
 
 function performEyebrowAreasMeasurement() {
-  console.log('✂️ NUOVO: Misurazione aree sopracciglia con landmark corretti...');
-
   if (!currentLandmarks || currentLandmarks.length === 0) {
-    console.log('🔍 Nessun landmark - Tentativo auto-rilevamento...');
     showToast('Rilevamento landmarks per misurazione...', 'info');
     autoDetectLandmarksOnImageChange().then(success => {
       if (success) {
@@ -1424,6 +1768,18 @@ function performEyebrowAreasMeasurement() {
   }
 
   try {
+    // Verifica che fabricCanvas sia disponibile
+    if (!fabricCanvas || typeof fabricCanvas === 'undefined') {
+      showToast('Canvas non inizializzato. Riprova.', 'error');
+      return;
+    }
+
+    // Verifica che window.transformLandmarkCoordinate esista
+    if (!window.transformLandmarkCoordinate || typeof window.transformLandmarkCoordinate !== 'function') {
+      showToast('Funzione di trasformazione coordinate non disponibile', 'error');
+      return;
+    }
+
     // === LANDMARK CORRETTI MediaPipe Face Mesh per SOPRACCIGLIA ===
     // Sopracciglio SINISTRO (dal punto di vista dell'osservatore - è il destro del soggetto)
     const leftBrowLandmarks = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46];
@@ -1439,13 +1795,6 @@ function performEyebrowAreasMeasurement() {
     const rightBrowPoints = rightBrowLandmarks
       .map(i => currentLandmarks[i])
       .filter(point => point && point.x !== undefined && point.y !== undefined);
-
-    console.log('✂️ Landmark sopracciglia trovati:', {
-      leftBrowPoints: leftBrowPoints.length,
-      rightBrowPoints: rightBrowPoints.length,
-      leftLandmarks: leftBrowLandmarks,
-      rightLandmarks: rightBrowLandmarks
-    });
 
     if (leftBrowPoints.length >= 3 && rightBrowPoints.length >= 3) {
       // Calcola aree
@@ -1481,7 +1830,7 @@ function performEyebrowAreasMeasurement() {
           comparisonText = `Destro +${percentDiff.toFixed(1)}%`;
         }
 
-        const labelLeft = new fabric.Text(`${leftBrowArea.toFixed(1)}mm²`, {
+        const labelLeft = new fabric.Text(`${leftBrowArea.toFixed(1)}px²`, {
           left: leftCentroid.x - 20,
           top: leftCentroid.y - 25,
           fontSize: 12,
@@ -1492,7 +1841,7 @@ function performEyebrowAreasMeasurement() {
           isMeasurementLabel: true
         });
 
-        const labelRight = new fabric.Text(`${rightBrowArea.toFixed(1)}mm²`, {
+        const labelRight = new fabric.Text(`${rightBrowArea.toFixed(1)}px²`, {
           left: rightCentroid.x - 20,
           top: rightCentroid.y - 25,
           fontSize: 12,
@@ -1529,17 +1878,35 @@ function performEyebrowAreasMeasurement() {
       // Salva overlay
       measurementOverlays.set('eyebrowAreas', overlayObjects);
 
-      // Aggiungi alla tabella
-      addMeasurementToTable('Area Sopracciglio Sinistro', leftBrowArea, 'mm²');
-      addMeasurementToTable('Area Sopracciglio Destro', rightBrowArea, 'mm²');
+      // Determina quale sopracciglio è più grande
+      const areaDifference = Math.abs(leftBrowArea - rightBrowArea);
+      const percentDiff = (areaDifference / Math.max(leftBrowArea, rightBrowArea) * 100);
 
-      console.log('✂️ RISULTATI sopracciglia:', {
-        leftBrowArea: leftBrowArea.toFixed(2),
-        rightBrowArea: rightBrowArea.toFixed(2),
-        difference: Math.abs(leftBrowArea - rightBrowArea).toFixed(2)
-      });
+      let comparisonText = '';
+      let voiceMessage = '';
 
-      showToast(`Aree sopracciglia: S=${leftBrowArea.toFixed(1)}mm², D=${rightBrowArea.toFixed(1)}mm²`, 'success');
+      if (percentDiff < 5) {
+        comparisonText = 'Sopracciglia di dimensioni equilibrate';
+        voiceMessage = `Area sopracciglio sinistro ${leftBrowArea.toFixed(0)} pixel quadrati, sopracciglio destro ${rightBrowArea.toFixed(0)} pixel quadrati. Le sopracciglia hanno dimensioni equilibrate.`;
+      } else if (leftBrowArea > rightBrowArea) {
+        comparisonText = `Sopracciglio sinistro più grande di ${areaDifference.toFixed(1)}px² (+${percentDiff.toFixed(1)}%)`;
+        voiceMessage = `Il sopracciglio sinistro è più grande, con un'area di ${leftBrowArea.toFixed(0)} pixel quadrati, rispetto ai ${rightBrowArea.toFixed(0)} del sopracciglio destro.`;
+      } else {
+        comparisonText = `Sopracciglio destro più grande di ${areaDifference.toFixed(1)}px² (+${percentDiff.toFixed(1)}%)`;
+        voiceMessage = `Il sopracciglio destro è più grande, con un'area di ${rightBrowArea.toFixed(0)} pixel quadrati, rispetto ai ${leftBrowArea.toFixed(0)} del sopracciglio sinistro.`;
+      }
+
+      // Aggiungi alla tabella - ESPANDI LA SEZIONE
+      ensureMeasurementsSectionOpen();
+      addMeasurementToTable('Area Sopracciglio Sinistro', leftBrowArea, 'px²');
+      addMeasurementToTable('Area Sopracciglio Destro', rightBrowArea, 'px²');
+      addMeasurementToTable('Differenza Aree', areaDifference, 'px²');
+      addMeasurementToTable('Valutazione Dimensioni', comparisonText, '');
+
+      // Feedback vocale
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+        voiceAssistant.speak(voiceMessage);
+      }
     } else {
       showToast('Landmark insufficienti per calcolare le aree delle sopracciglia', 'warning');
     }
@@ -1576,7 +1943,7 @@ function measureChinWidth() {
 
     if (leftJaw && rightJaw) {
       drawMeasurementLine(leftJaw, rightJaw, 'Larghezza Mento');
-      const distance = calculateDistance(leftJaw, rightJaw);
+      const distance = calculateDistanceBetweenPoints(leftJaw, rightJaw);
       showToast(`Larghezza mento: ${distance.toFixed(1)}mm`, 'success');
     }
 
@@ -1724,9 +2091,9 @@ function measureFaceProportions() {
     clearPreviousMeasurements();
 
     // Calcola varie proporzioni
-    const faceWidth = calculateDistance(currentLandmarks[234], currentLandmarks[454]);
-    const faceHeight = calculateDistance(currentLandmarks[10], currentLandmarks[152]);
-    const eyeDistance = calculateDistance(currentLandmarks[33], currentLandmarks[362]);
+    const faceWidth = calculateDistanceBetweenPoints(currentLandmarks[234], currentLandmarks[454]);
+    const faceHeight = calculateDistanceBetweenPoints(currentLandmarks[10], currentLandmarks[152]);
+    const eyeDistance = calculateDistanceBetweenPoints(currentLandmarks[33], currentLandmarks[362]);
 
     const ratio = faceWidth / faceHeight;
     drawMeasurementLine(currentLandmarks[234], currentLandmarks[454], `Larghezza: ${faceWidth.toFixed(1)}mm`);
@@ -1762,9 +2129,9 @@ function measureKeyDistances() {
     clearPreviousMeasurements();
 
     // Distanze chiave del viso
-    const eyeToNose = calculateDistance(currentLandmarks[27], currentLandmarks[1]);
-    const noseToMouth = calculateDistance(currentLandmarks[1], currentLandmarks[13]);
-    const mouthToChin = calculateDistance(currentLandmarks[13], currentLandmarks[152]);
+    const eyeToNose = calculateDistanceBetweenPoints(currentLandmarks[27], currentLandmarks[1]);
+    const noseToMouth = calculateDistanceBetweenPoints(currentLandmarks[1], currentLandmarks[13]);
+    const mouthToChin = calculateDistanceBetweenPoints(currentLandmarks[13], currentLandmarks[152]);
 
     drawMeasurementLine(currentLandmarks[27], currentLandmarks[1], `Occhi-Naso: ${eyeToNose.toFixed(1)}mm`);
     drawMeasurementLine(currentLandmarks[1], currentLandmarks[13], `Naso-Bocca: ${noseToMouth.toFixed(1)}mm`);
@@ -1780,15 +2147,7 @@ function measureKeyDistances() {
 
 // Funzione di supporto per calcolare area poligono
 function calculatePolygonAreaFromPoints(points) {
-  /**
-   * Calcola l'area di un poligono usando la formula Shoelace (Gauss)
-   * @param {Array} points - Array di punti con proprietà x e y
-   * @returns {number} Area in unità quadrate
-   */
-  if (!points || points.length < 3) {
-    console.warn('⚠️ calculatePolygonAreaFromPoints: punti insufficienti', points?.length);
-    return 0;
-  }
+  if (!points || points.length < 3) return 0;
 
   let area = 0;
   for (let i = 0; i < points.length; i++) {
@@ -1798,14 +2157,10 @@ function calculatePolygonAreaFromPoints(points) {
       typeof points[j].x === 'number' && typeof points[j].y === 'number') {
       area += points[i].x * points[j].y;
       area -= points[j].x * points[i].y;
-    } else {
-      console.warn('⚠️ Punto non valido al calcolo area:', { i, point_i: points[i], point_j: points[j] });
     }
   }
 
-  const result = Math.abs(area) / 2;
-  console.log(`📐 Area calcolata: ${result.toFixed(2)} px² da ${points.length} punti`);
-  return result;
+  return Math.abs(area) / 2;
 }
 
 // Mantieni anche il nome vecchio per compatibilità con altro codice
@@ -1857,7 +2212,244 @@ function measureFaceProportions(event) {
 }
 
 function performFaceProportionsMeasurement() {
-  showToast('Misurazione proporzioni - In sviluppo', 'info');
+  console.log('📏 Misurazione proporzioni viso...');
+
+  // === SISTEMA SEMPLIFICATO ===
+  if (!currentLandmarks || currentLandmarks.length === 0) {
+    console.log('🔍 Nessun landmark - Tentativo auto-rilevamento...');
+    showToast('Rilevamento landmarks per misurazione...', 'info');
+    autoDetectLandmarksOnImageChange().then(success => {
+      if (success) {
+        performFaceProportionsMeasurement();
+      } else {
+        showToast('Impossibile rilevare landmarks per la misurazione', 'error');
+      }
+    });
+    return;
+  }
+
+  try {
+    // === CALCOLO MISURE FONDAMENTALI ===
+
+    // Altezza viso
+    const topForehead = currentLandmarks[10];
+    const bottomChin = currentLandmarks[152];
+    const faceHeight = calculateDistanceBetweenPoints(topForehead, bottomChin);
+
+    // Larghezza viso (zigomi)
+    const leftCheekbone = currentLandmarks[447];
+    const rightCheekbone = currentLandmarks[227];
+    const faceWidth = calculateDistanceBetweenPoints(leftCheekbone, rightCheekbone);
+
+    // Distanza interpupillare
+    const leftEye = currentLandmarks[133];
+    const rightEye = currentLandmarks[362];
+    const eyeDistance = calculateDistanceBetweenPoints(leftEye, rightEye);
+
+    // Larghezza naso
+    const leftNostril = currentLandmarks[98];
+    const rightNostril = currentLandmarks[327];
+    const noseWidth = calculateDistanceBetweenPoints(leftNostril, rightNostril);
+
+    // Larghezza bocca
+    const leftMouth = currentLandmarks[61];
+    const rightMouth = currentLandmarks[291];
+    const mouthWidth = calculateDistanceBetweenPoints(leftMouth, rightMouth);
+
+    // Altezza terzo medio (occhi-naso)
+    const nasion = currentLandmarks[6];
+    const subnasale = currentLandmarks[2];
+    const middleThirdHeight = calculateDistanceBetweenPoints(nasion, subnasale);
+
+    // Altezza terzo inferiore (naso-mento)
+    const lowerThirdHeight = calculateDistanceBetweenPoints(subnasale, bottomChin);
+
+    // === CALCOLO RAPPORTI PROPORZIONALI ===
+
+    // Rapporto altezza/larghezza
+    const heightWidthRatio = faceHeight / faceWidth;
+
+    // Rapporto naso/larghezza viso (ideale ~20-25%)
+    const noseWidthRatio = (noseWidth / faceWidth) * 100;
+
+    // Rapporto bocca/larghezza viso (ideale ~40-50%)
+    const mouthWidthRatio = (mouthWidth / faceWidth) * 100;
+
+    // Rapporto distanza occhi/larghezza viso (ideale ~45-48%)
+    const eyeDistanceRatio = (eyeDistance / faceWidth) * 100;
+
+    // Rapporto terzi viso (ideale: terzo medio ≈ terzo inferiore)
+    const thirdsRatio = middleThirdHeight / lowerThirdHeight;
+
+    // === VALUTAZIONE COMPLESSIVA ===
+    let score = 100; // Punteggio di partenza
+    let issues = []; // Lista problematiche
+    let positives = []; // Lista aspetti positivi
+
+    // Valutazione rapporto altezza/larghezza
+    if (heightWidthRatio >= 1.3 && heightWidthRatio <= 1.5) {
+      positives.push('Rapporto altezza/larghezza armonico');
+    } else if (heightWidthRatio < 1.2) {
+      score -= 10;
+      issues.push('Viso troppo largo rispetto all\'altezza');
+    } else if (heightWidthRatio > 1.6) {
+      score -= 10;
+      issues.push('Viso troppo allungato rispetto alla larghezza');
+    }
+
+    // Valutazione larghezza naso
+    if (noseWidthRatio >= 18 && noseWidthRatio <= 28) {
+      positives.push('Larghezza naso proporzionata');
+    } else if (noseWidthRatio < 18) {
+      score -= 5;
+      issues.push('Naso proporzionalmente stretto');
+    } else {
+      score -= 8;
+      issues.push('Naso proporzionalmente largo');
+    }
+
+    // Valutazione larghezza bocca
+    if (mouthWidthRatio >= 38 && mouthWidthRatio <= 52) {
+      positives.push('Larghezza bocca proporzionata');
+    } else if (mouthWidthRatio < 38) {
+      score -= 7;
+      issues.push('Bocca proporzionalmente stretta');
+    } else {
+      score -= 7;
+      issues.push('Bocca proporzionalmente larga');
+    }
+
+    // Valutazione distanza occhi
+    if (eyeDistanceRatio >= 42 && eyeDistanceRatio <= 50) {
+      positives.push('Distanza occhi armoniosa');
+    } else if (eyeDistanceRatio < 42) {
+      score -= 6;
+      issues.push('Occhi proporzionalmente vicini');
+    } else {
+      score -= 6;
+      issues.push('Occhi proporzionalmente distanti');
+    }
+
+    // Valutazione terzi viso
+    if (thirdsRatio >= 0.9 && thirdsRatio <= 1.1) {
+      positives.push('Terzi del viso equilibrati');
+    } else if (thirdsRatio < 0.9) {
+      score -= 8;
+      issues.push('Terzo medio proporzionalmente corto');
+    } else {
+      score -= 8;
+      issues.push('Terzo medio proporzionalmente lungo');
+    }
+
+    // Valutazione finale
+    let finalEvaluation = '';
+    let voiceMessage = '';
+
+    if (score >= 90) {
+      finalEvaluation = 'Proporzioni eccellenti';
+      voiceMessage = 'Le proporzioni del viso risultano eccellenti, con tutti i parametri in range ottimale.';
+    } else if (score >= 75) {
+      finalEvaluation = 'Proporzioni buone';
+      voiceMessage = 'Le proporzioni del viso risultano buone, con la maggior parte dei parametri armonici.';
+    } else if (score >= 60) {
+      finalEvaluation = 'Proporzioni accettabili';
+      voiceMessage = 'Le proporzioni del viso risultano accettabili, con alcuni aspetti da considerare.';
+    } else {
+      finalEvaluation = 'Proporzioni da valutare';
+      voiceMessage = 'Le proporzioni del viso presentano alcuni aspetti che meritano attenzione.';
+    }
+
+    // === CREA OVERLAY VISUALI ===
+    const overlayObjects = [];
+
+    // Linea altezza viso
+    const heightLine = createMeasurementLine(topForehead, bottomChin, 'Altezza', '#FF6B35');
+    overlayObjects.push(heightLine);
+
+    // Linea larghezza viso
+    const widthLine = createMeasurementLine(leftCheekbone, rightCheekbone, 'Larghezza', '#F7931E');
+    overlayObjects.push(widthLine);
+
+    // Linea distanza occhi
+    const eyeLine = createMeasurementLine(leftEye, rightEye, 'Dist. Occhi', '#FFD23F');
+    overlayObjects.push(eyeLine);
+
+    // Linea larghezza naso
+    const noseLine = createMeasurementLine(leftNostril, rightNostril, 'Larg. Naso', '#06FFA5');
+    overlayObjects.push(noseLine);
+
+    // Linea larghezza bocca
+    const mouthLine = createMeasurementLine(leftMouth, rightMouth, 'Larg. Bocca', '#118AB2');
+    overlayObjects.push(mouthLine);
+
+    // Linea terzo medio
+    const middleThirdLine = createMeasurementLine(nasion, subnasale, 'Terzo Medio', '#9C27B0');
+    overlayObjects.push(middleThirdLine);
+
+    // Linea terzo inferiore
+    const lowerThirdLine = createMeasurementLine(subnasale, bottomChin, 'Terzo Inf.', '#E91E63');
+    overlayObjects.push(lowerThirdLine);
+
+    // Salva overlay
+    measurementOverlays.set('faceProportions', overlayObjects);
+
+    // === AGGIUNGI ALLA TABELLA - ESPANDI LA SEZIONE ===
+    ensureMeasurementsSectionOpen();
+
+    // Misure assolute
+    addMeasurementToTable('Altezza Viso', faceHeight, 'px');
+    addMeasurementToTable('Larghezza Viso', faceWidth, 'px');
+    addMeasurementToTable('Distanza Occhi', eyeDistance, 'px');
+    addMeasurementToTable('Larghezza Naso', noseWidth, 'px');
+    addMeasurementToTable('Larghezza Bocca', mouthWidth, 'px');
+
+    // Rapporti percentuali
+    addMeasurementToTable('─── RAPPORTI ───', '───', '');
+    addMeasurementToTable('Rapporto Alt/Larg', heightWidthRatio.toFixed(2), '');
+    addMeasurementToTable('Naso/Viso', noseWidthRatio.toFixed(1), '%');
+    addMeasurementToTable('Bocca/Viso', mouthWidthRatio.toFixed(1), '%');
+    addMeasurementToTable('Occhi/Viso', eyeDistanceRatio.toFixed(1), '%');
+    addMeasurementToTable('Rapporto Terzi', thirdsRatio.toFixed(2), '');
+
+    // Valutazione
+    addMeasurementToTable('─── VALUTAZIONE ───', '───', '');
+    addMeasurementToTable('Punteggio Proporzioni', score.toFixed(0), '/100');
+    addMeasurementToTable('Valutazione Finale', finalEvaluation, '');
+
+    // Aspetti positivi
+    if (positives.length > 0) {
+      addMeasurementToTable('─── ASPETTI POSITIVI ───', '───', '');
+      positives.forEach(positive => {
+        addMeasurementToTable('✓', positive, '');
+      });
+    }
+
+    // Problematiche
+    if (issues.length > 0) {
+      addMeasurementToTable('─── NOTE ───', '───', '');
+      issues.forEach(issue => {
+        addMeasurementToTable('•', issue, '');
+      });
+    }
+
+    // Feedback vocale
+    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+      voiceAssistant.speak(voiceMessage);
+    }
+
+    console.log('📏 Proporzioni completate:', {
+      score: score,
+      heightWidthRatio: heightWidthRatio.toFixed(2),
+      noseWidthRatio: noseWidthRatio.toFixed(1),
+      mouthWidthRatio: mouthWidthRatio.toFixed(1),
+      eyeDistanceRatio: eyeDistanceRatio.toFixed(1),
+      evaluation: finalEvaluation
+    });
+
+  } catch (error) {
+    console.error('Errore misurazione proporzioni:', error);
+    showToast('Errore durante la misurazione delle proporzioni', 'error');
+  }
 }
 
 function measureKeyDistances(event) {
@@ -1958,73 +2550,24 @@ async function estimateAge(event) {
         ageRangeDescription = 'Senior';
       }
 
-      // Aggiungi i dati alla tabella measurements-data
-      const measurementsTable = document.getElementById('measurements-data');
-      if (measurementsTable) {
-        // Rimuovi eventuali righe precedenti di stima età
-        const existingRows = measurementsTable.querySelectorAll('[data-measurement="age-estimate"]');
+      // Aggiungi i dati alla tabella unificata usando addMeasurementToTable
+      // Rimuovi eventuali righe precedenti di stima età
+      const tableBody = document.getElementById('unified-table-body');
+      if (tableBody) {
+        const existingRows = tableBody.querySelectorAll('[data-measurement="age-estimate"]');
         existingRows.forEach(row => row.remove());
+      }
 
-        // Aggiungi nuova riga con dati età
-        const newRow = document.createElement('tr');
-        newRow.setAttribute('data-measurement', 'age-estimate');
-        newRow.innerHTML = `
-          <td>🎂 Età Stimata</td>
-          <td><strong>${result.age}</strong></td>
-          <td>anni</td>
-          <td><span class="badge badge-success">✅ Completato</span></td>
-        `;
-        measurementsTable.insertBefore(newRow, measurementsTable.firstChild);
+      // Aggiungi dati età usando la funzione standard
+      addMeasurementToTable('🎂 Età Stimata', result.age, 'anni', 'age-estimate');
+      addMeasurementToTable('👤 Categoria', ageRangeDescription, '-', 'age-estimate');
 
-        // Aggiungi riga per range età
-        const rangeRow = document.createElement('tr');
-        rangeRow.setAttribute('data-measurement', 'age-estimate');
-        rangeRow.innerHTML = `
-          <td>👤 Categoria</td>
-          <td>${ageRangeDescription}</td>
-          <td>-</td>
-          <td><span class="badge badge-info">ℹ️ Info</span></td>
-        `;
-        measurementsTable.insertBefore(rangeRow, measurementsTable.children[1]);
-
-        // Aggiungi riga per forma viso se disponibile
-        if (faceShapeDescription) {
-          const shapeRow = document.createElement('tr');
-          shapeRow.setAttribute('data-measurement', 'age-estimate');
-          shapeRow.innerHTML = `
-            <td>👁️ Forma Viso</td>
-            <td>${faceShapeDescription}</td>
-            <td>-</td>
-            <td><span class="badge badge-info">ℹ️ Info</span></td>
-          `;
-          measurementsTable.insertBefore(shapeRow, measurementsTable.children[2]);
-        }
+      if (faceShapeDescription) {
+        addMeasurementToTable('👁️ Forma Viso', faceShapeDescription, '-', 'age-estimate');
       }
 
       // Espandi sezione DATI ANALISI se chiusa
-      // Trova la sezione specifica cercando il pulsante con testo "📊 DATI ANALISI"
-      const dataSectionButton = Array.from(document.querySelectorAll('.toggle-btn'))
-        .find(btn => btn.textContent.includes('DATI ANALISI'));
-
-      if (dataSectionButton) {
-        const dataSection = dataSectionButton.closest('.section');
-        if (dataSection && dataSection.dataset.expanded === 'false') {
-          const header = dataSection.querySelector('.section-header');
-          if (header && typeof window.toggleSection === 'function') {
-            console.log('🔓 Espando sezione DATI ANALISI automaticamente');
-            window.toggleSection(header);
-          }
-        } else {
-          console.log('📊 Sezione DATI ANALISI già aperta');
-        }
-      } else {
-        console.warn('⚠️ Pulsante DATI ANALISI non trovato');
-      }
-
-      // Switcha alla tab Misurazioni
-      if (typeof window.switchUnifiedTab === 'function') {
-        window.switchUnifiedTab('measurements');
-      }
+      ensureMeasurementsSectionOpen();
 
       // Lettura vocale del risultato (solo età, senza confidenza)
       const voiceMessage = `Età stimata: ${result.age} anni. ${ageRangeDescription}.`;
@@ -2047,5 +2590,9 @@ async function estimateAge(event) {
     button.textContent = '🎂 Stima Età';
   }
 }
+
+// Esporta funzioni globali necessarie per altri moduli
+window.ensureMeasurementsSectionOpen = ensureMeasurementsSectionOpen;
+window.addMeasurementToTable = addMeasurementToTable;
 
 // === FINE DEL FILE ===
