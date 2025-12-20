@@ -1925,8 +1925,8 @@ async function estimateAge(event) {
       // Arrotonda l'età per visualizzazione e feedback vocale
       const ageRounded = Math.round(result.age);
       
-      // Aggiungi il risultato alla tabella misurazioni
-      addMeasurementToTable('Età Stimata', result.age, 'anni', 'ageEstimation');
+      // Aggiungi il risultato alla tabella misurazioni (usa valore arrotondato per coerenza)
+      addMeasurementToTable('Età Stimata', ageRounded, 'anni', 'ageEstimation');
       
       // Feedback vocale con il risultato
       if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {

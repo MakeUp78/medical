@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import json
 import base64
+import re
 from io import BytesIO
 from PIL import Image
 import uuid
@@ -2500,15 +2501,15 @@ async def estimate_age(request: AgeEstimationRequest):
         
         print("👤 [AGE ESTIMATION] Immagine decodificata, inizio analisi...")
         
-        # Stima l'età usando il modello
-        estimated_age = estimate_age_from_image_deepface(image)
+        # Stima l'età usando il modello (restituisce age e confidence)
+        estimated_age, confidence = estimate_age_from_image_deepface(image)
         
-        print(f"✅ [AGE ESTIMATION] Età stimata: {estimated_age} anni")
+        print(f"✅ [AGE ESTIMATION] Età stimata: {estimated_age} anni (confidence: {confidence})")
         
         return AgeEstimationResult(
             success=True,
             age=float(estimated_age),
-            confidence=AGE_ESTIMATION_DEFAULT_CONFIDENCE
+            confidence=float(confidence)
         )
         
     except Exception as e:
@@ -2519,9 +2520,12 @@ async def estimate_age(request: AgeEstimationRequest):
         )
 
 
-def estimate_age_from_image_deepface(image: Image.Image) -> float:
+def estimate_age_from_image_deepface(image: Image.Image) -> Tuple[float, float]:
     """
     Stima l'età da un'immagine PIL usando la libreria DeepFace
+    
+    Returns:
+        Tuple[float, float]: (età stimata, confidenza del rilevamento volto)
     """
     # Verifica che DeepFace sia disponibile
     if not DEEPFACE_AVAILABLE:
@@ -2548,19 +2552,26 @@ def estimate_age_from_image_deepface(image: Image.Image) -> float:
             if len(result) == 0:
                 raise ValueError("Nessun volto rilevato nell'immagine")
             # Prendi il primo volto (solitamente il più grande/centrale)
-            age = result[0]['age']
+            face_result = result[0]
         else:
-            age = result['age']
+            face_result = result
         
-        print(f"✅ [AGE ESTIMATION] DeepFace ha stimato l'età: {age}")
+        age = face_result['age']
         
-        return float(age)
+        # Estrai la confidence della detection del volto se disponibile
+        # DeepFace restituisce 'face_confidence' per alcuni detector backends
+        confidence = face_result.get('face_confidence', AGE_ESTIMATION_DEFAULT_CONFIDENCE)
+        
+        print(f"✅ [AGE ESTIMATION] DeepFace ha stimato l'età: {age} (confidence: {confidence})")
+        
+        return float(age), float(confidence)
     
     # Gestione specifica delle eccezioni DeepFace
     except ValueError as e:
         # ValueError viene sollevato quando non ci sono volti o dati non validi
         error_msg = str(e)
-        if "face" in error_msg.lower():
+        # Usa regex per pattern più robusto
+        if re.search(r'\b(face|volto)\b', error_msg, re.IGNORECASE):
             raise Exception("Nessun volto rilevato nell'immagine. Assicurati che il volto sia ben visibile e frontale.")
         else:
             raise Exception(f"Dati non validi: {error_msg}")
@@ -2570,12 +2581,34 @@ def estimate_age_from_image_deepface(image: Image.Image) -> float:
         raise Exception(f"Errore caricamento modello DeepFace: {str(e)}")
     
     except Exception as e:
-        # Gestione generica per altri errori
+        # Gestione generica per altri errori con pattern matching robusto
         error_msg = str(e)
-        if "Face could not be detected" in error_msg or "no face" in error_msg.lower():
+        
+        # Pattern per errori di rilevamento volto
+        face_patterns = [
+            r'face\s+could\s+not\s+be\s+detected',
+            r'no\s+face',
+            r'detect.*face',
+            r'face.*not.*found'
+        ]
+        
+        # Pattern per errori di modello
+        model_patterns = [
+            r'\bmodel\b',
+            r'\bweight\b',
+            r'download',
+            r'checkpoint'
+        ]
+        
+        # Controlla pattern di errore volto
+        if any(re.search(pattern, error_msg, re.IGNORECASE) for pattern in face_patterns):
             raise Exception("Nessun volto rilevato nell'immagine. Assicurati che il volto sia ben visibile e frontale.")
-        elif "model" in error_msg.lower() or "weight" in error_msg.lower():
+        
+        # Controlla pattern di errore modello
+        elif any(re.search(pattern, error_msg, re.IGNORECASE) for pattern in model_patterns):
             raise Exception(f"Errore modello DeepFace: {error_msg}. Potrebbe essere necessario scaricare i modelli.")
+        
+        # Errore generico
         else:
             raise Exception(f"Errore DeepFace: {error_msg}")
 
