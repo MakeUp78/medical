@@ -405,10 +405,11 @@ body {
 
 /* Pulsante attivo (per toggle) */
 .btn-analysis.active,
-.btn-analysis.btn-active {
+.btn-analysis.btn-active,
+#measure-btn.active {
   background: #28a745 !important;
-  border: 2px solid #1e7e34;
-  box-shadow: 0 0 8px rgba(40, 167, 69, 0.5);
+  border: 2px solid #1e7e34 !important;
+  box-shadow: 0 0 8px rgba(40, 167, 69, 0.5) !important;
 }
 
 /* Pulsante Analisi Completa - occupa tutta la larghezza */
@@ -810,6 +811,32 @@ body {
 /* 📏 Sezione landmarks con scrollbar limitata */
 .landmarks-section {
   max-height: 350px; /* Altezza fissa per mostrare circa 10 righe */
+}
+
+/* 📏 Sezione measurements con scrollbar per contenuto infinito */
+.measurements-section .table-container {
+  max-height: 400px; /* Altezza massima tabella misurazioni */
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 📊 Stili scrollbar per measurements */
+.measurements-section .table-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.measurements-section .table-container::-webkit-scrollbar-track {
+  background: #2a2a2a;
+  border-radius: 4px;
+}
+
+.measurements-section .table-container::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+.measurements-section .table-container::-webkit-scrollbar-thumb:hover {
+  background: #777;
 }
 
 .landmarks-section .table-container {

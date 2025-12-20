@@ -9,10 +9,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🏥 Facial Analysis Application v2.0 - Web Edition</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <link rel="stylesheet" href="static/css/main.css?v=1.2">
+    <link rel="stylesheet" href="static/css/main.css">
     <link rel="stylesheet" href="static/css/components.css">
     <link rel="stylesheet" href="static/css/tables.css">
-    <link rel="stylesheet" href="static/css/mobile-responsive.css?v=1.0">
+    <link rel="stylesheet" href="static/css/mobile-responsive.css">
 </head>
 
 <body>
@@ -626,18 +626,18 @@
     <!-- jsPDF per generazione PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <script src="static/js/api-client.js?v=1766016205.5"></script>
-    <script src="static/js/face-detection.js?v=1766016205.5"></script>
-    <script src="static/js/measurements.js?v=1766016205.0"></script>
-    <script src="static/js/scoring.js?v=1766016205.5"></script>
-    <script src="static/js/canvas.js?v=1766016205.0"></script>
+    <script src="static/js/api-client.js"></script>
+    <script src="static/js/face-detection.js"></script>
+    <script src="static/js/measurements.js"></script>
+    <script src="static/js/scoring.js"></script>
+    <script src="static/js/canvas.js"></script>
     <!-- Sistema modalità canvas (PAN, ZOOM, SELEZIONE) -->
-    <script src="static/js/canvas-modes.js?v=1766016205.3"></script>
+    <script src="static/js/canvas-modes.js"></script>
     <!-- NUOVO FILE PULITO - Correzione sopracciglia -->
-    <script src="static/js/eyebrow-correction.js?v=1766016205.6"></script>
+    <script src="static/js/eyebrow-correction.js"></script>
     <!-- Analisi Visagistica Completa -->
-    <script src="static/js/face-analysis-complete.js?v=1766016205"></script>
-    <script src="static/js/main.js?v=1766115621"></script>
+    <script src="static/js/face-analysis-complete.js"></script>
+    <script src="static/js/main.js"></script>
 
     <!-- Script di test per debug -->
     <script>
@@ -680,7 +680,7 @@
          ======================================== -->
 
     <!-- Voice Assistant Script -->
-    <script src="static/js/voice_assistant.js?v=1766016205"></script>
+    <script src="static/js/voice_assistant.js"></script>
 
     <!-- Voice Widget Container (NASCOSTO - ora è nella sidebar) -->
     <div id="voice-widget-container" style="display: none;"></div>
@@ -1494,22 +1494,7 @@
                 voiceAssistant.speak('Canvas pulito');
             };
 
-            // MISURAZIONI - Aggiungi feedback vocale
-            const measurementFunctions = [
-                'measureFaceWidth', 'measureFaceHeight', 'measureEyeDistance',
-                'measureNoseWidth', 'measureNoseHeight', 'measureMouthWidth'
-            ];
-
-            measurementFunctions.forEach(funcName => {
-                const original = window[funcName];
-                if (original) {
-                    window[funcName] = function (event) {
-                        voiceAssistant.speakMessage('measurement_started');
-                        original(event);
-                    };
-                }
-            });
-
+            // MISURAZIONI - Feedback vocale gestito direttamente in measurements.js
             console.log('✅ Voice Assistant integrato con successo');
         }
     </script>
