@@ -57,6 +57,12 @@ face_mesh = None
 # === INIZIALIZZAZIONE VOICE ASSISTANT ===
 voice_assistant = None
 
+# === AGE ESTIMATION CONFIGURATION ===
+# Default confidence level for age estimation when actual confidence is not available
+AGE_ESTIMATION_DEFAULT_CONFIDENCE = 0.85
+# DeepFace detector backend: opencv, ssd, dlib, mtcnn, retinaface, mediapipe
+AGE_ESTIMATION_DETECTOR_BACKEND = os.getenv('AGE_DETECTOR_BACKEND', 'opencv')
+
 def initialize_mediapipe():
     global mp_face_mesh, face_mesh
     if not MEDIAPIPE_AVAILABLE:
@@ -2493,7 +2499,7 @@ async def estimate_age(request: AgeEstimationRequest):
         return AgeEstimationResult(
             success=True,
             age=float(estimated_age),
-            confidence=0.85  # Confidenza indicativa
+            confidence=AGE_ESTIMATION_DEFAULT_CONFIDENCE
         )
         
     except Exception as e:
@@ -2519,6 +2525,7 @@ def estimate_age_from_image_deepface(image: Image.Image) -> float:
         img_np = np.array(image)
         
         print(f"👤 [AGE ESTIMATION] Immagine shape: {img_np.shape}")
+        print(f"👤 [AGE ESTIMATION] Usando detector backend: {AGE_ESTIMATION_DETECTOR_BACKEND}")
         
         # Analizza l'immagine con DeepFace
         # enforce_detection=True solleva un'eccezione se non trova volti
@@ -2526,7 +2533,7 @@ def estimate_age_from_image_deepface(image: Image.Image) -> float:
             img_np, 
             actions=['age'], 
             enforce_detection=True,
-            detector_backend='opencv'  # Usa OpenCV per la detection
+            detector_backend=AGE_ESTIMATION_DETECTOR_BACKEND
         )
         
         # DeepFace può restituire una lista se ci sono più volti

@@ -1923,7 +1923,7 @@ async function estimateAge(event) {
       console.log('✅ [AGE ESTIMATION] Età stimata:', result.age);
       
       // Aggiungi il risultato alla tabella misurazioni
-      addMeasurementToTable('Età Stimata', result.age, 'anni', '✅');
+      addMeasurementToTable('Età Stimata', result.age, 'anni', 'ageEstimation');
       
       // Feedback vocale con il risultato
       if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
