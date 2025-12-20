@@ -1869,4 +1869,81 @@ function performKeyDistancesMeasurement() {
   showToast('Misurazione distanze chiave - In sviluppo', 'info');
 }
 
+// === FUNZIONE STIMA ETÀ ===
+
+/**
+ * Stima l'età del volto nell'immagine corrente
+ */
+async function estimateAge(event) {
+  if (event) event.preventDefault();
+  
+  console.log('👤 [AGE ESTIMATION] Inizio stima età');
+  
+  // Verifica che ci sia un'immagine caricata
+  if (!fabricCanvas || !fabricCanvas.backgroundImage) {
+    showToast('⚠️ Carica prima un\'immagine', 'warning');
+    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+      voiceAssistant.speak('Carica prima un\'immagine per stimare l\'età');
+    }
+    return;
+  }
+  
+  // Feedback vocale di inizio
+  if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+    voiceAssistant.speak('Stima dell\'età in corso');
+  }
+  
+  showToast('👤 Stima età in corso...', 'info');
+  
+  try {
+    // Ottieni l'immagine dal canvas
+    const imageData = fabricCanvas.toDataURL({
+      format: 'png',
+      quality: 1.0
+    });
+    
+    // Invia al backend per la stima dell'età
+    const response = await fetch('/api/estimate-age', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        image: imageData
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Errore HTTP: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log('✅ [AGE ESTIMATION] Età stimata:', result.age);
+      
+      // Aggiungi il risultato alla tabella misurazioni
+      addMeasurementToTable('Età Stimata', result.age, 'anni', '✅');
+      
+      // Feedback vocale con il risultato
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+        const ageRounded = Math.round(result.age);
+        voiceAssistant.speak(`L'età stimata è di circa ${ageRounded} anni`);
+      }
+      
+      showToast(`✅ Età stimata: ${Math.round(result.age)} anni`, 'success');
+    } else {
+      throw new Error(result.error || 'Errore nella stima dell\'età');
+    }
+    
+  } catch (error) {
+    console.error('❌ [AGE ESTIMATION] Errore:', error);
+    showToast(`❌ Errore: ${error.message}`, 'error');
+    
+    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+      voiceAssistant.speak('Errore nella stima dell\'età');
+    }
+  }
+}
+
 // === FINE DEL FILE ===

@@ -262,6 +262,17 @@ class VoiceKeywordResponse(BaseModel):
     action: Optional[str] = None
     message: Optional[str] = None
 
+# === MODELLI PYDANTIC PER AGE ESTIMATION ===
+
+class AgeEstimationRequest(BaseModel):
+    image: str  # Base64 encoded image
+
+class AgeEstimationResult(BaseModel):
+    success: bool
+    age: Optional[float] = None
+    confidence: Optional[float] = None
+    error: Optional[str] = None
+
 # === UTILITY FUNCTIONS ===
 
 def decode_base64_image(base64_string: str) -> np.ndarray:
@@ -2445,6 +2456,98 @@ async def complete_face_analysis(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Errore import modulo analisi: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore durante l'analisi completa: {str(e)}")
+
+@app.post("/api/estimate-age", response_model=AgeEstimationResult)
+async def estimate_age(request: AgeEstimationRequest):
+    """
+    Stima l'età del volto nell'immagine fornita usando DeepFace
+    """
+    try:
+        print("👤 [AGE ESTIMATION] Richiesta ricevuta")
+        
+        if not request.image:
+            return AgeEstimationResult(
+                success=False,
+                error='Immagine mancante'
+            )
+        
+        # Decodifica l'immagine base64
+        image_data = request.image
+        if ',' in image_data:
+            image_data = image_data.split(',')[1]
+        
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(io.BytesIO(image_bytes))
+        
+        # Converti in RGB se necessario
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        print("👤 [AGE ESTIMATION] Immagine decodificata, inizio analisi...")
+        
+        # Stima l'età usando il modello
+        estimated_age = estimate_age_from_image_deepface(image)
+        
+        print(f"✅ [AGE ESTIMATION] Età stimata: {estimated_age} anni")
+        
+        return AgeEstimationResult(
+            success=True,
+            age=float(estimated_age),
+            confidence=0.85  # Confidenza indicativa
+        )
+        
+    except Exception as e:
+        print(f"❌ [AGE ESTIMATION] Errore: {str(e)}")
+        return AgeEstimationResult(
+            success=False,
+            error=str(e)
+        )
+
+
+def estimate_age_from_image_deepface(image: Image.Image) -> float:
+    """
+    Stima l'età da un'immagine PIL usando la libreria DeepFace
+    """
+    try:
+        # Importa DeepFace
+        try:
+            from deepface import DeepFace
+        except ImportError:
+            raise Exception("DeepFace non installato. Eseguire: pip install deepface")
+        
+        # Converti PIL Image in numpy array
+        img_np = np.array(image)
+        
+        print(f"👤 [AGE ESTIMATION] Immagine shape: {img_np.shape}")
+        
+        # Analizza l'immagine con DeepFace
+        # enforce_detection=True solleva un'eccezione se non trova volti
+        result = DeepFace.analyze(
+            img_np, 
+            actions=['age'], 
+            enforce_detection=True,
+            detector_backend='opencv'  # Usa OpenCV per la detection
+        )
+        
+        # DeepFace può restituire una lista se ci sono più volti
+        if isinstance(result, list):
+            if len(result) == 0:
+                raise Exception("Nessun volto rilevato nell'immagine")
+            # Prendi il primo volto (solitamente il più grande/centrale)
+            age = result[0]['age']
+        else:
+            age = result['age']
+        
+        print(f"✅ [AGE ESTIMATION] DeepFace ha stimato l'età: {age}")
+        
+        return float(age)
+        
+    except Exception as e:
+        error_msg = str(e)
+        if "Face could not be detected" in error_msg or "no face" in error_msg.lower():
+            raise Exception("Nessun volto rilevato nell'immagine. Assicurati che il volto sia ben visibile e frontale.")
+        else:
+            raise Exception(f"Errore DeepFace: {error_msg}")
 
 if __name__ == "__main__":
     import uvicorn
