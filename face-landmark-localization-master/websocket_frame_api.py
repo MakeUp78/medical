@@ -157,20 +157,25 @@ class WebSocketFrameScorer:
         """Sistema di scoring a 3 parametri ottimizzato"""
         
         # 1. POSE SCORE (0-100) - 60% del punteggio
-        # YAW ha peso maggiore (2x) per privilegiare la frontalità
+        # YAW e PITCH hanno peso UGUALE per bilanciare frontalità verticale/orizzontale
         normalized_roll = roll
         while normalized_roll > 90:
             normalized_roll -= 180
         while normalized_roll < -90:
             normalized_roll += 180
             
-        # Calcolo con pesi diversi: YAW peso 2.0, PITCH peso 1.0, ROLL peso 0.8
-        yaw_weighted = abs(yaw) * 2.0        # Peso massimo per frontalità
-        pitch_weighted = abs(pitch) * 1.0    # Peso standard per inclinazione verticale  
-        roll_weighted = abs(normalized_roll) * 0.8  # Peso minore per rotazione laterale
+        # Ignora Roll se vicino a ±180 (probabile errore MediaPipe)
+        if abs(roll) > 170:
+            roll_weighted = 0
+        else:
+            roll_weighted = abs(normalized_roll) * 0.5
+            
+        # Pesi BILANCIATI: YAW=PITCH=1.5 per valutare frontalità completa
+        yaw_weighted = abs(yaw) * 1.5
+        pitch_weighted = abs(pitch) * 1.5
         
         pose_deviation = yaw_weighted + pitch_weighted + roll_weighted
-        pose_score = max(0, 100 - pose_deviation * 0.8)  # Fattore ridotto per compensare i pesi
+        pose_score = max(0, 100 - pose_deviation * 0.8)
         
         # 2. SIZE SCORE (0-100) - 30% del punteggio - Premia volti PIÙ GRANDI
         face_width = face_bbox[1] - face_bbox[0]

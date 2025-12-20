@@ -294,15 +294,42 @@ function closeAnalysisModal() {
 }
 
 /**
+ * Carica il logo Kimerika come immagine base64
+ */
+async function loadKimerikaLogo() {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = function() {
+            // Converti in base64
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const dataURL = canvas.toDataURL('image/png');
+            resolve(dataURL);
+        };
+        img.onerror = function() {
+            console.warn('⚠️ Impossibile caricare il logo, uso testo come fallback');
+            resolve(null);
+        };
+        img.src = '/Kimeriza DIGITAL DESIGN SYSTEM (2).png';
+    });
+}
+
+/**
  * Genera PDF del report con bibliografia, formattazione scientifica e immagini incorporate
  */
-function generateAnalysisPDF() {
+async function generateAnalysisPDF() {
     if (!currentAnalysisReport) {
         showToast('⚠️ Nessun report disponibile', 'warning');
         return;
     }
 
     try {
+        // Carica il logo Kimerika
+        const logoImg = await loadKimerikaLogo();
+
         // Usa jsPDF
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF({
@@ -321,45 +348,144 @@ function generateAnalysisPDF() {
         let currentY = margin;
         let inSection4 = false; // Flag per rilevare la sezione 4 (immagini)
 
-        // === PAGINA DI COPERTINA ===
-        doc.setFontSize(22);
-        doc.setFont('helvetica', 'bold');
-        doc.text('ANALISI VISAGISTICA', pageWidth / 2, pageHeight / 2 - 20, { align: 'center' });
-        doc.text('COMPLETA', pageWidth / 2, pageHeight / 2 - 10, { align: 'center' });
+        // === PAGINA DI COPERTINA PROFESSIONALE ===
+        // Palette: #811d7b (viola), #fdf200 (giallo), #5f5f5f (grigio)
 
-        doc.setFontSize(12);
+        // Sfondo decorativo leggerissimo (senza alpha - non supportato da jsPDF)
+        doc.setFillColor(255, 252, 230); // Giallo chiarissimo
+        doc.rect(0, 0, pageWidth, pageHeight / 3, 'F');
+        doc.setFillColor(248, 240, 247); // Viola chiarissimo
+        doc.rect(0, pageHeight / 3, pageWidth, pageHeight / 3, 'F');
+
+        // Bordo decorativo elegante
+        doc.setDrawColor(129, 29, 123); // #811d7b
+        doc.setLineWidth(1.5);
+        doc.rect(10, 10, pageWidth - 20, pageHeight - 20);
+        doc.setLineWidth(0.5);
+        doc.rect(12, 12, pageWidth - 24, pageHeight - 24);
+
+        // Logo KIMERIKA (immagine o testo come fallback)
+        const logoY = 50;
+        if (logoImg) {
+            try {
+                // Calcola dimensioni mantenendo le proporzioni ORIGINALI
+                const imgProps = doc.getImageProperties(logoImg);
+                const aspectRatio = imgProps.width / imgProps.height;
+
+                // Larghezza massima 70mm, altezza calcolata per mantenere proporzioni
+                const maxLogoWidth = 70;
+                const logoWidth = maxLogoWidth;
+                const logoHeight = logoWidth / aspectRatio;
+                const logoX = (pageWidth - logoWidth) / 2;
+
+                doc.addImage(logoImg, 'PNG', logoX, logoY - logoHeight/2, logoWidth, logoHeight);
+                console.log(`✅ Logo aggiunto con proporzioni originali: ${logoWidth}x${logoHeight}mm (ratio: ${aspectRatio.toFixed(2)})`);
+            } catch (error) {
+                console.error('Errore aggiunta logo:', error);
+                // Fallback a testo
+                doc.setFontSize(28);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(60, 100, 180);
+                doc.text('KIMERIKA', pageWidth / 2, logoY, { align: 'center' });
+            }
+        } else {
+            // Fallback: Logo testuale
+            doc.setDrawColor(100, 150, 200);
+            doc.setLineWidth(2);
+            doc.rect(pageWidth/2 - 40, logoY - 15, 80, 25);
+
+            doc.setFontSize(28);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(60, 100, 180);
+            doc.text('KIMERIKA', pageWidth / 2, logoY, { align: 'center' });
+        }
+
+        // Sottotitolo logo
+        doc.setFontSize(9);
         doc.setFont('helvetica', 'normal');
-        doc.text('Report Scientifico Professionale', pageWidth / 2, pageHeight / 2 + 5, { align: 'center' });
+        doc.setTextColor(100, 100, 100);
+        doc.text('Facial Analysis & Visagism', pageWidth / 2, logoY + 20, { align: 'center' });
 
-        doc.setFontSize(10);
-        doc.text(`Data: ${new Date().toLocaleDateString('it-IT', {
+        // Linea divisoria decorativa
+        doc.setDrawColor(253, 242, 0); // #fdf200
+        doc.setLineWidth(0.8);
+        doc.line(pageWidth / 2 - 60, logoY + 30, pageWidth / 2 + 60, logoY + 30);
+
+        // Titolo principale
+        doc.setFontSize(28);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(95, 95, 95); // #5f5f5f
+        doc.text('ANALISI VISAGISTICA', pageWidth / 2, pageHeight / 2 - 10, { align: 'center' });
+
+        doc.setFontSize(24);
+        doc.setTextColor(129, 29, 123); // #811d7b
+        doc.text('COMPLETA', pageWidth / 2, pageHeight / 2 + 8, { align: 'center' });
+
+        // Sottotitolo
+        doc.setFontSize(13);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(80, 80, 80);
+        doc.text('Report Scientifico Professionale Personalizzato', pageWidth / 2, pageHeight / 2 + 25, { align: 'center' });
+
+        // Data con icona
+        doc.setFontSize(11);
+        doc.setTextColor(100, 100, 100);
+        const dataText = `📅 ${new Date().toLocaleDateString('it-IT', {
             year: 'numeric',
             month: 'long',
             day: 'numeric'
-        })}`, pageWidth / 2, pageHeight / 2 + 20, { align: 'center' });
+        })}`;
+        doc.text(dataText, pageWidth / 2, pageHeight / 2 + 40, { align: 'center' });
 
-        // Footer copertina
-        doc.setFontSize(8);
+        // Box informativo in basso
+        const boxY = pageHeight - 60;
+        doc.setFillColor(250, 245, 249); // Viola chiarissimo
+        doc.setDrawColor(253, 242, 0); // #fdf200
+        doc.roundedRect(30, boxY, pageWidth - 60, 35, 3, 3, 'FD');
+
+        doc.setFontSize(9);
         doc.setFont('helvetica', 'italic');
-        doc.text('Analisi basata su evidenze scientifiche peer-reviewed',
-            pageWidth / 2, pageHeight - 20, { align: 'center' });
+        doc.setTextColor(95, 95, 95); // #5f5f5f
+        doc.text('Analisi basata su evidenze scientifiche peer-reviewed', pageWidth / 2, boxY + 12, { align: 'center' });
+        doc.text('Metodologie di visagismo professionale e neuroscienze', pageWidth / 2, boxY + 22, { align: 'center' });
+
+        // Footer con copyright
+        doc.setFontSize(8);
+        doc.setTextColor(120, 120, 120);
+        doc.text('© 2025 Kimerika - Facial Analysis System', pageWidth / 2, pageHeight - 10, { align: 'center' });
 
         // Nuova pagina per il contenuto
         doc.addPage();
         currentY = margin;
 
-        // === INTESTAZIONE ===
-        doc.setFontSize(16);
+        // === INTESTAZIONE PROFESSIONALE ===
+        // Box header colorato
+        doc.setFillColor(129, 29, 123); // #811d7b
+        doc.rect(0, 0, pageWidth, 25, 'F');
+
+        doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
-        doc.text('REPORT DI ANALISI', margin, currentY);
-        currentY += 10;
+        doc.setTextColor(255, 255, 255);
+        doc.text('REPORT DI ANALISI VISAGISTICA', margin, 16);
+
+        // Ripristina colore testo
+        doc.setTextColor(95, 95, 95); // #5f5f5f
+        currentY = 35;
+
+        // Box informazioni con bordo
+        doc.setDrawColor(253, 242, 0); // #fdf200
+        doc.setLineWidth(0.5);
+        doc.setFillColor(255, 254, 240); // Giallo chiarissimo
+        doc.roundedRect(margin, currentY, maxWidth, 22, 2, 2, 'FD');
 
         doc.setFontSize(9);
         doc.setFont('helvetica', 'normal');
-        doc.text(`Generato il: ${new Date().toLocaleString('it-IT')}`, margin, currentY);
-        currentY += 5;
-        doc.text('Modulo: face_analysis_module.py v1.1.0', margin, currentY);
-        currentY += 10;
+        doc.setTextColor(95, 95, 95); // #5f5f5f
+        doc.text(`📅 Generato il: ${new Date().toLocaleString('it-IT')}`, margin + 5, currentY + 8);
+        doc.text(`⚙️ Modulo: face_analysis_module.py v1.2.0`, margin + 5, currentY + 16);
+
+        currentY += 30;
+        doc.setTextColor(50, 50, 50); // Grigio scuro leggibile
 
         // === CONTENUTO DEL REPORT ===
         doc.setFontSize(8.5);
@@ -384,7 +510,7 @@ function generateAnalysisPDF() {
             // Controlla se serve una nuova pagina
             if (currentY > pageHeight - margin - 15) {
                 doc.addPage();
-                currentY = margin;
+                currentY = 20; // Margine per header
             }
 
             // Linee vuote
@@ -395,15 +521,34 @@ function generateAnalysisPDF() {
 
             // Formattazione speciale per titoli sezioni (linee con ===)
             if (line.includes('===')) {
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(10);
-                currentY += 3;
+                // Linea divisoria decorativa invece di ===
+                doc.setDrawColor(253, 242, 0); // #fdf200
+                doc.setLineWidth(0.8);
+                doc.line(margin, currentY, pageWidth - margin, currentY);
+                currentY += lineHeight / 2;
+                continue;
             }
-            // Titoli sezioni (SEZIONE N:)
+            // Titoli sezioni (SEZIONE N:) con box colorato
             else if (line.match(/^SEZIONE \d+:/)) {
+                // Verifica spazio per box sezione
+                if (currentY > pageHeight - margin - 30) {
+                    doc.addPage();
+                    currentY = 20; // Margine per header
+                }
+
+                // Spazio prima della sezione
+                currentY += 3;
+
+                // Box colorato per sezione (colore molto chiaro)
+                doc.setFillColor(252, 248, 251); // Viola leggerissimo
+                doc.setDrawColor(253, 242, 0); // #fdf200
+                doc.setLineWidth(0.5);
+                doc.roundedRect(margin - 2, currentY - 2, maxWidth + 4, 13, 1, 1, 'FD');
+
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(11);
-                currentY += 4;
+                doc.setTextColor(129, 29, 123); // #811d7b
+                currentY += 5;
 
                 // Se è la sezione 4, aggiungi le immagini dopo il titolo
                 if (line.match(/^SEZIONE 4:/) && currentAnalysisReport.debug_images) {
@@ -412,14 +557,14 @@ function generateAnalysisPDF() {
                     for (let wrappedLine of wrappedTitle) {
                         if (currentY > pageHeight - margin - 15) {
                             doc.addPage();
-                            currentY = margin;
+                            currentY = 20; // Margine per header
                         }
                         doc.text(wrappedLine, margin, currentY);
                         currentY += lineHeight;
                     }
 
                     // Aggiungi le immagini
-                    currentY += 5; // Spazio prima delle immagini
+                    currentY += 8; // Spazio prima delle immagini
                     const debugImages = currentAnalysisReport.debug_images;
                     const imageKeys = Object.keys(debugImages);
 
@@ -428,29 +573,38 @@ function generateAnalysisPDF() {
                         const base64Data = debugImages[key];
                         const imgSrc = `data:image/jpeg;base64,${base64Data}`;
 
-                        // Aggiungi label dell'immagine prima di calcolare dimensioni
+                        // Box per etichetta immagine
+                        const imageLabel = key.replace(/_/g, ' ').toUpperCase();
+
+                        // Verifica spazio per etichetta e immagine
+                        if (currentY + 20 > pageHeight - margin) {
+                            doc.addPage();
+                            currentY = 20; // Margine per header
+                        }
+
+                        // Box etichetta professionale
+                        doc.setFillColor(255, 253, 235); // Giallo chiarissimo
+                        doc.setDrawColor(129, 29, 123); // #811d7b
+                        doc.setLineWidth(0.3);
+                        const labelWidth = maxWidth;
+                        doc.roundedRect(margin, currentY, labelWidth, 10, 1, 1, 'FD');
+
                         doc.setFont('helvetica', 'bold');
                         doc.setFontSize(9);
-                        const imageLabel = key.replace(/_/g, ' ').toUpperCase();
+                        doc.setTextColor(129, 29, 123); // #811d7b
 
                         // Aggiungi immagine con calcolo automatico aspect ratio
                         try {
-                            // Crea un elemento immagine temporaneo per ottenere dimensioni reali
-                            const img = new Image();
-                            img.src = imgSrc;
-
-                            // Calcola dimensioni mantenendo aspect ratio
-                            const maxImgWidth = maxWidth;
-                            const maxImgHeight = 100; // mm - limite massimo altezza
-
-                            // Ottieni dimensioni originali (approssimative dal base64)
-                            // jsPDF può calcolare automaticamente l'aspect ratio
+                            // Ottieni dimensioni originali
                             const imgProps = doc.getImageProperties(imgSrc);
                             const imgWidth = imgProps.width;
                             const imgHeight = imgProps.height;
                             const aspectRatio = imgWidth / imgHeight;
 
                             // Calcola dimensioni finali mantenendo aspect ratio
+                            const maxImgWidth = maxWidth;
+                            const maxImgHeight = 120; // mm - limite massimo altezza
+
                             let finalWidth = maxImgWidth;
                             let finalHeight = maxImgWidth / aspectRatio;
 
@@ -460,18 +614,35 @@ function generateAnalysisPDF() {
                                 finalWidth = maxImgHeight * aspectRatio;
                             }
 
-                            // Verifica se c'è spazio, altrimenti nuova pagina
-                            if (currentY + finalHeight + 20 > pageHeight - margin) {
+                            // Centra l'immagine se è più stretta della larghezza massima
+                            const imgX = margin + (maxImgWidth - finalWidth) / 2;
+
+                            // Verifica se c'è spazio per etichetta + immagine, altrimenti nuova pagina
+                            const totalHeight = 12 + finalHeight + 5; // etichetta + immagine + margine
+                            if (currentY + totalHeight > pageHeight - margin - 25) {
                                 doc.addPage();
-                                currentY = margin;
+                                currentY = 22; // Margine per header + spazio
+
+                                // Ridisegna l'etichetta sulla nuova pagina
+                                doc.setFillColor(255, 253, 235);
+                                doc.setDrawColor(129, 29, 123);
+                                doc.setLineWidth(0.3);
+                                doc.roundedRect(margin, currentY, labelWidth, 10, 1, 1, 'FD');
                             }
 
-                            // Scrivi label
-                            doc.text(imageLabel, margin, currentY);
-                            currentY += 6;
+                            // Scrivi label centrata
+                            doc.setFont('helvetica', 'bold');
+                            doc.setFontSize(9);
+                            doc.setTextColor(129, 29, 123);
+                            doc.text(imageLabel, margin + labelWidth / 2, currentY + 7, { align: 'center' });
+                            currentY += 12;
 
-                            // Aggiungi immagine con dimensioni proporzionali
-                            doc.addImage(imgSrc, 'JPEG', margin, currentY, finalWidth, finalHeight);
+                            // Aggiungi immagine con bordo decorativo
+                            doc.setDrawColor(95, 95, 95); // #5f5f5f
+                            doc.setLineWidth(0.5);
+                            doc.rect(imgX - 1, currentY - 1, finalWidth + 2, finalHeight + 2);
+
+                            doc.addImage(imgSrc, 'JPEG', imgX, currentY, finalWidth, finalHeight);
                             currentY += finalHeight + 10;
 
                             console.log(`✅ Immagine ${imageLabel} aggiunta: ${finalWidth.toFixed(1)}mm x ${finalHeight.toFixed(1)}mm (ratio: ${aspectRatio.toFixed(2)})`);
@@ -482,16 +653,14 @@ function generateAnalysisPDF() {
                             // Verifica se c'è spazio per il messaggio di errore
                             if (currentY + 20 > pageHeight - margin) {
                                 doc.addPage();
-                                currentY = margin;
+                                currentY = 20; // Margine per header
                             }
-
-                            doc.text(imageLabel, margin, currentY);
-                            currentY += 6;
 
                             doc.setFont('courier', 'normal');
                             doc.setFontSize(8);
-                            doc.text(`[Immagine ${imageLabel} non disponibile]`, margin, currentY);
-                            currentY += 10;
+                            doc.setTextColor(150, 50, 50);
+                            doc.text(`[Errore caricamento immagine: ${imageLabel}]`, margin, currentY);
+                            currentY += 12;
                         }
                     }
 
@@ -502,18 +671,21 @@ function generateAnalysisPDF() {
             // Sottotitoli
             else if (line.match(/^\d+\./)) {
                 doc.setFont('helvetica', 'bold');
-                doc.setFontSize(9);
-                currentY += 2;
+                doc.setFontSize(9.5);
+                doc.setTextColor(95, 95, 95);
+                currentY += 3; // Più spazio prima dei sottotitoli
             }
             // Bibliografia - font più piccolo
             else if (inBibliography) {
                 doc.setFont('courier', 'normal');
                 doc.setFontSize(7.5);
+                doc.setTextColor(70, 70, 70);
             }
             // Testo normale
             else {
                 doc.setFont('courier', 'normal');
                 doc.setFontSize(8.5);
+                doc.setTextColor(50, 50, 50);
             }
 
             // Salta il contenuto testuale della sezione 4 (già sostituito con immagini)
@@ -525,9 +697,10 @@ function generateAnalysisPDF() {
             const wrappedLines = doc.splitTextToSize(line, maxWidth);
 
             for (let wrappedLine of wrappedLines) {
-                if (currentY > pageHeight - margin - 15) {
+                // Controlla spazio disponibile
+                if (currentY > pageHeight - margin - 20) {
                     doc.addPage();
-                    currentY = margin;
+                    currentY = 20; // Margine superiore per evitare sovrapposizione con header
                 }
 
                 doc.text(wrappedLine, margin, currentY);
@@ -535,30 +708,86 @@ function generateAnalysisPDF() {
             }
         }
 
-        // === FOOTER SU OGNI PAGINA ===
+        // === HEADER E FOOTER PROFESSIONALE SU OGNI PAGINA ===
         const pageCount = doc.internal.getNumberOfPages();
         for (let i = 1; i <= pageCount; i++) {
             doc.setPage(i);
-            doc.setFontSize(7);
-            doc.setFont('helvetica', 'italic');
 
-            // Numero pagina
-            doc.text(
-                `Pagina ${i} di ${pageCount}`,
-                pageWidth / 2,
-                pageHeight - 8,
-                { align: 'center' }
-            );
+            if (i === 2) {
+                // Pagina 2 ha già il suo header custom, skippa
+            } else if (i > 2) {
+                // Header minimale sulle pagine successive alla seconda
+                doc.setDrawColor(253, 242, 0); // #fdf200
+                doc.setLineWidth(0.3);
+                doc.line(margin, 12, pageWidth - margin, 12);
 
-            // Disclaimer
+                doc.setFontSize(8);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(129, 29, 123);
+                doc.text('KIMERIKA - Analisi Visagistica', margin, 9);
+            }
+
             if (i > 1) { // Non sulla copertina
-                doc.setFontSize(6);
+                // Linea divisoria footer
+                doc.setDrawColor(253, 242, 0); // #fdf200
+                doc.setLineWidth(0.3);
+                doc.line(margin, pageHeight - 18, pageWidth - margin, pageHeight - 18);
+
+                // Logo piccolo a sinistra (immagine o testo)
+                if (logoImg) {
+                    try {
+                        // Calcola proporzioni originali per logo mini
+                        const imgProps = doc.getImageProperties(logoImg);
+                        const aspectRatio = imgProps.width / imgProps.height;
+
+                        const miniLogoWidth = 25;
+                        const miniLogoHeight = miniLogoWidth / aspectRatio;
+                        doc.addImage(logoImg, 'PNG', margin, pageHeight - 16, miniLogoWidth, miniLogoHeight);
+                    } catch (error) {
+                        // Fallback a testo
+                        doc.setFontSize(8);
+                        doc.setFont('helvetica', 'bold');
+                        doc.setTextColor(60, 100, 180);
+                        doc.text('KIMERIKA', margin, pageHeight - 10);
+                    }
+                } else {
+                    doc.setFontSize(8);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(60, 100, 180);
+                    doc.text('KIMERIKA', margin, pageHeight - 10);
+                }
+
+                // Numero pagina al centro
+                doc.setFontSize(7);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(100, 100, 100);
                 doc.text(
-                    'Documento confidenziale - Solo per uso personale',
+                    `Pagina ${i} di ${pageCount}`,
                     pageWidth / 2,
-                    pageHeight - 4,
+                    pageHeight - 10,
                     { align: 'center' }
                 );
+
+                // Disclaimer a destra
+                doc.setFontSize(6);
+                doc.setFont('helvetica', 'italic');
+                doc.text(
+                    'Confidenziale',
+                    pageWidth - margin,
+                    pageHeight - 10,
+                    { align: 'right' }
+                );
+
+                // Watermark molto leggero al centro della pagina
+                doc.setFontSize(60);
+                doc.setTextColor(245, 240, 244); // Viola estremamente chiaro (quasi invisibile)
+                doc.setFont('helvetica', 'bold');
+                doc.text('KIMERIKA', pageWidth / 2, pageHeight / 2, {
+                    align: 'center',
+                    angle: 45,
+                    renderingMode: 'stroke',
+                    lineWidth: 0.1
+                });
             }
         }
 
@@ -587,6 +816,7 @@ function toggleReportReading() {
 
 /**
  * Avvia il processo di lettura vocale interattiva
+ * INTEGRATO CON IL SISTEMA WAKE-WORD "KIMERIKA"
  */
 async function startReportReading() {
     if (!currentAnalysisReport || !reportSections || Object.keys(reportSections).length === 0) {
@@ -606,8 +836,8 @@ async function startReportReading() {
         awaitingSectionSelection = true;
         updateReadButton(true);
 
-        // Isabella chiede quale sezione leggere
-        await askUserWhichSection();
+        // Isabella fornisce istruzioni per l'uso con wake-word
+        await provideReadingInstructions();
 
     } catch (error) {
         console.error('❌ Errore avvio lettura Isabella:', error);
@@ -619,20 +849,23 @@ async function startReportReading() {
 }
 
 /**
- * Chiede all'utente quale sezione vuole ascoltare
+ * Fornisce istruzioni per l'uso del report con wake-word
  */
-async function askUserWhichSection() {
+async function provideReadingInstructions() {
     // Crea lista delle sezioni (esclude sezione 4 che è già filtrata)
     const sectionsList = Object.entries(reportSections)
         .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))  // Ordina per numero
         .map(([num, data]) => `Sezione ${num}, ${data.title}`)
         .join('. ');
 
-    const question = `Quale sezione vuoi che legga? ${sectionsList}. Oppure di' "tutte" per ascoltare l'intero report.`;
+    const instructions = `Report di analisi pronto. Per ascoltarlo, di' prima la parola Kimerika,
+        poi scegli cosa vuoi ascoltare. Puoi dire: ${sectionsList}.
+        Oppure di' Kimerika tutte, per ascoltare l'intero report.
+        Per fermare la lettura, di' Kimerika ferma.`;
 
-    await voiceAssistant.speak(question);
-    console.log('🎤 Isabella in attesa di risposta per selezione sezione...');
-    showToast('🎤 Isabella in attesa della tua risposta...', 'info');
+    await voiceAssistant.speak(instructions);
+    console.log('🎤 Isabella ha fornito le istruzioni. In attesa di comando wake-word...');
+    showToast('🎤 Di\' "Kimerika" seguito dalla sezione che vuoi ascoltare', 'info');
 }
 
 /**
@@ -977,7 +1210,7 @@ function setupReportVoiceCommands() {
         window.voiceCommandHandlers = {};
     }
 
-    // Comando: "Leggi report"
+    // Comando: "Leggi report" (per avviare il processo)
     window.voiceCommandHandlers['leggi report'] = async function () {
         console.log('🎤 Comando vocale riconosciuto: Leggi report');
 
@@ -990,35 +1223,44 @@ function setupReportVoiceCommands() {
         await startReportReading();
     };
 
-    // Comando: "STOP" o "Ferma"
-    window.voiceCommandHandlers['stop'] = function () {
-        console.log('🎤 Comando vocale riconosciuto: STOP');
-        stopReportReading();
-    };
-
+    // Comando: "Ferma" (con wake-word integrata)
     window.voiceCommandHandlers['ferma'] = function () {
-        console.log('🎤 Comando vocale riconosciuto: Ferma');
-        stopReportReading();
+        console.log('🎤 Comando vocale riconosciuto: Ferma lettura report');
+        if (isReadingReport || awaitingSectionSelection) {
+            stopReportReading();
+        }
     };
 
-    // Comandi per selezione sezione (solo se in attesa di selezione)
+    // Comando: "Tutte" (leggi tutte le sezioni - richiede wake-word)
     window.voiceCommandHandlers['tutte'] = async function () {
         if (awaitingSectionSelection) {
-            console.log('🎤 Comando vocale: Leggi tutte le sezioni');
+            console.log('🎤 Comando vocale: Leggi tutte le sezioni del report');
             await readReportSection('tutte');
         }
     };
 
-    // Comandi per sezioni numeriche (1-8, esclusa 4)
+    // Comandi per sezioni numeriche (1-8, esclusa 4) - richiedono wake-word
     for (let i = 1; i <= 8; i++) {
         if (i === 4) continue; // Salta sezione 4 (immagini)
 
+        // Aggiungi comando "sezione N"
         window.voiceCommandHandlers[`sezione ${i}`] = async function () {
             if (awaitingSectionSelection) {
-                console.log(`🎤 Comando vocale: Leggi sezione ${i}`);
+                console.log(`🎤 Comando vocale: Leggi sezione ${i} del report`);
                 await readReportSection(i.toString());
             }
         };
+
+        // Aggiungi anche supporto per "numero N" (es. "kimerika uno", "kimerika due")
+        const numeriItaliani = ['uno', 'due', 'tre', 'cinque', 'sei', 'sette', 'otto'];
+        if (i !== 4 && i <= numeriItaliani.length) {
+            window.voiceCommandHandlers[numeriItaliani[i - 1]] = async function () {
+                if (awaitingSectionSelection) {
+                    console.log(`🎤 Comando vocale: Leggi sezione ${i} (numero italiano)`);
+                    await readReportSection(i.toString());
+                }
+            };
+        }
     }
 
     console.log('✅ Comandi vocali per report configurati');

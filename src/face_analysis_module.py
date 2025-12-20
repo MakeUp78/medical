@@ -818,40 +818,84 @@ class FaceVisagismAnalyzer:
         cv2.imwrite(str(path), img_landmarks)
         debug_paths['face_mesh'] = str(path)
         
-        # 2. Analisi geometrica forma del viso
+        # 2. Analisi geometrica forma del viso MIGLIORATA
         img_geometry = image.copy()
-        
+        h_img, w_img = img_geometry.shape[:2]
+
+        # Crea overlay semi-trasparente
+        overlay_geo = img_geometry.copy()
+
+        # Funzione helper per disegnare linee di misura professionali
+        def draw_measurement_line(img, pt1, pt2, color, label, above=True):
+            # Linea principale
+            cv2.line(img, pt1, pt2, color, 3)
+            # Marcatori alle estremità
+            cv2.circle(img, pt1, 6, (255, 255, 255), 2)
+            cv2.circle(img, pt1, 4, color, -1)
+            cv2.circle(img, pt2, 6, (255, 255, 255), 2)
+            cv2.circle(img, pt2, 4, color, -1)
+
+            # Etichetta con sfondo
+            text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+            mid_x = (pt1[0] + pt2[0]) // 2
+            mid_y = (pt1[1] + pt2[1]) // 2
+            offset_y = -20 if above else 30
+
+            bg_pt1 = (mid_x - text_size[0]//2 - 5, mid_y + offset_y - text_size[1] - 5)
+            bg_pt2 = (mid_x + text_size[0]//2 + 5, mid_y + offset_y + 5)
+            cv2.rectangle(img, bg_pt1, bg_pt2, (0, 0, 0), -1)
+            cv2.rectangle(img, bg_pt1, bg_pt2, color, 2)
+            cv2.putText(img, label, (mid_x - text_size[0]//2, mid_y + offset_y),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
         # Linee di misura fronte
-        cv2.line(img_geometry, lm_coords['fronte_sx'], lm_coords['fronte_dx'], (255, 0, 0), 2)
-        cv2.putText(img_geometry, f"Fronte: {metrics.larghezza_fronte:.1f}px", 
-                    (lm_coords['fronte_sx'][0], lm_coords['fronte_sx'][1] - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-        
+        draw_measurement_line(overlay_geo, lm_coords['fronte_sx'], lm_coords['fronte_dx'],
+                             (255, 100, 100), f"Fronte: {metrics.larghezza_fronte:.0f}px")
+
         # Linee di misura zigomi
-        cv2.line(img_geometry, lm_coords['zigomo_sx'], lm_coords['zigomo_dx'], (0, 255, 0), 2)
-        cv2.putText(img_geometry, f"Zigomi: {metrics.larghezza_zigomi:.1f}px", 
-                    (lm_coords['zigomo_sx'][0], lm_coords['zigomo_sx'][1] - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        
+        draw_measurement_line(overlay_geo, lm_coords['zigomo_sx'], lm_coords['zigomo_dx'],
+                             (100, 255, 100), f"Zigomi: {metrics.larghezza_zigomi:.0f}px")
+
         # Linee di misura mascella
-        cv2.line(img_geometry, lm_coords['mascella_sx'], lm_coords['mascella_dx'], (0, 0, 255), 2)
-        cv2.putText(img_geometry, f"Mascella: {metrics.larghezza_mascella:.1f}px", 
-                    (lm_coords['mascella_sx'][0], lm_coords['mascella_sx'][1] + 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        
-        # Lunghezza viso
-        cv2.line(img_geometry, lm_coords['fronte_top'], lm_coords['mento'], (255, 255, 0), 2)
-        
-        # Annotazioni rapporti
-        y_offset = 30
-        cv2.putText(img_geometry, f"FORMA: {face_shape.value.upper()}", 
-                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        y_offset += 30
-        cv2.putText(img_geometry, f"Rapporto L/W: {metrics.rapporto_lunghezza_larghezza:.2f}", 
-                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        y_offset += 25
-        cv2.putText(img_geometry, f"Rapporto M/F: {metrics.rapporto_mascella_fronte:.2f}", 
-                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        draw_measurement_line(overlay_geo, lm_coords['mascella_sx'], lm_coords['mascella_dx'],
+                             (100, 100, 255), f"Mascella: {metrics.larghezza_mascella:.0f}px", False)
+
+        # Lunghezza viso con frecce
+        pt_top = lm_coords['fronte_top']
+        pt_bottom = lm_coords['mento']
+        cv2.arrowedLine(overlay_geo, pt_top, pt_bottom, (255, 255, 100), 3, tipLength=0.02)
+        cv2.arrowedLine(overlay_geo, pt_bottom, pt_top, (255, 255, 100), 3, tipLength=0.02)
+
+        # Pannello informativo professionale
+        panel_width = 450
+        panel_height = 140
+        panel_x = 10
+        panel_y = 10
+        cv2.rectangle(overlay_geo, (panel_x, panel_y), (panel_x + panel_width, panel_y + panel_height),
+                     (20, 20, 20), -1)
+        cv2.rectangle(overlay_geo, (panel_x, panel_y), (panel_x + panel_width, panel_y + panel_height),
+                     (100, 200, 255), 3)
+
+        # Titolo pannello
+        cv2.putText(overlay_geo, "ANALISI GEOMETRICA VISO",
+                   (panel_x + 15, panel_y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+
+        # Informazioni geometriche
+        y_info = panel_y + 60
+        cv2.putText(overlay_geo, f"Forma: {face_shape.value.upper()}",
+                   (panel_x + 15, y_info), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 200, 255), 2)
+        y_info += 25
+        cv2.putText(overlay_geo, f"Rapporto L/W: {metrics.rapporto_lunghezza_larghezza:.3f}",
+                   (panel_x + 15, y_info), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        y_info += 22
+        cv2.putText(overlay_geo, f"Rapporto M/F: {metrics.rapporto_mascella_fronte:.3f}",
+                   (panel_x + 15, y_info), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        y_info += 22
+        cv2.putText(overlay_geo, f"Prominenza Zigomi: {metrics.prominenza_zigomi:.3f}",
+                   (panel_x + 15, y_info), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+
+        # Blend overlay
+        cv2.addWeighted(overlay_geo, 0.9, img_geometry, 0.1, 0, img_geometry)
         
         path = output_path / "02_analisi_geometrica.jpg"
         cv2.imwrite(str(path), img_geometry)
@@ -1078,15 +1122,88 @@ class FaceVisagismAnalyzer:
         """Genera timestamp per l'analisi"""
         from datetime import datetime
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def _get_personalized_shape_intro(self, face_shape: str, metrics: Dict, features: Dict) -> str:
+        """Genera introduzione personalizzata basata sulla forma del viso specifica"""
+
+        shape_intros = {
+            "ovale": (
+                f"Il tuo viso presenta la forma ovale, considerata la più versatile e armoniosa. "
+                f"Con un rapporto lunghezza/larghezza di {metrics['rapporto_lunghezza_larghezza']:.2f}, "
+                f"le tue proporzioni sono naturalmente bilanciate. Questa forma ti permette di sperimentare "
+                f"con diversi stili, ma le raccomandazioni che seguono sono specificamente calibrate "
+                f"sulle tue caratteristiche uniche."
+            ),
+            "rotondo": (
+                f"Il tuo viso ha una forma rotonda con proporzioni morbide e accoglienti. "
+                f"Il rapporto lunghezza/larghezza di {metrics['rapporto_lunghezza_larghezza']:.2f} "
+                f"crea un'impressione di giovialità naturale. Le nostre raccomandazioni sono pensate "
+                f"per valorizzare questa dolcezza mantenendo definizione e struttura dove necessario."
+            ),
+            "quadrato": (
+                f"Il tuo viso presenta una forma quadrata con linee decise e struttura forte. "
+                f"Con un rapporto mascella/fronte di {metrics['rapporto_mascella_fronte']:.2f}, "
+                f"la tua struttura ossea è particolarmente definita. Le raccomandazioni che seguono "
+                f"sono calibrate per bilanciare questa forza con elementi di morbidezza."
+            ),
+            "rettangolare": (
+                f"Il tuo viso ha una forma rettangolare che comunica eleganza e raffinatezza. "
+                f"Con un rapporto lunghezza/larghezza di {metrics['rapporto_lunghezza_larghezza']:.2f}, "
+                f"le proporzioni verticali sono predominanti. Le nostre raccomandazioni sono progettate "
+                f"per creare equilibrio orizzontale mantenendo questa naturale distinzione."
+            ),
+            "triangolare": (
+                f"Il tuo viso presenta una forma triangolare con base ampia e solida. "
+                f"Il rapporto mascella/fronte di {metrics['rapporto_mascella_fronte']:.2f} "
+                f"evidenzia questa caratteristica strutturale. Le raccomandazioni seguenti mirano "
+                f"a creare armonia tra la parte superiore e inferiore del viso."
+            ),
+            "triangolare_inverso": (
+                f"Il tuo viso ha una forma a triangolo inverso con fronte ampia e mento delicato. "
+                f"Con un rapporto mascella/fronte di {metrics['rapporto_mascella_fronte']:.2f}, "
+                f"la tua fronte è la caratteristica dominante. Le raccomandazioni sono pensate "
+                f"per bilanciare le proporzioni creando armonia verticale."
+            ),
+            "diamante": (
+                f"Il tuo viso presenta la rara forma a diamante, con zigomi particolarmente prominenti "
+                f"(prominenza: {metrics['prominenza_zigomi']:.2f}). Questa struttura crea un punto focale "
+                f"naturale al centro del viso. Le raccomandazioni che seguono valorizzano questa "
+                f"caratteristica unica mantenendo equilibrio generale."
+            )
+        }
+
+        return shape_intros.get(face_shape, shape_intros["ovale"])
+
+    def _get_personalized_eye_distance_comment(self, distance: float, category: str) -> str:
+        """Genera commento personalizzato sulla distanza degli occhi"""
+
+        if category == "ravvicinati":
+            return (
+                "I tuoi occhi sono leggermente più vicini rispetto alla media, il che conferisce "
+                "intensità e focus al tuo sguardo. Questa caratteristica comunica concentrazione "
+                "e attenzione ai dettagli."
+            )
+        elif category == "distanti":
+            return (
+                "I tuoi occhi hanno una distanza superiore alla media, creando un'impressione "
+                "di apertura e disponibilità. Questa caratteristica comunica accoglienza "
+                "e visione d'insieme."
+            )
+        else:
+            return (
+                "La distanza tra i tuoi occhi rientra perfettamente nei canoni di armonia facciale, "
+                "creando un equilibrio naturale che comunica bilanciamento ed equilibrio interiore."
+            )
+
     
     def generate_text_report(self, result: Dict, output_path: str = None) -> str:
         """
-        Genera report testuale dettagliato dell'analisi
-        
+        Genera report testuale dettagliato e PERSONALIZZATO dell'analisi
+
         Args:
             result: Dizionario risultato dall'analisi
             output_path: Percorso dove salvare il report (opzionale)
-            
+
         Returns:
             Stringa con il report completo
         """
@@ -1095,101 +1212,166 @@ class FaceVisagismAnalyzer:
         report.append("REPORT PROFESSIONALE DI ANALISI VISAGISTICA E COMUNICAZIONE NON VERBALE")
         report.append("=" * 80)
         report.append(f"\nData analisi: {result['timestamp']}\n")
-        
-        # SEZIONE 1: Analisi Geometrica
+
+        # SEZIONE 1: Analisi Geometrica PERSONALIZZATA
         report.append("\n" + "=" * 80)
-        report.append("SEZIONE 1: ANALISI GEOMETRICA DEL VISO")
+        report.append("SEZIONE 1: ANALISI GEOMETRICA DEL TUO VISO")
         report.append("=" * 80 + "\n")
-        
-        report.append(f"CLASSIFICAZIONE FORMA DEL VISO: {result['forma_viso'].upper()}\n")
-        
+
         metrics = result['metriche_facciali']
-        report.append("Metriche Facciali Rilevate:")
+        features = result['caratteristiche_facciali']
+        face_shape = result['forma_viso']
+
+        # Introduzione personalizzata basata sulla forma del viso
+        report.append(f"CLASSIFICAZIONE: Il tuo viso presenta una forma {face_shape.upper()}\n")
+
+        shape_intro = self._get_personalized_shape_intro(face_shape, metrics, features)
+        report.append(shape_intro)
+
+        report.append("\n\nMETRICHE SPECIFICHE DEL TUO VISO:")
         report.append(f"  • Larghezza Fronte: {metrics['larghezza_fronte']:.1f} pixel")
         report.append(f"  • Larghezza Zigomi: {metrics['larghezza_zigomi']:.1f} pixel")
         report.append(f"  • Larghezza Mascella: {metrics['larghezza_mascella']:.1f} pixel")
         report.append(f"  • Lunghezza Viso: {metrics['lunghezza_viso']:.1f} pixel")
-        report.append(f"  • Larghezza Massima Viso: {metrics['larghezza_viso']:.1f} pixel")
-        report.append(f"\nRapporti Diagnostici:")
-        report.append(f"  • Rapporto Lunghezza/Larghezza: {metrics['rapporto_lunghezza_larghezza']:.3f}")
-        report.append(f"  • Rapporto Mascella/Fronte: {metrics['rapporto_mascella_fronte']:.3f}")
-        report.append(f"  • Prominenza Zigomi: {metrics['prominenza_zigomi']:.3f}")
-        report.append(f"  • Distanza tra Occhi: {metrics['distanza_occhi']:.1f} pixel")
-        report.append(f"  • Distanza Occhio-Sopracciglio: {metrics['distanza_occhio_sopracciglio']:.1f} pixel")
+
+        # Analisi personalizzata dei rapporti
+        report.append(f"\n\nANALISI DEI RAPPORTI FACCIALI:")
+
+        # Rapporto L/W personalizzato
+        lw_ratio = metrics['rapporto_lunghezza_larghezza']
+        if lw_ratio < 1.2:
+            lw_comment = "Il tuo viso tende alla forma tondeggiante, che comunica giovialità e approccio amichevole."
+        elif lw_ratio > 1.4:
+            lw_comment = "Il tuo viso presenta proporzioni allungate, che trasmettono eleganza e raffinatezza."
+        else:
+            lw_comment = "Il tuo viso ha proporzioni armoniose vicine al rapporto aureo ideale (1.3-1.4)."
+        report.append(f"  • Rapporto Lunghezza/Larghezza: {lw_ratio:.3f}")
+        report.append(f"    → {lw_comment}")
+
+        # Rapporto M/F personalizzato
+        mf_ratio = metrics['rapporto_mascella_fronte']
+        if mf_ratio > 1.05:
+            mf_comment = "La tua mascella è più larga della fronte, creando una base stabile e solida."
+        elif mf_ratio < 0.95:
+            mf_comment = "La tua fronte è più ampia della mascella, suggerendo intellettualità e creatività."
+        else:
+            mf_comment = "Fronte e mascella sono perfettamente bilanciate, creando armonia strutturale."
+        report.append(f"  • Rapporto Mascella/Fronte: {mf_ratio:.3f}")
+        report.append(f"    → {mf_comment}")
+
+        # Prominenza zigomi personalizzata
+        prom_zigomi = metrics['prominenza_zigomi']
+        if prom_zigomi > 1.05:
+            zigomi_comment = "I tuoi zigomi sono particolarmente prominenti, un tratto che aumenta il magnetismo visivo del viso."
+        elif prom_zigomi < 0.95:
+            zigomi_comment = "I tuoi zigomi hanno una prominenza delicata, che contribuisce alla morbidezza del viso."
+        else:
+            zigomi_comment = "I tuoi zigomi hanno una prominenza equilibrata, perfettamente proporzionata."
+        report.append(f"  • Prominenza Zigomi: {prom_zigomi:.3f}")
+        report.append(f"    → {zigomi_comment}")
+
+        # Distanza occhi personalizzata
+        dist_occhi_comment = self._get_personalized_eye_distance_comment(
+            metrics['distanza_occhi'],
+            features['occhi_distanza']
+        )
+        report.append(f"  • Distanza tra Occhi: {metrics['distanza_occhi']:.1f} pixel ({features['occhi_distanza']})")
+        report.append(f"    → {dist_occhi_comment}")
+
+        # Distanza occhio-sopracciglio personalizzata
+        dist_sopr = metrics['distanza_occhio_sopracciglio']
+        if dist_sopr < 15:
+            sopr_comment = "La distanza occhio-sopracciglio è ridotta, creando un'espressione intensa che andremo a bilanciare."
+        elif dist_sopr > 25:
+            sopr_comment = "La distanza occhio-sopracciglio è ampia, conferendo apertura naturale allo sguardo."
+        else:
+            sopr_comment = "La distanza occhio-sopracciglio è ottimale, creando un equilibrio espressivo naturale."
+        report.append(f"  • Distanza Occhio-Sopracciglio: {dist_sopr:.1f} pixel")
+        report.append(f"    → {sopr_comment}")
         
-        features = result['caratteristiche_facciali']
-        report.append(f"\nCaratteristiche Qualitative Rilevate:")
-        report.append(f"  • Distanza Occhi: {features['occhi_distanza']}")
-        report.append(f"  • Prominenza Zigomi: {features['zigomi_prominenza']}")
-        report.append(f"  • Larghezza Naso: {features['naso_larghezza']}")
-        report.append(f"  • Lunghezza Naso: {features['naso_lunghezza']}")
-        report.append(f"  • Definizione Mascella: {features['mascella_definizione']}")
-        report.append(f"  • Prominenza Mento: {features['mento_prominenza']}")
-        
-        # SEZIONE 2: Raccomandazioni Visagistiche
+        # SEZIONE 2: Raccomandazioni Visagistiche PERSONALIZZATE
         report.append("\n" + "=" * 80)
-        report.append("SEZIONE 2: RACCOMANDAZIONI VISAGISTICHE PROFESSIONALI")
+        report.append("SEZIONE 2: RACCOMANDAZIONI SPECIFICHE PER IL TUO VISO")
         report.append("=" * 80 + "\n")
-        
+
         vis_rec = result['analisi_visagistica']
-        report.append(f"FORMA SOPRACCIGLIO CONSIGLIATA: {vis_rec['forma_sopracciglio'].value.upper()}\n")
-        
-        report.append("Motivazione Scientifica:")
-        report.append(self._wrap_text(vis_rec['motivazione_scientifica'], 78))
-        
-        report.append("\nSpecifiche Tecniche del Design:")
-        report.append(f"\n  ARCO:")
+        report.append(f"FORMA SOPRACCIGLIO IDEALE PER TE: {vis_rec['forma_sopracciglio'].value.upper()}\n")
+
+        report.append("PERCHÉ QUESTA FORMA È PERFETTA PER TE:")
+        # Rendi la motivazione più personale
+        personal_motivation = vis_rec['motivazione_scientifica'].replace(
+            "questa forma", "questa forma per il tuo viso"
+        ).replace(
+            "Il viso", "Il tuo viso"
+        ).replace(
+            "questa configurazione", "questa configurazione nel tuo caso specifico"
+        )
+        report.append(self._wrap_text(personal_motivation, 78))
+
+        report.append("\n\nSPECIFICHE TECNICHE PERSONALIZZATE PER IL TUO DESIGN:")
+        report.append(f"\n  ARCO (calibrato sulle tue proporzioni):")
         report.append(self._wrap_text(vis_rec['arco_descrizione'], 74, "    "))
-        
-        report.append(f"\n  SPESSORE:")
+
+        report.append(f"\n  SPESSORE (adattato alla tua struttura facciale):")
         report.append(self._wrap_text(vis_rec['spessore_consigliato'], 74, "    "))
-        
-        report.append(f"\n  LUNGHEZZA:")
+
+        report.append(f"\n  LUNGHEZZA (proporzionata ai tuoi occhi):")
         report.append(self._wrap_text(vis_rec['lunghezza_consigliata'], 74, "    "))
-        
-        report.append(f"\n  PUNTO MASSIMO ARCO:")
+
+        report.append(f"\n  PUNTO MASSIMO ARCO (posizionato per il tuo viso):")
         report.append(self._wrap_text(vis_rec['punto_massimo_arco'], 74, "    "))
-        
+
         if vis_rec['aggiustamenti_personalizzati']:
-            report.append("\nAGGIUSTAMENTI PERSONALIZZATI per le tue caratteristiche specifiche:\n")
+            report.append("\n\nAGGIUSTAMENTI UNICI PER LE TUE CARATTERISTICHE SPECIFICHE:")
+            report.append("Basandomi sull'analisi dettagliata del tuo viso, ecco gli aggiustamenti che "
+                         "faranno la differenza:\n")
             for i, adj in enumerate(vis_rec['aggiustamenti_personalizzati'], 1):
                 report.append(f"{i}. {adj}\n")
-        
-        report.append("\nTECNICHE DI APPLICAZIONE PROFESSIONALE:")
+
+        report.append("\nCOME APPLICARE QUESTA FORMA SUL TUO VISO:")
+        report.append("Tecniche professionali adattate alle tue caratteristiche:")
         for i, tech in enumerate(vis_rec['tecniche_applicazione'], 1):
             report.append(f"\n  {i}. {tech}")
         
-        # SEZIONE 3: Analisi Comunicazione Non Verbale
+        # SEZIONE 3: Analisi Comunicazione Non Verbale PERSONALIZZATA
         report.append("\n\n" + "=" * 80)
-        report.append("SEZIONE 3: ANALISI DELLA COMUNICAZIONE NON VERBALE")
+        report.append("SEZIONE 3: COSA COMUNICA ATTUALMENTE IL TUO VISO")
         report.append("=" * 80 + "\n")
-        
+
         expr = result['analisi_espressiva']
-        report.append(f"ESPRESSIONE ATTUALMENTE PERCEPITA: {expr['espressione_percepita'].upper()}\n")
-        
-        report.append("Impatto Emotivo e Sociale:")
-        report.append(self._wrap_text(expr['impatto_emotivo'], 78))
-        
-        report.append("\n\nOBIETTIVI DI COMUNICAZIONE POSITIVA:")
+        report.append(f"LA TUA ESPRESSIONE ABITUALE: {expr['espressione_percepita'].upper()}\n")
+
+        report.append("COSA PERCEPISCONO GLI ALTRI NEL TUO VISO:")
+        # Personalizza l'impatto emotivo
+        personal_impact = expr['impatto_emotivo'].replace(
+            "L'espressione", "La tua espressione abituale"
+        ).replace(
+            "può essere percepita", "viene tipicamente percepita"
+        ).replace(
+            "può comunicare", "tende a comunicare"
+        )
+        report.append(self._wrap_text(personal_impact, 78))
+
+        report.append("\n\nOBIETTIVI PER MIGLIORARE LA TUA COMUNICAZIONE NON VERBALE:")
         for i, obj in enumerate(expr['obiettivi_comunicazione'], 1):
             report.append(f"\n  {i}. {obj}")
-        
-        report.append("\n\nPRINCIPI PSICOLOGICI APPLICATI:\n")
+
+        report.append("\n\nPRINCIPI PSICOLOGICI CHE SI APPLICANO AL TUO CASO:\n")
         for i, principio in enumerate(expr['principi_psicologici'], 1):
             report.append(f"\n{i}. {principio}\n")
-        
+
         report.append("\n" + "-" * 80)
-        report.append("RACCOMANDAZIONI ESPRESSIVE DETTAGLIATE")
+        report.append("PIANO D'AZIONE PERSONALIZZATO PER TE")
         report.append("-" * 80 + "\n")
-        
+
         for i, rac in enumerate(expr['raccomandazioni_espressive'], 1):
-            report.append(f"\nRACCOMANDAZIONE #{i}:")
-            report.append(f"\n  AZIONE: {rac['azione']}")
-            report.append(f"\n  METODO DI IMPLEMENTAZIONE:")
+            report.append(f"\nAZIONE SPECIFICA #{i} PER IL TUO VISO:")
+            report.append(f"\n  COSA FARE: {rac['azione']}")
+            report.append(f"\n  COME FARLO SUL TUO VISO:")
             report.append(self._wrap_text(rac['metodo'], 74, "    "))
-            report.append(f"\n  BENEFICIO ESTETICO:")
+            report.append(f"\n  BENEFICIO ESTETICO CHE OTTERRAI:")
             report.append(self._wrap_text(rac['beneficio_estetico'], 74, "    "))
-            report.append(f"\n  IMPATTO SULLA COMUNICAZIONE:")
+            report.append(f"\n  COME CAMBIERÀ LA PERCEZIONE DI TE:")
             report.append(self._wrap_text(rac['impatto_comunicazione'], 74, "    "))
             report.append(f"\n  EVIDENZA SCIENTIFICA:")
             report.append(self._wrap_text(rac['evidenza_scientifica'], 74, "    "))

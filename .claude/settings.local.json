@@ -3,7 +3,21 @@
     "allow": [
       "Bash(python -c \"\nimport base64\nimport requests\nimport json\n\n# Immagine di test 1x1 pixel (molto piccola per test rapido)\ntest_image = ''iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==''\n\n# Test endpoint landmarks info\nresponse = requests.get(''http://localhost:8001/api/landmarks/info'')\nprint(''Landmarks Info:'', response.json())\n\")",
       "Bash(curl:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(python3 -m py_compile:*)",
+      "Bash(node -c:*)",
+      "Bash(ls:*)",
+      "Bash(python3:*)",
+      "Bash(sudo systemctl restart:*)",
+      "Bash(sudo systemctl list-units:*)",
+      "Bash(sudo systemctl daemon-reload:*)",
+      "Bash(sudo systemctl status:*)",
+      "Bash(sudo journalctl:*)",
+      "Bash(sudo lsof:*)",
+      "Bash(sudo kill:*)",
+      "Bash(sudo systemctl start:*)",
+      "Bash(sudo nginx:*)",
+      "Bash(sudo systemctl reload:*)"
     ]
   }
 }
