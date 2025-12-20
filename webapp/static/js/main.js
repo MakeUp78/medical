@@ -3896,6 +3896,127 @@ function generateGreenDotsTableRows(result) {
   return rows;
 }
 
+function analyzeEyebrowDesignFromGreenDotsTable() {
+  /**
+   * Analizza i dati green dots dalla tabella misurazioni e genera un feedback vocale
+   * descrivendo le differenze tra i due sopraccigli.
+   */
+  console.log('📊 [FEEDBACK VOCALE] Analisi dati tabella green dots');
+
+  const measurementsTable = document.getElementById('measurements-data');
+  if (!measurementsTable) {
+    console.error('❌ [FEEDBACK VOCALE] Tabella misurazioni non trovata');
+    return null;
+  }
+
+  const rows = measurementsTable.querySelectorAll('tr[data-type="green-dots"]');
+  if (rows.length === 0) {
+    console.error('❌ [FEEDBACK VOCALE] Nessun dato green dots trovato');
+    return null;
+  }
+
+  console.log(`📋 [FEEDBACK VOCALE] Trovate ${rows.length} righe di dati green dots`);
+
+  // Estrai i dati rilevanti
+  let externalEyebrow = null; // Quale sopracciglio inizia più esternamente (punto A più lontano dall'asse)
+  let higherEyebrow = null; // Quale sopracciglio è più alto (punto C1)
+  let longerTail = null; // Quale ha la coda più lunga (punto B)
+  let thickerEyebrow = null; // Quale è più spesso (area)
+
+  rows.forEach(row => {
+    const cells = row.querySelectorAll('td');
+    if (cells.length < 2) return;
+
+    const label = cells[0].textContent.trim();
+    const value = cells[1].textContent.trim();
+
+    console.log(`   📝 [FEEDBACK VOCALE] ${label}: ${value}`);
+
+    // Analisi punto A (distanza dall'asse) - Il punto PIÙ LONTANO inizia più esternamente
+    if (label.includes('LA vs RA') && label.includes('Distanza Asse')) {
+      if (value.includes('LA più esterno')) {
+        externalEyebrow = 'sinistro';
+      } else if (value.includes('RA più esterno')) {
+        externalEyebrow = 'destro';
+      }
+    }
+
+    // Analisi punto C1 (altezza)
+    if (label.includes('LC1 vs RC1') && label.includes('Altezza')) {
+      if (value.includes('LC1')) {
+        higherEyebrow = 'sinistro';
+      } else if (value.includes('RC1')) {
+        higherEyebrow = 'destro';
+      }
+    }
+
+    // Analisi punto B (coda più lunga) - Il punto PIÙ LONTANO dall'asse ha la coda più lunga
+    if (label.includes('LB vs RB') && label.includes('Distanza Asse')) {
+      if (value.includes('LB più esterno')) {
+        longerTail = 'sinistro';
+      } else if (value.includes('RB più esterno')) {
+        longerTail = 'destro';
+      }
+    }
+
+    // Analisi area (spessore)
+    if ((label.includes('Poligono Sinistro') || label.includes('Poligono Destro')) && value.includes('MAGGIORE')) {
+      if (label.includes('Sinistro')) {
+        thickerEyebrow = 'sinistro';
+      } else if (label.includes('Destro')) {
+        thickerEyebrow = 'destro';
+      }
+    }
+  });
+
+  console.log('🔍 [FEEDBACK VOCALE] Risultati analisi:', {
+    externalEyebrow,
+    higherEyebrow,
+    longerTail,
+    thickerEyebrow
+  });
+
+  // Genera il feedback testuale
+  if (!externalEyebrow && !higherEyebrow && !longerTail && !thickerEyebrow) {
+    console.warn('⚠️ [FEEDBACK VOCALE] Nessun dato disponibile per generare feedback');
+    return null;
+  }
+
+  // Costruisci la frase seguendo esattamente il formato richiesto
+  let feedback = '';
+
+  // 1. Quale sopracciglio inizia più esternamente (punto A più lontano dall'asse)
+  if (externalEyebrow === 'destro') {
+    feedback += 'Il sopracciglio alla tua destra inizia più esternamente. ';
+  } else if (externalEyebrow === 'sinistro') {
+    feedback += 'Il sopracciglio alla tua sinistra inizia più esternamente. ';
+  }
+
+  // 2. Quale sopracciglio è più alto (C1)
+  if (higherEyebrow === 'sinistro') {
+    feedback += 'Il sopracciglio alla tua sinistra è più alto rispetto all\'altro. ';
+  } else if (higherEyebrow === 'destro') {
+    feedback += 'Il sopracciglio alla tua destra è più alto rispetto all\'altro. ';
+  }
+
+  // 3. Quale ha la coda più lunga (B)
+  if (longerTail === 'sinistro') {
+    feedback += 'La coda del sopracciglio alla tua sinistra è più lunga. ';
+  } else if (longerTail === 'destro') {
+    feedback += 'La coda del sopracciglio alla tua destra è più lunga. ';
+  }
+
+  // 4. Quale è più spesso (area)
+  if (thickerEyebrow === 'sinistro') {
+    feedback += 'Ed infine il sopracciglio sinistro è più spesso.';
+  } else if (thickerEyebrow === 'destro') {
+    feedback += 'Ed infine il sopracciglio destro è più spesso.';
+  }
+
+  console.log('✅ [FEEDBACK VOCALE] Feedback generato:', feedback);
+  return feedback || null;
+}
+
 function generateSymmetryAnalysisRows(result) {
   /**
    * Genera le righe della tabella per l'analisi di simmetria dei punti green dots.
@@ -4840,6 +4961,13 @@ function toggleGreenDots() {
       detectGreenDots();
     } else {
       updateCanvasDisplay();
+      // Se i dati esistono già, pronuncia comunque il feedback se non soppresso
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak && !window.suppressVoiceFeedback) {
+        const feedback = analyzeEyebrowDesignFromGreenDotsTable();
+        if (feedback) {
+          voiceAssistant.speak(feedback);
+        }
+      }
     }
   } else {
     updateCanvasDisplay();
@@ -4927,6 +5055,18 @@ async function detectGreenDots() {
       // Aggiorna le misurazioni con i risultati
       console.log('📊 Chiamando updateMeasurementsFromGreenDots con:', result);
       updateMeasurementsFromGreenDots(result);
+
+      // AUTOMAZIONE: Feedback vocale con analisi delle differenze
+      // Aspetta un attimo che i dati siano nella tabella, poi pronuncia l'analisi
+      setTimeout(() => {
+        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak && !window.suppressVoiceFeedback) {
+          const feedback = analyzeEyebrowDesignFromGreenDotsTable();
+          if (feedback) {
+            console.log('🔊 [GREEN DOTS] Feedback vocale generato:', feedback);
+            voiceAssistant.speak(feedback);
+          }
+        }
+      }, 500);
 
       // AUTOMAZIONE: Attiva automaticamente l'asse di simmetria se non è già attivo
       const axisBtn = document.getElementById('axis-btn');

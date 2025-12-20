@@ -186,8 +186,8 @@
                         <div class="eyebrow-buttons">
                             <button class="btn btn-analysis" id="green-dots-btn" onclick="toggleGreenDots()">� Trova
                                 Differenze</button>
-                            <button class="btn btn-eyebrow" onclick="showLeftEyebrow()">✂️ Preferenza Destra</button>
-                            <button class="btn btn-eyebrow" onclick="showRightEyebrow()">✂️ Preferenza Sinistra</button>
+                            <button class="btn btn-eyebrow" onclick="show_left_eyebrow_with_voice()">✂️ Preferenza Destra</button>
+                            <button class="btn btn-eyebrow" onclick="show_right_eyebrow_with_voice()">✂️ Preferenza Sinistra</button>
                         </div>
                     </div>
                 </div>
@@ -770,6 +770,8 @@
             };
 
             // TOGGLE - Green Dots
+            // Il feedback vocale delle differenze è ora gestito automaticamente in main.js
+            // dopo il completamento dell'analisi green dots
             const originalToggleGreenDots = window.toggleGreenDots;
             window.toggleGreenDots = function () {
                 if (originalToggleGreenDots) originalToggleGreenDots();
@@ -780,12 +782,8 @@
                     return;
                 }
 
-                const greenDotsBtn = document.getElementById('green-dots-btn');
-                if (greenDotsBtn && greenDotsBtn.classList.contains('active')) {
-                    voiceAssistant.speakMessage('green_dots_on');
-                } else {
-                    voiceAssistant.speakMessage('green_dots_off');
-                }
+                // I messaggi generici on/off non servono più perché ora c'è l'analisi dettagliata
+                // gestita da main.js che pronuncia le differenze tra i sopraccigli
             };
 
             // Funzione per comando vocale "preferenza destra" - analizza spostamenti sopracciglio sinistro
@@ -985,6 +983,9 @@
                 pointsOrder.forEach((point, index) => {
                     const move = movements[point];
                     const parts = [];
+                    
+                    // Formatta il nome del punto per pronuncia corretta
+                    const pointSpeech = formatPointNameForSpeech(point);
 
                     // Movimento verticale
                     if (Math.abs(move.vertical) > 0.5) {
@@ -1004,11 +1005,11 @@
                     const connector = instructionCount === 0 ? 'Sposta' : 'sposta';
 
                     if (parts.length > 0) {
-                        instructions += `${connector} ${point} ${parts.join(' e ')}. `;
+                        instructions += `${connector} ${pointSpeech} ${parts.join(' e ')}. `;
                         instructionCount++;
                     } else {
                         // Anche se non ci sono movimenti, menziona il punto
-                        instructions += `${connector} ${point} è già posizionato correttamente. `;
+                        instructions += `${connector} ${pointSpeech} è già posizionato correttamente. `;
                         instructionCount++;
                     }
                 });
@@ -1210,6 +1211,9 @@
                 pointsOrder.forEach((point, index) => {
                     const move = movements[point];
                     const parts = [];
+                    
+                    // Formatta il nome del punto per pronuncia corretta
+                    const pointSpeech = formatPointNameForSpeech(point);
 
                     // Movimento verticale
                     if (Math.abs(move.vertical) > 0.5) {
@@ -1229,11 +1233,11 @@
                     const connector = instructionCount === 0 ? 'Sposta' : 'sposta';
 
                     if (parts.length > 0) {
-                        instructions += `${connector} ${point} ${parts.join(' e ')}. `;
+                        instructions += `${connector} ${pointSpeech} ${parts.join(' e ')}. `;
                         instructionCount++;
                     } else {
                         // Anche se non ci sono movimenti, menziona il punto
-                        instructions += `${connector} ${point} è già posizionato correttamente. `;
+                        instructions += `${connector} ${pointSpeech} è già posizionato correttamente. `;
                         instructionCount++;
                     }
                 });
@@ -1248,6 +1252,23 @@
                 if (pixels < 10) return '';
                 if (pixels < 20) return 'molto ';
                 return 'molto ';
+            }
+
+            // Funzione helper per formattare i nomi dei punti per pronuncia corretta
+            function formatPointNameForSpeech(pointName) {
+                // Mappa caratteri a pronuncia italiana con pause tra lettere
+                const letterMap = {
+                    'L': 'Elle',
+                    'R': 'Erre',
+                    'A': 'A',
+                    'B': 'Bi',
+                    'C': 'Ci',
+                    '0': 'Zero',
+                    '1': 'Uno'
+                };
+                
+                // Separa ogni carattere con virgola per creare piccola pausa
+                return pointName.split('').map(char => letterMap[char] || char).join(', ');
             }
 
             // Funzione per analizzare la progettazione sopraccigliare
