@@ -105,7 +105,13 @@
     gap: 6px;
   }
 
-  /* Misurazioni predefinite - due colonne compatte */
+  /* Sezione Analisi Unificata - due colonne compatte su mobile */
+  .analysis-buttons {
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+
+  /* Misurazioni predefinite - due colonne compatte (deprecato) */
   .predefined-buttons {
     grid-template-columns: 1fr 1fr;
     gap: 4px;
@@ -252,7 +258,12 @@
     max-width: 100%;
   }
 
-  /* Misurazioni predefinite - singola colonna su schermi molto piccoli */
+  /* Sezione Analisi - singola colonna su schermi molto piccoli */
+  .analysis-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  /* Misurazioni predefinite - singola colonna su schermi molto piccoli (deprecato) */
   .predefined-buttons {
     grid-template-columns: 1fr;
   }
