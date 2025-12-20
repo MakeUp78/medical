@@ -1922,16 +1922,18 @@ async function estimateAge(event) {
     if (result.success) {
       console.log('✅ [AGE ESTIMATION] Età stimata:', result.age);
       
+      // Arrotonda l'età per visualizzazione e feedback vocale
+      const ageRounded = Math.round(result.age);
+      
       // Aggiungi il risultato alla tabella misurazioni
       addMeasurementToTable('Età Stimata', result.age, 'anni', 'ageEstimation');
       
       // Feedback vocale con il risultato
       if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
-        const ageRounded = Math.round(result.age);
         voiceAssistant.speak(`L'età stimata è di circa ${ageRounded} anni`);
       }
       
-      showToast(`✅ Età stimata: ${Math.round(result.age)} anni`, 'success');
+      showToast(`✅ Età stimata: ${ageRounded} anni`, 'success');
     } else {
       throw new Error(result.error || 'Errore nella stima dell\'età');
     }

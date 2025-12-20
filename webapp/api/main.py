@@ -49,6 +49,15 @@ except ImportError as e:
     print(f"❌ Warning: IsabellaVoiceAssistant not available: {e}")
     VOICE_ASSISTANT_AVAILABLE = False
 
+# Import DeepFace for age estimation (lazy loading to avoid conflicts)
+try:
+    from deepface import DeepFace
+    DEEPFACE_AVAILABLE = True
+    print("✅ DeepFace importato con successo")
+except ImportError as e:
+    print(f"❌ Warning: DeepFace not available: {e}")
+    DEEPFACE_AVAILABLE = False
+
 # === INIZIALIZZAZIONE MEDIAPIPE ===
 
 mp_face_mesh = None
@@ -2514,13 +2523,11 @@ def estimate_age_from_image_deepface(image: Image.Image) -> float:
     """
     Stima l'età da un'immagine PIL usando la libreria DeepFace
     """
+    # Verifica che DeepFace sia disponibile
+    if not DEEPFACE_AVAILABLE:
+        raise Exception("DeepFace non installato. Eseguire: pip install deepface")
+    
     try:
-        # Importa DeepFace
-        try:
-            from deepface import DeepFace
-        except ImportError:
-            raise Exception("DeepFace non installato. Eseguire: pip install deepface")
-        
         # Converti PIL Image in numpy array
         img_np = np.array(image)
         
@@ -2539,7 +2546,7 @@ def estimate_age_from_image_deepface(image: Image.Image) -> float:
         # DeepFace può restituire una lista se ci sono più volti
         if isinstance(result, list):
             if len(result) == 0:
-                raise Exception("Nessun volto rilevato nell'immagine")
+                raise ValueError("Nessun volto rilevato nell'immagine")
             # Prendi il primo volto (solitamente il più grande/centrale)
             age = result[0]['age']
         else:
@@ -2548,11 +2555,27 @@ def estimate_age_from_image_deepface(image: Image.Image) -> float:
         print(f"✅ [AGE ESTIMATION] DeepFace ha stimato l'età: {age}")
         
         return float(age)
-        
+    
+    # Gestione specifica delle eccezioni DeepFace
+    except ValueError as e:
+        # ValueError viene sollevato quando non ci sono volti o dati non validi
+        error_msg = str(e)
+        if "face" in error_msg.lower():
+            raise Exception("Nessun volto rilevato nell'immagine. Assicurati che il volto sia ben visibile e frontale.")
+        else:
+            raise Exception(f"Dati non validi: {error_msg}")
+    
+    except AttributeError as e:
+        # AttributeError può verificarsi se il modello non è caricato correttamente
+        raise Exception(f"Errore caricamento modello DeepFace: {str(e)}")
+    
     except Exception as e:
+        # Gestione generica per altri errori
         error_msg = str(e)
         if "Face could not be detected" in error_msg or "no face" in error_msg.lower():
             raise Exception("Nessun volto rilevato nell'immagine. Assicurati che il volto sia ben visibile e frontale.")
+        elif "model" in error_msg.lower() or "weight" in error_msg.lower():
+            raise Exception(f"Errore modello DeepFace: {error_msg}. Potrebbe essere necessario scaricare i modelli.")
         else:
             raise Exception(f"Errore DeepFace: {error_msg}")
 
