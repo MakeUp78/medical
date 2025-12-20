@@ -2129,6 +2129,50 @@ function updateCanvasWithBestFrame(imageData) {
 window.currentBestFrames = [];
 let currentBestFrames = window.currentBestFrames; // Alias per retrocompatibilità
 
+/**
+ * Ri-aggancia gli event listener alle righe della tabella debug unificata
+ * @param {HTMLElement} unifiedTableBody - La tabella unificata
+ * @param {HTMLElement} originalTableBody - La tabella originale debug
+ * @param {number} startIndex - Indice da cui iniziare (opzionale, default 0)
+ */
+function reattachDebugTableListeners(unifiedTableBody, originalTableBody, startIndex = 0) {
+  if (!unifiedTableBody || !originalTableBody) return;
+
+  const unifiedRows = Array.from(unifiedTableBody.querySelectorAll('tr'));
+
+  // Processa SOLO le righe a partire da startIndex
+  for (let index = startIndex; index < unifiedRows.length; index++) {
+    const unifiedRow = unifiedRows[index];
+
+    // Aggiungi il listener SOLO se non esiste già (controlla se ha già il dataset)
+    if (!unifiedRow.dataset.listenerAttached && window.currentBestFrames && window.currentBestFrames[index]) {
+      unifiedRow.style.cursor = 'pointer';
+      unifiedRow.dataset.listenerAttached = 'true'; // Marca come processato
+
+      unifiedRow.addEventListener('click', function () {
+        const frame = window.currentBestFrames[index];
+        if (typeof showFrameInMainCanvas === 'function') {
+          showFrameInMainCanvas(frame, index);
+
+          // Rimuovi highlight precedente
+          unifiedTableBody.querySelectorAll('tr').forEach(r => r.classList.remove('selected-frame'));
+          if (originalTableBody) {
+            originalTableBody.querySelectorAll('tr').forEach(r => r.classList.remove('selected-frame'));
+          }
+
+          // Aggiungi highlight
+          unifiedRow.classList.add('selected-frame');
+        }
+      });
+    }
+  }
+
+  const processedCount = unifiedRows.length - startIndex;
+  if (processedCount > 0) {
+    console.log(`🔗 Event listener aggiunti a ${processedCount} righe (da ${startIndex} a ${unifiedRows.length - 1})`);
+  }
+}
+
 function updateDebugTable(bestFrames) {
   try {
     const debugTableBody = document.getElementById('debug-data');
@@ -2181,10 +2225,51 @@ function updateDebugTable(bestFrames) {
     });
 
     // Apri la sezione DATI ANALISI unificata e switcha al tab DEBUG
-    openUnifiedAnalysisSection();
-    switchUnifiedTab('debug'); // Forza il passaggio al tab debug
+    // SOLO se la tabella unificata è vuota o se il tab corrente non è già debug
+    const currentTab = window.unifiedTableCurrentTab;
+    const unifiedTableBody = document.getElementById('unified-table-body');
 
-    console.log('🔄 [UNIFIED] Tab DEBUG attivato automaticamente per best frames');
+    if (!currentTab || currentTab !== 'debug' || !unifiedTableBody || unifiedTableBody.children.length === 0) {
+      console.log('🔄 [UNIFIED] Prima apertura tab DEBUG - switch necessario');
+      openUnifiedAnalysisSection();
+      switchUnifiedTab('debug');
+    } else {
+      // La tabella è già sul tab debug - aggiornamento INCREMENTALE per evitare flickering
+      const tableBody = document.getElementById('unified-table-body');
+      if (tableBody && debugTableBody) {
+        const currentRowCount = tableBody.children.length;
+        const newRowCount = debugTableBody.children.length;
+
+        if (currentRowCount < newRowCount) {
+          // CI SONO NUOVE RIGHE - Aggiungi SOLO le righe mancanti (evita re-render completo)
+          console.log(`➕ [UNIFIED] Nuove righe rilevate (${currentRowCount} → ${newRowCount}) - aggiunta incrementale`);
+
+          // Aggiungi solo le righe dalla posizione currentRowCount in poi
+          const newRows = Array.from(debugTableBody.children).slice(currentRowCount);
+          newRows.forEach(row => {
+            const clonedRow = row.cloneNode(true);
+            tableBody.appendChild(clonedRow);
+          });
+
+          // Ri-aggiungi event listener SOLO alle nuove righe appena aggiunte
+          reattachDebugTableListeners(tableBody, debugTableBody, currentRowCount);
+        } else if (currentRowCount > newRowCount) {
+          // CI SONO MENO RIGHE - Rimuovi le righe in eccesso
+          console.log(`➖ [UNIFIED] Righe rimosse (${currentRowCount} → ${newRowCount}) - rimozione`);
+
+          while (tableBody.children.length > newRowCount) {
+            tableBody.removeChild(tableBody.lastChild);
+          }
+
+          // Non serve ri-aggiungere listener, le righe rimanenti hanno già i loro listener
+        } else {
+          // Stesso numero di righe - NESSUN aggiornamento necessario (i listener esistono già)
+          console.log('✅ [UNIFIED] Numero righe invariato - nessuna azione necessaria');
+        }
+      }
+    }
+
+    console.log('🔄 [UNIFIED] Aggiornamento tab DEBUG completato');
 
     // Mostra automaticamente il miglior frame (primo della lista) nel canvas centrale
     if (bestFrames.length > 0 && bestFrames[0].image_data) {
@@ -6719,6 +6804,8 @@ function switchUnifiedTab(tabName, event = null) {
  * Aggiorna la tabella unificata per mostrare le misurazioni
  */
 function updateUnifiedTableForMeasurements(tableHead, tableBody) {
+  console.log('🔄 updateUnifiedTableForMeasurements chiamata');
+
   // Header per misurazioni
   tableHead.innerHTML = `
     <tr>
@@ -6729,15 +6816,36 @@ function updateUnifiedTableForMeasurements(tableHead, tableBody) {
     </tr>
   `;
 
-  // NON sovrascrivere il contenuto se ci sono già dati
-  // (le nuove misurazioni vengono aggiunte direttamente in unified-table-body)
-  if (tableBody.children.length === 0) {
-    // Solo se vuoto, copia dalla tabella originale per retrocompatibilità
+  // SALVA le righe di misurazione esistenti prima di pulire
+  const measurementRows = [];
+  if (tableBody.children.length > 0) {
+    // Filtra solo le righe che sono misurazioni (non debug frame)
+    Array.from(tableBody.children).forEach(row => {
+      // Le righe di misurazione hanno 4 colonne e NON hanno attributi data-frame-time
+      if (row.children.length === 4 && !row.hasAttribute('data-frame-time')) {
+        measurementRows.push(row.cloneNode(true));
+      }
+    });
+  }
+
+  console.log('📊 Righe misurazione trovate:', measurementRows.length);
+
+  // Pulisci SEMPRE la tabella quando switchi a measurements
+  tableBody.innerHTML = '';
+
+  // Ripristina le righe di misurazione
+  if (measurementRows.length > 0) {
+    measurementRows.forEach(row => tableBody.appendChild(row));
+    console.log('✅ Ripristinate', measurementRows.length, 'righe di misurazione');
+  } else {
+    // Se non ci sono misurazioni, copia dalla tabella originale per retrocompatibilità
     const originalTableBody = document.getElementById('measurements-data');
     if (originalTableBody && originalTableBody.children.length > 0) {
       tableBody.innerHTML = originalTableBody.innerHTML;
+      console.log('📋 Copiate misurazioni da tabella originale');
     } else {
       tableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nessuna misurazione disponibile</td></tr>';
+      console.log('ℹ️ Nessuna misurazione disponibile');
     }
   }
 
