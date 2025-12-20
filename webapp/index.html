@@ -186,8 +186,10 @@
                         <div class="eyebrow-buttons">
                             <button class="btn btn-analysis" id="green-dots-btn" onclick="toggleGreenDots()">� Trova
                                 Differenze</button>
-                            <button class="btn btn-eyebrow" onclick="show_left_eyebrow_with_voice()">✂️ Preferenza Destra</button>
-                            <button class="btn btn-eyebrow" onclick="show_right_eyebrow_with_voice()">✂️ Preferenza Sinistra</button>
+                            <button class="btn btn-eyebrow" onclick="show_left_eyebrow_with_voice()">✂️ Preferenza
+                                Destra</button>
+                            <button class="btn btn-eyebrow" onclick="show_right_eyebrow_with_voice()">✂️ Preferenza
+                                Sinistra</button>
                         </div>
                     </div>
                 </div>
@@ -983,7 +985,7 @@
                 pointsOrder.forEach((point, index) => {
                     const move = movements[point];
                     const parts = [];
-                    
+
                     // Formatta il nome del punto per pronuncia corretta
                     const pointSpeech = formatPointNameForSpeech(point);
 
@@ -1211,7 +1213,7 @@
                 pointsOrder.forEach((point, index) => {
                     const move = movements[point];
                     const parts = [];
-                    
+
                     // Formatta il nome del punto per pronuncia corretta
                     const pointSpeech = formatPointNameForSpeech(point);
 
@@ -1256,7 +1258,7 @@
 
             // Funzione helper per formattare i nomi dei punti per pronuncia corretta
             function formatPointNameForSpeech(pointName) {
-                // Mappa caratteri a pronuncia italiana con pause tra lettere
+                // Mappa caratteri a pronuncia italiana rallentata
                 const letterMap = {
                     'L': 'Elle',
                     'R': 'Erre',
@@ -1266,9 +1268,12 @@
                     '0': 'Zero',
                     '1': 'Uno'
                 };
+
+                // Separa ogni carattere del punto con pause per rallentare
+                const letters = pointName.split('').map(char => letterMap[char] || char);
                 
-                // Separa ogni carattere con virgola per creare piccola pausa
-                return pointName.split('').map(char => letterMap[char] || char).join(', ');
+                // Aggiunge piccola pausa prima e dopo, e virgole tra le lettere per rallentare
+                return '. ' + letters.join(', ') + ' .';
             }
 
             // Funzione per analizzare la progettazione sopraccigliare
