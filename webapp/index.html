@@ -318,7 +318,7 @@
                                     <p style="margin: 0.5rem 0; color: #555; font-size: 0.9em;">
                                         Scarica e installa IRIUN Webcam su PC e smartphone.
                                     </p>
-                                    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                                    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
                                         <a href="https://iriun.com" target="_blank" 
                                            class="btn btn-primary" 
                                            style="font-size: 0.85em; padding: 0.4rem 0.8rem; text-decoration: none; display: inline-block;">
@@ -327,14 +327,20 @@
                                         <button onclick="markStepComplete(1)" 
                                                 class="btn btn-success" 
                                                 style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
-                                            ✅ Installato
+                                            ✅ Ho installato ora
+                                        </button>
+                                        <button onclick="skipToStep2()" 
+                                                class="btn btn-info" 
+                                                style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
+                                            ⏩ Già installato
                                         </button>
                                     </div>
                                     <details style="margin-top: 0.5rem; font-size: 0.85em;">
                                         <summary style="cursor: pointer; color: #667eea;">ℹ️ Info installazione</summary>
                                         <div style="margin-top: 0.5rem; color: #666; line-height: 1.5;">
                                             <strong>PC:</strong> Vai su iriun.com e scarica la versione per il tuo sistema operativo.<br>
-                                            <strong>Smartphone:</strong> Cerca "IRIUN Webcam" su Play Store (Android) o App Store (iOS).
+                                            <strong>Smartphone:</strong> Cerca "IRIUN Webcam" su Play Store (Android) o App Store (iOS).<br>
+                                            <strong>Se hai già installato:</strong> Clicca "⏩ Già installato" per saltare al passo successivo.
                                         </div>
                                     </details>
                                 </div>
@@ -1683,6 +1689,65 @@
                 }
             }
 
+            // Salta al passo 2 per utenti con IRIUN già installato
+            function skipToStep2() {
+                markStepComplete(1);
+                if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                    voiceAssistant.speak('Ottimo! Ora verifica che IRIUN sia in esecuzione sul tuo computer.');
+                }
+            }
+
+            // Auto-rileva IRIUN all'avvio e suggerisci di saltare i passi
+            async function autoDetectIriun() {
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const iriunDevice = devices.find(device => 
+                        device.kind === 'videoinput' && device.label.toLowerCase().includes('iriun')
+                    );
+                    
+                    if (iriunDevice) {
+                        // IRIUN già rilevata - proponi di saltare direttamente al test
+                        const step1 = document.getElementById('step-1');
+                        const autoDetectBanner = document.createElement('div');
+                        autoDetectBanner.style.cssText = 'margin-top: 0.5rem; padding: 0.5rem; background: #d1ecf1; border-left: 3px solid #0c5460; border-radius: 4px; font-size: 0.85em; color: #0c5460;';
+                        autoDetectBanner.innerHTML = `
+                            ✨ <strong>IRIUN rilevata!</strong> Sembra che tu abbia già configurato IRIUN.<br>
+                            <button onclick="quickStart()" class="btn btn-success" style="font-size: 0.85em; padding: 0.3rem 0.6rem; margin-top: 0.3rem;">
+                                🚀 Salta al Test Finale
+                            </button>
+                        `;
+                        step1.appendChild(autoDetectBanner);
+                        
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('IRIUN già rilevata. Puoi saltare direttamente al test finale.');
+                        }
+                    }
+                } catch (error) {
+                    // Permessi non concessi o errore - ignora silenziosamente
+                    console.log('Auto-detect IRIUN non disponibile:', error.message);
+                }
+            }
+
+            // Avvio rapido per utenti con IRIUN già configurato
+            function quickStart() {
+                wizardState.step1 = true;
+                wizardState.step2 = true;
+                wizardState.step3 = true;
+                saveWizardState();
+                
+                updateStepUI(1, 'completed');
+                updateStepUI(2, 'completed');
+                updateStepUI(3, 'completed');
+                enableStep(4);
+                
+                // Scroll al passo 4
+                document.getElementById('step-4').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                    voiceAssistant.speak('Avvio rapido attivato. Procedi con il test finale della webcam.');
+                }
+            }
+
             // Inizializza wizard al caricamento pagina
             document.addEventListener('DOMContentLoaded', function() {
                 loadWizardState();
@@ -1690,6 +1755,9 @@
                 if (!wizardState.step1) {
                     enableStep(1);
                 }
+                
+                // Auto-rileva IRIUN dopo 1 secondo (per dare tempo al browser)
+                setTimeout(autoDetectIriun, 1000);
             });
 
             // Funzione per analizzare la progettazione sopraccigliare
