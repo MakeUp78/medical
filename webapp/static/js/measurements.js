@@ -994,36 +994,13 @@ function ensureMeasurementsSectionOpen() {
 
     // Switcha al tab Misurazioni se esiste la funzione
     if (typeof switchUnifiedTab === 'function') {
-      try {
-        // Assicurati che il tab sia impostato correttamente
-        window.unifiedTableCurrentTab = 'measurements';
-
-        // Imposta l'header della tabella se non è già impostato
-        const tableHead = document.getElementById('unified-table-head');
-        if (tableHead && tableHead.children.length === 0) {
-          tableHead.innerHTML = `
-            <tr>
-              <th>📏 Tipo Misurazione</th>
-              <th>📊 Valore</th>
-              <th>📐 Unità</th>
-              <th>✅ Stato</th>
-            </tr>
-          `;
-        }
-
-        // Attiva visivamente il tab
-        document.querySelectorAll('.unified-tab').forEach(tab => {
-          if (tab.dataset.tab === 'measurements') {
-            tab.classList.add('active');
-          } else {
-            tab.classList.remove('active');
-          }
-        });
-
-        console.log('📊 Switchato al tab Misurazioni');
-      } catch (e) {
-        console.warn('Impossibile switchare al tab:', e);
-      }
+      console.log('🔧 Chiamo switchUnifiedTab("measurements") per forzare il cambio tab');
+      switchUnifiedTab('measurements');
+    } else if (typeof window.switchUnifiedTab === 'function') {
+      console.log('🔧 Chiamo window.switchUnifiedTab("measurements") per forzare il cambio tab');
+      window.switchUnifiedTab('measurements');
+    } else {
+      console.error('❌ switchUnifiedTab NON TROVATA!');
     }
   } else {
     console.warn('⚠️ Sezione DATI ANALISI non trovata');
