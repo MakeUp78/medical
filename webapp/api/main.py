@@ -2493,7 +2493,7 @@ async def estimate_age(request: AgeEstimationRequest):
             image_data = image_data.split(',')[1]
         
         image_bytes = base64.b64decode(image_data)
-        image = Image.open(io.BytesIO(image_bytes))
+        image = Image.open(BytesIO(image_bytes))
         
         # Converti in RGB se necessario
         if image.mode != 'RGB':
