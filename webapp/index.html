@@ -306,7 +306,8 @@
                             </p>
 
                             <!-- Avvio Rapido IRIUN per Utenti Esperti -->
-                            <div id="quick-launch-panel" style="display: none; margin-bottom: 1rem; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; color: white; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+                            <div id="quick-launch-panel"
+                                style="display: none; margin-bottom: 1rem; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; color: white; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
                                 <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
                                     <span style="font-size: 1.5em;">⚡</span>
                                     <h4 style="margin: 0; font-size: 1.1em;">Avvio Rapido IRIUN</h4>
@@ -314,15 +315,22 @@
                                 <p style="margin: 0.5rem 0; font-size: 0.9em; opacity: 0.95;">
                                     Sistema di monitoraggio automatico per utenti esperti
                                 </p>
-                                <button onclick="launchQuickStart()" class="btn" 
-                                        style="width: 100%; font-size: 0.95em; padding: 0.7rem; background: white; color: #667eea; font-weight: bold; border: none; margin-top: 0.5rem;">
+                                <button onclick="launchQuickStart()" class="btn"
+                                    style="width: 100%; font-size: 0.95em; padding: 0.7rem; background: white; color: #667eea; font-weight: bold; border: none; margin-top: 0.5rem;">
                                     🚀 Avvia Monitoraggio Automatico
                                 </button>
-                                <div id="quick-launch-status" style="margin-top: 0.5rem; font-size: 0.85em; opacity: 0.9;"></div>
+                                <div id="quick-launch-status"
+                                    style="margin-top: 0.5rem; font-size: 0.85em; opacity: 0.9;"></div>
                             </div>
 
                             <!-- Wizard Configurazione IRIUN -->
-                            <div id="iriun-wizard" style="margin-bottom: 1rem;">
+                            <details id="wizard-details" style="margin-bottom: 1rem;" open>
+                                <summary style="cursor: pointer; font-weight: bold; padding: 0.8rem; background: #667eea; color: white; border-radius: 8px; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+                                    <span style="font-size: 1.2em;">🎯</span>
+                                    <span>Procedura Guidata - Configurazione Iniziale IRIUN</span>
+                                </summary>
+                                
+                                <div id="iriun-wizard" style="padding: 0.5rem;">
                                 <!-- Passo 1: Download e Installazione -->
                                 <div class="wizard-step" id="step-1"
                                     style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #6c757d;">
@@ -393,19 +401,24 @@
                                             ✅ Avviato
                                         </button>
                                     </div>
-                                    <div id="iriun-path-config" style="margin-top: 0.5rem; font-size: 0.85em; color: #666;">
+                                    <div id="iriun-path-config"
+                                        style="margin-top: 0.5rem; font-size: 0.85em; color: #666;">
                                         <details>
-                                            <summary style="cursor: pointer; color: #667eea;">⚙️ Configura percorso IRIUN</summary>
-                                            <div style="margin-top: 0.5rem; padding: 0.5rem; background: white; border: 1px solid #dee2e6; border-radius: 4px;">
-                                                <p style="margin: 0 0 0.5rem 0; font-size: 0.9em;">Inserisci il percorso dell'eseguibile IRIUN sul tuo PC:</p>
-                                                <input type="text" id="iriun-path-input" 
-                                                       placeholder="Es: C:\Program Files\Iriun\iriun-webcam.exe"
-                                                       style="width: 100%; padding: 0.4rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85em; margin-bottom: 0.5rem;">
-                                                <button onclick="saveIriunPath()" class="btn btn-success" 
-                                                        style="font-size: 0.85em; padding: 0.3rem 0.6rem; width: 100%;">
+                                            <summary style="cursor: pointer; color: #667eea;">⚙️ Configura percorso
+                                                IRIUN</summary>
+                                            <div
+                                                style="margin-top: 0.5rem; padding: 0.5rem; background: white; border: 1px solid #dee2e6; border-radius: 4px;">
+                                                <p style="margin: 0 0 0.5rem 0; font-size: 0.9em;">Inserisci il percorso
+                                                    dell'eseguibile IRIUN sul tuo PC:</p>
+                                                <input type="text" id="iriun-path-input"
+                                                    placeholder="Es: C:\Program Files\Iriun\iriun-webcam.exe"
+                                                    style="width: 100%; padding: 0.4rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85em; margin-bottom: 0.5rem;">
+                                                <button onclick="saveIriunPath()" class="btn btn-success"
+                                                    style="font-size: 0.85em; padding: 0.3rem 0.6rem; width: 100%;">
                                                     💾 Salva Percorso
                                                 </button>
-                                                <p style="margin: 0.5rem 0 0 0; font-size: 0.8em; color: #856404; background: #fff3cd; padding: 0.3rem; border-radius: 3px;">
+                                                <p
+                                                    style="margin: 0.5rem 0 0 0; font-size: 0.8em; color: #856404; background: #fff3cd; padding: 0.3rem; border-radius: 3px;">
                                                     ⚠️ Percorso salvato per il prossimo avvio rapido
                                                 </p>
                                             </div>
@@ -482,7 +495,8 @@
                                     style="width: 100%; font-size: 0.85em; padding: 0.5rem; margin-bottom: 1rem;">
                                     🔄 Resetta Procedura Guidata
                                 </button>
-                            </div>
+                                </div>
+                            </details>
 
                             <details style="margin-top: 1rem;">
                                 <summary
@@ -509,7 +523,8 @@
                                     <h5 style="color: #667eea;">🔗 Passo 3: Connessione</h5>
                                     <ol style="margin-left: 1.2rem; color: #444;">
                                         <li><strong>Importante:</strong> Assicurati che PC e smartphone siano sulla
-                                            <strong>stessa rete Wi-Fi</strong></li>
+                                            <strong>stessa rete Wi-Fi</strong>
+                                        </li>
                                         <li>Apri l'app IRIUN sul telefono</li>
                                         <li>L'app rileverà automaticamente il PC sulla rete</li>
                                         <li>Sul PC, vedrai la connessione confermata nell'app IRIUN</li>
@@ -1731,6 +1746,18 @@
                     document.getElementById('wizard-complete').style.display = 'block';
                     // Mostra pannello avvio rapido per utenti che hanno completato la configurazione
                     document.getElementById('quick-launch-panel').style.display = 'block';
+                    
+                    // Chiudi automaticamente il wizard dopo 3 secondi
+                    setTimeout(() => {
+                        const wizardDetails = document.getElementById('wizard-details');
+                        if (wizardDetails && wizardDetails.open) {
+                            wizardDetails.open = false;
+                            
+                            if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                                voiceAssistant.speak('Configurazione completata. Usa ora il pulsante Avvio Rapido per connettere il tuo smartphone.');
+                            }
+                        }
+                    }, 3000);
                 }
             }
 
@@ -1795,12 +1822,12 @@
             let quickStartInterval = null;
 
             // Salva percorso IRIUN per avvii futuri
-            window.saveIriunPath = function() {
+            window.saveIriunPath = function () {
                 const path = document.getElementById('iriun-path-input').value.trim();
                 if (path) {
                     localStorage.setItem('iriunExecutablePath', path);
                     alert('✅ Percorso IRIUN salvato!\n\n' + path + '\n\nIl sistema ricorderà questo percorso per i prossimi avvii rapidi.');
-                    
+
                     if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                         voiceAssistant.speak('Percorso IRIUN salvato con successo.');
                     }
@@ -1810,9 +1837,9 @@
             };
 
             // Apri IRIUN (tenta vari metodi)
-            window.openIriunApp = function() {
+            window.openIriunApp = function () {
                 const savedPath = localStorage.getItem('iriunExecutablePath');
-                
+
                 // Mostra istruzioni per avviare IRIUN
                 const instructions = `
 📱 Avvia IRIUN Webcam sul tuo PC:
@@ -1830,13 +1857,13 @@ Dopo aver avviato IRIUN sul PC:
 
 💡 Suggerimento: Salva il percorso dell'eseguibile nella sezione "⚙️ Configura percorso IRIUN" per i prossimi avvii rapidi.
                 `.trim();
-                
+
                 alert(instructions);
-                
+
                 if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                     voiceAssistant.speak('Segui le istruzioni per avviare IRIUN sul tuo computer. Poi apri l\'app sullo smartphone.');
                 }
-                
+
                 // Avvia monitoraggio automatico
                 startIriunMonitoring();
             };
@@ -1844,42 +1871,42 @@ Dopo aver avviato IRIUN sul PC:
             // Sistema di monitoraggio automatico IRIUN
             function startIriunMonitoring() {
                 if (quickStartMonitoring) return; // Già in monitoraggio
-                
+
                 quickStartMonitoring = true;
                 const statusDiv = document.getElementById('quick-launch-status');
-                
+
                 if (statusDiv) {
                     statusDiv.innerHTML = '🔄 Monitoraggio attivo... Cercando IRIUN...';
                 }
-                
+
                 let checkCount = 0;
                 const maxChecks = 60; // 60 tentativi = 2 minuti
-                
+
                 quickStartInterval = setInterval(async () => {
                     checkCount++;
-                    
+
                     try {
                         const devices = await navigator.mediaDevices.enumerateDevices();
                         const iriunDevice = devices.find(device =>
                             device.kind === 'videoinput' && device.label.toLowerCase().includes('iriun')
                         );
-                        
+
                         if (iriunDevice) {
                             // IRIUN TROVATA!
                             clearInterval(quickStartInterval);
                             quickStartMonitoring = false;
-                            
+
                             if (statusDiv) {
                                 statusDiv.innerHTML = '✅ IRIUN connessa! Dispositivo: ' + iriunDevice.label;
                             }
-                            
+
                             // Notifica utente
                             showToast('🎉 IRIUN Smartphone connesso!', 'success');
-                            
+
                             if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                                 voiceAssistant.speak('Ottimo! Il tuo smartphone è ora connesso come webcam IRIUN. Clicco su Avvia Webcam per iniziare.');
                             }
-                            
+
                             // Proponi di avviare la webcam
                             if (confirm('🎉 IRIUN Smartphone connesso!\n\n' + iriunDevice.label + '\n\nVuoi avviare subito la webcam?')) {
                                 // Chiudi sezione impostazioni e avvia webcam
@@ -1887,7 +1914,7 @@ Dopo aver avviato IRIUN sul PC:
                                 if (settingsSection && settingsSection.dataset.expanded === 'true') {
                                     settingsSection.querySelector('.toggle-btn').click();
                                 }
-                                
+
                                 // Aspetta che la sezione si chiuda e avvia webcam
                                 setTimeout(() => {
                                     if (typeof startWebcam === 'function') {
@@ -1897,30 +1924,30 @@ Dopo aver avviato IRIUN sul PC:
                                     }
                                 }, 500);
                             }
-                            
+
                             return;
                         }
-                        
+
                         // Aggiorna stato
                         if (statusDiv) {
                             const dots = '.'.repeat((checkCount % 3) + 1);
                             statusDiv.innerHTML = `🔄 Cercando IRIUN${dots} (tentativo ${checkCount}/${maxChecks})`;
                         }
-                        
+
                         // Timeout dopo maxChecks
                         if (checkCount >= maxChecks) {
                             clearInterval(quickStartInterval);
                             quickStartMonitoring = false;
-                            
+
                             if (statusDiv) {
                                 statusDiv.innerHTML = '⏱️ Timeout - IRIUN non rilevata. Riprova.';
                             }
-                            
+
                             if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                                 voiceAssistant.speak('IRIUN non rilevata. Verifica che sia in esecuzione su PC e smartphone.');
                             }
                         }
-                        
+
                     } catch (error) {
                         console.error('Errore monitoraggio IRIUN:', error);
                     }
@@ -1928,14 +1955,14 @@ Dopo aver avviato IRIUN sul PC:
             }
 
             // Avvia Quick Start completo
-            window.launchQuickStart = function() {
+            window.launchQuickStart = function () {
                 const statusDiv = document.getElementById('quick-launch-status');
-                
+
                 if (quickStartMonitoring) {
                     alert('⚠️ Monitoraggio già attivo!');
                     return;
                 }
-                
+
                 // Istruzioni per l'utente
                 const instructions = `
 ⚡ AVVIO RAPIDO IRIUN
@@ -1953,16 +1980,16 @@ Il sistema ti avviserà appena rileva la connessione IRIUN!
 
 Vuoi procedere con il monitoraggio automatico?
                 `.trim();
-                
+
                 if (confirm(instructions)) {
                     if (statusDiv) {
                         statusDiv.innerHTML = '🚀 Avvio monitoraggio automatico...';
                     }
-                    
+
                     if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                         voiceAssistant.speak('Avvio monitoraggio automatico IRIUN. Avvia IRIUN sul computer e sullo smartphone.');
                     }
-                    
+
                     // Avvia il monitoraggio
                     setTimeout(() => startIriunMonitoring(), 1000);
                 }
@@ -1994,6 +2021,14 @@ Vuoi procedere con il monitoraggio automatico?
                 // Abilita sempre il primo passo
                 if (!wizardState.step1) {
                     enableStep(1);
+                }
+                
+                // Se wizard già completato, chiudi la sezione automaticamente
+                if (wizardState.step1 && wizardState.step2 && wizardState.step3 && wizardState.step4) {
+                    const wizardDetails = document.getElementById('wizard-details');
+                    if (wizardDetails) {
+                        wizardDetails.open = false;
+                    }
                 }
 
                 // Auto-rileva IRIUN dopo 1 secondo (per dare tempo al browser)
