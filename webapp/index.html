@@ -305,109 +305,160 @@
                                 Configura il tuo smartphone come webcam professionale con la procedura guidata.
                             </p>
 
+                            <!-- Avvio Rapido IRIUN per Utenti Esperti -->
+                            <div id="quick-launch-panel" style="display: none; margin-bottom: 1rem; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; color: white; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+                                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                    <span style="font-size: 1.5em;">⚡</span>
+                                    <h4 style="margin: 0; font-size: 1.1em;">Avvio Rapido IRIUN</h4>
+                                </div>
+                                <p style="margin: 0.5rem 0; font-size: 0.9em; opacity: 0.95;">
+                                    Sistema di monitoraggio automatico per utenti esperti
+                                </p>
+                                <button onclick="launchQuickStart()" class="btn" 
+                                        style="width: 100%; font-size: 0.95em; padding: 0.7rem; background: white; color: #667eea; font-weight: bold; border: none; margin-top: 0.5rem;">
+                                    🚀 Avvia Monitoraggio Automatico
+                                </button>
+                                <div id="quick-launch-status" style="margin-top: 0.5rem; font-size: 0.85em; opacity: 0.9;"></div>
+                            </div>
+
                             <!-- Wizard Configurazione IRIUN -->
                             <div id="iriun-wizard" style="margin-bottom: 1rem;">
                                 <!-- Passo 1: Download e Installazione -->
-                                <div class="wizard-step" id="step-1" style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #6c757d;">
-                                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <div class="wizard-step" id="step-1"
+                                    style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #6c757d;">
+                                    <div
+                                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
                                         <h5 style="margin: 0; color: #333;">
                                             <span id="step-1-icon">⏸️</span> Passo 1: Installa IRIUN
                                         </h5>
-                                        <span id="step-1-status" style="font-size: 0.8em; color: #6c757d;">In attesa</span>
+                                        <span id="step-1-status" style="font-size: 0.8em; color: #6c757d;">In
+                                            attesa</span>
                                     </div>
                                     <p style="margin: 0.5rem 0; color: #555; font-size: 0.9em;">
                                         Scarica e installa IRIUN Webcam su PC e smartphone.
                                     </p>
                                     <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
-                                        <a href="https://iriun.com" target="_blank" 
-                                           class="btn btn-primary" 
-                                           style="font-size: 0.85em; padding: 0.4rem 0.8rem; text-decoration: none; display: inline-block;">
+                                        <a href="https://iriun.com" target="_blank" class="btn btn-primary"
+                                            style="font-size: 0.85em; padding: 0.4rem 0.8rem; text-decoration: none; display: inline-block;">
                                             💻 Download PC
                                         </a>
-                                        <button onclick="markStepComplete(1)" 
-                                                class="btn btn-success" 
-                                                style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
+                                        <button onclick="markStepComplete(1)" class="btn btn-success"
+                                            style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
                                             ✅ Ho installato ora
                                         </button>
-                                        <button onclick="skipToStep2()" 
-                                                class="btn btn-info" 
-                                                style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
+                                        <button onclick="skipToStep2()" class="btn btn-info"
+                                            style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
                                             ⏩ Già installato
                                         </button>
                                     </div>
                                     <details style="margin-top: 0.5rem; font-size: 0.85em;">
-                                        <summary style="cursor: pointer; color: #667eea;">ℹ️ Info installazione</summary>
+                                        <summary style="cursor: pointer; color: #667eea;">ℹ️ Info installazione
+                                        </summary>
                                         <div style="margin-top: 0.5rem; color: #666; line-height: 1.5;">
-                                            <strong>PC:</strong> Vai su iriun.com e scarica la versione per il tuo sistema operativo.<br>
-                                            <strong>Smartphone:</strong> Cerca "IRIUN Webcam" su Play Store (Android) o App Store (iOS).<br>
-                                            <strong>Se hai già installato:</strong> Clicca "⏩ Già installato" per saltare al passo successivo.
+                                            <strong>PC:</strong> Vai su iriun.com e scarica la versione per il tuo
+                                            sistema operativo.<br>
+                                            <strong>Smartphone:</strong> Cerca "IRIUN Webcam" su Play Store (Android) o
+                                            App Store (iOS).<br>
+                                            <strong>Se hai già installato:</strong> Clicca "⏩ Già installato" per
+                                            saltare al passo successivo.
                                         </div>
                                     </details>
                                 </div>
 
                                 <!-- Passo 2: Avvio IRIUN PC -->
-                                <div class="wizard-step" id="step-2" style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #6c757d; opacity: 0.6;">
-                                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <div class="wizard-step" id="step-2"
+                                    style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #6c757d; opacity: 0.6;">
+                                    <div
+                                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
                                         <h5 style="margin: 0; color: #333;">
                                             <span id="step-2-icon">⏸️</span> Passo 2: Avvia IRIUN sul PC
                                         </h5>
-                                        <span id="step-2-status" style="font-size: 0.8em; color: #6c757d;">In attesa</span>
+                                        <span id="step-2-status" style="font-size: 0.8em; color: #6c757d;">In
+                                            attesa</span>
                                     </div>
                                     <p style="margin: 0.5rem 0; color: #555; font-size: 0.9em;">
                                         Apri l'applicazione IRIUN Webcam sul computer.
                                     </p>
-                                    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-                                        <button onclick="checkIriunRunning()" 
-                                                class="btn btn-info" 
-                                                style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
+                                    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
+                                        <button onclick="openIriunApp()" class="btn btn-primary"
+                                            style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
+                                            💻 Esegui IRIUN
+                                        </button>
+                                        <button onclick="checkIriunRunning()" class="btn btn-info"
+                                            style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
                                             🔍 Verifica IRIUN
                                         </button>
-                                        <button onclick="markStepComplete(2)" 
-                                                class="btn btn-success" 
-                                                style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
+                                        <button onclick="markStepComplete(2)" class="btn btn-success"
+                                            style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
                                             ✅ Avviato
                                         </button>
+                                    </div>
+                                    <div id="iriun-path-config" style="margin-top: 0.5rem; font-size: 0.85em; color: #666;">
+                                        <details>
+                                            <summary style="cursor: pointer; color: #667eea;">⚙️ Configura percorso IRIUN</summary>
+                                            <div style="margin-top: 0.5rem; padding: 0.5rem; background: white; border: 1px solid #dee2e6; border-radius: 4px;">
+                                                <p style="margin: 0 0 0.5rem 0; font-size: 0.9em;">Inserisci il percorso dell'eseguibile IRIUN sul tuo PC:</p>
+                                                <input type="text" id="iriun-path-input" 
+                                                       placeholder="Es: C:\Program Files\Iriun\iriun-webcam.exe"
+                                                       style="width: 100%; padding: 0.4rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.85em; margin-bottom: 0.5rem;">
+                                                <button onclick="saveIriunPath()" class="btn btn-success" 
+                                                        style="font-size: 0.85em; padding: 0.3rem 0.6rem; width: 100%;">
+                                                    💾 Salva Percorso
+                                                </button>
+                                                <p style="margin: 0.5rem 0 0 0; font-size: 0.8em; color: #856404; background: #fff3cd; padding: 0.3rem; border-radius: 3px;">
+                                                    ⚠️ Percorso salvato per il prossimo avvio rapido
+                                                </p>
+                                            </div>
+                                        </details>
                                     </div>
                                 </div>
 
                                 <!-- Passo 3: Connessione Smartphone -->
-                                <div class="wizard-step" id="step-3" style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #6c757d; opacity: 0.6;">
-                                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <div class="wizard-step" id="step-3"
+                                    style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #6c757d; opacity: 0.6;">
+                                    <div
+                                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
                                         <h5 style="margin: 0; color: #333;">
                                             <span id="step-3-icon">⏸️</span> Passo 3: Connetti Smartphone
                                         </h5>
-                                        <span id="step-3-status" style="font-size: 0.8em; color: #6c757d;">In attesa</span>
+                                        <span id="step-3-status" style="font-size: 0.8em; color: #6c757d;">In
+                                            attesa</span>
                                     </div>
                                     <p style="margin: 0.5rem 0; color: #555; font-size: 0.9em;">
-                                        Apri l'app IRIUN sul telefono. Assicurati che PC e telefono siano sulla stessa rete Wi-Fi.
+                                        Apri l'app IRIUN sul telefono. Assicurati che PC e telefono siano sulla stessa
+                                        rete Wi-Fi.
                                     </p>
                                     <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-                                        <button onclick="markStepComplete(3)" 
-                                                class="btn btn-success" 
-                                                style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
+                                        <button onclick="markStepComplete(3)" class="btn btn-success"
+                                            style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
                                             ✅ Connesso
                                         </button>
                                     </div>
-                                    <div id="wifi-warning" style="display: none; margin-top: 0.5rem; padding: 0.5rem; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px; font-size: 0.85em; color: #856404;">
-                                        ⚠️ <strong>Importante:</strong> PC e smartphone devono essere sulla stessa rete Wi-Fi!
+                                    <div id="wifi-warning"
+                                        style="display: none; margin-top: 0.5rem; padding: 0.5rem; background: #fff3cd; border-left: 3px solid #ffc107; border-radius: 4px; font-size: 0.85em; color: #856404;">
+                                        ⚠️ <strong>Importante:</strong> PC e smartphone devono essere sulla stessa rete
+                                        Wi-Fi!
                                     </div>
                                 </div>
 
                                 <!-- Passo 4: Test Connessione -->
-                                <div class="wizard-step" id="step-4" style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #6c757d; opacity: 0.6;">
-                                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                                <div class="wizard-step" id="step-4"
+                                    style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #6c757d; opacity: 0.6;">
+                                    <div
+                                        style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
                                         <h5 style="margin: 0; color: #333;">
                                             <span id="step-4-icon">⏸️</span> Passo 4: Seleziona IRIUN in Kimerika
                                         </h5>
-                                        <span id="step-4-status" style="font-size: 0.8em; color: #6c757d;">In attesa</span>
+                                        <span id="step-4-status" style="font-size: 0.8em; color: #6c757d;">In
+                                            attesa</span>
                                     </div>
                                     <p style="margin: 0.5rem 0; color: #555; font-size: 0.9em;">
-                                        Clicca il pulsante qui sotto per testare la connessione e avviare la webcam IRIUN.
+                                        Clicca il pulsante qui sotto per testare la connessione e avviare la webcam
+                                        IRIUN.
                                     </p>
                                     <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-                                        <button onclick="testIriunWebcam()" 
-                                                class="btn btn-primary" 
-                                                style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
+                                        <button onclick="testIriunWebcam()" class="btn btn-primary"
+                                            style="font-size: 0.85em; padding: 0.4rem 0.8rem;">
                                             🎥 Avvia Webcam IRIUN
                                         </button>
                                     </div>
@@ -415,31 +466,35 @@
                                 </div>
 
                                 <!-- Stato Finale -->
-                                <div id="wizard-complete" style="display: none; padding: 1rem; background: #d4edda; border-left: 4px solid #28a745; border-radius: 8px; margin-bottom: 1rem;">
+                                <div id="wizard-complete"
+                                    style="display: none; padding: 1rem; background: #d4edda; border-left: 4px solid #28a745; border-radius: 8px; margin-bottom: 1rem;">
                                     <h5 style="margin: 0 0 0.5rem 0; color: #155724;">
                                         🎉 Configurazione Completata!
                                     </h5>
                                     <p style="margin: 0; color: #155724; font-size: 0.9em;">
-                                        Il tuo smartphone è ora configurato come webcam. Usa il pulsante "📹 Avvia Webcam" nella sezione SORGENTE quando vuoi utilizzarlo.
+                                        Il tuo smartphone è ora configurato come webcam. Usa il pulsante "📹 Avvia
+                                        Webcam" nella sezione SORGENTE quando vuoi utilizzarlo.
                                     </p>
                                 </div>
 
                                 <!-- Pulsante Reset Wizard -->
-                                <button onclick="resetWizard()" 
-                                        class="btn btn-secondary" 
-                                        style="width: 100%; font-size: 0.85em; padding: 0.5rem; margin-bottom: 1rem;">
+                                <button onclick="resetWizard()" class="btn btn-secondary"
+                                    style="width: 100%; font-size: 0.85em; padding: 0.5rem; margin-bottom: 1rem;">
                                     🔄 Resetta Procedura Guidata
                                 </button>
                             </div>
-                            
+
                             <details style="margin-top: 1rem;">
-                                <summary style="cursor: pointer; font-weight: bold; padding: 0.5rem; background: #667eea; color: white; border-radius: 4px;">
+                                <summary
+                                    style="cursor: pointer; font-weight: bold; padding: 0.5rem; background: #667eea; color: white; border-radius: 4px;">
                                     📚 Guida Completa IRIUN
                                 </summary>
-                                <div style="padding: 1rem; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; margin-top: 0.5rem; font-size: 0.85em; line-height: 1.6; color: #333;">
+                                <div
+                                    style="padding: 1rem; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; margin-top: 0.5rem; font-size: 0.85em; line-height: 1.6; color: #333;">
                                     <h5 style="margin-top: 0; color: #667eea;">💻 Passo 1: Installazione PC</h5>
                                     <ol style="margin-left: 1.2rem; color: #444;">
-                                        <li>Vai su <a href="https://iriun.com" target="_blank" style="color: #667eea; font-weight: bold;">iriun.com</a></li>
+                                        <li>Vai su <a href="https://iriun.com" target="_blank"
+                                                style="color: #667eea; font-weight: bold;">iriun.com</a></li>
                                         <li>Scarica e installa <strong>IRIUN Webcam</strong> per Windows/Mac/Linux</li>
                                         <li>Avvia l'applicazione IRIUN sul PC</li>
                                     </ol>
@@ -453,7 +508,8 @@
 
                                     <h5 style="color: #667eea;">🔗 Passo 3: Connessione</h5>
                                     <ol style="margin-left: 1.2rem; color: #444;">
-                                        <li><strong>Importante:</strong> Assicurati che PC e smartphone siano sulla <strong>stessa rete Wi-Fi</strong></li>
+                                        <li><strong>Importante:</strong> Assicurati che PC e smartphone siano sulla
+                                            <strong>stessa rete Wi-Fi</strong></li>
                                         <li>Apri l'app IRIUN sul telefono</li>
                                         <li>L'app rileverà automaticamente il PC sulla rete</li>
                                         <li>Sul PC, vedrai la connessione confermata nell'app IRIUN</li>
@@ -461,7 +517,8 @@
 
                                     <h5 style="color: #667eea;">🎥 Passo 4: Usa in Kimerika</h5>
                                     <ol style="margin-left: 1.2rem; color: #444;">
-                                        <li>Con IRIUN connesso, clicca su <strong>"📹 Avvia Webcam"</strong> nella sezione SORGENTE</li>
+                                        <li>Con IRIUN connesso, clicca su <strong>"📹 Avvia Webcam"</strong> nella
+                                            sezione SORGENTE</li>
                                         <li>Il browser chiederà il permesso di accedere alla webcam</li>
                                         <li>Seleziona <strong>"IRIUN Webcam"</strong> dalla lista dispositivi</li>
                                         <li>Clicca "Consenti" - il video del telefono apparirà nel canvas!</li>
@@ -476,16 +533,16 @@
                                         <li>✔️ La risoluzione Full HD è supportata (1080p)</li>
                                     </ul>
 
-                                    <div style="background: #d1ecf1; padding: 0.8rem; border-radius: 4px; margin-top: 1rem; border-left: 4px solid #0c5460; color: #0c5460;">
-                                        <strong>🎯 Nota:</strong> IRIUN è gratuito per uso personale. 
+                                    <div
+                                        style="background: #d1ecf1; padding: 0.8rem; border-radius: 4px; margin-top: 1rem; border-left: 4px solid #0c5460; color: #0c5460;">
+                                        <strong>🎯 Nota:</strong> IRIUN è gratuito per uso personale.
                                         La versione premium rimuove il watermark e aggiunge funzioni avanzate.
                                     </div>
                                 </div>
                             </details>
 
-                            <a href="https://iriun.com" target="_blank" 
-                               class="btn btn-primary" 
-                               style="display: block; text-align: center; text-decoration: none; margin-top: 1rem;">
+                            <a href="https://iriun.com" target="_blank" class="btn btn-primary"
+                                style="display: block; text-align: center; text-decoration: none; margin-top: 1rem;">
                                 🌐 Scarica IRIUN Webcam
                             </a>
                         </div>
@@ -1472,7 +1529,7 @@
 
                 // Separa ogni carattere del punto con pause per rallentare
                 const letters = pointName.split('').map(char => letterMap[char] || char);
-                
+
                 // Aggiunge piccola pausa prima e dopo, e virgole tra le lettere per rallentare
                 return '. ' + letters.join(', ') + ' .';
             }
@@ -1506,23 +1563,23 @@
             }
 
             // Marca un passo come completato
-            window.markStepComplete = function(stepNum) {
+            window.markStepComplete = function (stepNum) {
                 wizardState['step' + stepNum] = true;
                 saveWizardState();
                 updateStepUI(stepNum, 'completed');
-                
+
                 // Abilita il prossimo passo
                 if (stepNum < 4) {
                     enableStep(stepNum + 1);
                 }
-                
+
                 // Mostra warning Wi-Fi al passo 3
                 if (stepNum === 2) {
                     document.getElementById('wifi-warning').style.display = 'block';
                 }
-                
+
                 checkWizardCompletion();
-                
+
                 // Feedback vocale
                 if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                     const messages = [
@@ -1540,7 +1597,7 @@
                 const step = document.getElementById('step-' + stepNum);
                 const icon = document.getElementById('step-' + stepNum + '-icon');
                 const statusText = document.getElementById('step-' + stepNum + '-status');
-                
+
                 if (status === 'completed') {
                     step.style.borderLeftColor = '#28a745';
                     step.style.opacity = '1';
@@ -1572,22 +1629,22 @@
             }
 
             // Verifica se IRIUN è in esecuzione (controlla disponibilità webcam)
-            window.checkIriunRunning = async function() {
+            window.checkIriunRunning = async function () {
                 updateStepUI(2, 'active');
-                
+
                 try {
                     const devices = await navigator.mediaDevices.enumerateDevices();
                     const videoDevices = devices.filter(device => device.kind === 'videoinput');
-                    const iriunDevice = videoDevices.find(device => 
+                    const iriunDevice = videoDevices.find(device =>
                         device.label.toLowerCase().includes('iriun')
                     );
-                    
+
                     if (iriunDevice) {
                         alert('✅ IRIUN Webcam rilevata!\n\nDispositivo: ' + iriunDevice.label + '\n\nPuoi procedere al passo successivo.');
                         markStepComplete(2);
                     } else {
-                        alert('⚠️ IRIUN Webcam non rilevata.\n\nAssicurati di:\n1. Aver installato IRIUN sul PC\n2. Aver avviato l\'applicazione IRIUN\n3. Concedere i permessi alla webcam se richiesto\n\nWebcam disponibili:\n' + 
-                              videoDevices.map((d, i) => (i + 1) + '. ' + (d.label || 'Webcam senza nome')).join('\n'));
+                        alert('⚠️ IRIUN Webcam non rilevata.\n\nAssicurati di:\n1. Aver installato IRIUN sul PC\n2. Aver avviato l\'applicazione IRIUN\n3. Concedere i permessi alla webcam se richiesto\n\nWebcam disponibili:\n' +
+                            videoDevices.map((d, i) => (i + 1) + '. ' + (d.label || 'Webcam senza nome')).join('\n'));
                         updateStepUI(2, 'error');
                     }
                 } catch (error) {
@@ -1597,18 +1654,18 @@
             };
 
             // Test completo della webcam IRIUN
-            window.testIriunWebcam = async function() {
+            window.testIriunWebcam = async function () {
                 const resultDiv = document.getElementById('webcam-test-result');
                 resultDiv.innerHTML = '<div style="padding: 0.5rem; background: #cce5ff; border-left: 3px solid #004085; border-radius: 4px; font-size: 0.85em; color: #004085;">⏳ Test in corso...</div>';
-                
+
                 try {
                     // Enumera dispositivi
                     const devices = await navigator.mediaDevices.enumerateDevices();
                     const videoDevices = devices.filter(device => device.kind === 'videoinput');
-                    const iriunDevice = videoDevices.find(device => 
+                    const iriunDevice = videoDevices.find(device =>
                         device.label.toLowerCase().includes('iriun')
                     );
-                    
+
                     if (!iriunDevice) {
                         resultDiv.innerHTML = `
                             <div style="padding: 0.5rem; background: #f8d7da; border-left: 3px solid #721c24; border-radius: 4px; font-size: 0.85em; color: #721c24;">
@@ -1621,16 +1678,16 @@
                         updateStepUI(4, 'error');
                         return;
                     }
-                    
+
                     // Prova ad avviare lo stream
                     const stream = await navigator.mediaDevices.getUserMedia({
                         video: { deviceId: iriunDevice.deviceId }
                     });
-                    
+
                     // Stream ottenuto con successo
                     const videoTrack = stream.getVideoTracks()[0];
                     const settings = videoTrack.getSettings();
-                    
+
                     resultDiv.innerHTML = `
                         <div style="padding: 0.5rem; background: #d4edda; border-left: 3px solid #155724; border-radius: 4px; font-size: 0.85em; color: #155724;">
                             ✅ <strong>Test Superato!</strong><br>
@@ -1641,19 +1698,19 @@
                             </span>
                         </div>
                     `;
-                    
+
                     // Ferma lo stream dopo il test
                     stream.getTracks().forEach(track => track.stop());
-                    
+
                     // Marca come completato
                     markStepComplete(4);
                     updateStepUI(4, 'completed');
-                    
+
                     // Feedback vocale
                     if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                         voiceAssistant.speak('Test completato con successo! La webcam IRIUN è pronta per essere utilizzata.');
                     }
-                    
+
                 } catch (error) {
                     resultDiv.innerHTML = `
                         <div style="padding: 0.5rem; background: #f8d7da; border-left: 3px solid #721c24; border-radius: 4px; font-size: 0.85em; color: #721c24;">
@@ -1672,11 +1729,13 @@
             function checkWizardCompletion() {
                 if (wizardState.step1 && wizardState.step2 && wizardState.step3 && wizardState.step4) {
                     document.getElementById('wizard-complete').style.display = 'block';
+                    // Mostra pannello avvio rapido per utenti che hanno completato la configurazione
+                    document.getElementById('quick-launch-panel').style.display = 'block';
                 }
             }
 
             // Resetta wizard
-            window.resetWizard = function() {
+            window.resetWizard = function () {
                 if (confirm('Vuoi resettare la procedura guidata IRIUN?')) {
                     wizardState = {
                         step1: false,
@@ -1690,7 +1749,7 @@
             };
 
             // Salta al passo 2 per utenti con IRIUN già installato
-            window.skipToStep2 = function() {
+            window.skipToStep2 = function () {
                 markStepComplete(1);
                 if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                     voiceAssistant.speak('Ottimo! Ora verifica che IRIUN sia in esecuzione sul tuo computer.');
@@ -1701,10 +1760,10 @@
             async function autoDetectIriun() {
                 try {
                     const devices = await navigator.mediaDevices.enumerateDevices();
-                    const iriunDevice = devices.find(device => 
+                    const iriunDevice = devices.find(device =>
                         device.kind === 'videoinput' && device.label.toLowerCase().includes('iriun')
                     );
-                    
+
                     if (iriunDevice) {
                         // IRIUN già rilevata - proponi di saltare direttamente al test
                         const step1 = document.getElementById('step-1');
@@ -1717,10 +1776,13 @@
                             </button>
                         `;
                         step1.appendChild(autoDetectBanner);
-                        
+
                         if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                             voiceAssistant.speak('IRIUN già rilevata. Puoi saltare direttamente al test finale.');
                         }
+
+                        // Mostra pannello avvio rapido per utenti esperti
+                        document.getElementById('quick-launch-panel').style.display = 'block';
                     }
                 } catch (error) {
                     // Permessi non concessi o errore - ignora silenziosamente
@@ -1728,34 +1790,212 @@
                 }
             }
 
+            // === SISTEMA AVVIO RAPIDO IRIUN ===
+            let quickStartMonitoring = false;
+            let quickStartInterval = null;
+
+            // Salva percorso IRIUN per avvii futuri
+            window.saveIriunPath = function() {
+                const path = document.getElementById('iriun-path-input').value.trim();
+                if (path) {
+                    localStorage.setItem('iriunExecutablePath', path);
+                    alert('✅ Percorso IRIUN salvato!\n\n' + path + '\n\nIl sistema ricorderà questo percorso per i prossimi avvii rapidi.');
+                    
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('Percorso IRIUN salvato con successo.');
+                    }
+                } else {
+                    alert('⚠️ Inserisci un percorso valido.');
+                }
+            };
+
+            // Apri IRIUN (tenta vari metodi)
+            window.openIriunApp = function() {
+                const savedPath = localStorage.getItem('iriunExecutablePath');
+                
+                // Mostra istruzioni per avviare IRIUN
+                const instructions = `
+📱 Avvia IRIUN Webcam sul tuo PC:
+
+${savedPath ? '✅ Percorso salvato: ' + savedPath : ''}
+
+🔹 METODO 1: Cerca "IRIUN" nel menu Start di Windows
+🔹 METODO 2: Vai alla cartella Program Files\\Iriun
+🔹 METODO 3: Doppio click su iriun-webcam.exe
+
+Dopo aver avviato IRIUN sul PC:
+1. Apri l'app IRIUN sul tuo smartphone
+2. Assicurati che PC e telefono siano sulla stessa rete Wi-Fi
+3. Clicca "🔍 Verifica IRIUN" per controllare la connessione
+
+💡 Suggerimento: Salva il percorso dell'eseguibile nella sezione "⚙️ Configura percorso IRIUN" per i prossimi avvii rapidi.
+                `.trim();
+                
+                alert(instructions);
+                
+                if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                    voiceAssistant.speak('Segui le istruzioni per avviare IRIUN sul tuo computer. Poi apri l\'app sullo smartphone.');
+                }
+                
+                // Avvia monitoraggio automatico
+                startIriunMonitoring();
+            };
+
+            // Sistema di monitoraggio automatico IRIUN
+            function startIriunMonitoring() {
+                if (quickStartMonitoring) return; // Già in monitoraggio
+                
+                quickStartMonitoring = true;
+                const statusDiv = document.getElementById('quick-launch-status');
+                
+                if (statusDiv) {
+                    statusDiv.innerHTML = '🔄 Monitoraggio attivo... Cercando IRIUN...';
+                }
+                
+                let checkCount = 0;
+                const maxChecks = 60; // 60 tentativi = 2 minuti
+                
+                quickStartInterval = setInterval(async () => {
+                    checkCount++;
+                    
+                    try {
+                        const devices = await navigator.mediaDevices.enumerateDevices();
+                        const iriunDevice = devices.find(device =>
+                            device.kind === 'videoinput' && device.label.toLowerCase().includes('iriun')
+                        );
+                        
+                        if (iriunDevice) {
+                            // IRIUN TROVATA!
+                            clearInterval(quickStartInterval);
+                            quickStartMonitoring = false;
+                            
+                            if (statusDiv) {
+                                statusDiv.innerHTML = '✅ IRIUN connessa! Dispositivo: ' + iriunDevice.label;
+                            }
+                            
+                            // Notifica utente
+                            showToast('🎉 IRIUN Smartphone connesso!', 'success');
+                            
+                            if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                                voiceAssistant.speak('Ottimo! Il tuo smartphone è ora connesso come webcam IRIUN. Clicco su Avvia Webcam per iniziare.');
+                            }
+                            
+                            // Proponi di avviare la webcam
+                            if (confirm('🎉 IRIUN Smartphone connesso!\n\n' + iriunDevice.label + '\n\nVuoi avviare subito la webcam?')) {
+                                // Chiudi sezione impostazioni e avvia webcam
+                                const settingsSection = document.getElementById('settings-section');
+                                if (settingsSection && settingsSection.dataset.expanded === 'true') {
+                                    settingsSection.querySelector('.toggle-btn').click();
+                                }
+                                
+                                // Aspetta che la sezione si chiuda e avvia webcam
+                                setTimeout(() => {
+                                    if (typeof startWebcam === 'function') {
+                                        startWebcam();
+                                    } else {
+                                        document.getElementById('start-webcam-btn').click();
+                                    }
+                                }, 500);
+                            }
+                            
+                            return;
+                        }
+                        
+                        // Aggiorna stato
+                        if (statusDiv) {
+                            const dots = '.'.repeat((checkCount % 3) + 1);
+                            statusDiv.innerHTML = `🔄 Cercando IRIUN${dots} (tentativo ${checkCount}/${maxChecks})`;
+                        }
+                        
+                        // Timeout dopo maxChecks
+                        if (checkCount >= maxChecks) {
+                            clearInterval(quickStartInterval);
+                            quickStartMonitoring = false;
+                            
+                            if (statusDiv) {
+                                statusDiv.innerHTML = '⏱️ Timeout - IRIUN non rilevata. Riprova.';
+                            }
+                            
+                            if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                                voiceAssistant.speak('IRIUN non rilevata. Verifica che sia in esecuzione su PC e smartphone.');
+                            }
+                        }
+                        
+                    } catch (error) {
+                        console.error('Errore monitoraggio IRIUN:', error);
+                    }
+                }, 2000); // Controlla ogni 2 secondi
+            }
+
+            // Avvia Quick Start completo
+            window.launchQuickStart = function() {
+                const statusDiv = document.getElementById('quick-launch-status');
+                
+                if (quickStartMonitoring) {
+                    alert('⚠️ Monitoraggio già attivo!');
+                    return;
+                }
+                
+                // Istruzioni per l'utente
+                const instructions = `
+⚡ AVVIO RAPIDO IRIUN
+
+Il sistema inizierà a monitorare automaticamente la connessione IRIUN.
+
+📋 COSA FARE ORA:
+
+1. 💻 Avvia l'applicazione IRIUN sul PC
+2. 📱 Apri l'app IRIUN sullo smartphone  
+3. 📶 Verifica che PC e telefono siano sulla stessa rete Wi-Fi
+4. ⏳ Attendi il rilevamento automatico (max 2 minuti)
+
+Il sistema ti avviserà appena rileva la connessione IRIUN!
+
+Vuoi procedere con il monitoraggio automatico?
+                `.trim();
+                
+                if (confirm(instructions)) {
+                    if (statusDiv) {
+                        statusDiv.innerHTML = '🚀 Avvio monitoraggio automatico...';
+                    }
+                    
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('Avvio monitoraggio automatico IRIUN. Avvia IRIUN sul computer e sullo smartphone.');
+                    }
+                    
+                    // Avvia il monitoraggio
+                    setTimeout(() => startIriunMonitoring(), 1000);
+                }
+            };
+
             // Avvio rapido per utenti con IRIUN già configurato
-            window.quickStart = function() {
+            window.quickStart = function () {
                 wizardState.step1 = true;
                 wizardState.step2 = true;
                 wizardState.step3 = true;
                 saveWizardState();
-                
+
                 updateStepUI(1, 'completed');
                 updateStepUI(2, 'completed');
                 updateStepUI(3, 'completed');
                 enableStep(4);
-                
+
                 // Scroll al passo 4
                 document.getElementById('step-4').scrollIntoView({ behavior: 'smooth', block: 'center' });
-                
+
                 if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                     voiceAssistant.speak('Avvio rapido attivato. Procedi con il test finale della webcam.');
                 }
             };
 
             // Inizializza wizard al caricamento pagina
-            document.addEventListener('DOMContentLoaded', function() {
+            document.addEventListener('DOMContentLoaded', function () {
                 loadWizardState();
                 // Abilita sempre il primo passo
                 if (!wizardState.step1) {
                     enableStep(1);
                 }
-                
+
                 // Auto-rileva IRIUN dopo 1 secondo (per dare tempo al browser)
                 setTimeout(autoDetectIriun, 1000);
             });
