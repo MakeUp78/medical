@@ -109,6 +109,7 @@
                                 Chiave</button>
                             <button class="btn btn-analysis" onclick="measureFacialSymmetry(event)">⚖️
                                 Simmetria</button>
+                            <button class="btn btn-analysis" onclick="estimateAge(event)">🎂 Stima Età</button>
 
                             <!-- Pulsante Analisi Completa - occupa tutta la larghezza -->
                             <button class="btn btn-analysis btn-analysis-complete"
@@ -183,8 +184,8 @@
                         </div>
 
                         <div class="eyebrow-buttons">
-                            <button class="btn btn-analysis" id="green-dots-btn" onclick="toggleGreenDots()">🟢 Green
-                                Dots</button>
+                            <button class="btn btn-analysis" id="green-dots-btn" onclick="toggleGreenDots()">� Trova
+                                Differenze</button>
                             <button class="btn btn-eyebrow" onclick="showLeftEyebrow()">✂️ Preferenza Destra</button>
                             <button class="btn btn-eyebrow" onclick="showRightEyebrow()">✂️ Preferenza Sinistra</button>
                         </div>
@@ -349,100 +350,128 @@
                 </div>
             </div>
 
-            <!-- Sezione Misurazioni -->
+            <!-- Sezione Dati Analisi Unificata -->
             <div class="section" data-expanded="false">
                 <div class="section-header" onclick="toggleSection(this)">
-                    <button class="toggle-btn">📏 MISURAZIONI</button>
+                    <button class="toggle-btn">📊 DATI ANALISI</button>
                     <span class="icon">►</span>
                 </div>
                 <div class="section-content" style="display: none;">
+                    <!-- Tabs per selezionare il tipo di dati -->
+                    <div class="unified-tabs">
+                        <button class="unified-tab active" data-tab="measurements"
+                            onclick="switchUnifiedTab('measurements', event)">
+                            📏 Misurazioni
+                        </button>
+                        <button class="unified-tab" data-tab="landmarks" onclick="switchUnifiedTab('landmarks', event)">
+                            🎯 Landmarks
+                        </button>
+                        <button class="unified-tab" data-tab="debug" onclick="switchUnifiedTab('debug', event)">
+                            🐛 Debug
+                        </button>
+                    </div>
+
+                    <!-- Tabella Unificata -->
                     <div class="table-container">
-                        <table class="data-table" id="measurements-table">
-                            <thead>
-                                <tr>
-                                    <th>📏 Tipo Misurazione</th>
-                                    <th>📊 Valore</th>
-                                    <th>📐 Unità</th>
-                                    <th>✅ Stato</th>
-                                </tr>
+                        <table class="data-table" id="unified-table">
+                            <thead id="unified-table-head">
+                                <!-- Header dinamico basato sul tab selezionato -->
                             </thead>
-                            <tbody id="measurements-data">
+                            <tbody id="unified-table-body">
                                 <!-- Dati dinamici verranno inseriti qui -->
                             </tbody>
                         </table>
                     </div>
+
+
                 </div>
             </div>
 
-            <!-- Sezione Landmarks -->
-            <div class="section" data-expanded="false">
-                <div class="section-header" onclick="toggleSection(this)">
-                    <button class="toggle-btn">🎯 LANDMARKS</button>
-                    <span class="icon">►</span>
-                </div>
-                <div class="section-content" style="display: none;">
-                    <div class="table-container">
-                        <table class="data-table" id="landmarks-table">
-                            <thead>
-                                <tr>
-                                    <th>🎨</th>
-                                    <th>ID</th>
-                                    <th>Nome</th>
-                                    <th>X</th>
-                                    <th>Y</th>
-                                </tr>
-                            </thead>
-                            <tbody id="landmarks-data">
-                                <!-- Dati landmarks verranno inseriti qui -->
-                            </tbody>
-                        </table>
+            <!-- Sezioni originali (nascoste, ma mantengono i dati per compatibilità) -->
+            <div style="display: none;">
+                <!-- Sezione Misurazioni Originale (nascosta) -->
+                <div class="section" data-expanded="false">
+                    <div class="section-content">
+                        <div class="table-container">
+                            <table class="data-table" id="measurements-table">
+                                <thead>
+                                    <tr>
+                                        <th>📏 Tipo Misurazione</th>
+                                        <th>📊 Valore</th>
+                                        <th>📐 Unità</th>
+                                        <th>✅ Stato</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="measurements-data">
+                                    <!-- Dati dinamici verranno inseriti qui -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
+                </div>
 
-                    <!-- 📄 Controlli paginazione landmarks -->
-                    <div class="landmarks-controls" id="landmarks-pagination" style="display: none;">
-                        <button class="btn btn-mini" onclick="showLandmarksPage('prev')" id="landmarks-prev">◀
-                            Prec</button>
-                        <span class="landmarks-page-info" id="landmarks-page-info">Pagina 1/1</span>
-                        <button class="btn btn-mini" onclick="showLandmarksPage('next')" id="landmarks-next">Succ
-                            ▶</button>
-                        <button class="btn btn-mini" onclick="showAllLandmarks()"
-                            title="Mostra tutti i landmarks in una nuova finestra">📋 Tutti</button>
-                    </div>
-                </div>
-            </div>
+                <!-- Sezione Landmarks Originale (nascosta) -->
+                <div class="section" data-expanded="false">
+                    <div class="section-content">
+                        <div class="table-container">
+                            <table class="data-table" id="landmarks-table">
+                                <thead>
+                                    <tr>
+                                        <th>🎨</th>
+                                        <th>ID</th>
+                                        <th>Nome</th>
+                                        <th>X</th>
+                                        <th>Y</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="landmarks-data">
+                                    <!-- Dati landmarks verranno inseriti qui -->
+                                </tbody>
+                            </table>
+                        </div>
 
-            <!-- Debug Analysis - ORA SOTTO -->
-            <div class="section" data-expanded="true">
-                <div class="section-header" onclick="toggleSection(this)">
-                    <button class="toggle-btn">🐛 DEBUG ANALYSIS</button>
-                    <span class="icon">▼</span>
-                </div>
-                <div class="section-content debug-content">
-                    <div class="table-container">
-                        <table class="data-table debug-table" id="debug-table">
-                            <thead>
-                                <tr>
-                                    <th>Frame</th>
-                                    <th>Tempo</th>
-                                    <th>Score</th>
-                                    <th>Yaw</th>
-                                    <th>Pitch</th>
-                                    <th>Roll</th>
-                                    <th>Stato</th>
-                                </tr>
-                            </thead>
-                            <tbody id="debug-data">
-                                <!-- Dati debug verranno inseriti qui -->
-                            </tbody>
-                        </table>
+                        <!-- Controlli paginazione landmarks -->
+                        <div class="landmarks-controls" id="landmarks-pagination" style="display: none;">
+                            <button class="btn btn-mini" onclick="showLandmarksPage('prev')" id="landmarks-prev">◀
+                                Prec</button>
+                            <span class="landmarks-page-info" id="landmarks-page-info">Pagina 1/1</span>
+                            <button class="btn btn-mini" onclick="showLandmarksPage('next')" id="landmarks-next">Succ
+                                ▶</button>
+                            <button class="btn btn-mini" onclick="showAllLandmarks()"
+                                title="Mostra tutti i landmarks in una nuova finestra">📋 Tutti</button>
+                        </div>
                     </div>
-                    <div class="debug-controls">
-                        <button class="btn btn-small" onclick="clearDebugLogs()" style="display: none;">Pulisci</button>
-                        <button class="btn btn-small" onclick="ensureSidebarSectionsVisible()"
-                            title="Ripristina visibilità sezioni" style="display: none;">🔧 Ripristina UI</button>
-                        <label class="auto-scroll-label" style="display: none;">
-                            <input type="checkbox" id="auto-scroll"> Auto
-                        </label>
+                </div>
+
+                <!-- Debug Analysis Originale (nascosta) -->
+                <div class="section" data-expanded="false">
+                    <div class="section-content debug-content">
+                        <div class="table-container">
+                            <table class="data-table debug-table" id="debug-table">
+                                <thead>
+                                    <tr>
+                                        <th>Frame</th>
+                                        <th>Tempo</th>
+                                        <th>Score</th>
+                                        <th>Yaw</th>
+                                        <th>Pitch</th>
+                                        <th>Roll</th>
+                                        <th>Stato</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="debug-data">
+                                    <!-- Dati debug verranno inseriti qui -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="debug-controls">
+                            <button class="btn btn-small" onclick="clearDebugLogs()">Pulisci</button>
+                            <button class="btn btn-small" onclick="ensureSidebarSectionsVisible()"
+                                title="Ripristina visibilità sezioni">🔧 Ripristina UI</button>
+                            <label class="auto-scroll-label">
+                                <input type="checkbox" id="auto-scroll"> Auto
+                            </label>
+                        </div>
                     </div>
                 </div>
             </div>

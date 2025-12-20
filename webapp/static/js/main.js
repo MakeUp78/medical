@@ -1,6 +1,9 @@
 /*
  * JavaScript principale - Gestione interfaccia e sezioni
  * Replica comportamenti dell'app desktop
+ * 
+ * VERSIONE: 2.1 - 2025-12-20 - Tabella Unificata con auto-espansione
+ * ULTIMO AGGIORNAMENTO: Corretto openUnifiedAnalysisSection con log dettagliati
  */
 
 // 🚀 VERSION CHECK - main.js v6.17 - AUTH SYSTEM + LEFT SIDEBAR FIX + CANVAS MODES
@@ -2122,8 +2125,9 @@ function updateCanvasWithBestFrame(imageData) {
   }
 }
 
-// Variabile globale per conservare i frame
-let currentBestFrames = [];
+// Variabile globale per conservare i frame (esposta su window)
+window.currentBestFrames = [];
+let currentBestFrames = window.currentBestFrames; // Alias per retrocompatibilità
 
 function updateDebugTable(bestFrames) {
   try {
@@ -2132,6 +2136,7 @@ function updateDebugTable(bestFrames) {
 
     // Salva i frame globalmente per il click handler
     currentBestFrames = bestFrames;
+    window.currentBestFrames = bestFrames; // Esponi anche su window
 
     // Pulisci tabella esistente
     debugTableBody.innerHTML = '';
@@ -2174,6 +2179,12 @@ function updateDebugTable(bestFrames) {
 
       debugTableBody.appendChild(row);
     });
+
+    // Apri la sezione DATI ANALISI unificata e switcha al tab DEBUG
+    openUnifiedAnalysisSection();
+    switchUnifiedTab('debug'); // Forza il passaggio al tab debug
+
+    console.log('🔄 [UNIFIED] Tab DEBUG attivato automaticamente per best frames');
 
     // Mostra automaticamente il miglior frame (primo della lista) nel canvas centrale
     if (bestFrames.length > 0 && bestFrames[0].image_data) {
@@ -3709,6 +3720,12 @@ function updateMeasurementsFromGreenDots(greenDotsResult) {
 
     console.log('✅ Misurazioni green dots aggiornate e mostrate');
 
+    // Apri la sezione DATI ANALISI unificata e switcha al tab MISURAZIONI
+    openUnifiedAnalysisSection();
+    switchUnifiedTab('measurements'); // Forza il passaggio al tab measurements
+
+    console.log('🔄 [UNIFIED] Tab MISURAZIONI attivato automaticamente per green dots');
+
   } catch (error) {
     console.error('❌ Errore aggiornamento misurazioni green dots:', error);
   }
@@ -4301,12 +4318,12 @@ function toggleLandmarks() {
     window.landmarkSelectionMode = true;
     console.log('🖱️ Modalità selezione landmarks ATTIVA - clicca sui landmarks per aggiungerli alla tabella');
 
-    // Imposta cursore MANO (pointer) per modalità solo LANDMARKS
-    if (fabricCanvas && !window.measurementMode) {
-      fabricCanvas.defaultCursor = 'pointer';
-      fabricCanvas.hoverCursor = 'pointer';
+    // NON impostare cursore globale - i landmarks gestiranno il proprio hover
+    // Il cursore diventerà "pointer" solo quando si passa sopra un landmark
+    if (fabricCanvas) {
+      fabricCanvas.defaultCursor = 'default'; // Cursore normale
       fabricCanvas.renderAll();
-      console.log('👆 Cursore impostato a MANO (pointer) per modalità LANDMARKS');
+      console.log('👆 Cursore base impostato a DEFAULT - diventerà POINTER solo sopra i landmarks');
     }
 
     if (!currentLandmarks || currentLandmarks.length === 0) {
@@ -4484,8 +4501,14 @@ function addLandmarkToTable(landmarkId, landmark, showHighlight = false) {
     highlightSelectedLandmark(landmarkId, color);
   }
 
-  // Apri automaticamente la sezione LANDMARKS se era chiusa
+  // Apri automaticamente la sezione LANDMARKS se era chiusa (vecchia - ora nascosta)
   openLandmarksSection();
+
+  // Apri la sezione DATI ANALISI unificata e switcha al tab LANDMARKS
+  openUnifiedAnalysisSection();
+  switchUnifiedTab('landmarks'); // Forza il passaggio al tab landmarks
+
+  console.log('🔄 [UNIFIED] Tab LANDMARKS attivato automaticamente');
 
   console.log(`📍 Landmark ${landmarkId} (${landmarkName}) aggiunto alla tabella${showHighlight ? ' con highlight' : ''}: (${pixelX}, ${pixelY})`);
 }
@@ -4824,7 +4847,11 @@ async function detectGreenDots() {
       const axisBtn = document.getElementById('axis-btn');
       if (axisBtn && !axisBtn.classList.contains('active')) {
         console.log('🔄 Attivazione automatica asse di simmetria...');
+        // Sopprimi feedback vocale per questa attivazione automatica
+        window.suppressVoiceFeedback = true;
         axisBtn.click(); // Simula click per attivare l'asse
+        // Ripristina feedback vocale dopo un breve delay
+        setTimeout(() => { window.suppressVoiceFeedback = false; }, 100);
       }
 
       // AUTOMAZIONE: Espandi la sezione correzione sopracciglia se è chiusa (nella LEFT sidebar!)
@@ -5245,8 +5272,16 @@ function updateMeasurementsTable() {
     tbody.appendChild(row);
   });
 
-  // Apri automaticamente la sezione MISURAZIONI
+  // Apri automaticamente la sezione MISURAZIONI (vecchia - ora nascosta)
   openMeasurementsSection();
+
+  // Apri la sezione DATI ANALISI unificata e sincronizza
+  openUnifiedAnalysisSection();
+
+  // Se il tab corrente è measurements, aggiorna subito la tabella unificata
+  if (window.unifiedTableCurrentTab === 'measurements') {
+    syncUnifiedTableWithOriginal();
+  }
 
   console.log(`📊 Tabella misurazioni aggiornata: ${window.measurementResults.length} risultati`);
 }
@@ -5747,6 +5782,12 @@ function addDebugAnalysisRow(frameData) {
 
   tbody.appendChild(row);
 
+  // Apri la sezione DATI ANALISI unificata e switcha al tab DEBUG
+  openUnifiedAnalysisSection();
+  switchUnifiedTab('debug'); // Forza il passaggio al tab debug
+
+  console.log('🔄 [UNIFIED] Tab DEBUG attivato automaticamente (addRow)');
+
   // Mantieni solo gli ultimi 50 risultati per performance
   while (tbody.children.length > 50) {
     tbody.removeChild(tbody.firstChild);
@@ -5862,38 +5903,22 @@ function filterFramesByFrontality(filterType) {
 
 // 🔍 Funzione per assicurare che le sezioni della sidebar rimangano visibili
 function ensureSidebarSectionsVisible() {
-  const sectionsToCheck = [
-    { selector: '.measurements-section', name: 'Misurazioni' },
-    { selector: '.landmarks-section', name: 'Landmarks' },
-    { selector: '.debug-section', name: 'Debug' }
-  ];
+  // ℹ️ Le vecchie sezioni Misurazioni, Landmarks e Debug sono ora unificate in DATI ANALISI
+  // Non serve più controllare le singole sezioni perché sono nascoste per compatibilità
 
   console.log('🔍 Verifica visibilità sezioni sidebar...');
 
-  sectionsToCheck.forEach(({ selector, name }) => {
-    const section = document.querySelector(selector);
-    if (section) {
-      // Assicura che la sezione sia visibile
-      if (section.style.display === 'none') {
-        section.style.display = 'block';
-        console.log(`✅ Ripristinata visibilità sezione: ${name}`);
-      }
-
-      // Assicura che non sia nascosta da CSS
-      section.style.visibility = 'visible';
-      section.style.opacity = '1';
-
-      console.log(`✅ Sezione ${name} verificata e visibile`);
-    } else {
-      console.warn(`⚠️ Sezione ${name} non trovata!`);
-    }
-  });
-
-  // Verifica che la sidebar non abbia problemi di layout
+  // Verifica solo che la sidebar principale sia visibile
   const rightSidebar = document.querySelector('.right-sidebar');
   if (rightSidebar) {
     rightSidebar.style.display = 'block';
     console.log('✅ Right sidebar confermata visibile');
+  }
+
+  // Verifica che la sezione unificata DATI ANALISI sia presente
+  const unifiedSection = document.querySelector('.section .section-header .toggle-btn');
+  if (unifiedSection && unifiedSection.textContent.includes('📊 DATI ANALISI')) {
+    console.log('✅ Sezione unificata DATI ANALISI trovata e pronta');
   }
 }
 
@@ -6714,3 +6739,307 @@ window.addEventListener('DOMContentLoaded', async () => {
   // (il resto del codice di inizializzazione esistente continua qui)
 });
 
+// ===================================
+// GESTIONE TABELLA UNIFICATA
+// ===================================
+
+/**
+ * Variabile globale per tracciare il tab corrente della tabella unificata
+ */
+window.unifiedTableCurrentTab = 'measurements';
+
+/**
+ * Cambia il tab attivo nella tabella unificata
+ * @param {string} tabName - Nome del tab ('measurements', 'landmarks', 'debug')
+ */
+function switchUnifiedTab(tabName, event = null) {
+  console.log(`🔄 Cambio tab unificato: ${tabName}`);
+
+  // Aggiorna variabile globale
+  window.unifiedTableCurrentTab = tabName;
+
+  // Aggiorna stato visivo dei tabs
+  document.querySelectorAll('.unified-tab').forEach(tab => {
+    tab.classList.remove('active');
+    // Se la chiamata è programmatica (senza event), trova il tab corrispondente
+    if (!event && tab.dataset.tab === tabName) {
+      tab.classList.add('active');
+    }
+  });
+
+  // Se c'è un evento, usa event.target
+  if (event && event.target) {
+    event.target.classList.add('active');
+  }
+
+  // Aggiorna header e contenuto della tabella in base al tab
+  const tableHead = document.getElementById('unified-table-head');
+  const tableBody = document.getElementById('unified-table-body');
+
+  // Animazione di cambio
+  const table = document.getElementById('unified-table');
+  table.classList.add('switching');
+
+  setTimeout(() => {
+    switch (tabName) {
+      case 'measurements':
+        updateUnifiedTableForMeasurements(tableHead, tableBody);
+        break;
+      case 'landmarks':
+        updateUnifiedTableForLandmarks(tableHead, tableBody);
+        break;
+      case 'debug':
+        updateUnifiedTableForDebug(tableHead, tableBody);
+        // Nessun controllo per debug
+        break;
+    }
+
+    table.classList.remove('switching');
+  }, 200);
+}
+
+/**
+ * Aggiorna la tabella unificata per mostrare le misurazioni
+ */
+function updateUnifiedTableForMeasurements(tableHead, tableBody) {
+  // Header per misurazioni
+  tableHead.innerHTML = `
+    <tr>
+      <th>📏 Tipo Misurazione</th>
+      <th>📊 Valore</th>
+      <th>📐 Unità</th>
+      <th>✅ Stato</th>
+    </tr>
+  `;
+
+  // Copia i dati dalla tabella originale
+  const originalTableBody = document.getElementById('measurements-data');
+  if (originalTableBody) {
+    tableBody.innerHTML = originalTableBody.innerHTML;
+  } else {
+    tableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nessuna misurazione disponibile</td></tr>';
+  }
+
+  console.log('✅ Tabella unificata aggiornata: Misurazioni');
+}
+
+/**
+ * Aggiorna la tabella unificata per mostrare i landmarks
+ */
+function updateUnifiedTableForLandmarks(tableHead, tableBody) {
+  // Header per landmarks
+  tableHead.innerHTML = `
+    <tr>
+      <th>🎨</th>
+      <th>ID</th>
+      <th>Nome</th>
+      <th>X</th>
+      <th>Y</th>
+    </tr>
+  `;
+
+  // Copia i dati dalla tabella originale
+  const originalTableBody = document.getElementById('landmarks-data');
+  if (originalTableBody) {
+    tableBody.innerHTML = originalTableBody.innerHTML;
+  } else {
+    tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Nessun landmark disponibile</td></tr>';
+  }
+
+  console.log('✅ Tabella unificata aggiornata: Landmarks');
+}
+
+/**
+ * Aggiorna la tabella unificata per mostrare i dati di debug
+ */
+function updateUnifiedTableForDebug(tableHead, tableBody) {
+  // Header per debug
+  tableHead.innerHTML = `
+    <tr>
+      <th>Frame</th>
+      <th>Tempo</th>
+      <th>Score</th>
+      <th>Yaw</th>
+      <th>Pitch</th>
+      <th>Roll</th>
+      <th>Stato</th>
+    </tr>
+  `;
+
+  // Copia i dati dalla tabella originale
+  const originalTableBody = document.getElementById('debug-data');
+  if (originalTableBody && originalTableBody.children.length > 0) {
+    // Copia l'HTML
+    tableBody.innerHTML = originalTableBody.innerHTML;
+
+    // Ri-aggiungi gli event listener per il click sulle righe
+    // Trova le righe originali e quelle unificate e sincronizza i listener
+    const originalRows = originalTableBody.querySelectorAll('tr');
+    const unifiedRows = tableBody.querySelectorAll('tr');
+
+    originalRows.forEach((originalRow, index) => {
+      const unifiedRow = unifiedRows[index];
+      if (unifiedRow && originalRow.onclick) {
+        // Copia l'onclick se esiste
+        unifiedRow.onclick = originalRow.onclick;
+        unifiedRow.style.cursor = 'pointer';
+      } else if (unifiedRow) {
+        // Se la riga originale ha event listener tramite addEventListener,
+        // dobbiamo aggiungerlo anche alla riga unificata
+        // Verifichiamo se la riga è cliccabile dal cursor
+        if (originalRow.style.cursor === 'pointer') {
+          unifiedRow.style.cursor = 'pointer';
+
+          // Aggiungi un listener generico che chiama la stessa funzione
+          // Usa i dati salvati globalmente in currentBestFrames
+          if (window.currentBestFrames && window.currentBestFrames[index]) {
+            unifiedRow.addEventListener('click', function () {
+              const frame = window.currentBestFrames[index];
+              if (typeof showFrameInMainCanvas === 'function') {
+                showFrameInMainCanvas(frame, index);
+
+                // Rimuovi highlight precedente sia dalla tabella originale che unificata
+                originalTableBody.querySelectorAll('tr').forEach(r => r.classList.remove('selected-frame'));
+                tableBody.querySelectorAll('tr').forEach(r => r.classList.remove('selected-frame'));
+
+                // Aggiungi highlight
+                originalRow.classList.add('selected-frame');
+                unifiedRow.classList.add('selected-frame');
+              }
+            });
+          }
+        }
+      }
+    });
+  } else {
+    tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Nessun dato di debug disponibile</td></tr>';
+  }
+
+  console.log('✅ Tabella unificata aggiornata: Debug con ' + (originalTableBody ? originalTableBody.children.length : 0) + ' righe');
+}
+
+/**
+ * Apre automaticamente la sezione DATI ANALISI quando arrivano nuovi dati
+ * Versione 2.0 - Semplificata e robusta
+ */
+function openUnifiedAnalysisSection() {
+  // LOG IMMEDIATO - per verificare se la funzione viene chiamata
+  console.log('%c🔴 [UNIFIED v2.0] FUNZIONE CHIAMATA!', 'color: red; font-weight: bold; font-size: 14px');
+
+  try {
+    // Cerca tutte le sezioni
+    const allSections = document.querySelectorAll('.section');
+    console.log(`🔍 [UNIFIED] Trovate ${allSections.length} sezioni totali`);
+
+    // Trova la sezione DATI ANALISI
+    let targetSection = null;
+    let targetContent = null;
+    let targetIcon = null;
+
+    allSections.forEach((section, index) => {
+      const btn = section.querySelector('.toggle-btn');
+      if (btn) {
+        const text = btn.textContent || btn.innerText || '';
+        console.log(`   [${index}] Pulsante: "${text.trim()}"`);
+
+        if (text.includes('DATI ANALISI') || text.includes('📊')) {
+          targetSection = section;
+          targetContent = section.querySelector('.section-content');
+          targetIcon = section.querySelector('.icon');
+          console.log(`🎯 [UNIFIED] TROVATA sezione target all'indice ${index}!`);
+        }
+      }
+    });
+
+    if (!targetSection) {
+      console.error('%c❌ [UNIFIED] SEZIONE NON TROVATA!', 'color: red; font-weight: bold');
+      return;
+    }
+
+    // Apri la sezione
+    if (targetContent) {
+      const wasHidden = targetContent.style.display === 'none';
+      targetContent.style.display = 'block';
+      if (targetIcon) targetIcon.textContent = '▼';
+      targetSection.setAttribute('data-expanded', 'true');
+
+      console.log('%c✅ [UNIFIED] Sezione APERTA! (era nascosta: ' + wasHidden + ')', 'color: green; font-weight: bold');
+    } else {
+      console.error('❌ [UNIFIED] section-content non trovato');
+    }
+
+  } catch (error) {
+    console.error('❌ [UNIFIED] ERRORE:', error);
+  }
+}
+
+/**
+ * Mantiene sincronizzata la tabella unificata quando viene aggiornata una delle tabelle originali
+ */
+function syncUnifiedTableWithOriginal() {
+  if (!window.unifiedTableCurrentTab) return;
+
+  const tableHead = document.getElementById('unified-table-head');
+  const tableBody = document.getElementById('unified-table-body');
+
+  if (!tableHead || !tableBody) return;
+
+  // Aggiorna solo se la sezione unificata è visibile
+  const unifiedSection = document.querySelector('.section[data-expanded="true"] .toggle-btn');
+  if (!unifiedSection || !unifiedSection.textContent.includes('📊 DATI ANALISI')) return;
+
+  switch (window.unifiedTableCurrentTab) {
+    case 'measurements':
+      updateUnifiedTableForMeasurements(tableHead, tableBody);
+      break;
+    case 'landmarks':
+      updateUnifiedTableForLandmarks(tableHead, tableBody);
+      break;
+    case 'debug':
+      updateUnifiedTableForDebug(tableHead, tableBody);
+      break;
+  }
+}
+
+// Aggiungi observers per sincronizzare automaticamente quando le tabelle originali cambiano
+if (typeof MutationObserver !== 'undefined') {
+  // Observer per la tabella misurazioni
+  const measurementsObserver = new MutationObserver(() => {
+    if (window.unifiedTableCurrentTab === 'measurements') {
+      syncUnifiedTableWithOriginal();
+    }
+  });
+
+  // Observer per la tabella landmarks
+  const landmarksObserver = new MutationObserver(() => {
+    if (window.unifiedTableCurrentTab === 'landmarks') {
+      syncUnifiedTableWithOriginal();
+    }
+  });
+
+  // Observer per la tabella debug
+  const debugObserver = new MutationObserver(() => {
+    if (window.unifiedTableCurrentTab === 'debug') {
+      syncUnifiedTableWithOriginal();
+    }
+  });
+
+  // Attiva gli observers quando il DOM è pronto
+  window.addEventListener('DOMContentLoaded', () => {
+    const measurementsTable = document.getElementById('measurements-data');
+    const landmarksTable = document.getElementById('landmarks-data');
+    const debugTable = document.getElementById('debug-data');
+
+    if (measurementsTable) {
+      measurementsObserver.observe(measurementsTable, { childList: true, subtree: true });
+    }
+    if (landmarksTable) {
+      landmarksObserver.observe(landmarksTable, { childList: true, subtree: true });
+    }
+    if (debugTable) {
+      debugObserver.observe(debugTable, { childList: true, subtree: true });
+    }
+
+    console.log('👀 Observers per sincronizzazione tabella unificata attivati');
+  });
+}

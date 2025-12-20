@@ -291,22 +291,42 @@ def decode_base64_image(base64_string: str) -> np.ndarray:
 
 def detect_face_landmarks(image: np.ndarray) -> List[LandmarkPoint]:
     """Rileva landmarks facciali usando MediaPipe."""
+    global face_mesh, mp_face_mesh
+    
+    # DEBUG: Verifica stato
+    print(f"🔍 DEBUG detect_face_landmarks:")
+    print(f"   MEDIAPIPE_AVAILABLE: {MEDIAPIPE_AVAILABLE}")
+    print(f"   face_mesh: {face_mesh}")
+    print(f"   face_mesh is None: {face_mesh is None}")
+    
+    # Se face_mesh è None, prova a reinizializzare
+    if face_mesh is None and MEDIAPIPE_AVAILABLE:
+        print("⚠️ face_mesh è None - tentativo reinizializzazione...")
+        success = initialize_mediapipe()
+        print(f"   Reinizializzazione: {'✅ OK' if success else '❌ FALLITA'}")
+    
     if not MEDIAPIPE_AVAILABLE or face_mesh is None:
         raise HTTPException(status_code=500, detail="MediaPipe non disponibile o non inizializzato")
     
     try:
+        print(f"🎨 Conversione immagine - shape: {image.shape}, dtype: {image.dtype}")
+        
         # Converti BGR to RGB se necessario
         if len(image.shape) == 3 and image.shape[2] == 3:
             rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         else:
             rgb_image = image
         
+        print(f"🔍 Chiamata face_mesh.process...")
         # Esegui rilevamento
         results = face_mesh.process(rgb_image)
+        print(f"✅ face_mesh.process completato - multi_face_landmarks: {results.multi_face_landmarks is not None}")
         
         if not results.multi_face_landmarks:
+            print("⚠️ Nessun volto rilevato")
             return []
         
+        print(f"📊 Estrazione {len(results.multi_face_landmarks[0].landmark)} landmarks...")
         # Estrai landmarks del primo volto
         face_landmarks = results.multi_face_landmarks[0]
         
@@ -321,9 +341,13 @@ def detect_face_landmarks(image: np.ndarray) -> List[LandmarkPoint]:
                 visibility=getattr(landmark, 'visibility', 1.0)
             ))
         
+        print(f"✅ {len(landmarks)} landmarks estratti con successo")
         return landmarks
         
     except Exception as e:
+        print(f"❌ ERRORE in detect_face_landmarks: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Errore rilevamento landmarks: {str(e)}")
 
 def calculate_facial_score(landmarks: List[LandmarkPoint], config: ScoringConfig) -> Dict[str, float]:
@@ -907,7 +931,21 @@ async def analyze_image(request: AnalysisRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Errore durante l'analisi: {str(e)}")
+        import traceback
+        import logging
+        logger = logging.getLogger(__name__)
+        error_detail = f"Errore durante l'analisi: {str(e)}"
+        full_traceback = traceback.format_exc()
+        
+        # Scrivi l'errore in un file per debug
+        with open('/tmp/analyze_error.log', 'a') as f:
+            f.write(f"\n{'='*80}\n")
+            f.write(f"Timestamp: {datetime.now()}\n")
+            f.write(f"Error: {error_detail}\n")
+            f.write(f"Traceback:\n{full_traceback}\n")
+        
+        logger.error(f"❌ ERRORE /api/analyze: {error_detail}\n{full_traceback}")
+        raise HTTPException(status_code=500, detail=error_detail)
 
 @app.post("/api/batch-analyze")
 async def batch_analyze_images(request: BatchAnalysisRequest):
@@ -2445,6 +2483,96 @@ async def complete_face_analysis(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Errore import modulo analisi: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore durante l'analisi completa: {str(e)}")
+
+@app.post("/api/estimate-age")
+async def estimate_age(request: AnalysisRequest):
+    """Endpoint per stimare l'età dal viso usando un modello leggero basato su proporzioni."""
+    try:
+        # Decodifica immagine base64
+        image_data = base64.b64decode(request.image.split(',')[1] if ',' in request.image else request.image)
+        nparr = np.frombuffer(image_data, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if image is None:
+            raise HTTPException(status_code=400, detail="Impossibile decodificare l'immagine")
+        
+        # Usa MediaPipe per rilevare landmarks facciali
+        if not MEDIAPIPE_AVAILABLE or face_mesh is None:
+            raise HTTPException(status_code=500, detail="MediaPipe non disponibile")
+        
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = face_mesh.process(rgb_image)
+        
+        if not results.multi_face_landmarks:
+            raise HTTPException(status_code=404, detail="Nessun volto rilevato nell'immagine")
+        
+        landmarks = results.multi_face_landmarks[0]
+        h, w = image.shape[:2]
+        
+        # Estrai proporzioni facciali per stima età
+        # Indici landmarks MediaPipe
+        forehead_top = landmarks.landmark[10]  # Parte alta fronte
+        chin_bottom = landmarks.landmark[152]  # Mento
+        left_eye = landmarks.landmark[33]      # Occhio sinistro
+        right_eye = landmarks.landmark[263]    # Occhio destro
+        nose_tip = landmarks.landmark[1]       # Punta naso
+        upper_lip = landmarks.landmark[13]     # Labbro superiore
+        
+        # Calcola distanze in pixel
+        face_height = abs(forehead_top.y - chin_bottom.y) * h
+        eye_distance = abs(left_eye.x - right_eye.x) * w
+        nose_mouth_dist = abs(nose_tip.y - upper_lip.y) * h
+        
+        # Ratio facciali (cambiano con l'età)
+        face_ratio = face_height / max(eye_distance, 1)
+        lower_face_ratio = nose_mouth_dist / max(face_height, 1)
+        
+        # Stima età basata su ratios (calibrata empiricamente)
+        # Giovani: ratio alto, viso più allungato
+        # Anziani: ratio più basso, viso più squadrato
+        base_age = 30
+        
+        # Aggiustamento per face ratio (18-70 anni)
+        if face_ratio > 2.8:
+            age_adjustment = -15  # Viso molto giovane
+        elif face_ratio > 2.5:
+            age_adjustment = -8
+        elif face_ratio > 2.2:
+            age_adjustment = 0
+        elif face_ratio > 1.9:
+            age_adjustment = 10
+        else:
+            age_adjustment = 20  # Viso più maturo
+        
+        # Aggiustamento per lower face ratio
+        if lower_face_ratio < 0.15:
+            age_adjustment -= 5
+        elif lower_face_ratio > 0.25:
+            age_adjustment += 5
+        
+        estimated_age = max(18, min(80, base_age + age_adjustment))
+        
+        # Calcola confidenza basata sulla qualità del rilevamento
+        visibility_avg = sum(lm.visibility for lm in [forehead_top, chin_bottom, left_eye, right_eye]) / 4
+        confidence = "high" if visibility_avg > 0.9 else "medium" if visibility_avg > 0.7 else "low"
+        
+        return JSONResponse({
+            "success": True,
+            "age": int(estimated_age),
+            "confidence": confidence,
+            "method": "facial_proportions",
+            "ratios": {
+                "face_ratio": round(face_ratio, 2),
+                "lower_face_ratio": round(lower_face_ratio, 3)
+            }
+        })
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Errore durante la stima età: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
