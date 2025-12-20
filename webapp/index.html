@@ -1506,7 +1506,7 @@
             }
 
             // Marca un passo come completato
-            function markStepComplete(stepNum) {
+            window.markStepComplete = function(stepNum) {
                 wizardState['step' + stepNum] = true;
                 saveWizardState();
                 updateStepUI(stepNum, 'completed');
@@ -1533,7 +1533,7 @@
                     ];
                     voiceAssistant.speak(messages[stepNum - 1]);
                 }
-            }
+            };
 
             // Aggiorna UI di un passo
             function updateStepUI(stepNum, status) {
@@ -1572,7 +1572,7 @@
             }
 
             // Verifica se IRIUN è in esecuzione (controlla disponibilità webcam)
-            async function checkIriunRunning() {
+            window.checkIriunRunning = async function() {
                 updateStepUI(2, 'active');
                 
                 try {
@@ -1594,10 +1594,10 @@
                     alert('❌ Errore durante la verifica:\n\n' + error.message + '\n\nAssicurati di aver concesso i permessi per accedere alla webcam.');
                     updateStepUI(2, 'error');
                 }
-            }
+            };
 
             // Test completo della webcam IRIUN
-            async function testIriunWebcam() {
+            window.testIriunWebcam = async function() {
                 const resultDiv = document.getElementById('webcam-test-result');
                 resultDiv.innerHTML = '<div style="padding: 0.5rem; background: #cce5ff; border-left: 3px solid #004085; border-radius: 4px; font-size: 0.85em; color: #004085;">⏳ Test in corso...</div>';
                 
@@ -1666,7 +1666,7 @@
                     `;
                     updateStepUI(4, 'error');
                 }
-            }
+            };
 
             // Verifica se il wizard è completo
             function checkWizardCompletion() {
@@ -1676,7 +1676,7 @@
             }
 
             // Resetta wizard
-            function resetWizard() {
+            window.resetWizard = function() {
                 if (confirm('Vuoi resettare la procedura guidata IRIUN?')) {
                     wizardState = {
                         step1: false,
@@ -1687,15 +1687,15 @@
                     saveWizardState();
                     location.reload();
                 }
-            }
+            };
 
             // Salta al passo 2 per utenti con IRIUN già installato
-            function skipToStep2() {
+            window.skipToStep2 = function() {
                 markStepComplete(1);
                 if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                     voiceAssistant.speak('Ottimo! Ora verifica che IRIUN sia in esecuzione sul tuo computer.');
                 }
-            }
+            };
 
             // Auto-rileva IRIUN all'avvio e suggerisci di saltare i passi
             async function autoDetectIriun() {
@@ -1729,7 +1729,7 @@
             }
 
             // Avvio rapido per utenti con IRIUN già configurato
-            function quickStart() {
+            window.quickStart = function() {
                 wizardState.step1 = true;
                 wizardState.step2 = true;
                 wizardState.step3 = true;
@@ -1746,7 +1746,7 @@
                 if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                     voiceAssistant.speak('Avvio rapido attivato. Procedi con il test finale della webcam.');
                 }
-            }
+            };
 
             // Inizializza wizard al caricamento pagina
             document.addEventListener('DOMContentLoaded', function() {
