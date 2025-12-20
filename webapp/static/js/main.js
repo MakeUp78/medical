@@ -1482,13 +1482,41 @@ async function startWebcam() {
   try {
     updateStatus('Avvio webcam...');
 
-    // Avvia stream webcam
-    webcamStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        width: 640,
-        height: 480,
-        facingMode: 'user'
+    // Rileva dispositivi disponibili e dai priorità a IRIUN
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+    
+    // Cerca IRIUN Webcam
+    const iriunDevice = videoDevices.find(device => 
+      device.label.toLowerCase().includes('iriun')
+    );
+    
+    // Configura constraints video
+    let videoConstraints = {
+      width: 640,
+      height: 480,
+      facingMode: 'user'
+    };
+    
+    // Se IRIUN trovata, usala esplicitamente
+    if (iriunDevice) {
+      console.log('📱 IRIUN Webcam rilevata:', iriunDevice.label);
+      videoConstraints.deviceId = { exact: iriunDevice.deviceId };
+      delete videoConstraints.facingMode; // Rimuovi facingMode quando usi deviceId specifico
+      updateStatus('Avvio IRIUN Webcam...');
+      
+      // Feedback vocale
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+        voiceAssistant.speak('Avvio webcam IRIUN dal tuo smartphone.');
       }
+    } else {
+      console.log('💻 Uso webcam integrata del PC');
+      updateStatus('Avvio webcam integrata...');
+    }
+
+    // Avvia stream webcam con il dispositivo selezionato
+    webcamStream = await navigator.mediaDevices.getUserMedia({
+      video: videoConstraints
     });
 
     const video = document.getElementById('webcam-video');
@@ -1520,15 +1548,25 @@ async function startWebcam() {
     startFrameCapture(video); // Invio frame al server
 
     isWebcamActive = true;
-    updateStatus('Webcam attiva - Anteprima live + Elaborazione server');
+    
+    // Mostra quale webcam è in uso
+    const activeDevice = iriunDevice ? 'IRIUN Smartphone' : 'Webcam PC';
+    updateStatus(`Webcam attiva (${activeDevice}) - Anteprima live + Elaborazione server`);
     updateWebcamBadge(true);
 
-    showToast('Webcam avviata con successo', 'success');
+    showToast(`Webcam avviata: ${activeDevice}`, 'success');
 
   } catch (error) {
     console.error('Errore avvio webcam:', error);
     updateStatus('Errore: Impossibile accedere alla webcam');
-    showToast('Errore accesso webcam', 'error');
+    showToast('Errore accesso webcam: ' + error.message, 'error');
+    
+    // Se IRIUN non funziona, suggerisci di verificare configurazione
+    if (error.message.includes('deviceId') || error.message.includes('constraint')) {
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+        voiceAssistant.speak('Errore webcam IRIUN. Verifica che sia in esecuzione su PC e smartphone.');
+      }
+    }
   }
 }
 
