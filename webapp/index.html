@@ -291,6 +291,80 @@
                     </div>
                 </div>
 
+                <!-- Sezione IMPOSTAZIONI -->
+                <div class="section" data-expanded="false" id="settings-section">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">⚙️ IMPOSTAZIONI</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <!-- Info Webcam Smartphone -->
+                        <div class="settings-info">
+                            <h4 style="margin-top: 0;">📱 Usa Smartphone come Webcam</h4>
+                            <p style="font-size: 0.9em; color: #666; margin-bottom: 1rem;">
+                                Puoi usare il tuo smartphone come webcam professionale tramite <strong>IRIUN Webcam</strong>.
+                            </p>
+                            
+                            <details style="margin-bottom: 1rem;">
+                                <summary style="cursor: pointer; font-weight: bold; padding: 0.5rem; background: #f0f0f0; border-radius: 4px;">
+                                    📖 Guida Configurazione IRIUN
+                                </summary>
+                                <div style="padding: 1rem; background: #fafafa; border-radius: 4px; margin-top: 0.5rem; font-size: 0.85em; line-height: 1.6;">
+                                    <h5 style="margin-top: 0;">💻 Passo 1: Installazione PC</h5>
+                                    <ol style="margin-left: 1.2rem;">
+                                        <li>Vai su <a href="https://iriun.com" target="_blank" style="color: #667eea;">iriun.com</a></li>
+                                        <li>Scarica e installa <strong>IRIUN Webcam</strong> per Windows/Mac/Linux</li>
+                                        <li>Avvia l'applicazione IRIUN sul PC</li>
+                                    </ol>
+
+                                    <h5>📱 Passo 2: Installazione Smartphone</h5>
+                                    <ol style="margin-left: 1.2rem;">
+                                        <li>Sul telefono, apri Google Play Store (Android) o App Store (iOS)</li>
+                                        <li>Cerca <strong>"IRIUN Webcam"</strong></li>
+                                        <li>Installa l'app sul telefono</li>
+                                    </ol>
+
+                                    <h5>🔗 Passo 3: Connessione</h5>
+                                    <ol style="margin-left: 1.2rem;">
+                                        <li><strong>Importante:</strong> Assicurati che PC e smartphone siano sulla <strong>stessa rete Wi-Fi</strong></li>
+                                        <li>Apri l'app IRIUN sul telefono</li>
+                                        <li>L'app rileverà automaticamente il PC sulla rete</li>
+                                        <li>Sul PC, vedrai la connessione confermata nell'app IRIUN</li>
+                                    </ol>
+
+                                    <h5>🎥 Passo 4: Usa in Kimerika</h5>
+                                    <ol style="margin-left: 1.2rem;">
+                                        <li>Con IRIUN connesso, clicca su <strong>"📹 Avvia Webcam"</strong> nella sezione SORGENTE</li>
+                                        <li>Il browser chiederà il permesso di accedere alla webcam</li>
+                                        <li>Seleziona <strong>"IRIUN Webcam"</strong> dalla lista dispositivi</li>
+                                        <li>Clicca "Consenti" - il video del telefono apparirà nel canvas!</li>
+                                    </ol>
+
+                                    <h5>💡 Suggerimenti</h5>
+                                    <ul style="margin-left: 1.2rem;">
+                                        <li>✔️ Usa Wi-Fi 5GHz per migliore qualità</li>
+                                        <li>✔️ Posiziona il telefono su un supporto stabile</li>
+                                        <li>✔️ Assicurati che il telefono sia carico o collegato</li>
+                                        <li>✔️ Usa buona illuminazione per risultati ottimali</li>
+                                        <li>✔️ La risoluzione Full HD è supportata (1080p)</li>
+                                    </ul>
+
+                                    <div style="background: #e3f2fd; padding: 0.8rem; border-radius: 4px; margin-top: 1rem;">
+                                        <strong>🎯 Nota:</strong> IRIUN è gratuito per uso personale. 
+                                        La versione premium rimuove il watermark e aggiunge funzioni avanzate.
+                                    </div>
+                                </div>
+                            </details>
+
+                            <a href="https://iriun.com" target="_blank" 
+                               class="btn btn-primary" 
+                               style="display: block; text-align: center; text-decoration: none; margin-top: 1rem;">
+                                🌐 Scarica IRIUN Webcam
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
 
@@ -1260,7 +1334,7 @@
             function formatPointNameForSpeech(pointName) {
                 // Mappa caratteri a pronuncia italiana rallentata
                 const letterMap = {
-                    'L': 'Èllè',      // Entrambe le E con accento grave (aperte) per pronuncia chiara
+                    'L': 'Èllè',      // Entrambe le E con stesso accento grave (aperte) per pronuncia uniforme
                     'R': 'Erre',
                     'A': 'A',
                     'B': 'Bi',
