@@ -79,6 +79,12 @@ function addDebugImageOverlay(imageDataUrl, layerName, opacity = 0.7) {
     
     return new Promise((resolve, reject) => {
         fabric.Image.fromURL(imageDataUrl, function(img) {
+            if (!img) {
+                console.error(`❌ Impossibile caricare immagine per layer ${layerName}`);
+                reject(new Error(`Impossibile caricare immagine per layer ${layerName}`));
+                return;
+            }
+            
             // Scala per adattare al canvas
             const canvasWidth = window.fabricCanvas.width;
             const canvasHeight = window.fabricCanvas.height;
@@ -103,7 +109,13 @@ function addDebugImageOverlay(imageDataUrl, layerName, opacity = 0.7) {
             
             console.log(`✅ Layer ${layerName} aggiunto al canvas`);
             resolve(img);
-        }, {crossOrigin: 'anonymous'});
+        }, {
+            crossOrigin: 'anonymous'
+        }, function(error) {
+            // Error callback
+            console.error(`❌ Errore caricamento immagine ${layerName}:`, error);
+            reject(error);
+        });
     });
 }
 

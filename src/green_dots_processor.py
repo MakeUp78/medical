@@ -768,7 +768,8 @@ class GreenDotsProcessor:
                     'z': lm.z
                 })
             
-            face_mesh.close()
+            # MediaPipe FaceMesh doesn't require explicit closing in static mode
+            # face_mesh will be garbage collected automatically
             
             return {
                 'left_eyebrow': left_eyebrow,
