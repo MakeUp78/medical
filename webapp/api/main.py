@@ -1610,6 +1610,237 @@ async def analyze_right_eyebrow(request: Dict[str, str]):
             "timestamp": datetime.now().isoformat()
         }
 
+# === ENDPOINT PER PREPROCESSING SOPRACCIGLIO ===
+
+class EyebrowPreprocessRequest(BaseModel):
+    image: str  # Base64 encoded image
+    side: str   # "left" o "right"
+    expand_factor: float = 0.5
+    apply_color_correction: bool = True
+
+class EyebrowPreprocessResult(BaseModel):
+    success: bool
+    session_id: str
+    side: str
+    landmarks: Optional[List[Dict[str, Any]]] = None
+    bbox: Optional[Dict[str, Any]] = None
+    mask_area: Optional[int] = None
+    debug_images: Optional[Dict[str, str]] = None  # base64 encoded images
+    preprocessing_metadata: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    timestamp: str
+
+@app.post("/api/eyebrow/preprocess", response_model=EyebrowPreprocessResult)
+async def preprocess_eyebrow(request: EyebrowPreprocessRequest):
+    """
+    Preprocessa la regione del sopracciglio con rilevamento landmarks, mascheramento e color correction.
+    
+    Questo endpoint implementa il flusso completo di preprocessing:
+    1. Rileva landmarks del sopracciglio usando MediaPipe
+    2. Calcola bounding box con espansione
+    3. Genera maschera binaria per la regione
+    4. Applica correzione colore (opzionale)
+    5. Ritorna debug images e metadati
+    """
+    try:
+        session_id = str(uuid.uuid4())
+        timestamp = datetime.now().isoformat()
+        
+        print(f"🔬 Preprocessing sopracciglio {request.side} - Sessione: {session_id}")
+        
+        # Verifica disponibilità del modulo
+        if not GREEN_DOTS_AVAILABLE:
+            return EyebrowPreprocessResult(
+                success=False,
+                session_id=session_id,
+                side=request.side,
+                error="Modulo GreenDotsProcessor non disponibile",
+                timestamp=timestamp
+            )
+        
+        # Decodifica immagine
+        image_cv = decode_base64_image(request.image)
+        
+        # Inizializza processore
+        processor = GreenDotsProcessor()
+        
+        # Esegui preprocessing
+        result = processor.preprocess_eyebrow_region(
+            image=image_cv,
+            side=request.side,
+            expand_factor=request.expand_factor,
+            apply_color_correction_flag=request.apply_color_correction
+        )
+        
+        if not result['success']:
+            return EyebrowPreprocessResult(
+                success=False,
+                session_id=session_id,
+                side=request.side,
+                error=result.get('error', 'Errore preprocessing sconosciuto'),
+                timestamp=timestamp
+            )
+        
+        # Converti debug images in base64
+        debug_images_b64 = {}
+        for key, img in result['debug_images'].items():
+            _, buffer = cv2.imencode('.png', img)
+            img_b64 = base64.b64encode(buffer).decode('utf-8')
+            debug_images_b64[key] = f"data:image/png;base64,{img_b64}"
+        
+        # Prepara metadata preprocessing
+        preprocessing_metadata = {
+            'expand_factor': request.expand_factor,
+            'color_correction_applied': request.apply_color_correction,
+            'landmarks_count': len(result['landmarks']) if result['landmarks'] else 0,
+            'bbox_area': result['bbox']['width'] * result['bbox']['height'] if result['bbox'] else 0,
+            'mask_area': result['mask_area']
+        }
+        
+        print(f"✅ Preprocessing completato: {len(debug_images_b64)} debug images generate")
+        
+        return EyebrowPreprocessResult(
+            success=True,
+            session_id=session_id,
+            side=request.side,
+            landmarks=result['landmarks'],
+            bbox=result['bbox'],
+            mask_area=result['mask_area'],
+            debug_images=debug_images_b64,
+            preprocessing_metadata=preprocessing_metadata,
+            timestamp=timestamp
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Errore preprocessing: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return EyebrowPreprocessResult(
+            success=False,
+            session_id=session_id if 'session_id' in locals() else str(uuid.uuid4()),
+            side=request.side,
+            error=f"Errore interno: {str(e)}",
+            timestamp=datetime.now().isoformat()
+        )
+
+# === ENDPOINT PER PREPROCESSING SOPRACCIGLIO ===
+
+class EyebrowPreprocessRequest(BaseModel):
+    image: str  # Base64 encoded image
+    side: str   # "left" o "right"
+    expand_factor: float = 0.5
+    apply_color_correction: bool = True
+
+class EyebrowPreprocessResult(BaseModel):
+    success: bool
+    session_id: str
+    side: str
+    landmarks: Optional[List[Dict[str, Any]]] = None
+    bbox: Optional[Dict[str, Any]] = None
+    mask_area: Optional[int] = None
+    debug_images: Optional[Dict[str, str]] = None  # base64 encoded images
+    preprocessing_metadata: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    timestamp: str
+
+@app.post("/api/eyebrow/preprocess", response_model=EyebrowPreprocessResult)
+async def preprocess_eyebrow(request: EyebrowPreprocessRequest):
+    """
+    Preprocessa la regione del sopracciglio con rilevamento landmarks, mascheramento e color correction.
+    
+    Questo endpoint implementa il flusso completo di preprocessing:
+    1. Rileva landmarks del sopracciglio usando MediaPipe
+    2. Calcola bounding box con espansione
+    3. Genera maschera binaria per la regione
+    4. Applica correzione colore (opzionale)
+    5. Ritorna debug images e metadati
+    """
+    try:
+        session_id = str(uuid.uuid4())
+        timestamp = datetime.now().isoformat()
+        
+        print(f"🔬 Preprocessing sopracciglio {request.side} - Sessione: {session_id}")
+        
+        # Verifica disponibilità del modulo
+        if not GREEN_DOTS_AVAILABLE:
+            return EyebrowPreprocessResult(
+                success=False,
+                session_id=session_id,
+                side=request.side,
+                error="Modulo GreenDotsProcessor non disponibile",
+                timestamp=timestamp
+            )
+        
+        # Decodifica immagine
+        image_cv = decode_base64_image(request.image)
+        
+        # Inizializza processore
+        processor = GreenDotsProcessor()
+        
+        # Esegui preprocessing
+        result = processor.preprocess_eyebrow_region(
+            image=image_cv,
+            side=request.side,
+            expand_factor=request.expand_factor,
+            apply_color_correction_flag=request.apply_color_correction
+        )
+        
+        if not result['success']:
+            return EyebrowPreprocessResult(
+                success=False,
+                session_id=session_id,
+                side=request.side,
+                error=result.get('error', 'Errore preprocessing sconosciuto'),
+                timestamp=timestamp
+            )
+        
+        # Converti debug images in base64
+        debug_images_b64 = {}
+        for key, img in result['debug_images'].items():
+            _, buffer = cv2.imencode('.png', img)
+            img_b64 = base64.b64encode(buffer).decode('utf-8')
+            debug_images_b64[key] = f"data:image/png;base64,{img_b64}"
+        
+        # Prepara metadata preprocessing
+        preprocessing_metadata = {
+            'expand_factor': request.expand_factor,
+            'color_correction_applied': request.apply_color_correction,
+            'landmarks_count': len(result['landmarks']) if result['landmarks'] else 0,
+            'bbox_area': result['bbox']['width'] * result['bbox']['height'] if result['bbox'] else 0,
+            'mask_area': result['mask_area']
+        }
+        
+        print(f"✅ Preprocessing completato: {len(debug_images_b64)} debug images generate")
+        
+        return EyebrowPreprocessResult(
+            success=True,
+            session_id=session_id,
+            side=request.side,
+            landmarks=result['landmarks'],
+            bbox=result['bbox'],
+            mask_area=result['mask_area'],
+            debug_images=debug_images_b64,
+            preprocessing_metadata=preprocessing_metadata,
+            timestamp=timestamp
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Errore preprocessing: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return EyebrowPreprocessResult(
+            success=False,
+            session_id=session_id if 'session_id' in locals() else str(uuid.uuid4()),
+            side=request.side,
+            error=f"Errore interno: {str(e)}",
+            timestamp=datetime.now().isoformat()
+        )
+
+
 # === ENDPOINT UNIFICATO PER ANALISI COMPLETA ===
 
 class CanvasAnalysisRequest(BaseModel):

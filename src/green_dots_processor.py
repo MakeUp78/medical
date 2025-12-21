@@ -8,8 +8,9 @@ Funzionalità principali:
 - Divisione dei puntini in gruppi sinistro (Sx) e destro (Dx)
 - Generazione di overlay trasparenti con i perimetri
 - Calcolo delle coordinate e statistiche delle forme
+- Preprocessing avanzato per regioni sopracciglia con mascheramento e correzione colore
 
-Dipendenze: opencv-python, numpy, pillow
+Dipendenze: opencv-python, numpy, pillow, mediapipe (opzionale per landmark detection)
 
 Esempio d'uso:
     from src.green_dots_processor import GreenDotsProcessor
@@ -24,6 +25,13 @@ import numpy as np
 from PIL import Image, ImageDraw
 import math
 from typing import Dict, List, Tuple, Optional
+
+try:
+    import mediapipe as mp
+    MEDIAPIPE_AVAILABLE = True
+except ImportError:
+    MEDIAPIPE_AVAILABLE = False
+    print("Warning: MediaPipe not available. Eyebrow landmark detection will be disabled.")
 
 
 class GreenDotsProcessor:
@@ -702,6 +710,252 @@ class GreenDotsProcessor:
             "overlay": overlay,
             "image_size": detection_results["image_size"],
         }
+
+    def detect_eyebrow_landmarks(self, image: np.ndarray) -> Optional[Dict]:
+        """
+        Rileva i landmarks delle sopracciglia usando MediaPipe Face Mesh.
+        
+        Args:
+            image: Immagine numpy array (BGR format from OpenCV)
+            
+        Returns:
+            Dict con landmarks sopracciglia o None se MediaPipe non disponibile
+        """
+        if not MEDIAPIPE_AVAILABLE:
+            print("MediaPipe non disponibile per rilevamento eyebrow landmarks")
+            return None
+            
+        try:
+            mp_face_mesh = mp.solutions.face_mesh
+            face_mesh = mp_face_mesh.FaceMesh(
+                static_image_mode=True,
+                max_num_faces=1,
+                refine_landmarks=True,
+                min_detection_confidence=0.5
+            )
+            
+            # Converti BGR to RGB per MediaPipe
+            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = face_mesh.process(rgb_image)
+            
+            if not results.multi_face_landmarks:
+                return None
+                
+            landmarks = results.multi_face_landmarks[0]
+            h, w = image.shape[:2]
+            
+            # Indici MediaPipe per le sopracciglia
+            # Sopracciglio sinistro: [70, 63, 105, 66, 107, 55, 65, 52, 53, 46]
+            # Sopracciglio destro: [300, 293, 334, 296, 336, 285, 295, 282, 283, 276]
+            LEFT_EYEBROW_INDICES = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46]
+            RIGHT_EYEBROW_INDICES = [300, 293, 334, 296, 336, 285, 295, 282, 283, 276]
+            
+            left_eyebrow = []
+            for idx in LEFT_EYEBROW_INDICES:
+                lm = landmarks.landmark[idx]
+                left_eyebrow.append({
+                    'x': int(lm.x * w),
+                    'y': int(lm.y * h),
+                    'z': lm.z
+                })
+            
+            right_eyebrow = []
+            for idx in RIGHT_EYEBROW_INDICES:
+                lm = landmarks.landmark[idx]
+                right_eyebrow.append({
+                    'x': int(lm.x * w),
+                    'y': int(lm.y * h),
+                    'z': lm.z
+                })
+            
+            face_mesh.close()
+            
+            return {
+                'left_eyebrow': left_eyebrow,
+                'right_eyebrow': right_eyebrow,
+                'image_size': (w, h)
+            }
+            
+        except Exception as e:
+            print(f"Errore nel rilevamento eyebrow landmarks: {e}")
+            return None
+
+    def calculate_eyebrow_bounding_box_from_landmarks(
+        self, 
+        landmarks: List[Dict], 
+        expand_factor: float = 0.5
+    ) -> Tuple[int, int, int, int]:
+        """
+        Calcola bounding box dalle coordinate dei landmarks del sopracciglio.
+        
+        Args:
+            landmarks: Lista di dizionari con keys 'x', 'y'
+            expand_factor: Fattore di espansione (0.5 = 50% extra padding)
+            
+        Returns:
+            Tuple (x_min, y_min, x_max, y_max)
+        """
+        if not landmarks:
+            return (0, 0, 0, 0)
+            
+        x_coords = [lm['x'] for lm in landmarks]
+        y_coords = [lm['y'] for lm in landmarks]
+        
+        x_min, x_max = min(x_coords), max(x_coords)
+        y_min, y_max = min(y_coords), max(y_coords)
+        
+        width = x_max - x_min
+        height = y_max - y_min
+        
+        expand_w = int(width * expand_factor / 2)
+        expand_h = int(height * expand_factor / 2)
+        
+        return (
+            max(0, x_min - expand_w),
+            max(0, y_min - expand_h),
+            x_max + expand_w,
+            y_max + expand_h
+        )
+
+    def create_eyebrow_mask(
+        self, 
+        image_size: Tuple[int, int], 
+        bbox: Tuple[int, int, int, int]
+    ) -> np.ndarray:
+        """
+        Crea una maschera binaria per la regione del sopracciglio.
+        
+        Args:
+            image_size: (width, height) dell'immagine
+            bbox: (x_min, y_min, x_max, y_max) del bounding box
+            
+        Returns:
+            Maschera binaria numpy array (0 o 255)
+        """
+        width, height = image_size
+        mask = np.zeros((height, width), dtype=np.uint8)
+        
+        x_min, y_min, x_max, y_max = bbox
+        mask[y_min:y_max, x_min:x_max] = 255
+        
+        return mask
+
+    def apply_color_correction(self, image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        """
+        Applica correzione colore per enfatizzare i verdi e desaturare i toni della pelle.
+        
+        Args:
+            image: Immagine originale BGR
+            mask: Maschera binaria della regione
+            
+        Returns:
+            Immagine corretta BGR
+        """
+        # Converti in HSV per manipolazione colori
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV).astype(np.float32)
+        
+        # Crea maschera booleana
+        mask_bool = mask > 0
+        
+        # Enfatizza i verdi (hue ~60-150 in OpenCV)
+        green_mask = (hsv[:,:,0] >= 30) & (hsv[:,:,0] <= 90) & mask_bool
+        hsv[green_mask, 1] = np.clip(hsv[green_mask, 1] * 1.3, 0, 255)  # Aumenta saturazione
+        
+        # Desatura i toni della pelle (hue ~0-30 rosso-arancio)
+        skin_mask = ((hsv[:,:,0] >= 0) & (hsv[:,:,0] <= 30)) & mask_bool
+        hsv[skin_mask, 1] = np.clip(hsv[skin_mask, 1] * 0.7, 0, 255)  # Diminuisci saturazione
+        
+        # Converti di nuovo in BGR
+        corrected = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+        
+        # Applica solo nella regione mascherata
+        result = image.copy()
+        result[mask_bool] = corrected[mask_bool]
+        
+        return result
+
+    def preprocess_eyebrow_region(
+        self,
+        image: np.ndarray,
+        side: str = 'left',
+        expand_factor: float = 0.5,
+        apply_color_correction_flag: bool = True
+    ) -> Dict:
+        """
+        Preprocessa la regione del sopracciglio con rilevamento landmark, mascheramento e color correction.
+        
+        Args:
+            image: Immagine numpy array (BGR)
+            side: 'left' o 'right'
+            expand_factor: Fattore espansione bounding box
+            apply_color_correction_flag: Se True, applica correzione colore
+            
+        Returns:
+            Dict con preprocessing data e debug images
+        """
+        result = {
+            'success': False,
+            'side': side,
+            'error': None,
+            'landmarks': None,
+            'bbox': None,
+            'mask_area': 0,
+            'preprocessed_image': None,
+            'debug_images': {}
+        }
+        
+        # Step 1: Rileva landmarks sopracciglia
+        landmarks_data = self.detect_eyebrow_landmarks(image)
+        if not landmarks_data:
+            result['error'] = "Impossibile rilevare landmarks facciali"
+            return result
+        
+        eyebrow_landmarks = landmarks_data[f'{side}_eyebrow']
+        result['landmarks'] = eyebrow_landmarks
+        
+        # Step 2: Calcola bounding box
+        bbox = self.calculate_eyebrow_bounding_box_from_landmarks(
+            eyebrow_landmarks, 
+            expand_factor
+        )
+        result['bbox'] = {
+            'x_min': bbox[0],
+            'y_min': bbox[1],
+            'x_max': bbox[2],
+            'y_max': bbox[3],
+            'width': bbox[2] - bbox[0],
+            'height': bbox[3] - bbox[1]
+        }
+        
+        # Debug image: Original con bbox
+        debug_bbox = image.copy()
+        cv2.rectangle(debug_bbox, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 2)
+        for lm in eyebrow_landmarks:
+            cv2.circle(debug_bbox, (lm['x'], lm['y']), 3, (0, 0, 255), -1)
+        result['debug_images']['bbox_overlay'] = debug_bbox
+        
+        # Step 3: Crea maschera
+        h, w = image.shape[:2]
+        mask = self.create_eyebrow_mask((w, h), bbox)
+        result['mask_area'] = np.sum(mask > 0)
+        
+        # Debug image: Mask
+        result['debug_images']['mask'] = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        
+        # Step 4: Applica maschera per estrarre regione
+        masked_image = cv2.bitwise_and(image, image, mask=mask)
+        result['debug_images']['masked_region'] = masked_image
+        
+        # Step 5: Correzione colore (opzionale)
+        if apply_color_correction_flag:
+            corrected_image = self.apply_color_correction(image, mask)
+            result['preprocessed_image'] = corrected_image
+            result['debug_images']['color_corrected'] = corrected_image
+        else:
+            result['preprocessed_image'] = masked_image
+        
+        result['success'] = True
+        return result
 
 
 # Funzioni di convenienza per uso diretto del modulo
