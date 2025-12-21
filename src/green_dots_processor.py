@@ -768,8 +768,10 @@ class GreenDotsProcessor:
                     'z': lm.z
                 })
             
-            # MediaPipe FaceMesh doesn't require explicit closing in static mode
-            # face_mesh will be garbage collected automatically
+            # MediaPipe FaceMesh in static_image_mode doesn't require explicit cleanup.
+            # Resources are automatically released when the function exits and the
+            # face_mesh object goes out of scope. MediaPipe manages internal resources
+            # efficiently and will clean up GPU/CPU resources through Python's garbage collector.
             
             return {
                 'left_eyebrow': left_eyebrow,

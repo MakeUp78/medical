@@ -409,7 +409,8 @@ function showDebugImagesWindow(debugImages, side, bbox, landmarks) {
         imageCard.innerHTML = `
             <h4 style="margin: 0 0 10px 0; color: #555;">${imageLabels[key] || key}</h4>
             <img src="${imageDataUrl}" style="width: 100%; height: auto; border-radius: 4px; cursor: zoom-in;" 
-                 onclick="window.open(this.src, '_blank')">
+                 onclick="if(this.src.startsWith('data:image/')) window.open(this.src, '_blank')"
+                 title="Click per aprire in nuova finestra">
         `;
         
         grid.appendChild(imageCard);
