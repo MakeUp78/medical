@@ -443,6 +443,8 @@ function handleFileLoad(file) {
   reader.onload = function (e) {
     const img = new Image();
     img.onload = async function () {
+      // Salva il tipo MIME originale per preservare il formato (JPG/PNG)
+      img._originalMimeType = file.type || 'image/jpeg';
       // Espandi sezioni dopo upload immagine
       collapseDetectionSections();
 
@@ -458,11 +460,13 @@ function handleFileLoad(file) {
       // Disegna immagine sul canvas temporaneo
       tempCtx.drawImage(img, 0, 0);
 
-      // Ottieni base64 (rimuovi prefisso "data:image/png;base64,")
-      const base64Data = tempCanvas.toDataURL('image/jpeg', 0.9).split(',')[1];
+      // Preserva il formato originale (JPG→JPG, PNG→PNG)
+      const isPNG = img._originalMimeType && img._originalMimeType.includes('png');
+      const base64Image = isPNG ? tempCanvas.toDataURL('image/png') : tempCanvas.toDataURL('image/jpeg', 0.95);
+      const base64Data = base64Image.split(',')[1];
 
       // Usa il flusso video standard
-      updateCanvasWithBestFrame(base64Data);
+      updateCanvasWithBestFrame(base64Data, img._originalMimeType);
 
       updateStatus(`Immagine caricata: ${file.name}`);
       showToast('Immagine caricata con successo', 'success');
@@ -1485,26 +1489,26 @@ async function startWebcam() {
     // Rileva dispositivi disponibili e dai priorità a IRIUN
     const devices = await navigator.mediaDevices.enumerateDevices();
     const videoDevices = devices.filter(device => device.kind === 'videoinput');
-    
+
     // Cerca IRIUN Webcam
-    const iriunDevice = videoDevices.find(device => 
+    const iriunDevice = videoDevices.find(device =>
       device.label.toLowerCase().includes('iriun')
     );
-    
+
     // Configura constraints video
     let videoConstraints = {
       width: 640,
       height: 480,
       facingMode: 'user'
     };
-    
+
     // Se IRIUN trovata, usala esplicitamente
     if (iriunDevice) {
       console.log('📱 IRIUN Webcam rilevata:', iriunDevice.label);
       videoConstraints.deviceId = { exact: iriunDevice.deviceId };
       delete videoConstraints.facingMode; // Rimuovi facingMode quando usi deviceId specifico
       updateStatus('Avvio IRIUN Webcam...');
-      
+
       // Feedback vocale
       if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
         voiceAssistant.speak('Avvio webcam IRIUN dal tuo smartphone.');
@@ -1548,7 +1552,7 @@ async function startWebcam() {
     startFrameCapture(video); // Invio frame al server
 
     isWebcamActive = true;
-    
+
     // Mostra quale webcam è in uso
     const activeDevice = iriunDevice ? 'IRIUN Smartphone' : 'Webcam PC';
     updateStatus(`Webcam attiva (${activeDevice}) - Anteprima live + Elaborazione server`);
@@ -1560,7 +1564,7 @@ async function startWebcam() {
     console.error('Errore avvio webcam:', error);
     updateStatus('Errore: Impossibile accedere alla webcam');
     showToast('Errore accesso webcam: ' + error.message, 'error');
-    
+
     // Se IRIUN non funziona, suggerisci di verificare configurazione
     if (error.message.includes('deviceId') || error.message.includes('constraint')) {
       if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
@@ -2045,7 +2049,7 @@ function updateBestFramesDisplay(data) {
   }
 }
 
-function updateCanvasWithBestFrame(imageData) {
+function updateCanvasWithBestFrame(imageData, mimeType = 'image/jpeg') {
   try {
     console.log('🖼️ Aggiornamento canvas con frame video...');
 
@@ -2061,10 +2065,14 @@ function updateCanvasWithBestFrame(imageData) {
       canvasElement.style.display = 'block';
     }
 
-    // Crea immagine da base64 usando Fabric.js
-    const imageUrl = 'data:image/jpeg;base64,' + imageData;
+    // Crea immagine da base64 usando Fabric.js (preserva formato originale)
+    const imageUrl = `data:${mimeType};base64,${imageData}`;
 
     fabric.Image.fromURL(imageUrl, function (img) {
+      // Propaga il tipo MIME originale
+      if (img && img.getElement) {
+        img.getElement()._originalMimeType = mimeType;
+      }
       try {
         // Rimuovi immagine precedente se presente
         if (currentImage) {
@@ -3562,7 +3570,7 @@ function drawGreenDotsLandmarksFallback() {
 function drawGreenDotsOverlay(overlayBase64) {
   /**
    * Disegna l'overlay trasparente generato dal processore green dots.
-   * Usa la stessa logica di trasformazione dinamica dei landmarks.
+   * Scala l'overlay alle dimensioni originali se è stato ridimensionato nel frontend.
    */
   try {
     fabric.Image.fromURL(overlayBase64, function (overlayImg) {
@@ -3582,11 +3590,22 @@ function drawGreenDotsOverlay(overlayBase64) {
         }
       }
 
-      // L'overlay è delle dimensioni dell'immagine originale
-      const originalWidth = overlayImg.width;
-      const originalHeight = overlayImg.height;
+      // Dimensioni dell'overlay ricevuto dal backend (potrebbe essere ridimensionato)
+      const overlayWidth = overlayImg.width;
+      const overlayHeight = overlayImg.height;
 
-      console.log(`🎨 Overlay originale: ${originalWidth}x${originalHeight}`);
+      // Dimensioni originali dell'immagine nel canvas
+      const imageElement = currentImage.getElement ? currentImage.getElement() : currentImage;
+      const originalImageWidth = imageElement.naturalWidth || imageElement.width;
+      const originalImageHeight = imageElement.naturalHeight || imageElement.height;
+
+      // Calcola il fattore di scala per adattare l'overlay alle dimensioni originali
+      const scaleFactorX = originalImageWidth / overlayWidth;
+      const scaleFactorY = originalImageHeight / overlayHeight;
+
+      console.log(`🎨 Overlay dal backend: ${overlayWidth}x${overlayHeight}`);
+      console.log(`🎨 Immagine originale canvas: ${originalImageWidth}x${originalImageHeight}`);
+      console.log(`🎨 Fattore scala overlay: X=${scaleFactorX.toFixed(2)}, Y=${scaleFactorY.toFixed(2)}`);
       console.log(`🎨 Scala canvas: ${window.imageScale}, Offset: (${window.imageOffset.x}, ${window.imageOffset.y})`);
 
       // Rimuovi overlay precedente se esiste
@@ -3599,8 +3618,9 @@ function drawGreenDotsOverlay(overlayBase64) {
         // USA ESATTAMENTE LE STESSE COORDINATE DELL'IMMAGINE PRINCIPALE
         left: currentImage.left,
         top: currentImage.top,
-        scaleX: currentImage.scaleX,
-        scaleY: currentImage.scaleY,
+        // Scala l'overlay per adattarlo alle dimensioni originali + scala del canvas
+        scaleX: currentImage.scaleX * scaleFactorX,
+        scaleY: currentImage.scaleY * scaleFactorY,
         selectable: false,
         evented: false,
         isGreenDotsOverlay: true,
@@ -5032,12 +5052,16 @@ async function detectGreenDots() {
 
   try {
     updateStatus('🔄 Rilevamento green dots in corso...');
+    showToast('⏳ Elaborazione in corso... Può richiedere 10-60 secondi', 'info');
 
-    // Ottieni l'immagine del canvas come base64
-    const canvasImageData = getCanvasImageAsBase64();
+    // Ottieni l'immagine del canvas come base64 con resize a max 1600px per velocizzare
+    const canvasImageData = getCanvasImageAsBase64(1600);
     if (!canvasImageData) {
       throw new Error('Impossibile ottenere dati immagine dal canvas');
     }
+
+    // Salva la scala di ridimensionamento applicata per l'eyebrow processor
+    window.greenDotsImageScale = window.lastImageResizeScale || 1.0;
 
     console.log('🟢 Invio richiesta API green dots...');
 
@@ -5173,10 +5197,14 @@ async function detectGreenDots() {
   }
 }
 
-function getCanvasImageAsBase64() {
+function getCanvasImageAsBase64(maxDimension = null) {
   /**
    * Ottiene l'immagine corrente dal canvas come stringa base64.
    * Prende solo l'immagine di base senza overlay.
+   * PRESERVA IL FORMATO ORIGINALE (JPG→JPG, PNG→PNG) per evitare conversioni che degradano la qualità.
+   * 
+   * @param {number|null} maxDimension - Dimensione massima (larghezza o altezza). Se null, usa dimensioni originali.
+   * @returns {string|null} - Immagine in formato base64
    */
   try {
     if (!currentImage) {
@@ -5200,18 +5228,55 @@ function getCanvasImageAsBase64() {
       return null;
     }
 
+    // Recupera il tipo MIME originale (preserva JPG/PNG)
+    const originalMimeType = imageElement._originalMimeType || 'image/jpeg';
+    const isPNG = originalMimeType.includes('png');
+    const outputFormat = isPNG ? 'image/png' : 'image/jpeg';
+    const quality = isPNG ? undefined : 0.95; // Quality solo per JPEG
+
+    // Ottiene dimensioni originali
+    const origWidth = imageElement.naturalWidth || imageElement.width || 800;
+    const origHeight = imageElement.naturalHeight || imageElement.height || 600;
+
+    // Calcola dimensioni finali con resize se necessario
+    let finalWidth = origWidth;
+    let finalHeight = origHeight;
+    let needsResize = false;
+    let resizeScale = 1.0;
+
+    // Applica resize SOLO se l'immagine supera maxDimension
+    if (maxDimension) {
+      const maxOriginal = Math.max(origWidth, origHeight);
+      if (maxOriginal > maxDimension) {
+        needsResize = true;
+        resizeScale = maxDimension / maxOriginal;
+        finalWidth = Math.round(origWidth * resizeScale);
+        finalHeight = Math.round(origHeight * resizeScale);
+        console.log(`📐 Resize applicato: ${origWidth}x${origHeight} → ${finalWidth}x${finalHeight} (scala: ${resizeScale.toFixed(2)})`);
+      } else {
+        console.log(`✅ Immagine già ottimale: ${origWidth}x${origHeight} (max consentito: ${maxDimension}px) - Nessun resize`);
+      }
+    }
+
+    // Salva la scala applicata per uso esterno (es. eyebrow processor)
+    window.lastImageResizeScale = resizeScale;
+
     // Imposta le dimensioni del canvas temporaneo
-    tempCanvas.width = imageElement.naturalWidth || imageElement.width || 800;
-    tempCanvas.height = imageElement.naturalHeight || imageElement.height || 600;
+    tempCanvas.width = finalWidth;
+    tempCanvas.height = finalHeight;
 
-    // Disegna solo l'immagine corrente
-    tempCtx.drawImage(imageElement, 0, 0, tempCanvas.width, tempCanvas.height);
+    // Disegna l'immagine (con resize se necessario)
+    tempCtx.drawImage(imageElement, 0, 0, finalWidth, finalHeight);
 
-    // Converte in base64
-    const base64Data = tempCanvas.toDataURL('image/png');
-    console.log('✅ Immagine convertita in base64 per analisi green dots:', {
-      width: tempCanvas.width,
-      height: tempCanvas.height,
+    // PRESERVA IL FORMATO ORIGINALE: JPG→JPG (con qualità alta), PNG→PNG (lossless)
+    // Questo evita conversioni non necessarie che possono degradare la qualità
+    const base64Data = isPNG ? tempCanvas.toDataURL(outputFormat) : tempCanvas.toDataURL(outputFormat, quality);
+    console.log('✅ Immagine convertita in base64:', {
+      original: `${origWidth}x${origHeight}`,
+      final: `${finalWidth}x${finalHeight}`,
+      resized: needsResize,
+      format: `${outputFormat.toUpperCase()} ${isPNG ? '(lossless)' : '(quality 95)'}`,
+      originalMimeType: originalMimeType,
       imageType: imageElement.constructor.name
     });
 

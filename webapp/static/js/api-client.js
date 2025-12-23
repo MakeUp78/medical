@@ -16,7 +16,7 @@ const API_CONFIG = {
     greenDotsInfo: '/api/green-dots/info',
     greenDotsTest: '/api/green-dots/test'
   },
-  timeout: 30000 // 30 secondi
+  timeout: 120000 // 120 secondi (2 minuti) - aumentato per elaborazione green dots
 };
 
 // Debug log per verificare la configurazione

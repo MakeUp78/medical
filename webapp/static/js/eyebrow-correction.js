@@ -142,8 +142,8 @@ function createFullImageOverlay(sourceCanvas, side, axis) {
   ctx.drawImage(sourceCanvas, 0, 0);
   console.log(`  📋 Immagine base copiata: ${overlayCanvas.width}x${overlayCanvas.height}`);
 
-  // I punti green dots dall'API sono già in coordinate IMMAGINE ORIGINALE
-  // NON servono conversioni!
+  // I punti green dots dall'API sono in coordinate BACKEND (ridimensionate max 1600px)
+  // NON sono in coordinate immagine originale!
   const greenDots = side === 'left'
     ? window.greenDotsData.groups.Sx.slice(0, 5)
     : window.greenDotsData.groups.Dx.slice(0, 5);
@@ -152,57 +152,122 @@ function createFullImageOverlay(sourceCanvas, side, axis) {
     ? window.greenDotsData.groups.Dx.slice(0, 5)
     : window.greenDotsData.groups.Sx.slice(0, 5);
 
-  console.log(`  📍 Punti verdi: ${greenDots.length}, Punti da riflettere: ${dotsToReflect.length}`);
+  console.log(`  📍 Punti verdi (coordinate backend): ${greenDots.length}, Punti da riflettere: ${dotsToReflect.length}`);
 
-  // L'asse è in coordinate canvas, dobbiamo convertirlo a coordinate immagine
-  const scale = window.imageScale || 1;
-  const offset = window.imageOffset || { x: 0, y: 0 };
+  // CRITICO: Calcola le scale corrette
+  // 1. greenDotsData.image_size = dimensioni immagine processata dal backend
+  // 2. sourceCanvas = dimensioni immagine originale
+  // 3. axis = coordinate canvas display (da landmarks) CON OFFSET!
 
-  const canvasToImage = (canvasPoint) => ({
-    x: (canvasPoint.x - offset.x) / scale,
-    y: (canvasPoint.y - offset.y) / scale
-  });
+  const backendWidth = window.greenDotsData.image_size[0];
+  const backendHeight = window.greenDotsData.image_size[1];
+  const originalWidth = sourceCanvas.width;
+  const originalHeight = sourceCanvas.height;
 
-  const axisImage = {
-    p1: canvasToImage(axis.p1),
-    p2: canvasToImage(axis.p2)
-  };
+  // Rileva se c'è stato ridimensionamento nel frontend
+  const wasResized = (backendWidth !== originalWidth) || (backendHeight !== originalHeight);
+  const resizeRatio = wasResized ? (originalWidth / backendWidth) : 1.0;
 
-  console.log(`  📏 Asse convertito a coordinate immagine`);
+  console.log(`  📐 Backend: ${backendWidth}x${backendHeight}, Original: ${originalWidth}x${originalHeight}`);
+  console.log(`  📐 Ridimensionamento: ${wasResized ? 'SI' : 'NO'}, Ratio: ${resizeRatio.toFixed(3)}`);
+
+  // Scala da backend a originale
+  const backendToOriginalX = originalWidth / backendWidth;
+  const backendToOriginalY = originalHeight / backendHeight;
+
+  // IMPORTANTE: L'asse ha un offset (left/top dell'immagine nel canvas Fabric.js)
+  const imageOffset = window.imageOffset || { x: 0, y: 0 };
+  const imageScale = window.imageScale || 1;
+
+  // Scala da display a backend (con rimozione offset!)
+  const fabricScaleX = window.currentImage.scaleX || 1;
+  const fabricScaleY = window.currentImage.scaleY || 1;
+
+  console.log(`  📐 ImageScale: ${imageScale.toFixed(3)}, Offset: (${imageOffset.x.toFixed(1)}, ${imageOffset.y.toFixed(1)})`);
+  console.log(`  📐 FabricScale: (${fabricScaleX.toFixed(3)}, ${fabricScaleY.toFixed(3)})`);
+  console.log(`  📐 Scale backend→original: X=${backendToOriginalX.toFixed(3)}, Y=${backendToOriginalY.toFixed(3)}`);
+
+  // FLUSSO DIVERSO per immagini piccole (no resize) vs grandi (con resize)
+  let axisBackend;
+
+  if (!wasResized) {
+    // IMMAGINI PICCOLE: coordinate già corrette, conversione semplice
+    console.log(`  ✅ Immagine NON ridimensionata - Flusso semplice`);
+    axisBackend = {
+      p1: {
+        x: (axis.p1.x - imageOffset.x) / imageScale,
+        y: (axis.p1.y - imageOffset.y) / imageScale
+      },
+      p2: {
+        x: (axis.p2.x - imageOffset.x) / imageScale,
+        y: (axis.p2.y - imageOffset.y) / imageScale
+      }
+    };
+  } else {
+    // IMMAGINI GRANDI: rimuovi offset + scala display→original→backend
+    console.log(`  ⚠️ Immagine ridimensionata - Flusso con scale`);
+    axisBackend = {
+      p1: {
+        x: ((axis.p1.x - imageOffset.x) / imageScale) / backendToOriginalX,
+        y: ((axis.p1.y - imageOffset.y) / imageScale) / backendToOriginalY
+      },
+      p2: {
+        x: ((axis.p2.x - imageOffset.x) / imageScale) / backendToOriginalX,
+        y: ((axis.p2.y - imageOffset.y) / imageScale) / backendToOriginalY
+      }
+    };
+  }
+
+  console.log(`  📏 Asse display (con offset):`, axis);
+  console.log(`  📏 Asse backend:`, axisBackend);
 
   // Array per salvare coppie di punti per le frecce
   const arrowPairs = [];
 
-  // Disegna punti VERDI (originali del lato selezionato)
+  // Dimensione punti scalata in base al ridimensionamento
+  // Immagini piccole: punti piccoli originali (1px)
+  // Immagini grandi ridimensionate: punti più grandi e visibili
+  const pointRadius = wasResized ? Math.max(5, 12 / resizeRatio) : 1;
+  console.log(`  🎨 Dimensione punti: ${pointRadius.toFixed(1)}px (wasResized: ${wasResized}, ratio: ${resizeRatio.toFixed(2)})`);
+
+  // Disegna punti VERDI (backend → originale per disegno)
   ctx.fillStyle = 'rgb(0, 255, 0)';
   greenDots.forEach((dot, i) => {
+    const originalX = wasResized ? (dot.x * backendToOriginalX) : dot.x;
+    const originalY = wasResized ? (dot.y * backendToOriginalY) : dot.y;
     ctx.beginPath();
-    ctx.arc(dot.x, dot.y, 1, 0, 2 * Math.PI);
+    ctx.arc(originalX, originalY, pointRadius, 0, 2 * Math.PI);
     ctx.fill();
-    console.log(`    🟢 Punto verde ${i + 1}: (${dot.x.toFixed(1)}, ${dot.y.toFixed(1)})`);
+    console.log(`    🟢 Punto verde ${i + 1}: backend(${dot.x.toFixed(1)},${dot.y.toFixed(1)}) → original(${originalX.toFixed(1)},${originalY.toFixed(1)})`);
   });
 
   // Array per salvare i punti rossi riflessi
   const reflectedRedDots = [];
 
-  // Rifletti e disegna punti ROSSI (dal lato opposto)
+  // Rifletti punti ROSSI (in coordinate backend, poi scala a originale per disegno)
   ctx.fillStyle = 'rgb(255, 0, 0)';
   dotsToReflect.forEach((dot, i) => {
-    const reflected = reflectPointAcrossAxis({ x: dot.x, y: dot.y }, axisImage);
+    // Rifletti in coordinate backend
+    const reflected = reflectPointAcrossAxis({ x: dot.x, y: dot.y }, axisBackend);
+
+    // Scala a originale per disegno
+    const originalX = wasResized ? (reflected.x * backendToOriginalX) : reflected.x;
+    const originalY = wasResized ? (reflected.y * backendToOriginalY) : reflected.y;
+
     ctx.beginPath();
-    ctx.arc(reflected.x, reflected.y, 1, 0, 2 * Math.PI);
+    ctx.arc(originalX, originalY, pointRadius, 0, 2 * Math.PI);
     ctx.fill();
 
     reflectedRedDots.push(reflected);
 
-    console.log(`    🔴 Punto rosso ${i + 1}: (${dot.x.toFixed(1)}, ${dot.y.toFixed(1)}) → (${reflected.x.toFixed(1)}, ${reflected.y.toFixed(1)})`);
+    console.log(`    🔴 Punto rosso ${i + 1}: backend(${dot.x.toFixed(1)},${dot.y.toFixed(1)}) → riflesso_backend(${reflected.x.toFixed(1)},${reflected.y.toFixed(1)}) → original(${originalX.toFixed(1)},${originalY.toFixed(1)})`);
   });
 
-  // CORREZIONE: Accoppia ogni punto verde con il punto rosso PIÙ VICINO
+  // CORREZIONE: Accoppia ogni punto verde con il punto rosso PIÙ VICINO (in coordinate backend)
   // Questo garantisce che le frecce puntino sempre al centro del punto corrispondente
-  console.log(`  🔗 Accoppiamento punti verde-rosso per distanza minima:`);
+  console.log(`  🔗 Accoppiamento punti verde-rosso per distanza minima (coordinate backend):`);
   greenDots.forEach((greenDot, greenIdx) => {
-    // Trova il punto rosso più vicino a questo punto verde
+    // Trova il punto rosso più vicino a questo punto verde (in coordinate backend)
     let minDistance = Infinity;
     let closestRedDot = null;
     let closestRedIdx = -1;
@@ -220,11 +285,18 @@ function createFullImageOverlay(sourceCanvas, side, axis) {
     });
 
     if (closestRedDot) {
+      // Scala entrambi i punti a originale per il disegno
       arrowPairs.push({
-        from: greenDot,
-        to: closestRedDot
+        from: {
+          x: wasResized ? (greenDot.x * backendToOriginalX) : greenDot.x,
+          y: wasResized ? (greenDot.y * backendToOriginalY) : greenDot.y
+        },
+        to: {
+          x: wasResized ? (closestRedDot.x * backendToOriginalX) : closestRedDot.x,
+          y: wasResized ? (closestRedDot.y * backendToOriginalY) : closestRedDot.y
+        }
       });
-      console.log(`    🔗 Verde ${greenIdx} → Rosso ${closestRedIdx} (distanza: ${minDistance.toFixed(1)}px)`);
+      console.log(`    🔗 Verde ${greenIdx} → Rosso ${closestRedIdx} (distanza backend: ${minDistance.toFixed(1)}px)`);
     }
   });
 
@@ -268,18 +340,87 @@ function reflectPointAcrossAxis(point, axis) {
 }
 
 function calculateInclusiveBbox(side, axis) {
-  // I green dots dall'API sono GIÀ in coordinate immagine originale
+  // I green dots dall'API sono in coordinate BACKEND (ridimensionate)
   const greenDots = side === 'left'
     ? window.greenDotsData.groups.Sx.slice(0, 5)
     : window.greenDotsData.groups.Dx.slice(0, 5);
 
-  console.log(`  📏 Bbox basato su ${greenDots.length} punti verdi (già in coordinate immagine)`);
+  const dotsToReflect = side === 'left'
+    ? window.greenDotsData.groups.Dx.slice(0, 5)
+    : window.greenDotsData.groups.Sx.slice(0, 5);
+
+  console.log(`  📏 Bbox basato su ${greenDots.length} punti verdi + ${dotsToReflect.length} punti rossi riflessi`);
+
+  // Calcola le scale
+  const backendWidth = window.greenDotsData.image_size[0];
+  const backendHeight = window.greenDotsData.image_size[1];
+  const imageElement = window.currentImage._element || window.currentImage.getElement();
+  const originalWidth = imageElement.width;
+  const originalHeight = imageElement.height;
+
+  const backendToOriginalX = originalWidth / backendWidth;
+  const backendToOriginalY = originalHeight / backendHeight;
+
+  // Rileva se c'è stato ridimensionamento
+  const wasResized = (backendWidth !== originalWidth) || (backendHeight !== originalHeight);
+
+  // IMPORTANTE: L'asse ha un offset (left/top dell'immagine nel canvas Fabric.js)
+  const imageOffset = window.imageOffset || { x: 0, y: 0 };
+  const imageScale = window.imageScale || 1;
+
+  const fabricScaleX = window.currentImage.scaleX || 1;
+  const fabricScaleY = window.currentImage.scaleY || 1;
+
+  // Converti asse a backend con flusso appropriato
+  let axisBackend;
+  if (!wasResized) {
+    // IMMAGINI PICCOLE: conversione semplice
+    axisBackend = {
+      p1: {
+        x: (axis.p1.x - imageOffset.x) / imageScale,
+        y: (axis.p1.y - imageOffset.y) / imageScale
+      },
+      p2: {
+        x: (axis.p2.x - imageOffset.x) / imageScale,
+        y: (axis.p2.y - imageOffset.y) / imageScale
+      }
+    };
+  } else {
+    // IMMAGINI GRANDI: rimuovi offset + scala
+    axisBackend = {
+      p1: {
+        x: ((axis.p1.x - imageOffset.x) / imageScale) / backendToOriginalX,
+        y: ((axis.p1.y - imageOffset.y) / imageScale) / backendToOriginalY
+      },
+      p2: {
+        x: ((axis.p2.x - imageOffset.x) / imageScale) / backendToOriginalX,
+        y: ((axis.p2.y - imageOffset.y) / imageScale) / backendToOriginalY
+      }
+    };
+  }
+
+  // Calcola punti rossi riflessi in coordinate backend
+  const reflectedRedDots = dotsToReflect.map(dot =>
+    reflectPointAcrossAxis({ x: dot.x, y: dot.y }, axisBackend)
+  );
+
+  // Combina TUTTI i punti (verdi + rossi) e scala a originale
+  const allPointsOriginal = [
+    ...greenDots.map(d => ({
+      x: wasResized ? (d.x * backendToOriginalX) : d.x,
+      y: wasResized ? (d.y * backendToOriginalY) : d.y
+    })),
+    ...reflectedRedDots.map(d => ({
+      x: wasResized ? (d.x * backendToOriginalX) : d.x,
+      y: wasResized ? (d.y * backendToOriginalY) : d.y
+    }))
+  ];
 
   // Trova min/max
   let minX = Infinity, minY = Infinity;
   let maxX = -Infinity, maxY = -Infinity;
 
-  greenDots.forEach(dot => {
+  allPointsOriginal.forEach(dot => {
     minX = Math.min(minX, dot.x);
     minY = Math.min(minY, dot.y);
     maxX = Math.max(maxX, dot.x);
@@ -367,20 +508,35 @@ function displayCorrectionWindow(croppedCanvas, side) {
 
   // Container per immagine + frecce animate
   const imageContainer = document.createElement('div');
-  imageContainer.style.cssText = 'position: relative; display: inline-block;';
+  imageContainer.style.cssText = 'position: relative; display: inline-block; max-width: 95vw; max-height: 80vh; overflow: auto;';
 
-  // Immagine (ingrandita 8x per maggiore visibilità)
+  // Calcola scala dinamica per immagini grandi
+  // Immagini piccole (< 300px): scala 8x
+  // Immagini grandi (> 300px): scala per adattarsi allo schermo
+  const maxDisplayWidth = window.innerWidth * 0.9;
+  const maxDisplayHeight = window.innerHeight * 0.75;
+
+  let scale;
+  if (croppedCanvas.width < 300 && croppedCanvas.height < 300) {
+    // Immagine piccola: ingrandisci molto
+    scale = 8;
+  } else {
+    // Immagine grande: scala per adattarsi
+    const scaleX = maxDisplayWidth / croppedCanvas.width;
+    const scaleY = maxDisplayHeight / croppedCanvas.height;
+    scale = Math.min(scaleX, scaleY, 4); // Max 4x per immagini grandi
+  }
+
+  console.log(`  🖼️ Crop: ${croppedCanvas.width}x${croppedCanvas.height}, Display scale: ${scale.toFixed(2)}x`);
+
+  // Immagine scalata
   const img = document.createElement('img');
   img.src = croppedCanvas.toDataURL('image/png');
-  const scale = 8;
   img.style.cssText = `
         width: ${croppedCanvas.width * scale}px;
         height: ${croppedCanvas.height * scale}px;
-        image-rendering: pixelated;
+        image-rendering: ${scale >= 4 ? 'pixelated' : 'auto'};
         border: 2px solid #ccc;
-        max-width: 95vw;
-        max-height: 85vh;
-        object-fit: contain;
         display: block;
     `;
 
@@ -439,8 +595,8 @@ function displayCorrectionWindow(croppedCanvas, side) {
       const dirX = dx / distance;
       const dirY = dy / distance;
 
-      // Freccia MOLTO PICCOLA: max 8px o 25% della distanza
-      const arrowLength = Math.min(8, distance * 0.25);
+      // Freccia più visibile per immagini grandi: max 14px o 30% della distanza
+      const arrowLength = Math.min(14, distance * 0.30);
 
       // Punto finale freccia
       const endX = fromX + dirX * arrowLength;
@@ -457,13 +613,13 @@ function displayCorrectionWindow(croppedCanvas, side) {
       line.setAttribute('x2', endX);
       line.setAttribute('y2', endY);
       line.setAttribute('stroke', '#000000');
-      line.setAttribute('stroke-width', '0.8');
+      line.setAttribute('stroke-width', '1.5');
       line.setAttribute('stroke-linecap', 'round');
       g.appendChild(line);
 
       // FRECCIA DIREZIONALE MIGLIORATA: triangolo isoscele con punta pronunciata
-      const headLength = 3.5;  // Lunghezza dalla punta alla base
-      const headWidth = 1.2;   // Larghezza base ridotta per triangolo isoscele stretto
+      const headLength = 5.5;  // Lunghezza dalla punta alla base (più grande per immagini grandi)
+      const headWidth = 2.0;   // Larghezza base per maggiore visibilità
       const angle = Math.atan2(dy, dx);
 
       // Crea triangolo isoscele che punta nella direzione
@@ -482,7 +638,7 @@ function displayCorrectionWindow(croppedCanvas, side) {
       polygon.setAttribute('points', `${tipX},${tipY} ${baseLeftX},${baseLeftY} ${baseRightX},${baseRightY}`);
       polygon.setAttribute('fill', '#000000');
       polygon.setAttribute('stroke', '#FFD700');  // Bordo giallo per maggiore visibilità
-      polygon.setAttribute('stroke-width', '0.3');
+      polygon.setAttribute('stroke-width', '0.5');
 
       g.appendChild(polygon);
 

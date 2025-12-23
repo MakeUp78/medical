@@ -65,48 +65,43 @@ async function processEyebrowCorrection(side) {
     }
     console.log(`✅ STEP 2: Asse simmetria calcolato`, axis);
 
-    // STEP 3: Accedi DIRETTAMENTE al canvas HTML sottostante di Fabric
-    let sourceCanvas;
+    // STEP 3: Ottieni immagine originale e calcola scala
+    console.log(`\n📸 STEP 3: Ottenimento immagine originale...`);
 
-    if (window.fabricCanvas) {
-      console.log('📸 Accesso diretto al canvas HTML di Fabric');
+    // Ottieni l'immagine originale dalle dimensioni reali (non ridimensionata dal canvas)
+    const imageElement = currentImage.getElement ? currentImage.getElement() : currentImage;
+    const originalWidth = imageElement.naturalWidth || imageElement.width;
+    const originalHeight = imageElement.naturalHeight || imageElement.height;
 
-      // SOLUZIONE CORRETTA: Fabric.js ha un elemento canvas HTML sottostante
-      // che contiene TUTTO il rendering (background + oggetti)
-      const fabricLowerCanvas = window.fabricCanvas.lowerCanvasEl;
+    // Crea un canvas con le dimensioni ORIGINALI dell'immagine
+    const fullSizeCanvas = document.createElement('canvas');
+    fullSizeCanvas.width = originalWidth;
+    fullSizeCanvas.height = originalHeight;
+    const fullSizeCtx = fullSizeCanvas.getContext('2d');
+    fullSizeCtx.drawImage(imageElement, 0, 0, originalWidth, originalHeight);
 
-      if (fabricLowerCanvas) {
-        console.log('✅ Trovato lowerCanvasEl (canvas HTML di rendering)');
-        sourceCanvas = fabricLowerCanvas;
-      } else {
-        // Fallback: prova a ottenerlo dall'elemento wrapper
-        const canvasElements = document.querySelectorAll('.canvas-container canvas');
-        console.log(`🔍 Trovati ${canvasElements.length} elementi canvas`);
+    // IMPORTANTE: Calcola fattore di scala usando le dimensioni EFFETTIVE dell'immagine processata dal backend
+    // greenDotsData.image_size contiene [width, height] dell'immagine che il backend ha ricevuto
+    // Questo gestisce automaticamente qualsiasi ridimensionamento applicato dal frontend
 
-        if (canvasElements.length > 0) {
-          sourceCanvas = canvasElements[0]; // Primo canvas è di solito quello di rendering
-          console.log('✅ Usando primo canvas trovato nel wrapper');
-        } else {
-          alert('Impossibile trovare canvas di rendering');
-          return;
-        }
-      }
+    const fabricScaleX = currentImage.scaleX || 1;
+    const fabricScaleY = currentImage.scaleY || 1;
 
-      // Test pixel DIRETTO dal canvas HTML
-      const ctx = sourceCanvas.getContext('2d');
-      const testX = Math.floor(sourceCanvas.width / 2);
-      const testY = Math.floor(sourceCanvas.height / 2);
-      const testPixel = ctx.getImageData(testX, testY, 1, 1);
-      console.log(`🔍 Test pixel centro canvas HTML (${testX},${testY}): R=${testPixel.data[0]} G=${testPixel.data[1]} B=${testPixel.data[2]} A=${testPixel.data[3]}`);
+    // Dimensioni dell'immagine che il backend ha processato (dalla risposta API)
+    const backendImageWidth = greenDotsData.image_size[0];
+    const backendImageHeight = greenDotsData.image_size[1];
 
-    } else {
-      console.log('📸 Usando main-canvas diretto');
-      sourceCanvas = document.getElementById('main-canvas');
-      if (!sourceCanvas) {
-        alert("Canvas non trovato");
-        return;
-      }
-    }
+    // Le coordinate green dots sono relative a backendImageWidth x backendImageHeight
+    // Dobbiamo scalare DALLE coordinate backend ALLE dimensioni originali dell'immagine
+    const scaleX = originalWidth / backendImageWidth;
+    const scaleY = originalHeight / backendImageHeight;
+
+    console.log(`📐 Dimensioni immagine originale: ${originalWidth}x${originalHeight}`);
+    console.log(`📐 Dimensioni immagine processata dal backend: ${backendImageWidth}x${backendImageHeight}`);
+    console.log(`📐 Scala Fabric.js applicata: scaleX=${fabricScaleX.toFixed(3)}, scaleY=${fabricScaleY.toFixed(3)}`);
+    console.log(`📐 Fattore scala (backend→original): X=${scaleX.toFixed(3)}, Y=${scaleY.toFixed(3)}`);
+
+    const sourceCanvas = fullSizeCanvas;
 
     const greenDotsData = window.greenDotsData;
     if (!greenDotsData || !greenDotsData.success) {
@@ -114,11 +109,15 @@ async function processEyebrowCorrection(side) {
       return;
     }
 
-    console.log('📍 Green dots con coordinate canvas:', greenDotsData.groups);
+    console.log('📍 Green dots data completo:', greenDotsData);
+    console.log('📍 Image size dal backend:', greenDotsData.image_size);
+    console.log('📍 Green dots groups:', greenDotsData.groups);
+    console.log('📍 window.greenDotsImageScale:', window.greenDotsImageScale);
+    console.log('📍 window.lastImageResizeScale:', window.lastImageResizeScale);
 
     // STEP 4: Calcola bounding box che include TUTTI i punti (verdi + rossi)
     console.log(`\n📐 STEP 4: Calcolo bounding box inclusivo...`);
-    const bbox = calculateInclusiveBoundingBox(greenDotsData, axis, side);
+    const bbox = calculateInclusiveBoundingBox(greenDotsData, axis, side, scaleX, scaleY, fabricScaleX, fabricScaleY);
     if (!bbox || bbox.width === 0 || bbox.height === 0) {
       alert(`Bounding box non valido per sopracciglio ${sideName}`);
       console.error('❌ Bbox invalido:', bbox);
@@ -148,7 +147,7 @@ async function processEyebrowCorrection(side) {
 
     // STEP 6: Disegna i punti verdi e rossi SUL ritaglio
     console.log(`\n🎨 STEP 6: Disegno punti sul ritaglio...`);
-    const croppedWithPoints = drawPointsOnCroppedImage(croppedImage, greenDotsData, axis, side, bbox);
+    const croppedWithPoints = drawPointsOnCroppedImage(croppedImage, greenDotsData, axis, side, bbox, scaleX, scaleY, fabricScaleX, fabricScaleY);
     console.log(`✅ Punti disegnati sul ritaglio`);
 
     // STEP 7: Mostra finestra con risultato
@@ -253,11 +252,14 @@ function reflectPointAcrossAxis(point, axis) {
 
 /**
  * Calcola bounding box che include TUTTI i punti (verdi + rossi riflessi)
+ * Scala le coordinate dal canvas display alle dimensioni originali dell'immagine
  */
-function calculateInclusiveBoundingBox(greenDotsData, axis, side, expandFactor = 0.5) {
+function calculateInclusiveBoundingBox(greenDotsData, axis, side, scaleX, scaleY, fabricScaleX, fabricScaleY, expandFactor = 0.5) {
   console.log(`🔧 Inizio calcolo bbox per lato ${side}`);
+  console.log(`🔧 scaleX/Y (backend→original): ${scaleX.toFixed(3)} / ${scaleY.toFixed(3)}`);
+  console.log(`🔧 fabricScaleX/Y (display→original): ${fabricScaleX.toFixed(3)} / ${fabricScaleY.toFixed(3)}`);
 
-  // Determina punti
+  // Determina punti (già in coordinate backend dall'API)
   let greenDots, dotsToReflect;
   if (side === 'left') {
     greenDots = greenDotsData.groups.Sx.slice(0, 5);
@@ -267,32 +269,54 @@ function calculateInclusiveBoundingBox(greenDotsData, axis, side, expandFactor =
     dotsToReflect = greenDotsData.groups.Sx.slice(0, 5);
   }
 
-  console.log(`  📍 Green dots: ${greenDots.length}, Dots to reflect: ${dotsToReflect.length}`);
+  console.log(`  📍 Green dots (coordinate backend):`, greenDots);
+  console.log(`  📍 Dots to reflect (coordinate backend):`, dotsToReflect);
 
-  // Calcola punti rossi riflessi
-  const redDots = dotsToReflect.map(dot => {
-    const reflected = reflectPointAcrossAxis({ x: dot.x, y: dot.y }, axis);
-    console.log(`    🔄 Rifletto (${dot.x}, ${dot.y}) → (${reflected.x.toFixed(1)}, ${reflected.y.toFixed(1)})`);
+  // IMPORTANTE: L'asse viene dai landmarks che sono in coordinate CANVAS DISPLAY
+  // I green dots sono in coordinate BACKEND (ridimensionate)
+  // Dobbiamo portare l'asse dalle coordinate display alle coordinate backend!
+
+  // Scala dalle coordinate display fabric alle coordinate backend
+  // fabricScale è la scala applicata per visualizzare (es. 0.264 per 3024→800)
+  // Ma i green dots sono in coordinate backend ridimensionate (es. 1600px)
+  // Quindi: display * (1/fabricScale) = original, poi original * (backend/original) = backend
+
+  // Calcola il fattore per portare dalle coordinate display alle coordinate backend
+  const displayToBackendX = 1 / (fabricScaleX * scaleX);
+  const displayToBackendY = 1 / (fabricScaleY * scaleY);
+
+  console.log(`  📐 Fattore display→backend: X=${displayToBackendX.toFixed(3)}, Y=${displayToBackendY.toFixed(3)}`);
+
+  const backendAxis = {
+    p1: { x: axis.p1.x * displayToBackendX, y: axis.p1.y * displayToBackendY },
+    p2: { x: axis.p2.x * displayToBackendX, y: axis.p2.y * displayToBackendY }
+  };
+
+  console.log(`  📏 Asse originale (display):`, axis);
+  console.log(`  📏 Asse convertito (backend):`, backendAxis);
+
+  // Calcola punti rossi riflessi (tutti in coordinate backend)
+  const redDots = dotsToReflect.map((dot, idx) => {
+    const reflected = reflectPointAcrossAxis(dot, backendAxis);
+    console.log(`    🔄 Rifletto punto ${idx}: (${dot.x}, ${dot.y}) → (${reflected.x.toFixed(1)}, ${reflected.y.toFixed(1)})`);
     return reflected;
   });
 
-  // Combina TUTTI i punti
-  const allPoints = [
-    ...greenDots.map(d => ({ x: d.x, y: d.y })),
-    ...redDots
+  // Scala TUTTI i punti (backend → original) per il crop finale
+  const allPointsOriginal = [
+    ...greenDots.map(d => ({ x: d.x * scaleX, y: d.y * scaleY })),
+    ...redDots.map(d => ({ x: d.x * scaleX, y: d.y * scaleY }))
   ];
 
-  console.log(`  📊 Calcolo bbox su ${allPoints.length} punti totali`);
-  console.log(`  📊 Tutti i punti:`, allPoints);
+  console.log(`  📊 Calcolo bbox su ${allPointsOriginal.length} punti totali (coordinate originali)`);
 
   // Trova min/max
   let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity;
-  allPoints.forEach((p, i) => {
+  allPointsOriginal.forEach((p, i) => {
     xMin = Math.min(xMin, p.x);
     yMin = Math.min(yMin, p.y);
     xMax = Math.max(xMax, p.x);
     yMax = Math.max(yMax, p.y);
-    console.log(`    📌 Punto ${i}: (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) → xMin=${xMin.toFixed(1)}, xMax=${xMax.toFixed(1)}, yMin=${yMin.toFixed(1)}, yMax=${yMax.toFixed(1)}`);
   });
 
   console.log(`  📏 Range: X[${xMin.toFixed(1)} - ${xMax.toFixed(1)}], Y[${yMin.toFixed(1)} - ${yMax.toFixed(1)}]`);
@@ -310,7 +334,9 @@ function calculateInclusiveBoundingBox(greenDotsData, axis, side, expandFactor =
     height: Math.ceil(height + 2 * expandH)
   };
 
-  console.log(`  ✅ Bbox finale:`, bbox);
+  console.log(`  ✅ Bbox finale (dimensioni originali):`, bbox);
+  console.log(`  ✅ Bbox rispetto a sourceCanvas (${width}x${height}): X[${bbox.x} - ${bbox.x + bbox.width}], Y[${bbox.y} - ${bbox.y + bbox.height}]`);
+
   return bbox;
 }
 
@@ -345,8 +371,9 @@ function cropCanvasToBbox(sourceCanvas, bbox) {
 
 /**
  * Disegna punti verdi e rossi sull'immagine ritagliata
+ * Con coordinate scalate alle dimensioni originali
  */
-function drawPointsOnCroppedImage(croppedCanvas, greenDotsData, axis, side, bbox) {
+function drawPointsOnCroppedImage(croppedCanvas, greenDotsData, axis, side, bbox, scaleX, scaleY, fabricScaleX, fabricScaleY) {
   // Crea nuovo canvas con stesse dimensioni
   const resultCanvas = document.createElement('canvas');
   resultCanvas.width = croppedCanvas.width;
@@ -356,7 +383,7 @@ function drawPointsOnCroppedImage(croppedCanvas, greenDotsData, axis, side, bbox
   // Copia immagine ritagliata
   ctx.drawImage(croppedCanvas, 0, 0);
 
-  // Determina punti
+  // Determina punti (già in coordinate backend)
   let greenDots, dotsToReflect;
   if (side === 'left') {
     greenDots = greenDotsData.groups.Sx.slice(0, 5);
@@ -366,30 +393,135 @@ function drawPointsOnCroppedImage(croppedCanvas, greenDotsData, axis, side, bbox
     dotsToReflect = greenDotsData.groups.Sx.slice(0, 5);
   }
 
-  // Disegna punti VERDI (coordinate relative al bbox)
-  ctx.fillStyle = 'rgb(0, 255, 0)';
+  console.log(`🎨 Disegno ${greenDots.length} punti verdi e ${dotsToReflect.length} punti rossi riflessi`);
+
+  // Converti asse da coordinate display a coordinate backend
+  const displayToBackendX = 1 / (fabricScaleX * scaleX);
+  const displayToBackendY = 1 / (fabricScaleY * scaleY);
+
+  const backendAxis = {
+    p1: { x: axis.p1.x * displayToBackendX, y: axis.p1.y * displayToBackendY },
+    p2: { x: axis.p2.x * displayToBackendX, y: axis.p2.y * displayToBackendY }
+  };
+
+  // 1. Disegna punti VERDI (backend → originali → relativi al ritaglio)
+  ctx.fillStyle = 'green';
   greenDots.forEach((dot, i) => {
-    const relX = dot.x - bbox.x;
-    const relY = dot.y - bbox.y;
-    if (relX >= 0 && relX < resultCanvas.width && relY >= 0 && relY < resultCanvas.height) {
-      ctx.beginPath();
-      ctx.arc(relX, relY, 4, 0, 2 * Math.PI);
-      ctx.fill();
-      console.log(`    🟢 Punto verde ${i + 1}: canvas(${dot.x},${dot.y}) → ritaglio(${relX.toFixed(1)},${relY.toFixed(1)})`);
+    // Scala coordinate backend alle dimensioni originali
+    const originalX = dot.x * scaleX;
+    const originalY = dot.y * scaleY;
+
+    // Converti in coordinate relative al ritaglio
+    const relX = originalX - bbox.x;
+    const relY = originalY - bbox.y;
+
+    ctx.beginPath();
+    ctx.arc(relX, relY, 8, 0, 2 * Math.PI);
+    ctx.fill();
+    console.log(`    🟢 Punto verde ${i + 1}: backend(${dot.x},${dot.y}) → originale(${originalX.toFixed(1)},${originalY.toFixed(1)}) → ritaglio(${relX.toFixed(1)},${relY.toFixed(1)})`);
+  });
+
+  // 2. Calcola punti ROSSI riflessi (tutti in coordinate backend)
+  const redDots = dotsToReflect.map(dot => reflectPointAcrossAxis(dot, backendAxis));
+
+  // 3. Abbinamento verde-rosso basato su distanza minima (in coordinate backend)
+  const pairs = [];
+  const usedRed = new Set();
+
+  greenDots.forEach((greenDot, greenIdx) => {
+    let minDist = Infinity;
+    let closestRedIdx = -1;
+    let closestReflected = null;
+
+    redDots.forEach((redDot, redIdx) => {
+      if (usedRed.has(redIdx)) return;
+
+      const dx = greenDot.x - redDot.x;
+      const dy = greenDot.y - redDot.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < minDist) {
+        minDist = dist;
+        closestRedIdx = redIdx;
+        closestReflected = redDot;
+      }
+    });
+
+    if (closestRedIdx !== -1) {
+      pairs.push({
+        greenIdx,
+        redIdx: closestRedIdx,
+        distance: minDist,
+        reflected: closestReflected
+      });
+      usedRed.add(closestRedIdx);
     }
   });
 
-  // Disegna punti ROSSI riflessi (coordinate relative al bbox)
-  ctx.fillStyle = 'rgb(255, 0, 0)';
-  dotsToReflect.forEach((dot, i) => {
-    const reflected = reflectPointAcrossAxis({ x: dot.x, y: dot.y }, axis);
-    const relX = reflected.x - bbox.x;
-    const relY = reflected.y - bbox.y;
-    if (relX >= 0 && relX < resultCanvas.width && relY >= 0 && relY < resultCanvas.height) {
+  // 4. Disegna frecce da verde a rosso
+  ctx.strokeStyle = 'red';
+  ctx.lineWidth = 3;
+
+  pairs.forEach(({ greenIdx, redIdx, distance, reflected }) => {
+    const greenDot = greenDots[greenIdx];
+
+    // Coordinate verdi in ritaglio (backend → originale → ritaglio)
+    const greenOriginalX = greenDot.x * scaleX;
+    const greenOriginalY = greenDot.y * scaleY;
+    const greenRelX = greenOriginalX - bbox.x;
+    const greenRelY = greenOriginalY - bbox.y;
+
+    // Coordinate rosse riflesse in ritaglio (backend → originale → ritaglio)
+    const redOriginalX = reflected.x * scaleX;
+    const redOriginalY = reflected.y * scaleY;
+    const redRelX = redOriginalX - bbox.x;
+    const redRelY = redOriginalY - bbox.y;
+
+    // Disegna punto rosso SOLO se dentro il bbox con margine
+    const margin = 20;
+    if (redRelX >= -margin && redRelX <= croppedCanvas.width + margin &&
+      redRelY >= -margin && redRelY <= croppedCanvas.height + margin) {
       ctx.beginPath();
-      ctx.arc(relX, relY, 4, 0, 2 * Math.PI);
+      ctx.arc(redRelX, redRelY, 8, 0, 2 * Math.PI);
       ctx.fill();
-      console.log(`    🔴 Punto rosso ${i + 1}: canvas(${dot.x},${dot.y}) → riflesso(${reflected.x.toFixed(1)},${reflected.y.toFixed(1)}) → ritaglio(${relX.toFixed(1)},${relY.toFixed(1)})`);
+      console.log(`    🔴 Punto rosso ${greenIdx + 1}: ritaglio(${redRelX.toFixed(1)},${redRelY.toFixed(1)})`);
+    } else {
+      console.log(`    ⚠️ Punto rosso ${greenIdx + 1} FUORI bbox: (${redRelX.toFixed(1)},${redRelY.toFixed(1)}), bbox: 0-${croppedCanvas.width}, 0-${croppedCanvas.height}`);
+    }
+
+    // Disegna freccia SEMPRE (indica direzione anche se punto è fuori)
+    const dx = redRelX - greenRelX;
+    const dy = redRelY - greenRelY;
+    const len = Math.sqrt(dx * dx + dy * dy);
+
+    if (len > 5) {
+      // Freccia limitata a 60px max per restare nel bbox
+      const maxArrowLen = Math.min(60, len * 0.3);
+      const dirX = dx / len;
+      const dirY = dy / len;
+
+      const endX = greenRelX + dirX * maxArrowLen;
+      const endY = greenRelY + dirY * maxArrowLen;
+
+      // Disegna linea
+      ctx.beginPath();
+      ctx.moveTo(greenRelX, greenRelY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+
+      // Punta freccia
+      const arrowHeadLen = 10;
+      const angle = Math.atan2(dy, dx);
+
+      ctx.fillStyle = 'red';
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX - arrowHeadLen * Math.cos(angle - Math.PI / 6), endY - arrowHeadLen * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(endX - arrowHeadLen * Math.cos(angle + Math.PI / 6), endY - arrowHeadLen * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fill();
+
+      console.log(`    ➡️ Freccia ${greenIdx + 1}: lunghezza ${maxArrowLen.toFixed(1)}px, direzione (${dirX.toFixed(2)},${dirY.toFixed(2)})`);
     }
   });
 
@@ -463,32 +595,61 @@ function showEyebrowCorrectionWindow(croppedCanvas, side) {
     align-items: center;
   `;
 
-  // Immagine con ingrandimento automatico (minimo 4x)
-  const minScale = 4;
-  const displayWidth = Math.max(croppedCanvas.width * minScale, 600);
-  const displayHeight = Math.max(croppedCanvas.height * minScale, 200);
+  // Calcola dimensioni ottimali per il display
+  // Se il ritaglio è piccolo (< 400px), ingrandiscilo
+  // Se il ritaglio è grande (> 1200px), riducilo
+  // Altrimenti mantieni dimensioni originali
+  const maxDisplaySize = 1200;
+  const minDisplaySize = 400;
+
+  let displayWidth = croppedCanvas.width;
+  let displayHeight = croppedCanvas.height;
+  let scale = 1;
+
+  const maxDim = Math.max(croppedCanvas.width, croppedCanvas.height);
+
+  if (maxDim > maxDisplaySize) {
+    // Riduci se troppo grande
+    scale = maxDisplaySize / maxDim;
+    displayWidth = Math.round(croppedCanvas.width * scale);
+    displayHeight = Math.round(croppedCanvas.height * scale);
+    console.log(`📉 Riduzione ritaglio grande: ${croppedCanvas.width}x${croppedCanvas.height} → ${displayWidth}x${displayHeight} (scala ${scale.toFixed(2)}x)`);
+  } else if (maxDim < minDisplaySize) {
+    // Ingrandisci se troppo piccolo
+    scale = minDisplaySize / maxDim;
+    displayWidth = Math.round(croppedCanvas.width * scale);
+    displayHeight = Math.round(croppedCanvas.height * scale);
+    console.log(`📈 Ingrandimento ritaglio piccolo: ${croppedCanvas.width}x${croppedCanvas.height} → ${displayWidth}x${displayHeight} (scala ${scale.toFixed(2)}x)`);
+  } else {
+    console.log(`✅ Dimensioni ottimali: ${displayWidth}x${displayHeight} (nessuna scala)`);
+  }
 
   const img = document.createElement('img');
   img.src = croppedCanvas.toDataURL();
   img.style.cssText = `
+    max-width: 100%;
+    max-height: 100%;
     width: ${displayWidth}px;
     height: ${displayHeight}px;
-    image-rendering: pixelated;
-    cursor: zoom-in;
+    image-rendering: ${scale < 1 ? 'auto' : 'pixelated'};
+    cursor: ${scale < 1 ? 'default' : 'zoom-in'};
+    object-fit: contain;
   `;
 
-  console.log(`🖼️ Immagine ritagliata: ${croppedCanvas.width}x${croppedCanvas.height}, Display: ${displayWidth}x${displayHeight}`);
+  console.log(`🖼️ Display finale: ${displayWidth}x${displayHeight}`);
 
-  // Zoom al click (toggle tra 4x e 8x)
-  let zoomed = false;
-  img.onclick = () => {
-    zoomed = !zoomed;
-    const scale = zoomed ? 8 : 4;
-    img.style.width = `${croppedCanvas.width * scale}px`;
-    img.style.height = `${croppedCanvas.height * scale}px`;
-    img.style.cursor = zoomed ? 'zoom-out' : 'zoom-in';
-    console.log(`🔍 Zoom ${zoomed ? 'IN' : 'OUT'}: scala ${scale}x`);
-  };
+  // Zoom al click solo per immagini piccole ingrandite
+  if (scale > 1) {
+    let zoomed = false;
+    img.onclick = () => {
+      zoomed = !zoomed;
+      const newScale = zoomed ? scale * 2 : scale;
+      img.style.width = `${Math.round(croppedCanvas.width * newScale)}px`;
+      img.style.height = `${Math.round(croppedCanvas.height * newScale)}px`;
+      img.style.cursor = zoomed ? 'zoom-out' : 'zoom-in';
+      console.log(`🔍 Zoom ${zoomed ? 'IN' : 'OUT'}: scala ${newScale.toFixed(2)}x`);
+    };
+  }
 
   imgContainer.appendChild(img);
   content.appendChild(imgContainer);
