@@ -21,9 +21,15 @@ Esempio d'uso:
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ExifTags
 import math
 from typing import Dict, List, Tuple, Optional
+
+try:
+    import mediapipe as mp
+    MEDIAPIPE_AVAILABLE = True
+except ImportError:
+    MEDIAPIPE_AVAILABLE = False
 
 
 class GreenDotsProcessor:
@@ -33,11 +39,11 @@ class GreenDotsProcessor:
 
     def __init__(
         self,
-        hue_range: Tuple[int, int] = (60, 150),
-        saturation_min: int = 15,
-        value_range: Tuple[int, int] = (15, 95),
-        cluster_size_range: Tuple[int, int] = (2, 150),
-        clustering_radius: int = 2,
+        hue_range: Tuple[int, int] = (42, 158),
+        saturation_min: int = 13,
+        value_range: Tuple[int, int] = (12, 98),
+        cluster_size_range: Tuple[int, int] = (2, 170),
+        clustering_radius: int = 3,
     ):
         """
         Inizializza il processore con parametri configurabili.
@@ -247,6 +253,162 @@ class GreenDotsProcessor:
 
         return left_dots, right_dots
 
+    # ========== FUNZIONI DI PREPROCESSING ==========
+    
+    def _expand_polygon_with_offset(self, points, offset_pixels, image_shape):
+        """Espande un poligono applicando un offset verso l'esterno."""
+        points = np.array(points, dtype=np.int32)
+        mask = np.zeros(image_shape, dtype=np.uint8)
+        cv2.fillPoly(mask, [points], 255)
+        kernel = np.ones((int(offset_pixels * 2) + 1, int(offset_pixels * 2) + 1), np.uint8)
+        dilated_mask = cv2.dilate(mask, kernel, iterations=1)
+        contours, _ = cv2.findContours(dilated_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if len(contours) > 0:
+            expanded_contour = max(contours, key=cv2.contourArea)
+            return expanded_contour.squeeze()
+        else:
+            return points
+
+    def _get_eyebrow_masks(self, image_np):
+        """Rileva sopracciglia usando MediaPipe Face Mesh e genera maschere poligonali."""
+        if not MEDIAPIPE_AVAILABLE:
+            return None, None, None, None
+            
+        h, w = image_np.shape[:2]
+        mp_face_mesh = mp.solutions.face_mesh
+
+        with mp_face_mesh.FaceMesh(
+            static_image_mode=True,
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5
+        ) as face_mesh:
+            rgb_image = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
+            results = face_mesh.process(rgb_image)
+
+            if not results.multi_face_landmarks:
+                y_start = int(h * 0.10)
+                y_end = int(h * 0.35)
+                left_bbox = (int(w * 0.10), y_start, int(w * 0.48), y_end)
+                right_bbox = (int(w * 0.52), y_start, int(w * 0.90), y_end)
+                return None, None, left_bbox, right_bbox
+
+            landmarks = results.multi_face_landmarks[0]
+            left_eyebrow = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46]
+            right_eyebrow = [300, 293, 334, 296, 336, 285, 295, 282, 283, 276]
+
+            left_points = [(int(landmarks.landmark[i].x * w), int(landmarks.landmark[i].y * h))
+                           for i in left_eyebrow]
+            right_points = [(int(landmarks.landmark[i].x * w), int(landmarks.landmark[i].y * h))
+                            for i in right_eyebrow]
+
+            left_bbox_temp = cv2.boundingRect(np.array(left_points, dtype=np.int32))
+            characteristic_size = max(left_bbox_temp[2], left_bbox_temp[3])
+            offset_pixels = characteristic_size * 0.15
+
+            left_polygon = self._expand_polygon_with_offset(left_points, offset_pixels, (h, w))
+            right_polygon = self._expand_polygon_with_offset(right_points, offset_pixels, (h, w))
+
+            left_bbox = cv2.boundingRect(left_polygon)
+            right_bbox = cv2.boundingRect(right_polygon)
+
+            left_bbox = (left_bbox[0], left_bbox[1], left_bbox[0] + left_bbox[2], left_bbox[1] + left_bbox[3])
+            right_bbox = (right_bbox[0], right_bbox[1], right_bbox[0] + right_bbox[2], right_bbox[1] + right_bbox[3])
+
+            return left_polygon, right_polygon, left_bbox, right_bbox
+
+    def _fix_image_orientation(self, pil_image):
+        """Corregge orientamento immagine usando dati EXIF."""
+        try:
+            for orientation in ExifTags.TAGS.keys():
+                if ExifTags.TAGS[orientation] == 'Orientation':
+                    break
+
+            exif = pil_image._getexif()
+            if exif is not None:
+                orientation_value = exif.get(orientation)
+
+                if orientation_value == 3:
+                    pil_image = pil_image.rotate(180, expand=True)
+                elif orientation_value == 6:
+                    pil_image = pil_image.rotate(270, expand=True)
+                elif orientation_value == 8:
+                    pil_image = pil_image.rotate(90, expand=True)
+        except:
+            pass
+
+        return pil_image
+
+    def preprocess_for_detection(self, pil_image, target_width=1400):
+        """
+        Preprocessa immagine per migliorare rilevamento green dots:
+        scala, rileva maschere sopracciglia, crea output con ritagli su bianco.
+
+        Args:
+            pil_image: Immagine PIL da preprocessare
+            target_width: Larghezza target per scaling
+
+        Returns:
+            Tuple: (immagine_preprocessata, immagine_originale, fattore_scala)
+        """
+        if not MEDIAPIPE_AVAILABLE:
+            return pil_image, pil_image, 1.0
+            
+        pil_image_original = self._fix_image_orientation(pil_image)
+        
+        scale_factor = target_width / pil_image_original.width if pil_image_original.width > target_width else 1.0
+        
+        if scale_factor < 1.0:
+            new_width = int(pil_image_original.width * scale_factor)
+            new_height = int(pil_image_original.height * scale_factor)
+            pil_image_scaled = pil_image_original.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        else:
+            pil_image_scaled = pil_image_original.copy()
+
+        image_np = cv2.cvtColor(np.array(pil_image_scaled), cv2.COLOR_RGB2BGR)
+
+        left_polygon, right_polygon, left_bbox, right_bbox = self._get_eyebrow_masks(image_np)
+
+        if left_bbox is None:
+            return pil_image_scaled, pil_image_original, scale_factor
+
+        result = np.ones_like(image_np) * 255
+        
+        if left_polygon is not None:
+            x_min, y_min, x_max, y_max = left_bbox
+            left_region = image_np[y_min:y_max, x_min:x_max].copy()
+            
+            left_mask = np.zeros(image_np.shape[:2], dtype=np.uint8)
+            cv2.fillPoly(left_mask, [left_polygon], 255)
+            left_mask_region = left_mask[y_min:y_max, x_min:x_max]
+            
+            result[y_min:y_max, x_min:x_max][left_mask_region == 255] = left_region[left_mask_region == 255]
+            
+            x_min, y_min, x_max, y_max = right_bbox
+            right_region = image_np[y_min:y_max, x_min:x_max].copy()
+            
+            right_mask = np.zeros(image_np.shape[:2], dtype=np.uint8)
+            cv2.fillPoly(right_mask, [right_polygon], 255)
+            right_mask_region = right_mask[y_min:y_max, x_min:x_max]
+            
+            result[y_min:y_max, x_min:x_max][right_mask_region == 255] = right_region[right_mask_region == 255]
+        else:
+            x_min, y_min, x_max, y_max = left_bbox
+            left_region = image_np[y_min:y_max, x_min:x_max].copy()
+            result[y_min:y_max, x_min:x_max] = left_region
+            
+            x_min, y_min, x_max, y_max = right_bbox
+            right_region = image_np[y_min:y_max, x_min:x_max].copy()
+            result[y_min:y_max, x_min:x_max] = right_region
+        
+        result_rgb = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
+        result_pil = Image.fromarray(result_rgb)
+        
+        return result_pil, pil_image_original, scale_factor
+
+    # ========== FINE FUNZIONI DI PREPROCESSING ==========
+
     def sort_points_by_proximity(self, points: List[Dict]) -> List[Dict]:
         """
         Ordina i punti per prossimità usando algoritmo Nearest Neighbor.
@@ -415,6 +577,86 @@ class GreenDotsProcessor:
 
         return perimeter
 
+    def sort_points_anatomical(self, points: List[Dict], is_left: bool) -> List[Dict]:
+        """
+        Ordina i punti in base a criteri anatomici fissi per garantire mappatura consistente.
+        
+        Criteri di identificazione:
+        1. Coppia B (LB/RB): Punti più esterni
+           - LB: x minima (più a sinistra)
+           - RB: x massima (più a destra)
+        
+        2. Coppia C1 (LC1/RC1): Punto più alto E tra i 3 più esterni
+           - y minima (più in alto)
+           - Deve essere tra i 3 punti con x più estrema
+        
+        3. Coppia A/A0: Dai 2 punti più interni, quello più basso è A, quello più alto è A0
+           - Trovare i 2 punti più interni (verso il centro)
+           - Il più basso (y massima) è A
+           - Il più alto (y minima) è A0
+        
+        4. Coppia C (LC/RC): Per esclusione
+        
+        Ordine finale:
+        - Sinistro: [LC1, LA0, LA, LC, LB]
+        - Destro: [RC1, RB, RC, RA, RA0]
+
+        Args:
+            points: Lista di punti da ordinare
+            is_left: True per sopracciglio sinistro, False per destro
+
+        Returns:
+            List[Dict]: Punti ordinati secondo criteri anatomici
+        """
+        if len(points) < 5:
+            return points
+        
+        if is_left:
+            # Sopracciglio sinistro
+            # 1. B: punto più esterno (x minima)
+            b_point = min(points, key=lambda p: p["x"])
+            
+            # 2. C1: tra i 3 punti più esterni, quello più alto
+            sorted_by_x = sorted(points, key=lambda p: p["x"])
+            three_most_external = sorted_by_x[:3]
+            c1_point = min(three_most_external, key=lambda p: p["y"])
+            
+            # 3. A e A0: dai 2 punti più interni, quello più basso è A, più alto è A0
+            sorted_by_x_desc = sorted(points, key=lambda p: p["x"], reverse=True)
+            two_most_internal = sorted_by_x_desc[:2]
+            a_point = max(two_most_internal, key=lambda p: p["y"])  # più basso
+            a0_point = min(two_most_internal, key=lambda p: p["y"])  # più alto
+            
+            # 4. C: per esclusione
+            identified = [b_point, c1_point, a_point, a0_point]
+            c_point = [p for p in points if p not in identified][0]
+            
+            # Ordine finale: [LC1, LA0, LA, LC, LB]
+            return [c1_point, a0_point, a_point, c_point, b_point]
+            
+        else:
+            # Sopracciglio destro
+            # 1. B: punto più esterno (x massima)
+            b_point = max(points, key=lambda p: p["x"])
+            
+            # 2. C1: tra i 3 punti più esterni, quello più alto
+            sorted_by_x = sorted(points, key=lambda p: p["x"], reverse=True)
+            three_most_external = sorted_by_x[:3]
+            c1_point = min(three_most_external, key=lambda p: p["y"])
+            
+            # 3. A e A0: dai 2 punti più interni, quello più basso è A, più alto è A0
+            sorted_by_x_asc = sorted(points, key=lambda p: p["x"])
+            two_most_internal = sorted_by_x_asc[:2]
+            a_point = max(two_most_internal, key=lambda p: p["y"])  # più basso
+            a0_point = min(two_most_internal, key=lambda p: p["y"])  # più alto
+            
+            # 4. C: per esclusione
+            identified = [b_point, c1_point, a_point, a0_point]
+            c_point = [p for p in points if p not in identified][0]
+            
+            # Ordine finale: [RC1, RB, RC, RA, RA0]
+            return [c1_point, b_point, c_point, a_point, a0_point]
+
     def sort_points_optimal(self, points: List[Dict]) -> List[Dict]:
         """
         Ordina i punti in modo ottimale scegliendo l'algoritmo che produce il perimetro minimo.
@@ -465,6 +707,129 @@ class GreenDotsProcessor:
             "points": points,
         }
 
+    def _create_curved_polygon(
+        self,
+        points: List[Tuple[float, float]],
+        is_left: bool,
+        arc_segments: int = 15,
+        curvature: float = 0.25
+    ) -> List[Tuple[float, float]]:
+        """
+        Crea un poligono con arco curvato verso l'esterno tra i punti specificati.
+        
+        Args:
+            points: Lista di punti (x, y) del poligono
+            is_left: True per sopracciglio sinistro (arco tra LC1-LB), False per destro (arco tra RC1-RB)
+            arc_segments: Numero di segmenti per approssimare l'arco
+            curvature: Intensità della curvatura (0.0-1.0), dove valori più alti curvano di più
+        
+        Returns:
+            Lista di punti con l'arco inserito
+        """
+        if len(points) < 3:
+            return points
+        
+        if is_left:
+            # Sopracciglio sinistro: arco tra LC1 (indice 0) e LB (ultimo indice)
+            start_point = points[0]  # LC1
+            end_point = points[-1]   # LB
+            # Punti intermedi (esclusi start e end)
+            middle_points = points[1:-1]
+        else:
+            # Sopracciglio destro: arco tra RC1 (indice 0) e RB (indice 1)
+            start_point = points[0]  # RC1
+            end_point = points[1]    # RB
+            # Punti intermedi (da indice 2 in poi)
+            middle_points = points[2:]
+        
+        # Calcola punto di controllo per la curva di Bezier quadratica
+        # Il punto medio tra start e end
+        mid_x = (start_point[0] + end_point[0]) / 2
+        mid_y = (start_point[1] + end_point[1]) / 2
+        
+        # Calcola vettore perpendicolare per spostare il punto di controllo verso l'esterno
+        dx = end_point[0] - start_point[0]
+        dy = end_point[1] - start_point[1]
+        length = (dx**2 + dy**2)**0.5
+        
+        if length == 0:
+            return points
+        
+        # Vettore perpendicolare normalizzato
+        perp_x = -dy / length
+        perp_y = dx / length
+        
+        # Per il lato sinistro, curva verso destra (segno positivo)
+        # Per il lato destro, curva verso sinistra (segno negativo)
+        direction = 1 if is_left else -1
+        
+        # Sposta il punto medio lungo il vettore perpendicolare
+        offset_distance = length * curvature
+        control_x = mid_x + direction * perp_x * offset_distance
+        control_y = mid_y + direction * perp_y * offset_distance
+        
+        # Genera punti lungo la curva di Bezier quadratica
+        arc_points = []
+        for i in range(arc_segments + 1):
+            t = i / arc_segments
+            # Formula della curva di Bezier quadratica: B(t) = (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
+            one_minus_t = 1 - t
+            x = (one_minus_t**2 * start_point[0] + 
+                 2 * one_minus_t * t * control_x + 
+                 t**2 * end_point[0])
+            y = (one_minus_t**2 * start_point[1] + 
+                 2 * one_minus_t * t * control_y + 
+                 t**2 * end_point[1])
+            arc_points.append((x, y))
+        
+        # Costruisci il poligono finale
+        if is_left:
+            # Per il lato sinistro: start (LC1) + middle_points + end (LB) viene sostituito da:
+            # arc (da LC1 a LB) + middle_points (in ordine inverso per chiudere correttamente)
+            result = arc_points + list(reversed(middle_points))
+        else:
+            # Per il lato destro: start (RC1) + end (RB) + middle_points viene sostituito da:
+            # arc (da RC1 a RB) + middle_points
+            result = arc_points + middle_points
+        
+        return result
+
+    def generate_overlay_dots_only(
+        self,
+        image_size: Tuple[int, int],
+        all_dots: List[Dict],
+    ) -> Image.Image:
+        """
+        Genera un overlay trasparente con solo i punti rilevati (senza poligoni).
+        Usato quando il numero di punti non è quello atteso.
+
+        Args:
+            image_size: Dimensioni dell'immagine (width, height)
+            all_dots: Lista di tutti i punti rilevati
+
+        Returns:
+            Image.Image: Overlay trasparente PNG con solo i punti gialli
+        """
+        width, height = image_size
+
+        # Crea immagine trasparente
+        overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+
+        # Disegna solo i punti gialli
+        for i, dot in enumerate(all_dots):
+            x, y = dot["x"], dot["y"]
+            draw.ellipse(
+                [x - 4, y - 4, x + 4, y + 4],
+                fill=(255, 255, 0, 255),
+                outline=(0, 0, 0, 255),
+                width=1,
+            )
+            # Etichetta numerica semplice
+            draw.text((x + 6, y - 6), str(i + 1), fill=(0, 0, 0, 255))
+
+        return overlay
+
     def generate_overlay(
         self,
         image_size: Tuple[int, int],
@@ -504,15 +869,19 @@ class GreenDotsProcessor:
 
         # Disegna forma sinistra
         if left_points and len(left_points) >= 3:
-            sorted_left = self.sort_points_optimal(left_points)
+            sorted_left = self.sort_points_anatomical(left_points, is_left=True)
             polygon_points = [(p["x"], p["y"]) for p in sorted_left]
 
+            # Crea poligono con arco tra LC1-LB (primo e ultimo punto)
+            # LC1 è l'indice 0, LB è l'indice 4 (ultimo)
+            curved_points = self._create_curved_polygon(polygon_points, is_left=True)
+
             # Riempimento semi-trasparente
-            draw.polygon(polygon_points, fill=left_color)
+            draw.polygon(curved_points, fill=left_color)
 
             # Bordo
             border_color = left_color[:3] + (255,)  # Bordo opaco
-            draw.polygon(polygon_points, outline=border_color, width=border_width)
+            draw.polygon(curved_points, outline=border_color, width=border_width)
 
             # Vertici
             # Etichette personalizzate per il lato sinistro: LC1, LA0, LA, LC, LB
@@ -531,15 +900,19 @@ class GreenDotsProcessor:
 
         # Disegna forma destra
         if right_points and len(right_points) >= 3:
-            sorted_right = self.sort_points_optimal(right_points)
+            sorted_right = self.sort_points_anatomical(right_points, is_left=False)
             polygon_points = [(p["x"], p["y"]) for p in sorted_right]
 
+            # Crea poligono con arco tra RC1-RB (primo e secondo punto)
+            # RC1 è l'indice 0, RB è l'indice 1
+            curved_points = self._create_curved_polygon(polygon_points, is_left=False)
+
             # Riempimento semi-trasparente
-            draw.polygon(polygon_points, fill=right_color)
+            draw.polygon(curved_points, fill=right_color)
 
             # Bordo
             border_color = right_color[:3] + (255,)  # Bordo opaco
-            draw.polygon(polygon_points, outline=border_color, width=border_width)
+            draw.polygon(curved_points, outline=border_color, width=border_width)
 
             # Vertici
             # Etichette personalizzate per il lato destro: RC1, RB, RC, RA, RA0
@@ -558,27 +931,48 @@ class GreenDotsProcessor:
 
         return overlay
 
-    def process_image(self, image_path: str) -> Dict:
+    def process_image(self, image_path: str, use_preprocessing: bool = False, return_scale_info: bool = False) -> Dict:
         """
         Processa completamente un'immagine: rileva puntini, li divide e calcola statistiche.
 
         Args:
             image_path: Percorso dell'immagine da processare
+            use_preprocessing: Se True, applica preprocessing eyebrow (default: False per retrocompatibilità)
+            return_scale_info: Se True, include info su scala e immagine originale nel risultato
 
         Returns:
             Dict: Risultati completi del processing
         """
         # Carica immagine
         image = Image.open(image_path)
+        
+        # Applica preprocessing se richiesto
+        if use_preprocessing:
+            preprocessed_image, original_image, scale_factor = self.preprocess_for_detection(image)
+            detection_image = preprocessed_image
+        else:
+            detection_image = image
+            original_image = image
+            scale_factor = 1.0
 
         # Rileva puntini verdi
-        detection_results = self.detect_green_dots(image)
+        detection_results = self.detect_green_dots(detection_image)
 
-        if detection_results["total_dots"] < 6:
+        # Se non ci sono abbastanza punti o ce ne sono troppi, genera overlay solo con punti
+        if detection_results["total_dots"] != 10:
+            overlay = self.generate_overlay_dots_only(
+                detection_results["image_size"],
+                detection_results["dots"]
+            )
             return {
-                "success": False,
-                "error": f"Trovati solo {detection_results['total_dots']} puntini. Servono almeno 6 (3 per lato).",
+                "success": True,
+                "warning": f"Rilevati {detection_results['total_dots']} punti invece di 10. Overlay generato solo con punti.",
                 "detection_results": detection_results,
+                "overlay": overlay,
+                "image_size": detection_results["image_size"],
+                "groups": None,
+                "coordinates": None,
+                "statistics": None,
             }
 
         # Dividi in gruppi
@@ -596,8 +990,8 @@ class GreenDotsProcessor:
             }
 
         # Ordina punti e calcola statistiche
-        sorted_left = self.sort_points_optimal(left_dots)
-        sorted_right = self.sort_points_optimal(right_dots)
+        sorted_left = self.sort_points_anatomical(left_dots, is_left=True)
+        sorted_right = self.sort_points_anatomical(right_dots, is_left=False)
 
         left_stats = self.calculate_shape_statistics(sorted_left, "Sinistra")
         right_stats = self.calculate_shape_statistics(sorted_right, "Destra")
@@ -607,7 +1001,7 @@ class GreenDotsProcessor:
             detection_results["image_size"], sorted_left, sorted_right
         )
 
-        return {
+        result = {
             "success": True,
             "detection_results": detection_results,
             "groups": {
@@ -631,25 +1025,54 @@ class GreenDotsProcessor:
             "overlay": overlay,
             "image_size": detection_results["image_size"],
         }
+        
+        # Aggiungi info preprocessing se richiesto
+        if return_scale_info and use_preprocessing:
+            result["scale_factor"] = scale_factor
+            result["original_image"] = original_image
+            result["preprocessed_image"] = detection_image
+        
+        return result
 
-    def process_pil_image(self, pil_image: Image.Image) -> Dict:
+    def process_pil_image(self, pil_image: Image.Image, use_preprocessing: bool = False, return_scale_info: bool = False) -> Dict:
         """
         Processa direttamente un'immagine PIL senza salvare su file.
 
         Args:
             pil_image: Immagine PIL da processare
+            use_preprocessing: Se True, applica preprocessing eyebrow (default: False per retrocompatibilità)
+            return_scale_info: Se True, include info su scala e immagine originale nel risultato
 
         Returns:
             Dict: Risultati completi del processing
         """
+        # Applica preprocessing se richiesto
+        if use_preprocessing:
+            preprocessed_image, original_image, scale_factor = self.preprocess_for_detection(pil_image)
+            detection_image = preprocessed_image
+        else:
+            detection_image = pil_image
+            original_image = pil_image
+            scale_factor = 1.0
+            
         # Rileva puntini verdi
-        detection_results = self.detect_green_dots(pil_image)
+        detection_results = self.detect_green_dots(detection_image)
 
-        if detection_results["total_dots"] < 6:
+        # Se non ci sono abbastanza punti o ce ne sono troppi, genera overlay solo con punti
+        if detection_results["total_dots"] != 10:
+            overlay = self.generate_overlay_dots_only(
+                detection_results["image_size"],
+                detection_results["dots"]
+            )
             return {
-                "success": False,
-                "error": f"Trovati solo {detection_results['total_dots']} puntini. Servono almeno 6 (3 per lato).",
+                "success": True,
+                "warning": f"Rilevati {detection_results['total_dots']} punti invece di 10. Overlay generato solo con punti.",
                 "detection_results": detection_results,
+                "overlay": overlay,
+                "image_size": detection_results["image_size"],
+                "groups": None,
+                "coordinates": None,
+                "statistics": None,
             }
 
         # Dividi in gruppi
@@ -657,18 +1080,26 @@ class GreenDotsProcessor:
             detection_results["dots"], detection_results["image_size"][0]
         )
 
-        if len(left_dots) < 3 or len(right_dots) < 3:
+        # Se i gruppi non hanno 5 punti ciascuno, genera overlay solo con punti
+        if len(left_dots) != 5 or len(right_dots) != 5:
+            overlay = self.generate_overlay_dots_only(
+                detection_results["image_size"],
+                detection_results["dots"]
+            )
             return {
-                "success": False,
-                "error": f"Gruppi insufficienti: Sx={len(left_dots)}, Dx={len(right_dots)}. Servono almeno 3 per lato.",
+                "success": True,
+                "warning": f"Gruppi non bilanciati: Sx={len(left_dots)}, Dx={len(right_dots)}. Overlay generato solo con punti.",
                 "detection_results": detection_results,
-                "left_dots": left_dots,
-                "right_dots": right_dots,
+                "overlay": overlay,
+                "image_size": detection_results["image_size"],
+                "groups": None,
+                "coordinates": None,
+                "statistics": None,
             }
 
         # Ordina punti e calcola statistiche
-        sorted_left = self.sort_points_optimal(left_dots)
-        sorted_right = self.sort_points_optimal(right_dots)
+        sorted_left = self.sort_points_anatomical(left_dots, is_left=True)
+        sorted_right = self.sort_points_anatomical(right_dots, is_left=False)
 
         left_stats = self.calculate_shape_statistics(sorted_left, "Sinistra")
         right_stats = self.calculate_shape_statistics(sorted_right, "Destra")
@@ -678,7 +1109,7 @@ class GreenDotsProcessor:
             detection_results["image_size"], sorted_left, sorted_right
         )
 
-        return {
+        result = {
             "success": True,
             "detection_results": detection_results,
             "groups": {
@@ -702,6 +1133,14 @@ class GreenDotsProcessor:
             "overlay": overlay,
             "image_size": detection_results["image_size"],
         }
+        
+        # Aggiungi info preprocessing se richiesto
+        if return_scale_info and use_preprocessing:
+            result["scale_factor"] = scale_factor
+            result["original_image"] = original_image
+            result["preprocessed_image"] = detection_image
+        
+        return result
 
 
 # Funzioni di convenienza per uso diretto del modulo
