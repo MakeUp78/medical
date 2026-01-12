@@ -400,7 +400,7 @@ function loadImage() {
   input.onchange = function (e) {
     const file = e.target.files[0];
     if (file) {
-      handleUnifiedFileLoad(file, 'image');
+      handleFileLoad(file);
     }
   };
   input.click();
@@ -431,61 +431,10 @@ function loadVideo() {
   input.onchange = function (e) {
     const file = e.target.files[0];
     if (file) {
-      handleUnifiedFileLoad(file, 'video');
+      handleVideoLoad(file);
     }
   };
   input.click();
-}
-
-// ============================================================================
-// HANDLER UNIFICATO PER IMMAGINI E VIDEO
-// ============================================================================
-async function handleUnifiedFileLoad(file, type) {
-  updateStatus(`Caricamento ${type === 'image' ? 'immagine' : 'video'}...`);
-  
-  if (type === 'image') {
-    const reader = new FileReader();
-    reader.onload = async function (e) {
-      const img = new Image();
-      img.onload = async function () {
-        img._originalMimeType = file.type || 'image/jpeg';
-        collapseDetectionSections();
-        
-        displayImageOnCanvas(img);
-        updateStatus('Immagine caricata');
-        
-        const frameSource = new FrameSource(img, 'image');
-        const processor = new UnifiedFrameProcessor();
-        
-        await processor.processSingleFrame(frameSource);
-        const best = processor.getBestFrame();
-        
-        if (best && best.result) {
-          currentLandmarks = best.result.landmarks;
-          window.currentLandmarks = currentLandmarks;
-          updateCanvasDisplay();
-          showToast(`Analisi completata - Score: ${best.result.frontality_score.toFixed(3)}`, 'success');
-        }
-      };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-    
-  } else if (type === 'video') {
-    const videoUrl = URL.createObjectURL(file);
-    const video = document.createElement('video');
-    video.src = videoUrl;
-    video.load();
-    
-    video.onloadedmetadata = async function () {
-      window.currentVideo = video;
-      window.currentVideoFile = file;
-      
-      createVideoInterface(video, file);
-      updateStatus('Video caricato - Usa controlli per navigare');
-      showToast('Video pronto per l\'analisi', 'info');
-    };
-  }
 }
 
 function handleFileLoad(file) {
@@ -1593,38 +1542,20 @@ async function startWebcam() {
 
     // Apri automaticamente la sezione anteprima webcam
     openWebcamSection();
-    showWebcamPreview(video);
-    startLivePreview(video);
 
-    // NUOVO: Usa sistema unificato per webcam
-    const frameSource = new FrameSource(video, 'webcam');
-    const processor = new UnifiedFrameProcessor();
-    
-    window.webcamProcessor = processor;
-    
-    processor.processStream(frameSource, {
-      onProgress: (frameData) => {
-        if (processor.buffer.size > 0 && frameData.result.frontality_score > processor.buffer.worstScore) {
-          const best = processor.buffer.getBest();
-          if (best && best.canvas) {
-            const img = new Image();
-            img.onload = () => {
-              displayImageOnCanvas(img);
-              currentLandmarks = best.result.landmarks;
-              window.currentLandmarks = currentLandmarks;
-              updateCanvasDisplay();
-            };
-            img.src = best.canvas.toDataURL('image/jpeg', 0.9);
-          }
-        }
-      }
-    });
+    // PROCESSO 1: Anteprima live (indipendente)
+    showWebcamPreview(video);
+    startLivePreview(video); // Rendering continuo dell'anteprima
+
+    // PROCESSO 2: Elaborazione server (separato)
+    await connectWebcamWebSocket();
+    startFrameCapture(video); // Invio frame al server
 
     isWebcamActive = true;
 
     // Mostra quale webcam è in uso
     const activeDevice = iriunDevice ? 'IRIUN Smartphone' : 'Webcam PC';
-    updateStatus(`Webcam attiva (${activeDevice}) - Sistema unificato`);
+    updateStatus(`Webcam attiva (${activeDevice}) - Anteprima live + Elaborazione server`);
     updateWebcamBadge(true);
 
     showToast(`Webcam avviata: ${activeDevice}`, 'success');
@@ -1645,29 +1576,30 @@ async function startWebcam() {
 
 function stopWebcam() {
   try {
-    if (window.webcamProcessor) {
-      window.webcamProcessor.stop();
-      window.webcamProcessor = null;
-    }
-
+    // Ferma cattura frame
     if (captureInterval) {
       clearInterval(captureInterval);
       captureInterval = null;
     }
 
+    // Ferma stream webcam
     if (webcamStream) {
       const tracks = webcamStream.getTracks();
       tracks.forEach(track => track.stop());
       webcamStream = null;
     }
 
+    // Nascondi video e anteprima webcam
     const video = document.getElementById('webcam-video');
     video.srcObject = null;
     video.style.display = 'none';
 
+    // Nascondi anteprima webcam nella colonna destra
     hideWebcamPreview();
+
     document.getElementById('main-canvas').style.display = 'block';
 
+    // Chiudi WebSocket
     disconnectWebcamWebSocket();
 
     isWebcamActive = false;
@@ -6716,49 +6648,55 @@ async function findBestFrontalFrame() {
   }
 
   const video = window.currentVideo;
-  clearDebugAnalysisTable();
-  updateStatus('🔍 Ricerca frame ottimale con sistema unificato...');
+  const duration = video.duration;
+  const stepSize = 1.0; // Analizza ogni secondo
+  let bestScore = 0;
+  let bestTime = 0;
+  const allResults = []; // 📊 Raccoglie tutti i risultati per la tabella
 
-  const frameSource = new FrameSource(video, 'video');
-  const processor = new UnifiedFrameProcessor();
+  updateStatus('🔍 Ricerca del miglior frame frontale...');
 
-  await processor.processStream(frameSource, {
-    stepSize: 0.33,
-    onProgress: (frameData) => {
-      const data = {
-        frameIndex: Math.floor(frameData.time / 0.33),
-        time: frameData.time,
-        score: frameData.result.frontality_score,
-        pose: frameData.result.pose_angles,
-        landmarks: frameData.result.landmarks,
-        status: getFrontalityStatus(frameData.result.frontality_score)
-      };
-      addDebugAnalysisRow(data);
-      
-      const progress = (frameData.time / video.duration) * 100;
-      updateStatus(`🔍 Analisi: ${progress.toFixed(1)}%`);
-    },
-    onComplete: (topFrames) => {
-      if (topFrames.length > 0) {
-        const best = topFrames[0];
-        highlightBestFramesInTable(topFrames.map(f => ({
-          time: f.time,
-          score: f.result.frontality_score,
-          pose: f.result.pose_angles,
-          landmarks: f.result.landmarks
-        })));
-        
-        drawVideoFrame(video, best.time);
-        currentLandmarks = best.result.landmarks;
-        window.currentLandmarks = currentLandmarks;
-        updateCanvasDisplay();
-        
-        updateStatus(`✅ Frame ottimale: ${best.time.toFixed(1)}s - Score: ${best.result.frontality_score.toFixed(3)}`);
-        showToast(`Top frame trovato! Score: ${best.result.frontality_score.toFixed(3)}`, 'success');
+  try {
+    // 📋 Pulisci tabella prima della nuova scansione
+    clearDebugAnalysisTable();
+
+    for (let time = 0; time < duration; time += stepSize) {
+      // Aggiorna progress
+      const progress = (time / duration) * 100;
+      updateStatus(`🔍 Scansione: ${progress.toFixed(1)}% (${time.toFixed(1)}s/${duration.toFixed(1)}s)`);
+
+      // Salta al frame
+      drawVideoFrame(video, time);
+      await new Promise(resolve => setTimeout(resolve, 500)); // Pausa per rendering
+
+      // Converti currentImage in base64 per l'API
+      if (!currentImage) {
+        console.warn('⚠️ currentImage non disponibile, salto frame');
+        continue;
       }
-    }
-  });
-}
+
+      try {
+        const imageBase64 = convertCurrentImageToBase64();
+        const analysisResult = await analyzeImageViaAPI(imageBase64);
+
+        if (analysisResult && analysisResult.frontality_score) {
+          const score = analysisResult.frontality_score;
+          const poseAngles = analysisResult.pose_angles;
+
+          // 📊 Aggiungi tutti i risultati alla tabella
+          const frameData = {
+            frameIndex: Math.floor(time / stepSize),
+            time: time,
+            score: score,
+            pose: poseAngles,
+            landmarks: analysisResult.landmarks,
+            status: getFrontalityStatus(score)
+          };
+
+          allResults.push(frameData);
+          addDebugAnalysisRow(frameData);
+
+          if (score > bestScore) {
             bestScore = score;
             bestTime = time;
             console.log(`📈 Nuovo miglior frame: t=${time.toFixed(1)}s, score=${score.toFixed(3)}`);
@@ -6814,56 +6752,106 @@ async function startAutomaticVideoScanning() {
   }
 
   const video = window.currentVideo;
-  clearDebugAnalysisTable();
-  updateStatus('🤖 Scansione automatica con sistema unificato...');
+  const duration = video.duration;
+  const stepSize = 0.5; // Scansione più fine ogni 0.5s
+  const results = [];
 
-  const frameSource = new FrameSource(video, 'video');
-  const processor = new UnifiedFrameProcessor();
+  updateStatus('🤖 Scansione automatica completa in corso...');
 
-  await processor.processStream(frameSource, {
-    stepSize: 0.5,
-    onProgress: (frameData) => {
-      const data = {
-        frameIndex: Math.floor(frameData.time / 0.5),
-        time: frameData.time,
-        score: frameData.result.frontality_score,
-        pose: frameData.result.pose_angles,
-        landmarks: frameData.result.landmarks,
-        status: getFrontalityStatus(frameData.result.frontality_score)
-      };
-      addDebugAnalysisRow(data);
-      
-      const progress = (frameData.time / video.duration) * 100;
-      updateStatus(`🤖 Scansione: ${progress.toFixed(1)}%`);
-    },
-    onComplete: (topFrames) => {
-      window.videoAnalysisResults = topFrames;
-      
-      const topResults = topFrames.slice(0, 10);
-      highlightBestFramesInTable(topResults.map(f => ({
-        time: f.time,
-        score: f.result.frontality_score,
-        pose: f.result.pose_angles,
-        landmarks: f.result.landmarks
-      })));
-      
-      const frontalFrames = topFrames.filter(f => f.result.frontality_score > 0.7);
-      const veryFrontalFrames = topFrames.filter(f => f.result.frontality_score > 0.8);
-      
-      if (topResults.length > 0) {
-        const best = topResults[0];
-        drawVideoFrame(video, best.time);
-        currentLandmarks = best.result.landmarks;
-        window.currentLandmarks = currentLandmarks;
-        updateCanvasDisplay();
-        ensureSidebarSectionsVisible();
-        
-        updateStatus(`✅ Scansione completa - ${frontalFrames.length} frame frontali trovati`);
-        showToast(`Top frame: Score ${best.result.frontality_score.toFixed(3)}`, 'success');
+  try {
+    // Pulisci tabella debug prima della nuova scansione
+    clearDebugAnalysisTable();
+
+    for (let time = 0; time < duration; time += stepSize) {
+      const progress = (time / duration) * 100;
+      updateStatus(`🤖 Analisi automatica: ${progress.toFixed(1)}%`);
+
+      drawVideoFrame(video, time);
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // Converti currentImage in base64 per l'API
+      if (!currentImage) {
+        console.warn('⚠️ currentImage non disponibile, salto frame');
+        continue;
+      }
+
+      try {
+        const imageBase64 = convertCurrentImageToBase64();
+        const analysisResult = await analyzeImageViaAPI(imageBase64);
+
+        if (analysisResult) {
+          const score = analysisResult.frontality_score;
+          const poseAngles = analysisResult.pose_angles;
+
+          const frameData = {
+            frameIndex: Math.floor(time / stepSize),
+            time: time,
+            score: score,
+            pose: poseAngles,
+            landmarks: analysisResult.landmarks,
+            status: getFrontalityStatus(score)
+          };
+
+          results.push(frameData);
+
+          // Aggiorna tabella debug in tempo reale
+          addDebugAnalysisRow(frameData);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Errore analisi frame a ${time.toFixed(1)}s:`, error);
       }
     }
-  });
-}
+
+    // Ordina risultati per score
+    results.sort((a, b) => b.score - a.score);
+
+    // Salva risultati globalmente per riferimenti futuri
+    window.videoAnalysisResults = results;
+
+    // 🎯 Evidenzia i migliori frame nella tabella (Top 10 invece di 5)
+    const topResults = results.slice(0, 10);
+    highlightBestFramesInTable(topResults);
+
+    // 📊 Statistiche dettagliate dei frame frontali
+    const frontalFrames = results.filter(f => f.score > 0.7); // Score > 0.7 considerato frontale
+    const veryFrontalFrames = results.filter(f => f.score > 0.8); // Score > 0.8 molto frontale
+    const excellentFrames = results.filter(f => f.score > 0.9); // Score > 0.9 eccellente
+
+    console.log('📊 STATISTICHE COMPLETE ANALISI VIDEO:');
+    console.log(`- Frame totali analizzati: ${results.length}`);
+    console.log(`- Frame frontali (>0.7): ${frontalFrames.length} (${((frontalFrames.length / results.length) * 100).toFixed(1)}%)`);
+    console.log(`- Frame molto frontali (>0.8): ${veryFrontalFrames.length} (${((veryFrontalFrames.length / results.length) * 100).toFixed(1)}%)`);
+    console.log(`- Frame eccellenti (>0.9): ${excellentFrames.length} (${((excellentFrames.length / results.length) * 100).toFixed(1)}%)`);
+
+    // Mostra top 10 risultati
+    console.log('🏆 TOP 10 FRAME PIÙ FRONTALI:');
+    topResults.forEach((result, index) => {
+      const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`;
+      console.log(`${medal} t=${result.time.toFixed(1)}s - Score: ${result.score.toFixed(3)} - P:${result.pose.pitch.toFixed(1)}° Y:${result.pose.yaw.toFixed(1)}° R:${result.pose.roll.toFixed(1)}°`);
+    });
+
+    // Vai al miglior frame
+    if (topResults.length > 0) {
+      const bestResult = topResults[0];
+      const timeline = document.getElementById('video-timeline');
+      if (timeline) {
+        timeline.value = bestResult.time;
+      }
+      drawVideoFrame(video, bestResult.time);
+      await analyzeCurrentVideoFrame();
+
+      // ✅ AGGIORNA IL CANVAS ALLA FINE DELLA SCANSIONE COMPLETA
+      updateCanvasDisplay();
+
+      // 🔧 ASSICURA che le sezioni sidebar rimangano visibili dopo l'analisi completa
+      ensureSidebarSectionsVisible();
+
+      updateStatus(`✅ Scansione completa - Miglior frame: ${bestResult.time.toFixed(1)}s (Score: ${bestResult.score.toFixed(3)}) - ${frontalFrames.length}/${results.length} frame frontali (${veryFrontalFrames.length} molto frontali)`);
+      showToast(`📊 Analisi completata! ${results.length} frame analizzati - ${frontalFrames.length} frontali (${veryFrontalFrames.length} molto frontali, ${excellentFrames.length} eccellenti)`, 'success');
+    } else {
+      updateStatus('❌ Nessun volto rilevato nel video');
+      showToast('Nessun volto rilevato', 'warning');
+    }
 
   } catch (error) {
     console.error('❌ Errore scansione automatica:', error);
