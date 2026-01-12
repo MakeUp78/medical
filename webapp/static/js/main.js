@@ -388,7 +388,7 @@ function initializeFileHandlers() {
 
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      handleFileLoad(files[0]);
+      handleUnifiedFileLoad(files[0]);
     }
   });
 }
@@ -488,54 +488,10 @@ async function handleUnifiedFileLoad(file, type) {
   }
 }
 
-function handleFileLoad(file) {
-  const reader = new FileReader();
+// ⚠️ FUNZIONE LEGACY RIMOSSA: handleFileLoad
+// Sostituita da handleUnifiedFileLoad() in frame-processor.js
+// Rimossa durante l'unificazione del 2024-01-12
 
-  reader.onload = function (e) {
-    const img = new Image();
-    img.onload = async function () {
-      // Salva il tipo MIME originale per preservare il formato (JPG/PNG)
-      img._originalMimeType = file.type || 'image/jpeg';
-      // Espandi sezioni dopo upload immagine
-      collapseDetectionSections();
-
-      // 🔄 NUOVO FLUSSO: Converti immagine in base64 e usa il flusso video
-      console.log('🖼️ Conversione immagine statica in flusso video-like...');
-
-      // Crea canvas temporaneo per convertire immagine in base64
-      const tempCanvas = document.createElement('canvas');
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCanvas.width = img.width;
-      tempCanvas.height = img.height;
-
-      // Disegna immagine sul canvas temporaneo
-      tempCtx.drawImage(img, 0, 0);
-
-      // Preserva il formato originale (JPG→JPG, PNG→PNG)
-      const isPNG = img._originalMimeType && img._originalMimeType.includes('png');
-      const base64Image = isPNG ? tempCanvas.toDataURL('image/png') : tempCanvas.toDataURL('image/jpeg', 0.95);
-      const base64Data = base64Image.split(',')[1];
-
-      // Usa il flusso video standard
-      updateCanvasWithBestFrame(base64Data, img._originalMimeType);
-
-      updateStatus(`Immagine caricata: ${file.name}`);
-      showToast('Immagine caricata con successo', 'success');
-
-      // === AUTO-RILEVAMENTO LANDMARKS ===
-      console.log('📸 Nuova immagine caricata - Avvio auto-rilevamento landmarks');
-      const landmarksDetected = await autoDetectLandmarksOnImageChange();
-      if (landmarksDetected) {
-        updateStatus(`✅ Landmarks rilevati automaticamente (${currentLandmarks.length})`);
-      } else {
-        console.warn('⚠️ Auto-rilevamento landmarks fallito');
-      }
-    };
-    img.src = e.target.result;
-  };
-
-  reader.readAsDataURL(file);
-}
 
 async function handleVideoLoad(file) {
   console.log('🎥 handleVideoLoad iniziato:', {
@@ -626,37 +582,21 @@ function startVideoFrameProcessing(video, fileName) {
     // Aggiorna posizione video
     video.currentTime = frameCount / 5;
 
-    // Cattura frame e invia tramite WebSocket
-    captureFrameFromVideoElement(video);
+    // Cattura frame tramite UnifiedFrameProcessor
+    const processor = new UnifiedFrameProcessor();
+    const frameSource = new FrameSource(video, 'video');
+    processor.captureAndAnalyzeFrame(frameSource).catch(err => {
+      console.error('❌ Errore cattura frame video:', err);
+    });
 
     frameCount++;
   }, 200); // 5 FPS
 }
 
-function captureFrameFromVideoElement(video) {
-  try {
-    const tempCanvas = document.createElement('canvas');
-    const context = tempCanvas.getContext('2d');
+// ⚠️ FUNZIONE LEGACY RIMOSSA: captureFrameFromVideoElement
+// Sostituita da UnifiedFrameProcessor.captureAndAnalyzeFrame() in frame-processor.js
+// Rimossa durante l'unificazione del 2024-01-12
 
-    tempCanvas.width = video.videoWidth || 640;
-    tempCanvas.height = video.videoHeight || 480;
-
-    context.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
-
-    const frameBase64 = tempCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-
-    // Riusa il protocollo WebSocket della webcam
-    const frameMessage = {
-      action: 'process_frame',
-      frame_data: frameBase64
-    };
-
-    webcamWebSocket.send(JSON.stringify(frameMessage));
-
-  } catch (error) {
-    console.error('Errore cattura frame video:', error);
-  }
-}
 
 function showVideoModeChoice(fileName) {
   return new Promise((resolve) => {
@@ -988,9 +928,15 @@ async function analyzeCurrentVideoFrame() {
   try {
     updateStatus('🔍 Analisi frontalità frame corrente tramite API...');
 
-    // Converti currentImage in base64 e usa l'API
-    const imageBase64 = convertCurrentImageToBase64();
-    const analysisResult = await analyzeImageViaAPI(imageBase64);
+    // Usa UnifiedFrameProcessor per catturare e analizzare frame corrente
+    const processor = new UnifiedFrameProcessor();
+    const imageElement = canvas.fabric.getObjects().find(obj => obj.type === 'image');
+    if (!imageElement || !imageElement._element) {
+      throw new Error('Nessuna immagine caricata sul canvas');
+    }
+    const frameSource = new FrameSource(imageElement._element, 'image');
+    const result = await processor.captureAndAnalyzeFrame(frameSource);
+    const analysisResult = result ? result.analysis : null;
 
     if (analysisResult) {
       const frontalityScore = analysisResult.frontality_score;
@@ -1765,7 +1711,17 @@ function startFrameCapture(video) {
   // Cattura frame ogni 500ms (2 FPS per server - più lento)
   captureInterval = setInterval(() => {
     if (isWebcamActive && webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
-      captureAndSendFrame(video);
+      // Usa UnifiedFrameProcessor per WebSocket streaming
+      const processor = new UnifiedFrameProcessor();
+      const frameSource = new FrameSource(video, 'webcam');
+      processor.captureAndAnalyzeFrame(frameSource).then(result => {
+        if (result && webcamWebSocket.readyState === WebSocket.OPEN) {
+          webcamWebSocket.send(JSON.stringify({
+            type: 'frame',
+            data: result.imageData
+          }));
+        }
+      }).catch(err => console.error('❌ Errore WebSocket frame:', err));
 
       // Log occasionale per verificare invio
       if (frameCounter % 10 === 0) {
@@ -1975,33 +1931,10 @@ function updateWebcamPreview(video) {
   console.log('🎥 Setup iniziale anteprima per:', video?.constructor?.name);
 }
 
-function captureAndSendFrame(video) {
-  try {
-    // Crea canvas temporaneo per catturare frame
-    const tempCanvas = document.createElement('canvas');
-    const context = tempCanvas.getContext('2d');
+// ⚠️ FUNZIONE LEGACY RIMOSSA: captureAndSendFrame
+// Sostituita da UnifiedFrameProcessor.captureAndAnalyzeFrame() in frame-processor.js
+// Rimossa durante l'unificazione del 2024-01-12
 
-    tempCanvas.width = video.videoWidth || 640;
-    tempCanvas.height = video.videoHeight || 480;
-
-    // Disegna frame video su canvas
-    context.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
-
-    // Converti in base64
-    const frameBase64 = tempCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-
-    // Invia frame con protocollo corretto del server 8765
-    const frameMessage = {
-      action: 'process_frame',
-      frame_data: frameBase64
-    };
-
-    webcamWebSocket.send(JSON.stringify(frameMessage));
-
-  } catch (error) {
-    console.error('Errore cattura frame:', error);
-  }
-}
 
 function handleWebSocketMessage(data) {
   try {
@@ -6665,28 +6598,9 @@ function formatTime(seconds) {
 /**
  * Converte currentImage in base64 per l'invio all'API
  */
-function convertCurrentImageToBase64() {
-  if (!currentImage) {
-    throw new Error('currentImage non disponibile');
-  }
-
-  // Ottiene l'elemento HTML dall'oggetto Fabric.js
-  let imageElement;
-  if (currentImage.getElement) {
-    imageElement = currentImage.getElement();
-  } else if (currentImage.src) {
-    imageElement = currentImage;
-  } else {
-    throw new Error('currentImage non è un oggetto valido');
-  }
-
-  const canvas = document.createElement('canvas');
-  canvas.width = imageElement.naturalWidth || imageElement.width || currentImage.width;
-  canvas.height = imageElement.naturalHeight || imageElement.height || currentImage.height;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(imageElement, 0, 0);
-  return canvas.toDataURL('image/jpeg', 0.8);
-}
+// ⚠️ FUNZIONE LEGACY RIMOSSA: convertCurrentImageToBase64
+// Sostituita da FrameSource.captureFrame() in frame-processor.js
+// Rimossa durante l'unificazione del 2024-01-12
 
 // FUNZIONE OBSOLETA - Ora usa l'API backend con logica landmarkPredict_webcam.py
 /*
@@ -6759,53 +6673,6 @@ async function findBestFrontalFrame() {
     }
   });
 }
-            bestScore = score;
-            bestTime = time;
-            console.log(`📈 Nuovo miglior frame: t=${time.toFixed(1)}s, score=${score.toFixed(3)}`);
-          }
-        }
-      } catch (error) {
-        console.warn(`⚠️ Errore analisi frame a ${time.toFixed(1)}s:`, error);
-      }
-    }
-
-    // 🎯 Ordina e evidenzia i migliori frame nella tabella
-    allResults.sort((a, b) => b.score - a.score);
-    const topFrames = allResults.slice(0, 10); // Top 10 frame frontali
-    highlightBestFramesInTable(topFrames);
-
-    // 📈 Mostra statistiche dei frame frontali
-    const frontalFrames = allResults.filter(f => f.score > 0.7); // Score > 0.7 considerato frontale
-    console.log(`📊 STATISTICHE FRONTALITÀ:`);
-    console.log(`- Frame totali analizzati: ${allResults.length}`);
-    console.log(`- Frame molto frontali (>0.7): ${frontalFrames.length}`);
-    console.log(`- Migliori 5 frame:`, topFrames.slice(0, 5).map(f => `t=${f.time.toFixed(1)}s (${f.score.toFixed(3)})`));
-
-    // Vai al miglior frame trovato
-    const timeline = document.getElementById('video-timeline');
-    if (timeline) {
-      timeline.value = bestTime;
-    }
-    drawVideoFrame(video, bestTime);
-
-    // Analizza il miglior frame
-    await analyzeCurrentVideoFrame();
-
-    // ✅ AGGIORNA IL CANVAS ALLA FINE DELL'ANALISI
-    updateCanvasDisplay();
-
-    // 🔧 ASSICURA che le sezioni sidebar rimangano visibili dopo l'analisi
-    ensureSidebarSectionsVisible();
-
-    updateStatus(`✅ AUTOMATICO: Miglior frame selezionato a ${bestTime.toFixed(1)}s (Score: ${bestScore.toFixed(3)}) - ${frontalFrames.length}/${allResults.length} frame frontali trovati`);
-    showToast(`🎯 Frame frontale trovato: ${bestTime.toFixed(1)}s (Score: ${bestScore.toFixed(3)}) - ${frontalFrames.length} frame molto frontali`, 'success');
-
-  } catch (error) {
-    console.error('❌ Errore ricerca miglior frame:', error);
-    updateStatus('Errore durante la ricerca');
-    showToast('Errore nella ricerca automatica', 'error');
-  }
-}
 
 async function startAutomaticVideoScanning() {
   if (!window.currentVideo) {
@@ -6863,13 +6730,6 @@ async function startAutomaticVideoScanning() {
       }
     }
   });
-}
-
-  } catch (error) {
-    console.error('❌ Errore scansione automatica:', error);
-    updateStatus('Errore durante la scansione automatica');
-    showToast('Errore nella scansione', 'error');
-  }
 }
 
 // === FUNZIONI SINCRONIZZAZIONE OVERLAY GREEN DOTS ===
