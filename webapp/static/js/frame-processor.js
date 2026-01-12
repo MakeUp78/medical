@@ -203,7 +203,10 @@ class UnifiedFrameProcessor {
         return frameData;
       }
     } catch (error) {
-      console.error('Frame processing error:', error);
+      // Non logga errori di "nessun volto rilevato" - sono normali in alcuni frame
+      if (!error.message || !error.message.includes('Nessun volto rilevato')) {
+        console.error('Frame processing error:', error);
+      }
       return null;
     }
   }

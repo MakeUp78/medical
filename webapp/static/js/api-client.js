@@ -134,8 +134,10 @@ async function analyzeImageViaAPI(imageBase64, config = null) {
 
   } catch (error) {
     console.error('❌ Errore analisi API:', error);
-    console.error('❌ Payload inviato:', payload);
-    updateStatus(`Errore analisi: ${error.message}`);
+    // Non logga payload se è un errore di "nessun volto rilevato" (è normale in alcuni frame)
+    if (!error.message.includes('Nessun volto rilevato')) {
+      updateStatus(`Errore analisi: ${error.message}`);
+    }
     return null;
   }
 }
