@@ -3942,13 +3942,6 @@ function generateGreenDotsTableRows(result) {
       <td>pz</td>
       <td>✅ OK</td>
     </tr>`;
-
-    rows += `<tr data-type="green-dots">
-      <td>🟢 Pixel Verdi</td>
-      <td>${result.detection_results.total_green_pixels}</td>
-      <td>px</td>
-      <td>✅ OK</td>
-    </tr>`;
   }
 
   return rows;
@@ -5051,6 +5044,15 @@ async function detectGreenDots() {
   }
 
   try {
+    // ATTIVA automaticamente l'asse di simmetria se non è già attivo (senza feedback vocale)
+    const axisBtn = document.getElementById('axis-btn');
+    if (axisBtn && !axisBtn.classList.contains('active')) {
+      console.log('🔄 Attivazione automatica asse di simmetria (silente)...');
+      window.suppressVoiceFeedback = true;
+      axisBtn.click();
+      setTimeout(() => { window.suppressVoiceFeedback = false; }, 100);
+    }
+
     updateStatus('🔄 Rilevamento green dots in corso...');
     showToast('⏳ Elaborazione in corso... Può richiedere 10-60 secondi', 'info');
 

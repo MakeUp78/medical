@@ -1,0 +1,1293 @@
+#!/usr/bin/env python3
+"""
+Modulo per il rilevamento di puntini verdi e generazione di overlay trasparenti.
+Questo modulo può essere importato in altri script per elaborare immagini senza interfaccia grafica.
+
+Funzionalità principali:
+- Rilevamento puntini verdi usando analisi HSV
+- Divisione dei puntini in gruppi sinistro (Sx) e destro (Dx)
+- Generazione di overlay trasparenti con i perimetri
+- Calcolo delle coordinate e statistiche delle forme
+
+Dipendenze: opencv-python, numpy, pillow
+
+Esempio d'uso:
+    from src.green_dots_processor import GreenDotsProcessor
+
+    processor = GreenDotsProcessor()
+    results = processor.process_image("path/to/image.jpg")
+    overlay = processor.generate_overlay(results['image_size'])
+"""
+
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw
+import math
+import os
+from datetime import datetime
+from typing import Dict, List, Tuple, Optional
+
+
+class GreenDotsProcessor:
+    """
+    Processore per il rilevamento di puntini verdi e generazione di forme geometriche.
+    """
+
+    def __init__(
+        self,
+        hue_range: Tuple[int, int] = (50, 160),
+        saturation_min: int = 8,
+        value_range: Tuple[int, int] = (8, 100),
+        cluster_size_range: Tuple[int, int] = (1, 250),
+        clustering_radius: int = 3,
+    ):
+        """
+        Inizializza il processore con parametri configurabili.
+        
+        PARAMETRI OTTIMIZZATI (2025-12-20):
+        - hue_range: (50, 160) - Più ampio per catturare variazioni verde
+        - saturation_min: 8 - Ridotto per verde "sporco" o sbiadito
+        - value_range: (8, 100) - Ampliato per verde molto scuro e molto chiaro
+        - cluster_size_range: (1, 250) - Accetta pixel singoli e cluster più grandi
+        - clustering_radius: 3 - Raggio maggiore per unire punti vicini
+
+        Args:
+            hue_range: Range di tonalità HSV per il verde (min, max)
+            saturation_min: Saturazione minima per considerare un pixel verde
+            value_range: Range di luminosità HSV (min, max)
+            cluster_size_range: Range dimensioni cluster validi (min, max pixel)
+            clustering_radius: Raggio per il clustering dei pixel adiacenti
+        """
+        self.hue_min, self.hue_max = hue_range
+        self.saturation_min = saturation_min
+        self.value_min, self.value_max = value_range
+        self.cluster_min, self.cluster_max = cluster_size_range
+        self.clustering_radius = clustering_radius
+
+        # Risultati dell'ultimo processing
+        self.last_results = None
+        self.left_dots = []
+        self.right_dots = []
+
+    def rgb_to_hsv(self, r: int, g: int, b: int) -> Tuple[int, int, int]:
+        """
+        Converte valori RGB in HSV.
+
+        Args:
+            r, g, b: Valori RGB (0-255)
+
+        Returns:
+            Tuple[int, int, int]: Valori HSV (H: 0-360, S: 0-100, V: 0-100)
+        """
+        r, g, b = r / 255.0, g / 255.0, b / 255.0
+
+        max_val = max(r, g, b)
+        min_val = min(r, g, b)
+        diff = max_val - min_val
+
+        # Hue
+        if diff == 0:
+            h = 0
+        elif max_val == r:
+            h = ((g - b) / diff) % 6
+        elif max_val == g:
+            h = (b - r) / diff + 2
+        else:
+            h = (r - g) / diff + 4
+
+        h = round(h * 60)
+        if h < 0:
+            h += 360
+
+        # Saturation
+        s = 0 if max_val == 0 else round((diff / max_val) * 100)
+
+        # Value
+        v = round(max_val * 100)
+
+        return h, s, v
+
+    def is_green_pixel(self, r: int, g: int, b: int) -> bool:
+        """
+        Determina se un pixel è verde secondo i parametri configurati.
+
+        Args:
+            r, g, b: Valori RGB del pixel
+
+        Returns:
+            bool: True se il pixel è considerato verde
+        """
+        h, s, v = self.rgb_to_hsv(r, g, b)
+        return (
+            self.hue_min <= h <= self.hue_max
+            and s >= self.saturation_min
+            and self.value_min <= v <= self.value_max
+        )
+
+    def cluster_pixels(self, pixels: List[Dict]) -> List[List[Dict]]:
+        """
+        Raggruppa i pixel verdi in cluster usando algoritmo BFS.
+
+        Args:
+            pixels: Lista di pixel verdi con coordinate e informazioni colore
+
+        Returns:
+            List[List[Dict]]: Lista di cluster, ogni cluster è una lista di pixel
+        """
+        visited = set()
+        clusters = []
+
+        for pixel in pixels:
+            key = f"{pixel['x']},{pixel['y']}"
+            if key in visited:
+                continue
+
+            # Trova tutti i pixel connessi (BFS)
+            cluster = []
+            queue = [pixel]
+
+            while queue:
+                current = queue.pop(0)
+                current_key = f"{current['x']},{current['y']}"
+
+                if current_key in visited:
+                    continue
+
+                visited.add(current_key)
+                cluster.append(current)
+
+                # Cerca pixel adiacenti
+                for neighbor in pixels:
+                    neighbor_key = f"{neighbor['x']},{neighbor['y']}"
+                    if neighbor_key not in visited:
+                        dx = abs(current["x"] - neighbor["x"])
+                        dy = abs(current["y"] - neighbor["y"])
+                        if (
+                            dx <= self.clustering_radius
+                            and dy <= self.clustering_radius
+                        ):
+                            queue.append(neighbor)
+
+            if self.cluster_min <= len(cluster) <= self.cluster_max:
+                clusters.append(cluster)
+
+        return clusters
+
+    def detect_green_dots(self, image: Image.Image) -> Dict:
+        """
+        Rileva i puntini verdi in un'immagine.
+
+        Args:
+            image: Immagine PIL da analizzare
+
+        Returns:
+            Dict: Risultati del rilevamento con puntini, statistiche e metadati
+        """
+        # Converti l'immagine PIL in numpy array
+        img_array = np.array(image)
+        height, width = img_array.shape[:2]
+
+        green_pixels = []
+
+        # Scansiona tutti i pixel
+        for y in range(height):
+            for x in range(width):
+                r, g, b = img_array[y, x][:3]
+
+                if self.is_green_pixel(r, g, b):
+                    h, s, v = self.rgb_to_hsv(r, g, b)
+                    green_pixels.append(
+                        {"x": x, "y": y, "r": r, "g": g, "b": b, "h": h, "s": s, "v": v}
+                    )
+
+        # Raggruppa i pixel verdi in cluster
+        clusters = self.cluster_pixels(green_pixels)
+
+        # Calcola centroidi per ogni cluster
+        dots = []
+        for cluster in clusters:
+            avg_x = sum(p["x"] for p in cluster) / len(cluster)
+            avg_y = sum(p["y"] for p in cluster) / len(cluster)
+
+            dots.append(
+                {
+                    "x": round(avg_x),
+                    "y": round(avg_y),
+                    "size": len(cluster),
+                    "pixels": cluster,
+                }
+            )
+
+        results = {
+            "dots": dots,
+            "total_dots": len(dots),
+            "total_green_pixels": len(green_pixels),
+            "image_size": (width, height),
+            "parameters": {
+                "hue_range": (self.hue_min, self.hue_max),
+                "saturation_min": self.saturation_min,
+                "value_range": (self.value_min, self.value_max),
+            },
+        }
+
+        self.last_results = results
+        return results
+
+    def divide_dots_by_vertical_center(
+        self, dots: List[Dict], image_width: int
+    ) -> Tuple[List[Dict], List[Dict]]:
+        """
+        Divide i puntini in due gruppi basati sulla divisione verticale centrale.
+
+        Args:
+            dots: Lista dei puntini rilevati
+            image_width: Larghezza dell'immagine in pixel
+
+        Returns:
+            Tuple[List[Dict], List[Dict]]: (puntini_sinistra, puntini_destra)
+        """
+        middle_x = image_width // 2
+
+        left_dots = [dot for dot in dots if dot["x"] < middle_x]
+        right_dots = [dot for dot in dots if dot["x"] >= middle_x]
+
+        self.left_dots = left_dots
+        self.right_dots = right_dots
+
+        return left_dots, right_dots
+
+    def sort_points_by_proximity(self, points: List[Dict]) -> List[Dict]:
+        """
+        Ordina i punti per prossimità usando algoritmo Nearest Neighbor.
+
+        Args:
+            points: Lista di punti da ordinare
+
+        Returns:
+            List[Dict]: Punti ordinati per formare un percorso ottimale
+        """
+        if len(points) < 3:
+            return points
+
+        sorted_points = [points[0]]
+        remaining = points[1:]
+
+        while remaining:
+            current = sorted_points[-1]
+
+            # Trova il punto più vicino
+            min_distance = float("inf")
+            nearest_index = 0
+
+            for i, point in enumerate(remaining):
+                dx = point["x"] - current["x"]
+                dy = point["y"] - current["y"]
+                distance = math.sqrt(dx * dx + dy * dy)
+
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_index = i
+
+            sorted_points.append(remaining.pop(nearest_index))
+
+        return sorted_points
+
+    def calculate_eyebrow_bounding_box(self, dots: List[Dict], expand_factor: float = 0.5) -> Tuple[int, int, int, int]:
+        """
+        Calcola il bounding box dei punti del sopracciglio e lo allarga del fattore specificato.
+        
+        Args:
+            dots: Lista dei punti verdi del sopracciglio
+            expand_factor: Fattore di allargamento del bounding box (0.5 = 50%)
+            
+        Returns:
+            Tuple[int, int, int, int]: (x_min, y_min, x_max, y_max) del bounding box allargato
+        """
+        if not dots:
+            return (0, 0, 0, 0)
+            
+        # Trova coordinate minime e massime
+        x_coords = [dot["x"] for dot in dots]
+        y_coords = [dot["y"] for dot in dots]
+        
+        x_min, x_max = min(x_coords), max(x_coords)
+        y_min, y_max = min(y_coords), max(y_coords)
+        
+        # Calcola dimensioni originali
+        width = x_max - x_min
+        height = y_max - y_min
+        
+        # Calcola l'espansione
+        expand_width = int(width * expand_factor / 2)
+        expand_height = int(height * expand_factor / 2)
+        
+        # Applica l'espansione
+        x_min_expanded = max(0, x_min - expand_width)
+        y_min_expanded = max(0, y_min - expand_height)
+        x_max_expanded = x_max + expand_width
+        y_max_expanded = y_max + expand_height
+        
+        return (x_min_expanded, y_min_expanded, x_max_expanded, y_max_expanded)
+
+    def get_left_eyebrow_bbox(self, expand_factor: float = 0.5) -> Tuple[int, int, int, int]:
+        """
+        Restituisce il bounding box del sopracciglio sinistro.
+        
+        Args:
+            expand_factor: Fattore di allargamento del bounding box
+            
+        Returns:
+            Tuple[int, int, int, int]: Bounding box del sopracciglio sinistro
+        """
+        return self.calculate_eyebrow_bounding_box(self.left_dots, expand_factor)
+        
+    def get_right_eyebrow_bbox(self, expand_factor: float = 0.5) -> Tuple[int, int, int, int]:
+        """
+        Restituisce il bounding box del sopracciglio destro.
+        
+        Args:
+            expand_factor: Fattore di allargamento del bounding box
+            
+        Returns:
+            Tuple[int, int, int, int]: Bounding box del sopracciglio destro
+        """
+        return self.calculate_eyebrow_bounding_box(self.right_dots, expand_factor)
+
+    def sort_points_convex_hull(self, points: List[Dict]) -> List[Dict]:
+        """
+        Ordina i punti usando algoritmo Convex Hull (Graham Scan).
+
+        Args:
+            points: Lista di punti da ordinare
+
+        Returns:
+            List[Dict]: Punti ordinati secondo l'ordine del convex hull
+        """
+        if len(points) < 3:
+            return points
+
+        # Trova il punto più in basso
+        bottom_point = min(points, key=lambda p: (p["y"], p["x"]))
+
+        def angle_distance(p):
+            dx = p["x"] - bottom_point["x"]
+            dy = p["y"] - bottom_point["y"]
+            angle = math.atan2(dy, dx)
+            distance = math.sqrt(dx * dx + dy * dy)
+            return angle, distance
+
+        other_points = [p for p in points if p != bottom_point]
+        other_points.sort(key=angle_distance)
+
+        return [bottom_point] + other_points
+
+    def calculate_polygon_area(self, points: List[Dict]) -> float:
+        """
+        Calcola l'area di un poligono usando la formula Shoelace.
+
+        Args:
+            points: Lista di punti del poligono
+
+        Returns:
+            float: Area del poligono in pixel quadrati
+        """
+        if len(points) < 3:
+            return 0
+
+        area = 0
+        for i in range(len(points)):
+            j = (i + 1) % len(points)
+            area += points[i]["x"] * points[j]["y"]
+            area -= points[j]["x"] * points[i]["y"]
+
+        return abs(area) / 2
+
+    def calculate_perimeter(self, points: List[Dict]) -> float:
+        """
+        Calcola il perimetro di un poligono.
+
+        Args:
+            points: Lista di punti del poligono
+
+        Returns:
+            float: Perimetro del poligono in pixel
+        """
+        if len(points) < 2:
+            return 0
+
+        perimeter = 0
+        for i in range(len(points)):
+            j = (i + 1) % len(points)
+            dx = points[j]["x"] - points[i]["x"]
+            dy = points[j]["y"] - points[i]["y"]
+            perimeter += math.sqrt(dx * dx + dy * dy)
+
+        return perimeter
+
+    def sort_points_optimal(self, points: List[Dict]) -> List[Dict]:
+        """
+        Ordina i punti in modo ottimale scegliendo l'algoritmo che produce il perimetro minimo.
+
+        Args:
+            points: Lista di punti da ordinare
+
+        Returns:
+            List[Dict]: Punti ordinati in modo ottimale
+        """
+        if len(points) < 3:
+            return points
+
+        methods = [
+            self.sort_points_by_proximity(points.copy()),
+            self.sort_points_convex_hull(points.copy()),
+        ]
+
+        # Scegli il metodo con perimetro minimo
+        best_method = min(methods, key=self.calculate_perimeter)
+        return best_method
+
+    def calculate_shape_statistics(self, points: List[Dict], label: str = "") -> Dict:
+        """
+        Calcola le statistiche complete di una forma.
+
+        Args:
+            points: Lista di punti della forma
+            label: Etichetta per identificare la forma
+
+        Returns:
+            Dict: Statistiche della forma (area, perimetro, centro, etc.)
+        """
+        if not points:
+            return {}
+
+        area = self.calculate_polygon_area(points)
+        perimeter = self.calculate_perimeter(points)
+        center_x = sum(p["x"] for p in points) / len(points)
+        center_y = sum(p["y"] for p in points) / len(points)
+
+        return {
+            "label": label,
+            "vertices": len(points),
+            "area": round(area, 2),
+            "perimeter": round(perimeter, 2),
+            "center": {"x": round(center_x, 1), "y": round(center_y, 1)},
+            "points": points,
+        }
+
+    def generate_overlay(
+        self,
+        image_size: Tuple[int, int],
+        left_points: Optional[List[Dict]] = None,
+        right_points: Optional[List[Dict]] = None,
+        left_color: Tuple[int, int, int, int] = (0, 255, 0, 128),
+        right_color: Tuple[int, int, int, int] = (0, 0, 255, 128),
+        border_width: int = 3,
+    ) -> Image.Image:
+        """
+        Genera un overlay trasparente con i perimetri delle forme.
+
+        Args:
+            image_size: Dimensioni dell'immagine (width, height)
+            left_points: Punti della forma sinistra (opzionale)
+            right_points: Punti della forma destra (opzionale)
+            left_color: Colore RGBA per la forma sinistra
+            right_color: Colore RGBA per la forma destra
+            border_width: Spessore del bordo in pixel
+
+        Returns:
+            Image.Image: Overlay trasparente PNG con le forme
+        """
+        width, height = image_size
+
+        # Crea immagine trasparente
+        overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+
+        # Linea di divisione centrale rimossa per richiesta utente
+
+        # Usa i punti forniti o quelli dell'ultimo processing
+        if left_points is None:
+            left_points = self.left_dots
+        if right_points is None:
+            right_points = self.right_dots
+
+        # Disegna forma sinistra
+        if left_points and len(left_points) >= 3:
+            sorted_left = self.sort_points_optimal(left_points)
+            polygon_points = [(p["x"], p["y"]) for p in sorted_left]
+
+            # Riempimento semi-trasparente
+            draw.polygon(polygon_points, fill=left_color)
+
+            # Bordo
+            border_color = left_color[:3] + (255,)  # Bordo opaco
+            draw.polygon(polygon_points, outline=border_color, width=border_width)
+
+            # Vertici
+            # Etichette FISSE per i 5 punti: LC1, LA0, LA, LC, LB
+            left_labels = ["LC1", "LA0", "LA", "LC", "LB"]
+            for i, point in enumerate(sorted_left):
+                x, y = point["x"], point["y"]
+                draw.ellipse(
+                    [x - 4, y - 4, x + 4, y + 4],
+                    fill=(255, 255, 0, 255),
+                    outline=(0, 0, 0, 255),
+                    width=1,
+                )
+                # Usa etichette FISSE (sempre 5 punti)
+                label = left_labels[i] if i < len(left_labels) else f"L{i+1}"
+                draw.text((x + 6, y - 6), label, fill=(0, 0, 0, 255))
+
+        # Disegna forma destra
+        if right_points and len(right_points) >= 3:
+            sorted_right = self.sort_points_optimal(right_points)
+            polygon_points = [(p["x"], p["y"]) for p in sorted_right]
+
+            # Riempimento semi-trasparente
+            draw.polygon(polygon_points, fill=right_color)
+
+            # Bordo
+            border_color = right_color[:3] + (255,)  # Bordo opaco
+            draw.polygon(polygon_points, outline=border_color, width=border_width)
+
+            # Vertici
+            # Etichette FISSE per i 5 punti: RC1, RB, RC, RA, RA0
+            right_labels = ["RC1", "RB", "RC", "RA", "RA0"]
+            for i, point in enumerate(sorted_right):
+                x, y = point["x"], point["y"]
+                draw.ellipse(
+                    [x - 4, y - 4, x + 4, y + 4],
+                    fill=(255, 255, 0, 255),
+                    outline=(0, 0, 0, 255),
+                    width=1,
+                )
+                # Usa etichette FISSE (sempre 5 punti)
+                label = right_labels[i] if i < len(right_labels) else f"R{i+1}"
+                draw.text((x + 6, y - 6), label, fill=(0, 0, 0, 255))
+
+        return overlay
+
+    def generate_debug_image(
+        self,
+        original_image: Image.Image,
+        detection_results: Dict,
+        left_points: List[Dict],
+        right_points: List[Dict],
+    ) -> Optional[str]:
+        """
+        Genera un'immagine di debug con tutti i punti verdi rilevati evidenziati.
+        Mostra:
+        - Immagine originale (ridimensionata se > 1920px per performance)
+        - Tutti i punti verdi rilevati con cerchi colorati
+        - Numeri identificativi per ogni punto
+        - Bounding box delle ROI (se usate)
+        - Conteggio punti per lato e totale
+        
+        Args:
+            original_image: Immagine PIL originale
+            detection_results: Risultati del rilevamento
+            left_points: Punti sopracciglio sinistro
+            right_points: Punti sopracciglio destro
+        
+        Returns:
+            str: Path relativo dell'immagine salvata, o None se errore
+        """
+        try:
+            # Crea directory debug se non esiste
+            debug_dir = "webapp/static/debug/green_dots"
+            os.makedirs(debug_dir, exist_ok=True)
+            
+            # Ridimensiona se immagine troppo grande (performance)
+            max_size = 1920
+            img_to_process = original_image
+            scale_factor = 1.0
+            
+            if original_image.width > max_size or original_image.height > max_size:
+                if original_image.width > original_image.height:
+                    new_width = max_size
+                    new_height = int(original_image.height * (max_size / original_image.width))
+                else:
+                    new_height = max_size
+                    new_width = int(original_image.width * (max_size / original_image.height))
+                
+                img_to_process = original_image.resize((new_width, new_height), Image.LANCZOS)
+                scale_factor = new_width / original_image.width
+                print(f"🔽 Debug image ridimensionata: {original_image.width}x{original_image.height} → {new_width}x{new_height} (scale: {scale_factor:.3f})")
+            
+            # Converti PIL a numpy per disegno con OpenCV
+            img_array = np.array(img_to_process)
+            if len(img_array.shape) == 2:  # Grayscale
+                img_array = cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
+            elif img_array.shape[2] == 4:  # RGBA
+                img_array = cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
+            elif img_array.shape[2] == 3:  # RGB
+                img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            
+            debug_img = img_array.copy()
+            
+            # Disegna ROI boxes se disponibili (scala coordinate se necessario)
+            if "roi_info" in detection_results and detection_results["roi_info"].get("used_roi"):
+                roi_info = detection_results["roi_info"]
+                
+                # ROI sinistra
+                if "left_roi_offset" in roi_info and "left_roi_size" in roi_info:
+                    x_off, y_off = roi_info["left_roi_offset"]
+                    w, h = roi_info["left_roi_size"]
+                    # Scala coordinate se immagine ridimensionata
+                    x_off = int(x_off * scale_factor)
+                    y_off = int(y_off * scale_factor)
+                    w = int(w * scale_factor)
+                    h = int(h * scale_factor)
+                    cv2.rectangle(debug_img, (x_off, y_off), (x_off + w, y_off + h), 
+                                (255, 255, 0), 2)  # Giallo
+                    cv2.putText(debug_img, "ROI LEFT", (x_off + 5, y_off + 20),
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+                
+                # ROI destra
+                if "right_roi_offset" in roi_info and "right_roi_size" in roi_info:
+                    x_off, y_off = roi_info["right_roi_offset"]
+                    w, h = roi_info["right_roi_size"]
+                    # Scala coordinate se immagine ridimensionata
+                    x_off = int(x_off * scale_factor)
+                    y_off = int(y_off * scale_factor)
+                    w = int(w * scale_factor)
+                    h = int(h * scale_factor)
+                    cv2.rectangle(debug_img, (x_off, y_off), (x_off + w, y_off + h),
+                                (255, 255, 0), 2)  # Giallo
+                    cv2.putText(debug_img, "ROI RIGHT", (x_off + 5, y_off + 20),
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+            
+            # Disegna tutti i punti verdi rilevati
+            all_dots = detection_results.get("dots", [])
+            
+            # Disegna punti sinistri in verde (scala coordinate se necessario)
+            for i, point in enumerate(left_points):
+                x = int(point["x"] * scale_factor)
+                y = int(point["y"] * scale_factor)
+                # Cerchio pieno verde
+                cv2.circle(debug_img, (x, y), 8, (0, 255, 0), -1)
+                # Bordo nero
+                cv2.circle(debug_img, (x, y), 8, (0, 0, 0), 2)
+                # Numero bianco con sfondo nero
+                label = f"L{i+1}"
+                cv2.putText(debug_img, label, (x + 12, y + 5),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)  # Ombra
+                cv2.putText(debug_img, label, (x + 12, y + 5),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+            
+            # Disegna punti destri in blu (scala coordinate se necessario)
+            for i, point in enumerate(right_points):
+                x = int(point["x"] * scale_factor)
+                y = int(point["y"] * scale_factor)
+                # Cerchio pieno blu
+                cv2.circle(debug_img, (x, y), 8, (255, 0, 0), -1)
+                # Bordo nero
+                cv2.circle(debug_img, (x, y), 8, (0, 0, 0), 2)
+                # Numero bianco con sfondo nero
+                label = f"R{i+1}"
+                cv2.putText(debug_img, label, (x + 12, y + 5),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)  # Ombra
+                cv2.putText(debug_img, label, (x + 12, y + 5),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+            
+            # Aggiungi info testuale nell'angolo in alto
+            info_y = 30
+            box_height = 120 if detection_results['total_dots'] > 0 else 150
+            cv2.rectangle(debug_img, (5, 5), (350, box_height), (0, 0, 0), -1)  # Sfondo nero
+            cv2.rectangle(debug_img, (5, 5), (350, box_height), (255, 255, 255), 2)  # Bordo bianco
+            
+            cv2.putText(debug_img, f"GREEN DOTS DEBUG", (15, info_y),
+                      cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            info_y += 25
+            
+            # Mostra conteggio con colore appropriato
+            total_dots = detection_results['total_dots']
+            color = (0, 255, 0) if total_dots >= 6 else (0, 0, 255)  # Verde se OK, Rosso se insufficienti
+            cv2.putText(debug_img, f"Total: {total_dots} dots", (15, info_y),
+                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+            info_y += 20
+            cv2.putText(debug_img, f"Left: {len(left_points)} | Right: {len(right_points)}", (15, info_y),
+                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            info_y += 20
+            
+            roi_text = "ROI: YES" if detection_results.get("roi_info", {}).get("used_roi") else "ROI: NO"
+            cv2.putText(debug_img, roi_text, (15, info_y),
+                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+            
+            # Se non ci sono abbastanza punti, aggiungi messaggio
+            if total_dots == 0:
+                info_y += 25
+                cv2.putText(debug_img, "NO GREEN PIXELS FOUND!", (15, info_y),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+            elif total_dots < 6:
+                info_y += 25
+                cv2.putText(debug_img, "INSUFFICIENT DOTS!", (15, info_y),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 165, 255), 1)
+            
+            # Salva immagine con timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"debug_{timestamp}.jpg"
+            filepath = os.path.join(debug_dir, filename)
+            
+            cv2.imwrite(filepath, debug_img)
+            
+            # Restituisci path relativo per uso nel frontend
+            relative_path = f"/static/debug/green_dots/{filename}"
+            print(f"🖼️  Debug image salvata: {relative_path}")
+            
+            return relative_path
+            
+        except Exception as e:
+            print(f"❌ Errore generazione debug image: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def extract_eyebrow_roi(
+        self,
+        image: Image.Image,
+        landmarks: List[Dict],
+        side: str,
+        expand_factor: float = 0.3
+    ) -> Tuple[Image.Image, Tuple[int, int]]:
+        """
+        Estrae la Region of Interest (ROI) del sopracciglio dall'immagine.
+        Questo permette di concentrare il rilevamento solo sull'area del sopracciglio,
+        riducendo falsi positivi e permettendo parametri più permissivi.
+        
+        Args:
+            image: Immagine PIL completa
+            landmarks: Lista dei landmarks facial (formato: [{x, y, z}, ...])
+            side: 'left' o 'right' per sopracciglio
+            expand_factor: Quanto espandere il bounding box (0.3 = 30%)
+        
+        Returns:
+            Tuple[Image.Image, Tuple[int, int]]: 
+                - Immagine ritagliata del sopracciglio
+                - Offset (x_offset, y_offset) per convertire coordinate ROI a globali
+        """
+        # Definisci indici landmarks MediaPipe per i sopracciglia
+        if side == 'left':
+            # Sopracciglio sinistro (dal punto di vista dell'immagine)
+            indices = [70, 63, 105, 66, 107, 336, 296, 334, 293, 300, 276, 283, 282, 295, 285]
+        else:  # right
+            # Sopracciglio destro (dal punto di vista dell'immagine)
+            indices = [300, 293, 334, 296, 336, 66, 107, 66, 105, 63, 46, 53, 52, 65, 55]
+        
+        # Estrai coordinate dei landmarks del sopracciglio
+        eyebrow_points = []
+        for idx in indices:
+            if idx < len(landmarks):
+                point = landmarks[idx]
+                # Converti da normalizzato (0-1) a pixel
+                # Landmarks possono essere dict o oggetti con attributi
+                if isinstance(point, dict):
+                    x = point.get('x', 0)
+                    y = point.get('y', 0)
+                else:
+                    x = getattr(point, 'x', 0)
+                    y = getattr(point, 'y', 0)
+                
+                # Se già in pixel, usa direttamente; altrimenti converti
+                if x <= 1.0 and y <= 1.0:
+                    x = int(x * image.width)
+                    y = int(y * image.height)
+                else:
+                    x = int(x)
+                    y = int(y)
+                    
+                eyebrow_points.append((x, y))
+        
+        if not eyebrow_points:
+            raise ValueError(f"Nessun landmark trovato per sopracciglio {side}")
+        
+        # Calcola bounding box
+        x_coords = [p[0] for p in eyebrow_points]
+        y_coords = [p[1] for p in eyebrow_points]
+        
+        x_min, x_max = min(x_coords), max(x_coords)
+        y_min, y_max = min(y_coords), max(y_coords)
+        
+        # Espandi il bounding box
+        width = x_max - x_min
+        height = y_max - y_min
+        
+        expand_x = int(width * expand_factor)
+        expand_y = int(height * expand_factor)
+        
+        x_min = max(0, x_min - expand_x)
+        y_min = max(0, y_min - expand_y)
+        x_max = min(image.width, x_max + expand_x)
+        y_max = min(image.height, y_max + expand_y)
+        
+        # Ritaglia l'immagine
+        roi = image.crop((x_min, y_min, x_max, y_max))
+        
+        # Restituisci ROI e offset per coordinate globali
+        offset = (x_min, y_min)
+        
+        print(f"✂️ ROI estratta per sopracciglio {side}:")
+        print(f"   Bounding box: ({x_min}, {y_min}) → ({x_max}, {y_max})")
+        print(f"   Dimensioni ROI: {roi.width}×{roi.height}")
+        roi_area = roi.width * roi.height
+        full_area = image.width * image.height
+        print(f"   Riduzione area: {100*(1 - roi_area/full_area):.1f}%")
+        
+        return roi, offset
+
+    def detect_green_dots_with_roi(
+        self,
+        image: Image.Image,
+        landmarks: Optional[List[Dict]] = None,
+        use_roi: bool = True
+    ) -> Dict:
+        """
+        Rileva i puntini verdi usando ROI dei sopracciglia se landmarks disponibili.
+        Questo metodo è SUPERIORE alla detection completa perché:
+        - Riduce area di scansione del 90-95%
+        - Elimina falsi positivi da sfondo/vestiti
+        - Permette parametri molto più permissivi
+        - 10-20x più veloce
+        
+        Args:
+            image: Immagine PIL da analizzare
+            landmarks: Lista landmarks facial (opzionale)
+            use_roi: Se True, usa ROI per detection più accurata
+        
+        Returns:
+            Dict: Risultati del rilevamento con metadati ROI
+        """
+        
+        if not use_roi or not landmarks or len(landmarks) == 0:
+            # Fallback: detection su immagine completa
+            print("⚠️ Detection su immagine completa (no ROI)")
+            return self.detect_green_dots(image)
+        
+        print("🎯 Detection con ROI dei sopracciglia - MODALITÀ OTTIMIZZATA")
+        
+        # Estrai ROI per entrambi i sopracciglia
+        try:
+            left_roi, left_offset = self.extract_eyebrow_roi(image, landmarks, 'left')
+            right_roi, right_offset = self.extract_eyebrow_roi(image, landmarks, 'right')
+        except (ValueError, KeyError, IndexError) as e:
+            print(f"❌ Errore estrazione ROI: {e}")
+            print("   Fallback a detection completa")
+            return self.detect_green_dots(image)
+        
+        # Crea processore con parametri PIÙ PERMISSIVI per ROI
+        # Possiamo essere molto più permissivi perché sappiamo dove cercare
+        roi_processor = GreenDotsProcessor(
+            hue_range=(45, 165),       # Ancora più ampio
+            saturation_min=5,          # Molto ridotto - accetta verde "sporco"
+            value_range=(5, 100),      # Accetta verde molto scuro
+            cluster_size_range=(1, 300),  # Accetta pixel singoli
+            clustering_radius=4        # Raggio maggiore per unire punti
+        )
+        
+        print("🔧 Parametri ROI ottimizzati:")
+        print(f"   Hue: {roi_processor.hue_min}°-{roi_processor.hue_max}°")
+        print(f"   Sat min: {roi_processor.saturation_min}%")
+        print(f"   Value: {roi_processor.value_min}%-{roi_processor.value_max}%")
+        print(f"   Cluster: {roi_processor.cluster_min}-{roi_processor.cluster_max} px")
+        
+        # Rileva green dots in ROI sinistra
+        print("🔍 Analisi ROI sopracciglio sinistro...")
+        left_results = roi_processor.detect_green_dots(left_roi)
+        
+        # Rileva green dots in ROI destra
+        print("🔍 Analisi ROI sopracciglio destro...")
+        right_results = roi_processor.detect_green_dots(right_roi)
+        
+        # LIMITA A 5 PUNTI PER LATO - seleziona i 5 cluster più grandi
+        left_dots_raw = sorted(left_results['dots'], key=lambda d: d['size'], reverse=True)[:5]
+        right_dots_raw = sorted(right_results['dots'], key=lambda d: d['size'], reverse=True)[:5]
+        
+        print(f"✂️ Limitato a 5 punti per lato: left={len(left_dots_raw)}, right={len(right_dots_raw)}")
+        
+        # Converti coordinate da ROI a globali
+        left_dots = []
+        for dot in left_dots_raw:
+            left_dots.append({
+                'x': dot['x'] + left_offset[0],
+                'y': dot['y'] + left_offset[1],
+                'size': dot['size'],
+                'pixels': dot['pixels']
+            })
+        
+        right_dots = []
+        for dot in right_dots_raw:
+            right_dots.append({
+                'x': dot['x'] + right_offset[0],
+                'y': dot['y'] + right_offset[1],
+                'size': dot['size'],
+                'pixels': dot['pixels']
+            })
+        
+        # Combina risultati
+        all_dots = left_dots + right_dots
+        
+        results = {
+            "dots": all_dots,
+            "total_dots": len(all_dots),
+            "total_green_pixels": left_results['total_green_pixels'] + right_results['total_green_pixels'],
+            "image_size": (image.width, image.height),
+            "roi_info": {
+                "used_roi": True,
+                "left_roi_size": (left_roi.width, left_roi.height),
+                "right_roi_size": (right_roi.width, right_roi.height),
+                "left_offset": left_offset,
+                "right_offset": right_offset,
+                "left_dots_count": len(left_dots),
+                "right_dots_count": len(right_dots)
+            },
+            "parameters": {
+                "hue_range": (roi_processor.hue_min, roi_processor.hue_max),
+                "saturation_min": roi_processor.saturation_min,
+                "value_range": (roi_processor.value_min, roi_processor.value_max),
+                "cluster_size_range": (roi_processor.cluster_min, roi_processor.cluster_max),
+                "clustering_radius": roi_processor.clustering_radius,
+                "use_roi": True
+            }
+        }
+        
+        # Salva per divisione Sx/Dx
+        self.left_dots = left_dots
+        self.right_dots = right_dots
+        self.last_results = results
+        
+        print(f"✅ Rilevamento ROI completato:")
+        print(f"   Dots sinistro: {len(left_dots)}")
+        print(f"   Dots destro: {len(right_dots)}")
+        print(f"   Totale: {len(all_dots)}")
+        print(f"   Pixel verdi totali: {results['total_green_pixels']}")
+        
+        return results
+
+    def process_image(self, image_path: str) -> Dict:
+        """
+        Processa completamente un'immagine: rileva puntini, li divide e calcola statistiche.
+
+        Args:
+            image_path: Percorso dell'immagine da processare
+
+        Returns:
+            Dict: Risultati completi del processing
+        """
+        # Carica immagine
+        image = Image.open(image_path)
+
+        # Rileva puntini verdi
+        detection_results = self.detect_green_dots(image)
+
+        if detection_results["total_dots"] < 6:
+            return {
+                "success": False,
+                "error": f"Trovati solo {detection_results['total_dots']} puntini. Servono almeno 6 (3 per lato).",
+                "detection_results": detection_results,
+            }
+
+        # Dividi in gruppi
+        left_dots, right_dots = self.divide_dots_by_vertical_center(
+            detection_results["dots"], detection_results["image_size"][0]
+        )
+
+        if len(left_dots) < 3 or len(right_dots) < 3:
+            return {
+                "success": False,
+                "error": f"Gruppi insufficienti: Sx={len(left_dots)}, Dx={len(right_dots)}. Servono almeno 3 per lato.",
+                "detection_results": detection_results,
+                "left_dots": left_dots,
+                "right_dots": right_dots,
+            }
+
+        # Ordina punti e calcola statistiche
+        sorted_left = self.sort_points_optimal(left_dots)
+        sorted_right = self.sort_points_optimal(right_dots)
+
+        left_stats = self.calculate_shape_statistics(sorted_left, "Sinistra")
+        right_stats = self.calculate_shape_statistics(sorted_right, "Destra")
+
+        # Genera overlay
+        overlay = self.generate_overlay(
+            detection_results["image_size"], sorted_left, sorted_right
+        )
+
+        return {
+            "success": True,
+            "detection_results": detection_results,
+            "groups": {
+                "Sx": sorted_left,  # Gruppo sinistro
+                "Dx": sorted_right,  # Gruppo destro
+            },
+            "coordinates": {
+                "Sx": [(p["x"], p["y"]) for p in sorted_left],
+                "Dx": [(p["x"], p["y"]) for p in sorted_right],
+            },
+            "statistics": {
+                "left": left_stats,
+                "right": right_stats,
+                "combined": {
+                    "total_vertices": len(sorted_left) + len(sorted_right),
+                    "total_area": left_stats["area"] + right_stats["area"],
+                    "total_perimeter": left_stats["perimeter"]
+                    + right_stats["perimeter"],
+                },
+            },
+            "overlay": overlay,
+            "image_size": detection_results["image_size"],
+        }
+
+    def process_pil_image_with_roi(
+        self, 
+        pil_image: Image.Image, 
+        landmarks: List[Dict]
+    ) -> Dict:
+        """
+        Processa completamente un'immagine PIL usando ROI detection ottimizzata.
+        Questo metodo usa extract_eyebrow_roi e detect_green_dots_with_roi
+        per un rilevamento più accurato e veloce.
+        
+        Args:
+            pil_image: Immagine PIL da processare
+            landmarks: Lista dei landmarks facial
+        
+        Returns:
+            Dict: Risultati completi del processing con ROI
+        """
+        print("🎯 process_pil_image_with_roi - Modalità ROI ATTIVA")
+        
+        # Rileva puntini verdi usando ROI
+        detection_results = self.detect_green_dots_with_roi(
+            pil_image, 
+            landmarks=landmarks, 
+            use_roi=True
+        )
+
+        # REQUISITO: Esattamente 10 punti totali (5 per lato)
+        if detection_results["total_dots"] != 10:
+            print(f"⚠️ Trovati {detection_results['total_dots']} dots, servono ESATTAMENTE 10 (5 per lato)")
+            
+            # Genera immagine debug anche per errori
+            debug_image_path = self.generate_debug_image(
+                pil_image, detection_results, self.left_dots, self.right_dots
+            )
+            
+            return {
+                "success": False,
+                "error": f"Trovati {detection_results['total_dots']} puntini. Servono ESATTAMENTE 10 (5 per lato).",
+                "detection_results": detection_results,
+                "debug_image_path": debug_image_path,
+            }
+
+        # I dots sono già divisi per lato dal metodo detect_green_dots_with_roi
+        left_dots = self.left_dots
+        right_dots = self.right_dots
+
+        # REQUISITO: Esattamente 5 per lato
+        if len(left_dots) != 5 or len(right_dots) != 5:
+            print(f"⚠️ Gruppi non corretti: Sx={len(left_dots)}, Dx={len(right_dots)} (servono 5 e 5)")
+            
+            # Genera immagine debug anche per errori
+            debug_image_path = self.generate_debug_image(
+                pil_image, detection_results, left_dots, right_dots
+            )
+            
+            return {
+                "success": False,
+                "error": f"Gruppi non corretti: Sx={len(left_dots)}, Dx={len(right_dots)}. Servono esattamente 5 per lato.",
+                "detection_results": detection_results,
+                "left_dots": left_dots,
+                "right_dots": right_dots,
+                "debug_image_path": debug_image_path,
+            }
+
+        # Ordina punti e calcola statistiche
+        sorted_left = self.sort_points_optimal(left_dots)
+        sorted_right = self.sort_points_optimal(right_dots)
+
+        left_stats = self.calculate_shape_statistics(sorted_left, "Sinistra")
+        right_stats = self.calculate_shape_statistics(sorted_right, "Destra")
+
+        # Genera overlay
+        overlay = self.generate_overlay(
+            detection_results["image_size"], sorted_left, sorted_right
+        )
+
+        # Genera immagine debug con punti evidenziati
+        debug_image_path = self.generate_debug_image(
+            pil_image, detection_results, sorted_left, sorted_right
+        )
+        
+        result = {
+            "success": True,
+            "detection_results": detection_results,
+            "groups": {
+                "Sx": sorted_left,
+                "Dx": sorted_right,
+            },
+            "coordinates": {
+                "Sx": [(p["x"], p["y"]) for p in sorted_left],
+                "Dx": [(p["x"], p["y"]) for p in sorted_right],
+            },
+            "statistics": {
+                "left": left_stats,
+                "right": right_stats,
+                "combined": {
+                    "total_vertices": len(sorted_left) + len(sorted_right),
+                    "total_area": left_stats["area"] + right_stats["area"],
+                    "total_perimeter": left_stats["perimeter"] + right_stats["perimeter"],
+                },
+            },
+            "overlay": overlay,  # PIL Image, sarà convertito in base64 da process_green_dots_analysis
+            "debug_image_path": debug_image_path,  # Path immagine debug
+        }
+        
+        # Aggiungi info ROI al risultato se disponibili
+        if "roi_info" in detection_results:
+            result["roi_info"] = detection_results["roi_info"]
+            print(f"📊 ROI Info incluse nei risultati")
+        
+        print(f"✅ process_pil_image_with_roi completato con successo")
+        print(f"   Dots totali: {detection_results['total_dots']}")
+        print(f"   Left: {len(sorted_left)}, Right: {len(sorted_right)}")
+        if debug_image_path:
+            print(f"   🖼️  Debug image salvata: {debug_image_path}")
+        
+        return result
+
+    def process_pil_image(self, pil_image: Image.Image) -> Dict:
+        """
+        Processa direttamente un'immagine PIL senza salvare su file.
+
+        Args:
+            pil_image: Immagine PIL da processare
+
+        Returns:
+            Dict: Risultati completi del processing
+        """
+        # Rileva puntini verdi
+        detection_results = self.detect_green_dots(pil_image)
+
+        if detection_results["total_dots"] < 6:
+            return {
+                "success": False,
+                "error": f"Trovati solo {detection_results['total_dots']} puntini. Servono almeno 6 (3 per lato).",
+                "detection_results": detection_results,
+            }
+
+        # Dividi in gruppi
+        left_dots, right_dots = self.divide_dots_by_vertical_center(
+            detection_results["dots"], detection_results["image_size"][0]
+        )
+
+        if len(left_dots) < 3 or len(right_dots) < 3:
+            return {
+                "success": False,
+                "error": f"Gruppi insufficienti: Sx={len(left_dots)}, Dx={len(right_dots)}. Servono almeno 3 per lato.",
+                "detection_results": detection_results,
+                "left_dots": left_dots,
+                "right_dots": right_dots,
+            }
+
+        # Ordina punti e calcola statistiche
+        sorted_left = self.sort_points_optimal(left_dots)
+        sorted_right = self.sort_points_optimal(right_dots)
+
+        left_stats = self.calculate_shape_statistics(sorted_left, "Sinistra")
+        right_stats = self.calculate_shape_statistics(sorted_right, "Destra")
+
+        # Genera overlay
+        overlay = self.generate_overlay(
+            detection_results["image_size"], sorted_left, sorted_right
+        )
+
+        return {
+            "success": True,
+            "detection_results": detection_results,
+            "groups": {
+                "Sx": sorted_left,  # Gruppo sinistro
+                "Dx": sorted_right,  # Gruppo destro
+            },
+            "coordinates": {
+                "Sx": [(p["x"], p["y"]) for p in sorted_left],
+                "Dx": [(p["x"], p["y"]) for p in sorted_right],
+            },
+            "statistics": {
+                "left": left_stats,
+                "right": right_stats,
+                "combined": {
+                    "total_vertices": len(sorted_left) + len(sorted_right),
+                    "total_area": left_stats["area"] + right_stats["area"],
+                    "total_perimeter": left_stats["perimeter"]
+                    + right_stats["perimeter"],
+                },
+            },
+            "overlay": overlay,
+            "image_size": detection_results["image_size"],
+        }
+
+
+# Funzioni di convenienza per uso diretto del modulo
+def process_image_file(image_path: str, **kwargs) -> Dict:
+    """
+    Funzione di convenienza per processare un'immagine con parametri di default.
+
+    Args:
+        image_path: Percorso dell'immagine
+        **kwargs: Parametri opzionali per GreenDotsProcessor
+
+    Returns:
+        Dict: Risultati del processing
+    """
+    processor = GreenDotsProcessor(**kwargs)
+    return processor.process_image(image_path)
+
+
+def create_overlay_from_coordinates(
+    image_size: Tuple[int, int],
+    left_coords: List[Tuple[int, int]],
+    right_coords: List[Tuple[int, int]],
+) -> Image.Image:
+    """
+    Crea un overlay dalle coordinate fornite.
+
+    Args:
+        image_size: Dimensioni dell'immagine (width, height)
+        left_coords: Lista di coordinate (x, y) per il lato sinistro
+        right_coords: Lista di coordinate (x, y) per il lato destro
+
+    Returns:
+        Image.Image: Overlay trasparente
+    """
+    # Converte coordinate in formato dizionario
+    left_points = [{"x": x, "y": y} for x, y in left_coords]
+    right_points = [{"x": x, "y": y} for x, y in right_coords]
+
+    processor = GreenDotsProcessor()
+    return processor.generate_overlay(image_size, left_points, right_points)
+
+
+if __name__ == "__main__":
+    # Test del modulo
+    print("Test del modulo GreenDotsProcessor")
+    print("Esempio d'uso:")
+    print(
+        """
+    from src.green_dots_processor import GreenDotsProcessor
+    
+    # Processa un'immagine
+    processor = GreenDotsProcessor()
+    results = processor.process_image("path/to/image.jpg")
+    
+    if results['success']:
+        print(f"Puntini Sx: {len(results['groups']['Sx'])}")
+        print(f"Puntini Dx: {len(results['groups']['Dx'])}")
+        
+        # Salva overlay
+        results['overlay'].save("overlay.png")
+        
+        # Coordinate dei puntini
+        sx_coords = results['coordinates']['Sx']
+        dx_coords = results['coordinates']['Dx']
+    """
+    )

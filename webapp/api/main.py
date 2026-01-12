@@ -838,8 +838,9 @@ def process_green_dots_analysis(
             clustering_radius=clustering_radius
         )
         
-        # Processa l'immagine SENZA preprocessing perché il frontend già ridimensiona
-        results = processor.process_pil_image(pil_image)
+        # Processa CON preprocessing (maschere sopracciglia MediaPipe)
+        # Output completo: statistiche, tabella dati, overlay perimetrali
+        results = processor.process_pil_image(pil_image, use_preprocessing=True)
         
         # Converte l'overlay in base64 se disponibile
         if results.get('success') and 'overlay' in results:
