@@ -652,7 +652,7 @@ function startVideoFrameProcessing(video, fileName) {
     // Cattura frame tramite UnifiedFrameProcessor
     const processor = new UnifiedFrameProcessor();
     const frameSource = new FrameSource(video, 'video');
-    processor.captureAndAnalyzeFrame(frameSource).catch(err => {
+    processor.processFrame(frameSource).catch(err => {
       console.error('❌ Errore cattura frame video:', err);
     });
 
@@ -661,7 +661,7 @@ function startVideoFrameProcessing(video, fileName) {
 }
 
 // ⚠️ FUNZIONE LEGACY RIMOSSA: captureFrameFromVideoElement
-// Sostituita da UnifiedFrameProcessor.captureAndAnalyzeFrame() in frame-processor.js
+// Sostituita da UnifiedFrameProcessor.processFrame() in frame-processor.js
 // Rimossa durante l'unificazione del 2024-01-12
 
 
@@ -836,7 +836,7 @@ async function analyzeCurrentVideoFrame() {
       throw new Error('Nessuna immagine caricata sul canvas');
     }
     const frameSource = new FrameSource(imageElement._element, 'image');
-    const result = await processor.captureAndAnalyzeFrame(frameSource);
+    const result = await processor.processFrame(frameSource);
     const analysisResult = result ? result.analysis : null;
 
     if (analysisResult) {
@@ -1615,7 +1615,7 @@ function startFrameCapture(video) {
       // Usa UnifiedFrameProcessor per WebSocket streaming
       const processor = new UnifiedFrameProcessor();
       const frameSource = new FrameSource(video, 'webcam');
-      processor.captureAndAnalyzeFrame(frameSource).then(result => {
+      processor.processFrame(frameSource).then(result => {
         if (result && webcamWebSocket.readyState === WebSocket.OPEN) {
           webcamWebSocket.send(JSON.stringify({
             type: 'frame',
@@ -1833,7 +1833,7 @@ function updateWebcamPreview(video) {
 }
 
 // ⚠️ FUNZIONE LEGACY RIMOSSA: captureAndSendFrame
-// Sostituita da UnifiedFrameProcessor.captureAndAnalyzeFrame() in frame-processor.js
+// Sostituita da UnifiedFrameProcessor.processFrame() in frame-processor.js
 // Rimossa durante l'unificazione del 2024-01-12
 
 
