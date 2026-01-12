@@ -486,19 +486,72 @@ async function handleUnifiedFileLoad(file, type) {
     reader.readAsDataURL(file);
 
   } else if (type === 'video') {
-    const videoUrl = URL.createObjectURL(file);
-    const video = document.createElement('video');
-    video.src = videoUrl;
-    video.load();
+    // RIPRISTINO SISTEMA ORIGINALE: Analisi automatica via WebSocket
+    console.log('🎥 handleVideoLoad iniziato:', {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type
+    });
 
-    video.onloadedmetadata = async function () {
-      window.currentVideo = video;
-      window.currentVideoFile = file;
+    try {
+      collapseDetectionSections();
+      updateStatus('Avvio analisi video...');
 
-      createVideoInterface(video, file);
-      updateStatus('Video caricato - Usa controlli per navigare');
-      showToast('Video pronto per l\'analisi', 'info');
-    };
+      // Crea elemento video nascosto per elaborazione
+      const video = document.createElement('video');
+      video.muted = true;
+      video.style.position = 'absolute';
+      video.style.left = '-9999px';
+      video.style.top = '-9999px';
+      document.body.appendChild(video);
+
+      // Carica file video
+      const url = URL.createObjectURL(file);
+      video.src = url;
+
+      // Aspetta caricamento video
+      await new Promise(resolve => {
+        video.onloadedmetadata = resolve;
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      console.log('Video caricato:', {
+        width: video.videoWidth,
+        height: video.videoHeight,
+        duration: video.duration
+      });
+
+      // Imposta video per riproduzione singola (NO LOOP)
+      video.loop = false;
+
+      // Handler per fermare quando finisce
+      video.addEventListener('ended', () => {
+        console.log('🎬 Video terminato - fermo anteprima');
+        stopLivePreview();
+      });
+
+      // PROCESSO ORIGINALE: Setup anteprima + elaborazione WebSocket
+      openWebcamSection();
+      showWebcamPreview(video);
+
+      // Aspetta WebSocket PRIMA di avviare il video
+      await connectWebcamWebSocket();
+
+      // Ora avvia il video e l'anteprima
+      video.play().then(() => {
+        console.log('▶️ Video avviato - play singolo');
+        startLivePreview(video); // Anteprima continua
+        startVideoFrameProcessing(video, file.name); // Elaborazione frame
+      }).catch(e => console.error('Errore play video:', e));
+
+      showToast('Video in elaborazione - sistema WebSocket automatico', 'success');
+
+    } catch (error) {
+      console.error('Errore analisi video:', error);
+      updateStatus('Errore: Impossibile analizzare il video');
+      showToast('Errore analisi video', 'error');
+    }
   }
 }
 
@@ -722,22 +775,10 @@ async function showVideoInMainCanvas(file) {
   }
 }
 
-function createVideoInterface(video, file) {
-  // Pulisci canvas
-  if (fabricCanvas) {
-    fabricCanvas.clear();
-  }
-
-  // Disegna primo frame
-  drawVideoFrame(video, 0);
-
-  // Crea controlli video nella sidebar destra
-  createVideoControls(video, file);
-
-  // Salva riferimento globale
-  window.currentVideo = video;
-  window.currentVideoFile = file;
-}
+// ⚠️ FUNZIONE createVideoInterface RIMOSSA
+// Il sistema ora usa automaticamente WebSocket per l'analisi video
+// Nessuna interfaccia manuale con pulsanti necessaria
+// Rimosso durante ripristino comportamento originale 2024-01-12
 
 function drawVideoFrame(video, currentTime) {
   if (!fabricCanvas || !video) return;
@@ -2415,6 +2456,12 @@ function handleResultsReady(data) {
 
       // Aggiorna tabella con i nuovi frame
       updateDebugTable(bestFrames);
+
+      // AGGIORNAMENTO AUTOMATICO: Mostra il miglior frame sul canvas
+      if (bestFrames[0] && bestFrames[0].image_data) {
+        console.log('🎯 Aggiornamento automatico canvas con miglior frame (score:', bestFrames[0].score.toFixed(3), ')');
+        updateCanvasWithBestFrame(bestFrames[0].image_data);
+      }
 
       updateStatus(`Ricevuti ${bestFrames.length} migliori frame dal server`);
 
@@ -6018,6 +6065,12 @@ function clearDebugAnalysisTable() {
 function addDebugAnalysisRow(frameData) {
   const tbody = document.getElementById('debug-data');
   if (!tbody) return;
+
+  // FILTRO: Ignora frame con score troppo basso (< 0.5)
+  if (frameData.score < 0.5) {
+    console.log(`⏭️ Frame ignorato (score troppo basso): ${frameData.score.toFixed(3)}`);
+    return;
+  }
 
   // Rimuovi placeholder se presente
   if (tbody.children.length === 1 && tbody.children[0].textContent.includes('Nessun dato')) {
