@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Modulo per il rilevamento di puntini verdi e generazione di overlay trasparenti.
+Modulo per il rilevamento di puntini bianchi/biancastri e generazione di overlay trasparenti.
 Questo modulo può essere importato in altri script per elaborare immagini senza interfaccia grafica.
 
 Funzionalità principali:
-- Rilevamento puntini verdi usando analisi HSV
+- Rilevamento puntini bianchi usando analisi HSV
 - Divisione dei puntini in gruppi sinistro (Sx) e destro (Dx)
 - Generazione di overlay trasparenti con i perimetri
 - Calcolo delle coordinate e statistiche delle forme
@@ -34,29 +34,32 @@ except ImportError:
 
 class GreenDotsProcessor:
     """
-    Processore per il rilevamento di puntini verdi e generazione di forme geometriche.
+    Processore per il rilevamento di puntini bianchi/biancastri e generazione di forme geometriche.
     """
 
     def __init__(
         self,
-        hue_range: Tuple[int, int] = (125, 185),
-        saturation_min: int = 50,
-        value_range: Tuple[int, int] = (15, 55),
-        cluster_size_range: Tuple[int, int] = (4, 170),
+        hue_range: Tuple[int, int] = (0, 360),
+        saturation_min: int = 0,
+        saturation_max: int = 30,
+        value_range: Tuple[int, int] = (70, 100),
+        cluster_size_range: Tuple[int, int] = (2, 170),
         clustering_radius: int = 3,
     ):
         """
         Inizializza il processore con parametri configurabili.
 
         Args:
-            hue_range: Range di tonalità HSV per il verde (min, max)
-            saturation_min: Saturazione minima per considerare un pixel verde
-            value_range: Range di luminosità HSV (min, max)
+            hue_range: Range di tonalità HSV (min, max) - irrilevante per bianco
+            saturation_min: Saturazione minima
+            saturation_max: Saturazione massima per considerare un pixel bianco/biancastro
+            value_range: Range di luminosità HSV (min, max) - alto per bianco
             cluster_size_range: Range dimensioni cluster validi (min, max pixel)
             clustering_radius: Raggio per il clustering dei pixel adiacenti
         """
         self.hue_min, self.hue_max = hue_range
         self.saturation_min = saturation_min
+        self.saturation_max = saturation_max
         self.value_min, self.value_max = value_range
         self.cluster_min, self.cluster_max = cluster_size_range
         self.clustering_radius = clustering_radius
@@ -106,34 +109,26 @@ class GreenDotsProcessor:
 
     def is_green_pixel(self, r: int, g: int, b: int) -> bool:
         """
-        Determina se un pixel è verde o bianco secondo i parametri configurati.
+        Determina se un pixel è bianco/biancastro secondo i parametri configurati.
 
         Args:
             r, g, b: Valori RGB del pixel
 
         Returns:
-            bool: True se il pixel è considerato verde o bianco
+            bool: True se il pixel è considerato bianco/biancastro
         """
         h, s, v = self.rgb_to_hsv(r, g, b)
-        
-        # Check per puntini verdi (originale)
-        is_green = (
-            self.hue_min <= h <= self.hue_max
-            and s >= self.saturation_min
+        return (
+            self.saturation_min <= s <= self.saturation_max
             and self.value_min <= v <= self.value_max
         )
-        
-        # Check per puntini bianchi (luminosità minima 78)
-        is_white = (s <= 20 and 78 <= v <= 95)
-        
-        return is_green or is_white
 
     def cluster_pixels(self, pixels: List[Dict]) -> List[List[Dict]]:
         """
-        Raggruppa i pixel verdi in cluster usando algoritmo BFS.
+        Raggruppa i pixel bianchi in cluster usando algoritmo BFS.
 
         Args:
-            pixels: Lista di pixel verdi con coordinate e informazioni colore
+            pixels: Lista di pixel bianchi con coordinate e informazioni colore
 
         Returns:
             List[List[Dict]]: Lista di cluster, ogni cluster è una lista di pixel
@@ -179,7 +174,7 @@ class GreenDotsProcessor:
 
     def detect_green_dots(self, image: Image.Image) -> Dict:
         """
-        Rileva i puntini verdi in un'immagine.
+        Rileva i puntini bianchi/biancastri in un'immagine.
 
         Args:
             image: Immagine PIL da analizzare
@@ -191,7 +186,7 @@ class GreenDotsProcessor:
         img_array = np.array(image)
         height, width = img_array.shape[:2]
 
-        green_pixels = []
+        white_pixels = []
 
         # Scansiona tutti i pixel
         for y in range(height):
@@ -200,103 +195,43 @@ class GreenDotsProcessor:
 
                 if self.is_green_pixel(r, g, b):
                     h, s, v = self.rgb_to_hsv(r, g, b)
-                    green_pixels.append(
+                    white_pixels.append(
                         {"x": x, "y": y, "r": r, "g": g, "b": b, "h": h, "s": s, "v": v}
                     )
 
-        # Raggruppa i pixel verdi in cluster
-        clusters = self.cluster_pixels(green_pixels)
+        # Raggruppa i pixel bianchi in cluster
+        clusters = self.cluster_pixels(white_pixels)
 
         # Calcola centroidi per ogni cluster
         dots = []
         for cluster in clusters:
             avg_x = sum(p["x"] for p in cluster) / len(cluster)
             avg_y = sum(p["y"] for p in cluster) / len(cluster)
-            
-            # Calcola score del cluster (basato su dimensione e saturazione media)
-            avg_saturation = sum(p["s"] for p in cluster) / len(cluster)
-            score = len(cluster) * (1 + avg_saturation / 100)
-            
-            # FILTRA: puntini bianchi (bassa saturazione) devono avere almeno 4 pixel
-            if avg_saturation <= 20 and len(cluster) < 4:
-                continue  # Scarta puntino bianco troppo piccolo
-            
-            # FILTRA: esclude puntini con bordi non definiti (pixel dispersi)
-            # Calcola deviazione standard dalla posizione del centroide
-            variance_x = sum((p["x"] - avg_x)**2 for p in cluster) / len(cluster)
-            variance_y = sum((p["y"] - avg_y)**2 for p in cluster) / len(cluster)
-            std_dev = math.sqrt(variance_x + variance_y)
-            
-            # Se deviazione standard troppo alta rispetto alla dimensione, bordi non definiti
-            compactness = std_dev / math.sqrt(len(cluster))
-            
-            # Soglia più stringente per puntini BIANCHI (devono essere più compatti)
-            if avg_saturation <= 20:
-                if compactness >= 1.0:  # Puntini bianchi devono essere estremamente compatti (< 1.0)
-                    continue
-            else:
-                if compactness > 2.5:  # Puntini verdi possono essere meno compatti
-                    continue
 
             dots.append(
                 {
                     "x": round(avg_x),
                     "y": round(avg_y),
                     "size": len(cluster),
-                    "score": score,
                     "pixels": cluster,
                 }
             )
 
-        # Filtra puntini troppo vicini, mantieni solo quello con score più alto
-        dots = self.filter_close_dots(dots, min_distance=15)
-
         results = {
             "dots": dots,
             "total_dots": len(dots),
-            "total_green_pixels": len(green_pixels),
+            "total_white_pixels": len(white_pixels),
             "image_size": (width, height),
             "parameters": {
                 "hue_range": (self.hue_min, self.hue_max),
                 "saturation_min": self.saturation_min,
+                "saturation_max": self.saturation_max,
                 "value_range": (self.value_min, self.value_max),
             },
         }
 
         self.last_results = results
         return results
-
-    def filter_close_dots(self, dots: List[Dict], min_distance: int = 15) -> List[Dict]:
-        """
-        Filtra puntini troppo vicini, mantiene solo quello con score più alto.
-        
-        Args:
-            dots: Lista di puntini con coordinate e score
-            min_distance: Distanza minima in pixel tra puntini
-            
-        Returns:
-            Lista filtrata di puntini
-        """
-        if len(dots) <= 1:
-            return dots
-            
-        # Ordina per score decrescente
-        sorted_dots = sorted(dots, key=lambda d: d.get('score', d['size']), reverse=True)
-        
-        filtered = []
-        for dot in sorted_dots:
-            # Controlla se è troppo vicino a puntini già accettati
-            too_close = False
-            for accepted in filtered:
-                distance = math.sqrt((dot['x'] - accepted['x'])**2 + (dot['y'] - accepted['y'])**2)
-                if distance < min_distance:
-                    too_close = True
-                    break
-            
-            if not too_close:
-                filtered.append(dot)
-        
-        return filtered
 
     def divide_dots_by_vertical_center(
         self, dots: List[Dict], image_width: int
@@ -1126,15 +1061,15 @@ class GreenDotsProcessor:
         # Rileva puntini verdi
         detection_results = self.detect_green_dots(detection_image)
 
-        # DEVE trovare esattamente 10 punti per output completo, ma mostra sempre overlay
+        # Se non ci sono abbastanza punti o ce ne sono troppi, genera overlay solo con punti
         if detection_results["total_dots"] != 10:
             overlay = self.generate_overlay_dots_only(
                 detection_results["image_size"],
                 detection_results["dots"]
             )
             return {
-                "success": True,  # SUCCESS per mostrare overlay
-                "warning": f"⚠️ Rilevati {detection_results['total_dots']} punti invece di 10. Overlay con punti rilevati.",
+                "success": True,
+                "warning": f"Rilevati {detection_results['total_dots']} punti invece di 10. Overlay generato solo con punti.",
                 "detection_results": detection_results,
                 "overlay": overlay,
                 "image_size": detection_results["image_size"],
@@ -1148,15 +1083,15 @@ class GreenDotsProcessor:
             detection_results["dots"], detection_results["image_size"][0]
         )
 
-        # DEVE essere esattamente 5+5 per poligoni, ma mostra sempre overlay
+        # Se i gruppi non hanno 5 punti ciascuno, genera overlay solo con punti
         if len(left_dots) != 5 or len(right_dots) != 5:
             overlay = self.generate_overlay_dots_only(
                 detection_results["image_size"],
                 detection_results["dots"]
             )
             return {
-                "success": True,  # SUCCESS per mostrare overlay
-                "warning": f"⚠️ Gruppi non bilanciati: Sx={len(left_dots)}, Dx={len(right_dots)}. Overlay con punti rilevati.",
+                "success": True,
+                "warning": f"Gruppi non bilanciati: Sx={len(left_dots)}, Dx={len(right_dots)}. Overlay generato solo con punti.",
                 "detection_results": detection_results,
                 "overlay": overlay,
                 "image_size": detection_results["image_size"],
@@ -1172,7 +1107,7 @@ class GreenDotsProcessor:
         left_stats = self.calculate_shape_statistics(sorted_left, "Sinistra")
         right_stats = self.calculate_shape_statistics(sorted_right, "Destra")
 
-        # Genera overlay con poligoni perimetrali
+        # Genera overlay
         overlay = self.generate_overlay(
             detection_results["image_size"], sorted_left, sorted_right
         )
@@ -1181,8 +1116,8 @@ class GreenDotsProcessor:
             "success": True,
             "detection_results": detection_results,
             "groups": {
-                "Sx": sorted_left,
-                "Dx": sorted_right,
+                "Sx": sorted_left,  # Gruppo sinistro
+                "Dx": sorted_right,  # Gruppo destro
             },
             "coordinates": {
                 "Sx": [(p["x"], p["y"]) for p in sorted_left],
@@ -1194,7 +1129,8 @@ class GreenDotsProcessor:
                 "combined": {
                     "total_vertices": len(sorted_left) + len(sorted_right),
                     "total_area": left_stats["area"] + right_stats["area"],
-                    "total_perimeter": left_stats["perimeter"] + right_stats["perimeter"],
+                    "total_perimeter": left_stats["perimeter"]
+                    + right_stats["perimeter"],
                 },
             },
             "overlay": overlay,
