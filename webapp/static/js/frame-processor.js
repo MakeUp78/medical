@@ -183,7 +183,7 @@ class UnifiedFrameProcessor {
       const base64Image = standardCanvas.toDataURL('image/jpeg', FRAME_CONFIG.jpegQuality);
 
       const result = await analyzeImageViaAPI(base64Image);
-      
+
       if (result && result.frontality_score) {
         const frameData = {
           canvas: rawCanvas,
@@ -223,7 +223,7 @@ class UnifiedFrameProcessor {
 
     const duration = frameSource.getDuration();
     const stepSize = options.stepSize || 0.33;
-    
+
     if (frameSource.type === 'video' && duration) {
       for (let time = 0; time < duration; time += stepSize) {
         if (!this.isProcessing) break;
