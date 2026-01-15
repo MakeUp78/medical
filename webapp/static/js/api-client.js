@@ -128,14 +128,19 @@ async function analyzeImageViaAPI(imageBase64, config = null) {
       return result;
     } else {
       const error = await response.json();
-      console.error('❌ Dettagli errore API:', error);
+      // Silenzia errori normali: frame video senza volto
+      const isNoFaceError = error.detail && error.detail.includes('Nessun volto rilevato');
+      if (!isNoFaceError) {
+        console.error('❌ Dettagli errore API:', error);
+      }
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
 
   } catch (error) {
-    console.error('❌ Errore analisi API:', error);
-    // Non logga payload se è un errore di "nessun volto rilevato" (è normale in alcuni frame)
-    if (!error.message.includes('Nessun volto rilevato')) {
+    // Silenzia errori normali: frame video senza volto
+    const isNoFaceError = error.message && error.message.includes('Nessun volto rilevato');
+    if (!isNoFaceError) {
+      console.error('❌ Errore analisi API:', error);
       updateStatus(`Errore analisi: ${error.message}`);
     }
     return null;

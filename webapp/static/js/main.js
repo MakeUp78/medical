@@ -259,14 +259,31 @@ async function detectLandmarksSilent() {
       canvas.width = fabricElement.width || fabricElement.naturalWidth;
       canvas.height = fabricElement.height || fabricElement.naturalHeight;
       ctx.drawImage(fabricElement, 0, 0);
-      base64Image = canvas.toDataURL('image/jpeg', 0.9);
+
+      // ✅ Normalizza e comprimi moderatamente
+      const normalized = normalizeTo72DPI(canvas);
+      const compressed = compressImage(normalized, 1920, 0.85);
+      base64Image = compressed.toDataURL('image/jpeg', 0.85);
     } else if (currentImage.width && currentImage.height) {
       canvas.width = currentImage.width;
       canvas.height = currentImage.height;
       ctx.drawImage(currentImage, 0, 0);
-      base64Image = canvas.toDataURL('image/jpeg', 0.9);
+
+      // ✅ Normalizza e comprimi moderatamente
+      const normalized = normalizeTo72DPI(canvas);
+      const compressed = compressImage(normalized, 1920, 0.85);
+      base64Image = compressed.toDataURL('image/jpeg', 0.85);
     } else {
-      base64Image = fabricCanvas.toDataURL('image/jpeg', 0.9);
+      // Fabric canvas - crea temp canvas, normalizza e comprimi
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = fabricCanvas.width;
+      tempCanvas.height = fabricCanvas.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(fabricCanvas.lowerCanvasEl, 0, 0);
+
+      const normalized = normalizeTo72DPI(tempCanvas);
+      const compressed = compressImage(normalized, 1920, 0.85);
+      base64Image = compressed.toDataURL('image/jpeg', 0.85);
     }
 
     // Chiama API tramite percorso relativo (nginx proxy)
@@ -315,6 +332,93 @@ async function detectLandmarksSilent() {
     console.error('Errore detectLandmarksSilent:', error);
     return false;
   }
+}
+
+// ============================================================================
+// RESET GLOBALE PER NUOVA ANALISI
+// ============================================================================
+function resetForNewAnalysis(reason) {
+  console.log(`🔄 Reset completo webapp - Motivo: ${reason}`);
+
+  // Reset score globale
+  if (typeof currentBestScore !== 'undefined') {
+    currentBestScore = 0;
+  }
+
+  // Chiudi WebSocket precedente
+  if (typeof webcamWebSocket !== 'undefined' && webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+    webcamWebSocket.close();
+    console.log('🔌 WebSocket precedente chiuso');
+  }
+
+  // Ferma webcam se attiva
+  if (typeof isWebcamActive !== 'undefined' && isWebcamActive) {
+    stopWebcam();
+  }
+
+  // Ferma anteprima video se attiva
+  if (typeof stopLivePreview === 'function') {
+    stopLivePreview();
+  }
+
+  // Pulisci tabella debug
+  const debugTableBody = document.getElementById('debug-data');
+  if (debugTableBody) {
+    debugTableBody.innerHTML = '';
+  }
+
+  // Pulisci tabella unificata
+  const unifiedTableBody = document.getElementById('unified-table-body');
+  if (unifiedTableBody) {
+    unifiedTableBody.innerHTML = '';
+  }
+
+  // Reset frame buffer globale
+  if (typeof currentBestFrames !== 'undefined') {
+    currentBestFrames = [];
+  }
+  if (window.currentBestFrames) {
+    window.currentBestFrames = [];
+  }
+
+  // ✅ RESET COMPLETO CANVAS E LANDMARKS
+  if (typeof fabricCanvas !== 'undefined' && fabricCanvas) {
+    fabricCanvas.clear();
+    fabricCanvas.backgroundColor = '#f0f0f0';
+    fabricCanvas.renderAll();
+  }
+
+  // Pulisci landmarks globali
+  if (typeof currentLandmarks !== 'undefined') {
+    currentLandmarks = [];
+  }
+  if (window.currentLandmarks) {
+    window.currentLandmarks = [];
+  }
+
+  // Pulisci landmarks dal canvas (se la funzione esiste)
+  if (typeof clearLandmarks === 'function') {
+    clearLandmarks();
+  }
+
+  // Pulisci tabella landmarks
+  const landmarksTableBody = document.getElementById('landmarks-table-body');
+  if (landmarksTableBody) {
+    landmarksTableBody.innerHTML = '';
+  }
+
+  // Reset immagine corrente
+  if (typeof currentImage !== 'undefined') {
+    currentImage = null;
+  }
+  if (window.currentImage) {
+    window.currentImage = null;
+  }
+
+  // Reset status
+  updateStatus('Pronto per nuova analisi');
+
+  console.log('✅ Reset completato - pronto per nuovo caricamento');
 }
 
 // Inizializzazione al caricamento pagina
@@ -438,9 +542,71 @@ function loadVideo() {
 }
 
 // ============================================================================
+// ============================================================================
+// FUNZIONI DEPRECATE - MANTENUTE SOLO PER COMPATIBILITÀ
+// ⚠️ NON USARE: La compressione deve avvenire A MONTE, non frame-per-frame
+// ============================================================================
+function compressImage(sourceCanvas, maxWidth = 1280, quality = 0.7) {
+  /**
+   * ⚠️ DEPRECATED: Usato solo per codice legacy che non è stato ancora refactorizzato
+   * La compressione dovrebbe avvenire A MONTE (video preprocessing, riduzione stream webcam, riduzione immagini all'upload)
+   */
+  console.warn('⚠️ compressImage() è DEPRECATED - la compressione dovrebbe avvenire A MONTE');
+
+  const originalWidth = sourceCanvas.width;
+  const originalHeight = sourceCanvas.height;
+
+  // Calcola nuove dimensioni mantenendo proporzioni
+  let newWidth = originalWidth;
+  let newHeight = originalHeight;
+
+  if (originalWidth > maxWidth) {
+    const ratio = maxWidth / originalWidth;
+    newWidth = maxWidth;
+    newHeight = Math.round(originalHeight * ratio);
+  }
+
+  // Crea canvas compresso
+  const compressedCanvas = document.createElement('canvas');
+  compressedCanvas.width = newWidth;
+  compressedCanvas.height = newHeight;
+
+  const ctx = compressedCanvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(sourceCanvas, 0, 0, newWidth, newHeight);
+
+  return compressedCanvas;
+}
+
+function normalizeTo72DPI(sourceCanvas) {
+  /**
+   * ⚠️ DEPRECATED: La normalizzazione DPI non è necessaria - i canvas non hanno DPI
+   * Questa funzione ora fa solo una copia del canvas
+   */
+  console.warn('⚠️ normalizeTo72DPI() è DEPRECATED - i canvas non hanno DPI');
+
+  const normalizedCanvas = document.createElement('canvas');
+  normalizedCanvas.width = sourceCanvas.width;
+  normalizedCanvas.height = sourceCanvas.height;
+
+  const ctx = normalizedCanvas.getContext('2d');
+  ctx.drawImage(sourceCanvas, 0, 0);
+
+  return normalizedCanvas;
+}
+
+// ============================================================================
 // HANDLER UNIFICATO PER IMMAGINI E VIDEO
 // ============================================================================
 async function handleUnifiedFileLoad(file, type) {
+  // ✅ RESET COMPLETO + HARD REFRESH della sessione
+  resetForNewAnalysis(`Caricamento nuovo ${type === 'image' ? 'immagine' : 'video'}`);
+
+  // ✅ FORCE CACHE BUST: Aggiungi timestamp per forzare hard refresh
+  const cacheBust = Date.now();
+  console.log(`🔄 Hard refresh sessione utente: ${cacheBust}`);
+
   updateStatus(`Caricamento ${type === 'image' ? 'immagine' : 'video'}...`);
 
   if (type === 'image') {
@@ -452,27 +618,54 @@ async function handleUnifiedFileLoad(file, type) {
         img._originalMimeType = file.type || 'image/jpeg';
         collapseDetectionSections();
 
-        // Crea canvas temporaneo per convertire immagine in base64
-        const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCanvas.width = img.width;
-        tempCanvas.height = img.height;
+        // ✅ COMPRESSIONE A MONTE: Riduci immagine a larghezza 464px (altezza proporzionale)
+        const rawCanvas = document.createElement('canvas');
+        rawCanvas.width = img.naturalWidth || img.width;
+        rawCanvas.height = img.naturalHeight || img.height;
+        const rawCtx = rawCanvas.getContext('2d');
+        rawCtx.drawImage(img, 0, 0);
 
-        // Disegna immagine sul canvas temporaneo
-        tempCtx.drawImage(img, 0, 0);
+        // Target: larghezza fissa 464px, altezza proporzionale per mantenere aspect ratio
+        const targetWidth = 464;
+        let finalWidth = rawCanvas.width;
+        let finalHeight = rawCanvas.height;
 
-        // Preserva il formato originale (JPG→JPG, PNG→PNG)
-        const isPNG = img._originalMimeType && img._originalMimeType.includes('png');
-        const base64Image = isPNG ? tempCanvas.toDataURL('image/png') : tempCanvas.toDataURL('image/jpeg', 0.95);
+        if (finalWidth > targetWidth) {
+          const ratio = targetWidth / finalWidth;
+          finalWidth = targetWidth;
+          finalHeight = Math.round(finalHeight * ratio);
+          console.log(`📐 Riduzione immagine a ${finalWidth}x${finalHeight} (larghezza fissa: 464px, aspect ratio preservato)`);
+        } else {
+          console.log(`✅ Immagine già piccola: ${finalWidth}x${finalHeight}px (no riduzione)`);
+        }
+
+        // Comprimi a dimensioni target
+        const compressedCanvas = document.createElement('canvas');
+        compressedCanvas.width = finalWidth;
+        compressedCanvas.height = finalHeight;
+        const compressedCtx = compressedCanvas.getContext('2d');
+        compressedCtx.imageSmoothingEnabled = true;
+        compressedCtx.imageSmoothingQuality = 'high';
+        compressedCtx.drawImage(rawCanvas, 0, 0, finalWidth, finalHeight);
+
+        // ✅ Converti in base64 dal canvas ridotto (quality 0.85)
+        const base64Image = compressedCanvas.toDataURL('image/jpeg', 0.85);
         const base64Data = base64Image.split(',')[1];
 
-        // Usa il flusso video standard per caricare sul canvas
+        // ✅ STEP 3: Carica immagine normalizzata sul canvas (con cache bust)
         updateCanvasWithBestFrame(base64Data, img._originalMimeType);
 
-        updateStatus(`Immagine caricata: ${file.name}`);
+        updateStatus(`Immagine caricata (72 DPI): ${file.name}`);
         showToast('Immagine caricata con successo', 'success');
+        console.log(`✅ Immagine normalizzata a 72 DPI e caricata - Cache bust: ${cacheBust}`);
 
-        // === AUTO-RILEVAMENTO LANDMARKS ===
+        // ✅ FORCE REPAINT: Ricarica visuale canvas
+        if (window.canvas && window.canvas.renderAll) {
+          window.canvas.renderAll();
+        }
+
+        // AUTO-RILEVAMENTO LANDMARKS (come sistema originale)
+        // L'analisi avviene QUI, con standardizzazione interna se necessario
         console.log('📸 Nuova immagine caricata - Avvio auto-rilevamento landmarks');
         const landmarksDetected = await autoDetectLandmarksOnImageChange();
         if (landmarksDetected) {
@@ -529,6 +722,20 @@ async function handleUnifiedFileLoad(file, type) {
       video.addEventListener('ended', () => {
         console.log('🎬 Video terminato - fermo anteprima');
         stopLivePreview();
+
+        // ✅ Attendi 2 secondi prima di chiudere il WebSocket
+        // per permettere al backend di processare gli ultimi frame
+        setTimeout(() => {
+          currentBestScore = 0;
+          if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+            // Richiesta finale risultati prima di chiudere
+            requestBestFramesUpdate();
+            setTimeout(() => {
+              webcamWebSocket.close();
+              console.log('🔌 WebSocket chiuso - tutti i frame processati');
+            }, 1000);
+          }
+        }, 2000);
       });
 
       // PROCESSO ORIGINALE: Setup anteprima + elaborazione WebSocket
@@ -571,6 +778,54 @@ async function handleVideoLoad(file) {
     // Espandi sezioni dopo upload video
     collapseDetectionSections();
 
+    // ========================================================================
+    // PREPROCESSING VIDEO: Ridimensiona e comprimi PRIMA dell'uso per video >2MB
+    // Target: 464x832 come simul_camera.mp4
+    // ========================================================================
+    const fileSizeMB = file.size / (1024 * 1024);
+    if (fileSizeMB > 2) {
+      updateStatus('Preprocessing video in corso...');
+      console.log('🔄 Invio video per preprocessing:', fileSizeMB.toFixed(2) + ' MB');
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const preprocessResponse = await fetch(`${API_CONFIG.baseURL}/api/preprocess-video`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (preprocessResponse.ok) {
+          const preprocessData = await preprocessResponse.json();
+          console.log('✅ Preprocessing completato:', {
+            originalSize: preprocessData.original_size_mb.toFixed(2) + ' MB',
+            processedSize: preprocessData.processed_size_mb.toFixed(2) + ' MB',
+            compression: preprocessData.compression_ratio
+          });
+
+          // Decodifica video processato da base64
+          const binaryString = atob(preprocessData.video_data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const processedBlob = new Blob([bytes], { type: 'video/mp4' });
+
+          // SOSTITUISCI file originale con versione processata
+          file = new File([processedBlob], file.name, { type: 'video/mp4' });
+          console.log('🔄 File originale sostituito con versione preprocessata');
+        } else {
+          console.warn('⚠️ Preprocessing fallito, uso video originale');
+        }
+      } catch (preprocessError) {
+        console.warn('⚠️ Errore preprocessing, uso video originale:', preprocessError);
+      }
+    } else {
+      console.log('📊 Video già piccolo (' + fileSizeMB.toFixed(2) + ' MB), skip preprocessing');
+    }
+    // ========================================================================
+
     updateStatus('Avvio analisi video...');
 
     // Crea elemento video nascosto per elaborazione
@@ -581,7 +836,7 @@ async function handleVideoLoad(file) {
     video.style.top = '-9999px';
     document.body.appendChild(video);
 
-    // Carica file video
+    // Carica file video (PREPROCESSATO)
     const url = URL.createObjectURL(file);
     video.src = url;
 
@@ -640,30 +895,46 @@ function startVideoFrameProcessing(video, fileName) {
   const processInterval = setInterval(() => {
     if (frameCount >= totalFrames || !webcamWebSocket || webcamWebSocket.readyState !== WebSocket.OPEN) {
       clearInterval(processInterval);
-      if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
-        requestBestFramesUpdate();
-      }
+      console.log('🏁 Elaborazione video completata - attesa frame finali');
       return;
     }
 
     // Aggiorna posizione video
     video.currentTime = frameCount / 5;
 
-    // Cattura frame tramite UnifiedFrameProcessor
-    const processor = new UnifiedFrameProcessor();
-    const frameSource = new FrameSource(video, 'video');
-    processor.processFrame(frameSource).catch(err => {
-      console.error('❌ Errore cattura frame video:', err);
-    });
+    // Cattura frame e invia tramite WebSocket (SISTEMA ORIGINALE)
+    captureFrameFromVideoElement(video);
 
     frameCount++;
   }, 200); // 5 FPS
 }
 
-// ⚠️ FUNZIONE LEGACY RIMOSSA: captureFrameFromVideoElement
-// Sostituita da UnifiedFrameProcessor.processFrame() in frame-processor.js
-// Rimossa durante l'unificazione del 2024-01-12
+function captureFrameFromVideoElement(video) {
+  try {
+    // ✅ NO COMPRESSIONE - video già preprocessato a 464x832
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
 
+    canvas.width = video.videoWidth || 464;
+    canvas.height = video.videoHeight || 832;
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Converti in base64 e invia
+    const frameBase64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+
+    // Riusa il protocollo WebSocket della webcam
+    const frameMessage = {
+      action: 'process_frame',
+      frame_data: frameBase64
+    };
+
+    webcamWebSocket.send(JSON.stringify(frameMessage));
+
+  } catch (error) {
+    console.error('Errore cattura frame video:', error);
+  }
+}
 
 function showVideoModeChoice(fileName) {
   return new Promise((resolve) => {
@@ -1382,6 +1653,9 @@ function startRealTimeFaceDetection(video) {
 
 async function startWebcam() {
   try {
+    // ✅ RESET COMPLETO prima di avviare webcam
+    resetForNewAnalysis('Avvio nuova sessione webcam');
+
     updateStatus('Avvio webcam...');
 
     // Rileva dispositivi disponibili e dai priorità a IRIUN
@@ -1393,11 +1667,12 @@ async function startWebcam() {
       device.label.toLowerCase().includes('iriun')
     );
 
-    // Configura constraints video
+    // Configura constraints video - LARGHEZZA TARGET 464px (altezza proporzionale)
+    // ✅ COMPRESSIONE A MONTE: riduci stream webcam SUBITO mantenendo aspect ratio
     let videoConstraints = {
-      width: 640,
-      height: 480,
+      width: { ideal: 464 },
       facingMode: 'user'
+      // height: calcolata automaticamente per mantenere aspect ratio
     };
 
     // Se IRIUN trovata, usala esplicitamente
@@ -1461,7 +1736,8 @@ async function startWebcam() {
               window.currentLandmarks = currentLandmarks;
               updateCanvasDisplay();
             };
-            img.src = best.canvas.toDataURL('image/jpeg', 0.9);
+            // ✅ NO COMPRESSIONE - stream webcam già ridotto a monte (464x832)
+            img.src = best.canvas.toDataURL('image/jpeg', 0.85);
           }
         }
       }
@@ -1492,6 +1768,11 @@ async function startWebcam() {
 
 function stopWebcam() {
   try {
+    console.log('🛑 Stop webcam - pulizia completa');
+
+    // ✅ Reset score
+    currentBestScore = 0;
+
     if (window.webcamProcessor) {
       window.webcamProcessor.stop();
       window.webcamProcessor = null;
@@ -1506,6 +1787,12 @@ function stopWebcam() {
       const tracks = webcamStream.getTracks();
       tracks.forEach(track => track.stop());
       webcamStream = null;
+    }
+
+    // ✅ Chiudi WebSocket
+    if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+      webcamWebSocket.close();
+      console.log('🔌 WebSocket chiuso - webcam fermata');
     }
 
     const video = document.getElementById('webcam-video');
@@ -1607,30 +1894,46 @@ function disconnectWebcamWebSocket() {
 function startFrameCapture(video) {
   frameCounter = 0;
 
-  console.log('📡 Avvio cattura frame per server (10 FPS)');
+  console.log('📡 Avvio cattura frame webcam per server (2 FPS)');
 
-  // Cattura frame ogni 500ms (2 FPS per server - più lento)
   captureInterval = setInterval(() => {
     if (isWebcamActive && webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
-      // Usa UnifiedFrameProcessor per WebSocket streaming
-      const processor = new UnifiedFrameProcessor();
-      const frameSource = new FrameSource(video, 'webcam');
-      processor.processFrame(frameSource).then(result => {
-        if (result && webcamWebSocket.readyState === WebSocket.OPEN) {
-          webcamWebSocket.send(JSON.stringify({
-            type: 'frame',
-            data: result.imageData
-          }));
-        }
-      }).catch(err => console.error('❌ Errore WebSocket frame:', err));
+      try {
+        // ✅ STEP 1: Cattura frame raw dalla webcam
+        const rawCanvas = document.createElement('canvas');
+        const context = rawCanvas.getContext('2d');
 
-      // Log occasionale per verificare invio
-      if (frameCounter % 10 === 0) {
-        console.log(`📡 Frame #${frameCounter} inviato al server`);
+        rawCanvas.width = video.videoWidth || 640;
+        rawCanvas.height = video.videoHeight || 480;
+
+        context.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
+
+        // ✅ STEP 2: Normalizza a 72 DPI
+        const normalizedCanvas = normalizeTo72DPI(rawCanvas);
+
+        // ✅ STEP 3: Comprimi frame webcam (max 1280px, quality 0.6)
+        const compressedCanvas = compressImage(normalizedCanvas, 1280, 0.6);
+
+        // ✅ STEP 4: Converti in base64 e invia
+        const frameBase64 = compressedCanvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+
+        // Invia frame via WebSocket (protocollo unificato)
+        const frameMessage = {
+          action: 'process_frame',
+          frame_data: frameBase64
+        };
+        webcamWebSocket.send(JSON.stringify(frameMessage));
+
+        // Log occasionale
+        if (frameCounter % 10 === 0) {
+          console.log(`📡 Frame webcam #${frameCounter} inviato`);
+        }
+        frameCounter++;
+      } catch (err) {
+        console.error('❌ Errore cattura/invio frame webcam:', err);
       }
-      frameCounter++;
     }
-  }, 500); // 2 FPS per il server (più efficiente)
+  }, 500); // 2 FPS per il server
 }
 
 function openWebcamSection() {
@@ -1753,34 +2056,22 @@ function renderLivePreview(video) {
     return;
   }
 
+  // ✅ Throttling: aggiorna anteprima max 15 FPS per evitare scatti
+  const now = Date.now();
+  if (!window.lastPreviewUpdate) window.lastPreviewUpdate = 0;
+  const timeSinceLastUpdate = now - window.lastPreviewUpdate;
+  if (timeSinceLastUpdate < 66) {  // 66ms = ~15 FPS
+    return;  // Salta questo frame
+  }
+  window.lastPreviewUpdate = now;
+
   try {
     const ctx = previewCanvas.getContext('2d');
-
-    // Debug completo stato canvas e video
-    const debugInfo = {
-      canvasVisible: previewCanvas.style.display !== 'none',
-      canvasSize: `${previewCanvas.offsetWidth}x${previewCanvas.offsetHeight}`,
-      videoReady: video.readyState,
-      videoSize: `${video.videoWidth}x${video.videoHeight}`,
-      videoPaused: video.paused,
-      videoEnded: video.ended,
-      videoCurrentTime: video.currentTime,
-      videoSrcObject: !!video.srcObject,
-      containerWidth: previewCanvas.parentElement?.offsetWidth
-    };
-
-    // Log debug ogni 100 frame (circa ogni 1.6 secondi a 60fps)
-    if (!window.debugFrameCount) window.debugFrameCount = 0;
-    window.debugFrameCount++;
-
-    if (window.debugFrameCount % 100 === 0) {
-      console.log('🎥 RENDER DEBUG:', debugInfo);
-    }
 
     // Calcola dimensioni dinamiche basate sul container e aspect ratio del video
     const containerWidth = previewCanvas.parentElement.offsetWidth - 16;
     const aspectRatio = video.videoWidth / video.videoHeight;
-    const canvasWidth = containerWidth; // Usa tutta la larghezza disponibile
+    const canvasWidth = containerWidth;
     const canvasHeight = canvasWidth / aspectRatio;
 
     // Imposta dimensioni canvas
@@ -1789,23 +2080,15 @@ function renderLivePreview(video) {
     previewCanvas.style.width = canvasWidth + 'px';
     previewCanvas.style.height = canvasHeight + 'px';
 
-    // DISEGNA il frame corrente del video (senza forzare play ogni volta!)
+    // ✅ NO COMPRESSIONE - stream webcam già ridotto a monte (464x832)
     try {
-      ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-
-      // Test: colora un pixel per vedere se il disegno funziona
-      ctx.fillStyle = 'lime';
-      ctx.fillRect(0, 0, 10, 10);
-
-      // Test: disegna testo per confermare che il canvas funziona
-      ctx.fillStyle = 'white';
-      ctx.font = '12px Arial';
-      ctx.fillText(`${Date.now()}`, 20, 20);
+      // Disegna direttamente dal video - stream già ottimizzato
+      ctx.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
 
     } catch (drawError) {
       console.error('❌ Errore drawImage:', drawError);
 
-      // Canvas di fallback - dovrebbe essere sempre visibile
+      // Canvas di fallback
       ctx.fillStyle = 'blue';
       ctx.fillRect(0, 0, video.videoWidth, video.videoHeight);
       ctx.fillStyle = 'white';
@@ -1832,10 +2115,10 @@ function updateWebcamPreview(video) {
   console.log('🎥 Setup iniziale anteprima per:', video?.constructor?.name);
 }
 
-// ⚠️ FUNZIONE LEGACY RIMOSSA: captureAndSendFrame
-// Sostituita da UnifiedFrameProcessor.processFrame() in frame-processor.js
-// Rimossa durante l'unificazione del 2024-01-12
-
+// Variabile globale per tracciare miglior score finora
+let currentBestScore = 0;
+let getResultsRequestId = 0; // Contatore richieste
+let pendingGetResultsRequests = new Set(); // Track richieste in corso
 
 function handleWebSocketMessage(data) {
   try {
@@ -1843,16 +2126,26 @@ function handleWebSocketMessage(data) {
       case 'session_started':
         updateStatus('Sessione avviata - Analisi in corso...');
         console.log('✅ Sessione WebSocket avviata:', data);
+        currentBestScore = 0; // Reset score all'inizio sessione
         break;
 
       case 'frame_processed':
         // Frame elaborato dal server
-        console.log('📸 Frame elaborato:', data);
+        // ⚠️ LOG RIDOTTO: Non stampare ogni frame
         updateFrameProcessingStats(data);
 
-        // Richiedi migliori frame ogni 3 frame elaborati per popolare la tabella più velocemente
-        if (data.total_frames_collected && data.total_frames_collected % 3 === 0 && data.total_frames_collected > 0) {
-          requestBestFramesUpdate();
+        // ✅ RICHIEDI get_results SOLO SE:
+        // - È il primo frame (currentBestScore === 0)
+        // - Lo score migliora di almeno 0.5 punti
+        // - Ogni 10 frame per verificare
+        if (data.total_frames_collected && data.total_frames_collected > 0) {
+          const shouldRequest = currentBestScore === 0 ||
+            (data.current_score && data.current_score > currentBestScore + 0.5) ||
+            (data.total_frames_collected % 10 === 0);
+
+          if (shouldRequest) {
+            requestBestFramesUpdate();
+          }
         }
         break;
 
@@ -1881,8 +2174,16 @@ function handleWebSocketMessage(data) {
 
 function requestBestFramesUpdate() {
   if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+    // Incrementa contatore e traccia richiesta
+    const requestId = ++getResultsRequestId;
+    pendingGetResultsRequests.add(requestId);
+
+    console.log(`🔍 [REQUEST #${requestId}] get_results inviata - Pending: ${pendingGetResultsRequests.size}`);
+
     const requestMessage = {
-      action: 'get_results'
+      action: 'get_results',
+      request_id: requestId,
+      timestamp: Date.now()
     };
     webcamWebSocket.send(JSON.stringify(requestMessage));
   }
@@ -2049,16 +2350,9 @@ function updateCanvasWithBestFrame(imageData, mimeType = 'image/jpeg') {
           updateImageInfo(img);
         }
 
-        // === AUTO-RILEVAMENTO LANDMARKS PER FRAME WEBCAM ===
-        setTimeout(async () => {
-          console.log('📸 updateCanvasWithBestFrame: Avvio auto-rilevamento landmarks');
-          const landmarksDetected = await autoDetectLandmarksOnImageChange();
-          if (landmarksDetected) {
-            console.log(`✅ Landmarks webcam rilevati: ${currentLandmarks.length}`);
-          } else {
-            console.warn('⚠️ Auto-rilevamento landmarks fallito per frame webcam');
-          }
-        }, 200);
+        // NON chiamare auto-rilevamento landmarks per frame video/webcam
+        // L'analisi avviene tramite WebSocket, non HTTP API
+        // Solo per immagini statiche caricate dall'utente
 
       } catch (fabricError) {
         console.error('❌ Errore Fabric.js:', fabricError);
@@ -2237,6 +2531,86 @@ function updateDebugTable(bestFrames) {
   }
 }
 
+// ✅ NUOVA FUNZIONE: Aggiorna solo tabella senza toccare canvas
+function updateDebugTableOnly(bestFrames) {
+  try {
+    const debugTableBody = document.getElementById('debug-data');
+    if (!debugTableBody) return;
+
+    // Salva i frame globalmente per il click handler
+    currentBestFrames = bestFrames;
+    window.currentBestFrames = bestFrames;
+
+    // Pulisci tabella esistente
+    debugTableBody.innerHTML = '';
+
+    // Aggiungi righe per ogni frame
+    bestFrames.forEach((frame, index) => {
+      const row = document.createElement('tr');
+
+      if (index === 0) {
+        row.classList.add('best-frame-row');
+      }
+
+      row.style.cursor = 'pointer';
+      row.title = 'Clicca per visualizzare questo frame nel canvas principale';
+
+      const frameTime = frame.timestamp ? new Date(frame.timestamp * 1000) : new Date();
+
+      row.innerHTML = `
+        <td>${String(frame.rank || index + 1).padStart(2, '0')}</td>
+        <td>${frameTime.toLocaleTimeString()}</td>
+        <td class="score-cell ${getScoreClass(frame.score)}">${(frame.score || 0).toFixed(3)}</td>
+        <td>${(frame.yaw || 0).toFixed(2)}°</td>
+        <td>${(frame.pitch || 0).toFixed(2)}°</td>
+        <td>${(frame.roll || 0).toFixed(2)}°</td>
+        <td><span class="status-badge status-success">Salvato</span></td>
+      `;
+
+      row.addEventListener('click', function () {
+        showFrameInMainCanvas(frame, index);
+        debugTableBody.querySelectorAll('tr').forEach(r => r.classList.remove('selected-frame'));
+        row.classList.add('selected-frame');
+      });
+
+      debugTableBody.appendChild(row);
+    });
+
+    // Aggiorna tabella unificata incrementalmente
+    const currentTab = window.unifiedTableCurrentTab;
+    const unifiedTableBody = document.getElementById('unified-table-body');
+
+    if (!currentTab || currentTab !== 'debug' || !unifiedTableBody || unifiedTableBody.children.length === 0) {
+      openUnifiedAnalysisSection();
+      switchUnifiedTab('debug');
+    } else {
+      const tableBody = document.getElementById('unified-table-body');
+      if (tableBody && debugTableBody) {
+        const currentRowCount = tableBody.children.length;
+        const newRowCount = debugTableBody.children.length;
+
+        if (currentRowCount < newRowCount) {
+          const newRows = Array.from(debugTableBody.children).slice(currentRowCount);
+          newRows.forEach(row => {
+            const clonedRow = row.cloneNode(true);
+            tableBody.appendChild(clonedRow);
+          });
+          reattachDebugTableListeners(tableBody, debugTableBody, currentRowCount);
+        } else if (currentRowCount > newRowCount) {
+          while (tableBody.children.length > newRowCount) {
+            tableBody.removeChild(tableBody.lastChild);
+          }
+        }
+      }
+    }
+
+    console.log(`📊 Tabella aggiornata (canvas non toccato) - ${bestFrames.length} frame`);
+
+  } catch (error) {
+    console.error('Errore aggiornamento tabella debug:', error);
+  }
+}
+
 function getScoreClass(score) {
   if (score >= 0.9) return 'excellent';
   if (score >= 0.8) return 'very-good';
@@ -2246,7 +2620,9 @@ function getScoreClass(score) {
 
 function showFrameInMainCanvas(frame, index) {
   try {
-    console.log(`🖼️ Mostrando frame ${index + 1} nel canvas principale`);
+    // Usa il rank del frame se disponibile, altrimenti usa index+1
+    const frameNumber = frame.rank || (index + 1);
+    console.log(`🖼️ Mostrando frame ${frameNumber} nel canvas principale`);
 
     if (frame.image_data) {
       updateCanvasWithBestFrame(frame.image_data);
@@ -2255,13 +2631,13 @@ function showFrameInMainCanvas(frame, index) {
       const frameInfo = document.getElementById('best-frame-info');
       if (frameInfo) {
         frameInfo.innerHTML = `
-          Frame selezionato: #${index + 1}<br>
+          Frame selezionato: #${frameNumber}<br>
           Score: ${(frame.score || 0).toFixed(3)}<br>
           Pose: Y=${(frame.yaw || 0).toFixed(1)}° P=${(frame.pitch || 0).toFixed(1)}° R=${(frame.roll || 0).toFixed(1)}°
         `;
       }
 
-      showToast(`Frame ${index + 1} visualizzato nel canvas`, 'info');
+      showToast(`Frame ${frameNumber} visualizzato nel canvas`, 'info');
     } else {
       showToast('Dati immagine non disponibili per questo frame', 'warning');
     }
@@ -2274,12 +2650,56 @@ function showFrameInMainCanvas(frame, index) {
 
 function handleResultsReady(data) {
   try {
-    console.log('📊 Elaborando risultati dal server:', data);
+    const responseId = data.request_id || 'unknown';
+    const responseTime = Date.now();
+
+    // Rimuovi dalla lista pending se presente
+    if (typeof responseId === 'number') {
+      pendingGetResultsRequests.delete(responseId);
+    }
+
+    // ⚠️ LOG RIDOTTO: Solo se ci sono problemi
+    if (pendingGetResultsRequests.size > 3) {
+      console.log(`📊 [RESPONSE #${responseId}] Pending: ${pendingGetResultsRequests.size}`);
+    }
+
+    // WARNING se ci sono molte richieste pending
+    if (pendingGetResultsRequests.size > 5) {
+      console.warn(`⚠️ RACE CONDITION RILEVATA: ${pendingGetResultsRequests.size} richieste pending!`);
+    }
 
     if (data.success && data.frames && data.frames.length > 0) {
+      const newBestScore = data.best_score || 0;
+      const scoreDiff = newBestScore - currentBestScore;
+
+      // ✅ AGGIORNA SOLO SE CAMBIA:
+      // - Primo frame
+      // - Score migliora
+      // - Numero frame diverso
+      const isFirstFrame = currentBestScore === 0;
+      const hasImproved = scoreDiff > 0.1; // Soglia minima 0.1
+      const framesChanged = !window.lastFramesHash || window.lastFramesHash !== data.frames.length + '_' + newBestScore;
+
+      if (!isFirstFrame && !hasImproved && !framesChanged) {
+        // ⚠️ SKIP: Dati identici, non aggiornare
+        return;
+      }
+
+      if (isFirstFrame) {
+        console.log(`🎯 Primo frame: score ${newBestScore.toFixed(3)}`);
+      } else if (hasImproved) {
+        console.log(`🔺 Score migliorato: ${currentBestScore.toFixed(3)} → ${newBestScore.toFixed(3)} (+${scoreDiff.toFixed(3)})`);
+      }
+
+      // Aggiorna score e hash
+      currentBestScore = newBestScore;
+      window.lastFramesHash = data.frames.length + '_' + newBestScore;
+
       // Trasforma i dati dei frame nel formato atteso
+      // ✅ RANK CORRETTO: usa posizione in tabella (1-10), non frame originale
       const bestFrames = data.frames.map((frame, index) => ({
-        rank: frame.rank || index + 1,
+        rank: index + 1, // Posizione in tabella: 1, 2, 3...
+        original_frame: frame.rank, // Frame originale dal video (opzionale)
         score: frame.score || 0,
         image_data: frame.data, // Base64 dell'immagine
         timestamp: Date.now() / 1000,
@@ -2292,6 +2712,7 @@ function handleResultsReady(data) {
       if (data.json_data && data.json_data.frames) {
         data.json_data.frames.forEach((jsonFrame, index) => {
           if (index < bestFrames.length && jsonFrame.pose) {
+            // ⚠️ NO LOG: Troppo verbose
             bestFrames[index].yaw = jsonFrame.pose.yaw || 0;
             bestFrames[index].pitch = jsonFrame.pose.pitch || 0;
             bestFrames[index].roll = jsonFrame.pose.roll || 0;
@@ -2300,14 +2721,8 @@ function handleResultsReady(data) {
         });
       }
 
-      // Aggiorna tabella con i nuovi frame
+      // ✅ AGGIORNA: Solo quando i dati cambiano effettivamente
       updateDebugTable(bestFrames);
-
-      // AGGIORNAMENTO AUTOMATICO: Mostra il miglior frame sul canvas
-      if (bestFrames[0] && bestFrames[0].image_data) {
-        console.log('🎯 Aggiornamento automatico canvas con miglior frame (score:', bestFrames[0].score.toFixed(3), ')');
-        updateCanvasWithBestFrame(bestFrames[0].image_data);
-      }
 
       updateStatus(`Ricevuti ${bestFrames.length} migliori frame dal server`);
 
@@ -5178,9 +5593,14 @@ function getCanvasImageAsBase64(maxDimension = null) {
     // Disegna l'immagine (con resize se necessario)
     tempCtx.drawImage(imageElement, 0, 0, finalWidth, finalHeight);
 
-    // PRESERVA IL FORMATO ORIGINALE: JPG→JPG (con qualità alta), PNG→PNG (lossless)
-    // Questo evita conversioni non necessarie che possono degradare la qualità
-    const base64Data = isPNG ? tempCanvas.toDataURL(outputFormat) : tempCanvas.toDataURL(outputFormat, quality);
+    // ✅ NORMALIZZA A 72 DPI prima della conversione
+    const normalizedCanvas = normalizeTo72DPI(tempCanvas);
+
+    // ✅ COMPRIMI moderatamente (max 1920px, quality 0.85)
+    const compressedCanvas = compressImage(normalizedCanvas, 1920, 0.85);
+
+    // Converti in JPEG con compressione moderata
+    const base64Data = compressedCanvas.toDataURL('image/jpeg', 0.85);
     console.log('✅ Immagine convertita in base64:', {
       original: `${origWidth}x${origHeight}`,
       final: `${finalWidth}x${finalHeight}`,

@@ -1192,6 +1192,103 @@ async def get_landmarks_info():
         }
     }
 
+# === API ENDPOINT PER PREPROCESSING VIDEO ===
+
+@app.post("/api/preprocess-video")
+async def preprocess_video(file: UploadFile = File(...)):
+    """
+    Preprocessa video riducendolo a larghezza 464px (altezza proporzionale per mantenere aspect ratio).
+    Sovrascrive il video originale con versione compressa.
+    Target: ~1.5MB, H264, bitrate 1500k
+    """
+    import subprocess
+    
+    try:
+        print(f"🎬 Preprocessing video: {file.filename}")
+        print(f"📦 Dimensione originale: {file.size / (1024*1024):.2f} MB")
+        
+        # Leggi contenuto originale
+        content = await file.read()
+        
+        # File temporanei
+        with tempfile.NamedTemporaryFile(delete=False, suffix='_input.mp4') as tmp_input:
+            tmp_input.write(content)
+            input_path = tmp_input.name
+        
+        output_path = tempfile.NamedTemporaryFile(delete=False, suffix='_output.mp4').name
+        
+        # Comando ffmpeg per ridimensionare e comprimere
+        # Target: larghezza 464px, altezza proporzionale (-1 preserva aspect ratio)
+        # H264, bitrate 1500k, audio rimosso
+        ffmpeg_cmd = [
+            'ffmpeg', '-i', input_path,
+            '-vf', 'scale=464:-1',  # Larghezza 464px, altezza proporzionale
+            '-c:v', 'libx264',
+            '-preset', 'medium',
+            '-b:v', '1500k',
+            '-maxrate', '1500k',
+            '-bufsize', '3000k',
+            '-an',  # Rimuovi audio
+            '-movflags', '+faststart',  # Ottimizzazione streaming
+            '-y',  # Sovrascrivi se esiste
+            output_path
+        ]
+        
+        print(f"🔧 Esecuzione ffmpeg...")
+        result = subprocess.run(
+            ffmpeg_cmd,
+            capture_output=True,
+            text=True,
+            timeout=60  # Max 60 secondi
+        )
+        
+        if result.returncode != 0:
+            print(f"❌ Errore ffmpeg: {result.stderr}")
+            # Cleanup
+            try:
+                os.remove(input_path)
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+            except:
+                pass
+            raise HTTPException(status_code=500, detail=f"Errore preprocessing: {result.stderr[:200]}")
+        
+        # Leggi video processato
+        with open(output_path, 'rb') as f:
+            processed_content = f.read()
+        
+        # Cleanup file temporanei
+        try:
+            os.remove(input_path)
+            os.remove(output_path)
+        except Exception as e:
+            print(f"⚠️ Errore cleanup: {e}")
+        
+        output_size_mb = len(processed_content) / (1024*1024)
+        compression_ratio = (1 - len(processed_content) / len(content)) * 100
+        
+        print(f"✅ Video preprocessato:")
+        print(f"   Dimensione finale: {output_size_mb:.2f} MB")
+        print(f"   Compressione: {compression_ratio:.1f}%")
+        
+        # Ritorna video processato come base64
+        processed_base64 = base64.b64encode(processed_content).decode('utf-8')
+        
+        return {
+            "success": True,
+            "original_size_mb": file.size / (1024*1024),
+            "processed_size_mb": output_size_mb,
+            "compression_ratio": f"{compression_ratio:.1f}%",
+            "video_data": processed_base64,
+            "mime_type": "video/mp4"
+        }
+        
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=408, detail="Timeout preprocessing video (>60s)")
+    except Exception as e:
+        print(f"❌ Errore preprocessing: {e}")
+        raise HTTPException(status_code=500, detail=f"Errore preprocessing: {str(e)}")
+
 # === API ENDPOINT PER MIGLIORI FRAME ===
 
 @app.get("/api/best-frames")

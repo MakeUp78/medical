@@ -136,34 +136,14 @@ class FrameSource {
 }
 
 // ============================================================================
-// STANDARDIZZAZIONE RISOLUZIONE
+// STANDARDIZZAZIONE RISOLUZIONE - ⚠️ DEPRECATED
+// La riduzione deve avvenire A MONTE (getUserMedia, preprocessing video, upload immagini)
 // ============================================================================
 function standardizeResolution(sourceCanvas, targetWidth = FRAME_CONFIG.standardWidth, targetHeight = FRAME_CONFIG.standardHeight) {
-  const canvas = document.createElement('canvas');
-  canvas.width = targetWidth;
-  canvas.height = targetHeight;
-  const ctx = canvas.getContext('2d');
+  console.warn('⚠️ standardizeResolution() è DEPRECATED - la riduzione dovrebbe avvenire A MONTE');
 
-  const sourceRatio = sourceCanvas.width / sourceCanvas.height;
-  const targetRatio = targetWidth / targetHeight;
-
-  let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
-
-  if (sourceRatio > targetRatio) {
-    drawHeight = targetHeight;
-    drawWidth = sourceCanvas.width * (targetHeight / sourceCanvas.height);
-    offsetX = (targetWidth - drawWidth) / 2;
-  } else {
-    drawWidth = targetWidth;
-    drawHeight = sourceCanvas.height * (targetWidth / sourceCanvas.width);
-    offsetY = (targetHeight - drawHeight) / 2;
-  }
-
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, targetWidth, targetHeight);
-  ctx.drawImage(sourceCanvas, offsetX, offsetY, drawWidth, drawHeight);
-
-  return canvas;
+  // Ora ritorna semplicemente il canvas originale senza modifiche
+  return sourceCanvas;
 }
 
 // ============================================================================

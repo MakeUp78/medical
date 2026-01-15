@@ -27,10 +27,13 @@ class WebSocketFrameScorer:
     
     def __init__(self, max_frames=10):
         self.max_frames = max_frames
-        self.best_frames = []  # Lista senza limite - mantiene TUTTI i frame della sessione
+        self.best_frames = []  # Buffer circolare - mantiene solo i migliori
+        self.buffer_size = max_frames * 4  # Buffer 4x per catturare più variazioni (40 frame)
         self.output_dir = "websocket_best_frames"
         self.frames_added = 0
+        self.frames_processed = 0  # Contatore frame totali processati
         self.session_id = None
+        self.min_score_threshold = 70  # Soglia minima: scarta solo frame molto scarsi
         
         # MediaPipe setup
         self.mp_face_mesh = mp.solutions.face_mesh
@@ -38,7 +41,7 @@ class WebSocketFrameScorer:
             static_image_mode=False,
             max_num_faces=1,
             refine_landmarks=True,
-            min_detection_confidence=0.7,
+            min_detection_confidence=0.5,  # Abbassato da 0.7 per catturare più pose frontali
             min_tracking_confidence=0.5
         )
         
@@ -51,6 +54,8 @@ class WebSocketFrameScorer:
         self.session_id = session_id
         self.best_frames = []
         self.frames_added = 0
+        self.frames_processed = 0  # Reset contatore frame
+        self.min_score_threshold = 0  # Reset soglia
         
         # Crea sottocartella per la sessione
         self.session_dir = os.path.join(self.output_dir, f"session_{session_id}")
@@ -158,17 +163,29 @@ class WebSocketFrameScorer:
         
         # 1. POSE SCORE (0-100) - 60% del punteggio
         # YAW e PITCH hanno peso UGUALE per bilanciare frontalità verticale/orizzontale
+        
+        # ✅ Normalizza Roll a range [-180, 180] → [-90, 90]
+        # MediaPipe a volte inverte di 180° l'asse Roll per orientamento video
         normalized_roll = roll
+        while normalized_roll > 180:
+            normalized_roll -= 360
+        while normalized_roll < -180:
+            normalized_roll += 360
+            
+        # Se Roll è vicino a ±180°, è equivalente a 0° (inversione asse)
+        if abs(normalized_roll) > 150:
+            # Esempio: Roll=-177° → equivalente a +3° (180-177=3)
+            normalized_roll = 180 - abs(normalized_roll)
+            if roll < 0:
+                normalized_roll = -normalized_roll
+        
+        # Ora normalizza a [-90, 90]
         while normalized_roll > 90:
             normalized_roll -= 180
         while normalized_roll < -90:
             normalized_roll += 180
-            
-        # Ignora Roll se vicino a ±180 (probabile errore MediaPipe)
-        if abs(roll) > 170:
-            roll_weighted = 0
-        else:
-            roll_weighted = abs(normalized_roll) * 0.5
+        
+        roll_weighted = abs(normalized_roll) * 0.5
             
         # Pesi BILANCIATI: YAW=PITCH=1.5 per valutare frontalità completa
         yaw_weighted = abs(yaw) * 1.5
@@ -227,6 +244,10 @@ class WebSocketFrameScorer:
     async def process_frame(self, frame_data):
         """Processa un singolo frame ricevuto dal client"""
         try:
+            # Incrementa contatore frame processati
+            self.frames_processed += 1
+            current_frame_number = self.frames_processed
+            
             # Decodifica il frame da base64
             frame_bytes = base64.b64decode(frame_data)
             nparr = np.frombuffer(frame_bytes, np.uint8)
@@ -276,9 +297,24 @@ class WebSocketFrameScorer:
                                 head_pose[0], head_pose[1], head_pose[2], bbox, w, h
                             )
                             
+                            # ✅ FILTRO: Scarta solo Yaw/Pitch invalidi (>170°)
+                            # Roll>170° è gestito con normalizzazione (inversione asse)
+                            is_invalid = (abs(head_pose[0]) > 170 or  # Pitch invalido
+                                         abs(head_pose[1]) > 170)      # Yaw invalido
+                            
+                            if is_invalid:
+                                # ⚠️ LOG RIDOTTO: Non stampare ogni frame scartato
+                                response.update({
+                                    "faces_detected": 1,
+                                    "current_score": 0,
+                                    "warning": "Frame scartato - pose invalida"
+                                })
+                                return response
+                            
                             # Aggiungi frame al sistema di scoring
                             frame_data = {
                                 'frame': frame.copy(),
+                                'frame_number': current_frame_number,  # Numero frame originale
                                 'score': score,
                                 'timestamp': time.time(),
                                 'pitch': head_pose[0],
@@ -288,8 +324,49 @@ class WebSocketFrameScorer:
                                 'score_details': score_details
                             }
                             
-                            self.best_frames.append(frame_data)
-                            self.frames_added += 1
+                            # ✅ BUFFER CIRCOLARE INTELLIGENTE CON PRIORITÀ PER FRAME ECCELLENTI
+                            # Frame con score >95 hanno SEMPRE priorità (pose quasi perfette)
+                            is_excellent = score >= 95
+                            
+                            if len(self.best_frames) < self.buffer_size:
+                                # Buffer non pieno - aggiungi se supera soglia minima
+                                if score >= self.min_score_threshold or is_excellent:
+                                    self.best_frames.append(frame_data)
+                                    self.frames_added += 1
+                                    
+                                    # Riordina e aggiorna soglia quando raggiungi buffer_size
+                                    if len(self.best_frames) == self.buffer_size:
+                                        self.best_frames.sort(key=lambda x: x['score'], reverse=True)
+                                        self.min_score_threshold = max(70, self.best_frames[-1]['score'])  # Min 70
+                                        logger.info(f"✅ Buffer pieno ({self.buffer_size}), soglia aggiornata: {self.min_score_threshold:.2f}")
+                            elif score > self.min_score_threshold or is_excellent:
+                                # Buffer pieno - sostituisci il peggiore se questo è migliore O se è eccellente
+                                self.best_frames[-1] = frame_data
+                                self.frames_added += 1
+                                
+                                # Riordina e aggiorna soglia
+                                self.best_frames.sort(key=lambda x: x['score'], reverse=True)
+                                old_threshold = self.min_score_threshold
+                                self.min_score_threshold = max(70, self.best_frames[-1]['score'])
+                                
+                                if is_excellent:
+                                    logger.info(f"🌟 Frame ECCELLENTE #{current_frame_number} score={score:.2f}")
+                                # ⚠️ LOG RIDOTTO: Non stampare ogni sostituzione
+                            else:
+                                # ⚠️ LOG RIDOTTO: Non stampare ogni frame scartato
+                                pass
+                            
+                            # Calcola Roll normalizzato per la UI
+                            normalized_roll_display = head_pose[2]
+                            while normalized_roll_display > 180:
+                                normalized_roll_display -= 360
+                            while normalized_roll_display < -180:
+                                normalized_roll_display += 360
+                            if abs(normalized_roll_display) > 150:
+                                # Inversione asse: 173° → 7°, -177° → -3°
+                                normalized_roll_display = 180 - abs(normalized_roll_display)
+                                if head_pose[2] < 0:
+                                    normalized_roll_display = -normalized_roll_display
                             
                             response.update({
                                 "faces_detected": 1,
@@ -297,7 +374,7 @@ class WebSocketFrameScorer:
                                 "pose": {
                                     "pitch": round(head_pose[0], 2),
                                     "yaw": round(head_pose[1], 2),
-                                    "roll": round(head_pose[2], 2)
+                                    "roll": round(normalized_roll_display, 2)  # Roll normalizzato
                                 },
                                 "score_breakdown": {
                                     "pose_score": round(score_details['pose_score'], 2),
@@ -317,9 +394,13 @@ class WebSocketFrameScorer:
         if len(self.best_frames) == 0:
             return {"error": "Nessun frame processato"}
         
-        # Ordina per punteggio decrescente
-        sorted_frames = sorted(self.best_frames, key=lambda x: x['score'], reverse=True)
-        best_frames = sorted_frames[:self.max_frames]
+        # ✅ ORDINA SEMPRE IL BUFFER PRIMA DI RESTITUIRE I RISULTATI
+        # RISOLVE RACE CONDITION: Frame eccellenti arrivano ma buffer non ancora riordinato
+        # Process_frame() sostituisce frame MA la UI chiede risultati PRIMA del sorting
+        self.best_frames.sort(key=lambda x: x['score'], reverse=True)
+        
+        # Prendi i migliori max_frames frame
+        best_frames = self.best_frames[:self.max_frames]
         
         # Salva i frame e prepara i dati
         frames_base64 = []
@@ -337,20 +418,32 @@ class WebSocketFrameScorer:
             frames_base64.append({
                 'filename': filename,
                 'data': frame_b64,
-                'rank': i + 1,
+                'rank': frame_data.get('frame_number', i + 1),  # Usa frame_number originale
                 'score': round(frame_data['score'], 2)
             })
+            
+            # Normalizza Roll per la UI
+            roll_raw = frame_data['roll']
+            normalized_roll_display = roll_raw
+            while normalized_roll_display > 180:
+                normalized_roll_display -= 360
+            while normalized_roll_display < -180:
+                normalized_roll_display += 360
+            if abs(normalized_roll_display) > 150:
+                normalized_roll_display = 180 - abs(normalized_roll_display)
+                if roll_raw < 0:
+                    normalized_roll_display = -normalized_roll_display
             
             # Prepara dati JSON
             json_data = {
                 'filename': filename,
-                'rank': i + 1,
+                'rank': frame_data.get('frame_number', i + 1),  # Usa frame_number originale
                 'total_score': round(frame_data['score'], 2),
                 'timestamp': frame_data['timestamp'],
                 'pose': {
                     'pitch': round(frame_data['pitch'], 2),
                     'yaw': round(frame_data['yaw'], 2),
-                    'roll': round(frame_data['roll'], 2)
+                    'roll': round(normalized_roll_display, 2)  # Roll normalizzato
                 },
                 'face_bbox': {
                     'x_min': int(frame_data['bbox'][0]),
@@ -443,6 +536,9 @@ async def handle_websocket(websocket):
                 elif action == 'get_results':
                     result = frame_scorer.get_best_frames_result()
                     result['action'] = 'results_ready'
+                    # Include request_id per correlazione richiesta/risposta
+                    if 'request_id' in data:
+                        result['request_id'] = data['request_id']
                     await websocket.send(json.dumps(result))
                 
                 elif action == 'ping':

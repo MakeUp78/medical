@@ -144,3 +144,7 @@ facial_analysis.log
 # OAuth sensitive files
 client_secret_*.json
 GOOGLE_OAUTH_REDIRECT_URIS.md
+
+# WebSocket session data (auto-generated)
+websocket_best_frames/
+best_frontal_frames/
