@@ -36,6 +36,11 @@ class WebHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', '*')
+        # Disabilita cache per JS/CSS (forza reload modifiche)
+        if self.path.endswith('.js') or self.path.endswith('.css'):
+            self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
         super().end_headers()
     
     def do_OPTIONS(self):
@@ -259,15 +264,16 @@ def start_web_server():
             print("🛑 Premi Ctrl+C per fermare il server")
             print()
             
+            # ❌ DISABILITATO: Non aprire browser automaticamente quando avviato con nohup
             # Funzione per aprire il browser dopo 2 secondi
-            def open_browser():
-                time.sleep(2)
-                print(f"🔗 Apertura automatica browser: {url}")
-                webbrowser.open(url)
+            # def open_browser():
+            #     time.sleep(2)
+            #     print(f"🔗 Apertura automatica browser: {url}")
+            #     webbrowser.open(url)
             
             # Avvia thread per aprire browser
-            browser_thread = threading.Thread(target=open_browser, daemon=True)
-            browser_thread.start()
+            # browser_thread = threading.Thread(target=open_browser, daemon=True)
+            # browser_thread.start()
             
             # Avvia server
             print("📡 Server in ascolto...")
