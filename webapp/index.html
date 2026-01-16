@@ -1481,10 +1481,36 @@
                 img.src = 'data:image/jpeg;base64,' + frameData;
             };
 
+            // ✅ Funzione per riprodurre beep quando score è alto
+            window.playBeep = function() {
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+
+                    oscillator.frequency.value = 800; // Frequenza acuta
+                    oscillator.type = 'sine';
+
+                    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + 0.2);
+                } catch (e) {
+                    console.error('Errore riproduzione beep:', e);
+                }
+            };
+
             // ❌ RIMOSSA FUNZIONE DUPLICATA renderIPhoneFramePreview (era definita 2 volte)
 
             // ❌ RIMOSSA registerDesktopForIPhoneNotifications - duplicato di main.js
             // La registrazione desktop avviene automaticamente in connectWebcamWebSocket()
+
+            // ✅ Tracciamento miglior score iPhone
+            window.bestIPhoneScore = 0;
 
             // Handler per messaggi iPhone dal WebSocket
             function handleIPhoneWebSocketMessage(data) {
@@ -1493,6 +1519,7 @@
                 if (data.action === 'iphone_connected') {
                     console.log('✅ iPhone connesso:', data.deviceIdShort);
                     window.isIPhoneStreamActive = true;
+                    window.bestIPhoneScore = 0;  // Reset score al nuovo collegamento
                     updateIPhoneStatus(true, data.deviceIdShort);
 
                     // NON espandere sezione - aspetta che l'utente prema "Avvia Webcam"
@@ -1505,6 +1532,7 @@
                 } else if (data.action === 'iphone_disconnected') {
                     console.log('❌ iPhone disconnesso:', data.deviceId);
                     window.isIPhoneStreamActive = false;
+                    window.bestIPhoneScore = 0;  // Reset score alla disconnessione
                     updateIPhoneStatus(false);
                 } else if (data.action === 'iphone_frame_processed') {
                     // Frame iPhone ricevuto - marca iPhone come attivo
@@ -1523,11 +1551,52 @@
                         updateFrameProcessingStats(data);
                     }
 
-                    // Segnale acustico se score supera soglia (come per video)
+                    // ✅ Score alto? Mostra SUBITO frame nel canvas principale e aggiorna tabella
                     const score = data.score || 0;
-                    if (score >= 85 && typeof playBeep === 'function') {
-                        playBeep();
-                        console.log('🎵 BEEP! Score iPhone:', score);
+                    const HIGH_SCORE_THRESHOLD = 85;
+                    
+                    // ✅ AGGIORNA SOLO SE score migliora (o è il primo ≥85)
+                    if (score >= HIGH_SCORE_THRESHOLD && score > window.bestIPhoneScore) {
+                        console.log('🏆 NUOVO MIGLIOR SCORE!', score, '(precedente:', window.bestIPhoneScore, ')');
+                        
+                        // Aggiorna miglior score
+                        window.bestIPhoneScore = score;
+                        
+                        // ✅ BEEP acustico per segnalare nuovo miglior frame
+                        if (typeof playBeep === 'function') {
+                            playBeep();
+                        }
+                        
+                        // ✅ Carica frame nel canvas PRINCIPALE (non solo preview)
+                        if (data.frame_data) {
+                            const img = new Image();
+                            img.onload = function() {
+                                // Usa displayImageOnCanvas per caricare nel canvas principale
+                                if (typeof displayImageOnCanvas === 'function') {
+                                    displayImageOnCanvas(img);
+                                    console.log('✅ Frame miglior score caricato nel canvas principale');
+                                }
+                                
+                                // Aggiorna landmarks se disponibili
+                                if (data.landmarks) {
+                                    window.currentLandmarks = data.landmarks;
+                                    if (typeof updateCanvasDisplay === 'function') {
+                                        updateCanvasDisplay();
+                                    }
+                                }
+                                
+                                // ✅ Richiedi analisi completa per popolare tabella
+                                if (typeof analyzeLandmarks === 'function') {
+                                    analyzeLandmarks();
+                                }
+                            };
+                            img.src = 'data:image/jpeg;base64,' + data.frame_data;
+                        }
+                    } else if (score >= 70) {
+                        // Score medio-alto: solo beep più leggero
+                        if (typeof playBeep === 'function') {
+                            playBeep();
+                        }
                     }
 
                     // Richiedi best frames se score migliora (come per video)

@@ -648,6 +648,7 @@ async def handle_websocket(websocket):
                         "deviceId": device_id,
                         "score": result.get('current_score', 0),
                         "faces_detected": result.get('faces_detected', 0),
+                        "landmarks": result.get('landmarks'),  # ✅ Includi landmarks per canvas
                         "timestamp": time.time(),
                         "frame_data": frame_data  # Invia frame corrente
                     }

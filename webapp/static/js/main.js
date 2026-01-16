@@ -1661,6 +1661,9 @@ async function startWebcam() {
       updateStatus('📱 iPhone Camera attiva - Anteprima in corso...');
       showToast('iPhone Camera avviata - Anteprima in corso', 'success');
 
+      // ✅ Reset miglior score all'avvio
+      window.bestIPhoneScore = 0;
+
       // ✅ INVIA start_webcam al server per iniziare a ricevere frames
       if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
         webcamWebSocket.send(JSON.stringify({
