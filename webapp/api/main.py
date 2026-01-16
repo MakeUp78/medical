@@ -2685,10 +2685,141 @@ async def estimate_age(request: AnalysisRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Errore durante la stima età: {str(e)}")
 
+# === ENDPOINT CAMERA IPHONE ===
+
+# Importa librerie per QR code (lazy import per evitare errori se non installato)
+def get_qr_module():
+    """Import qrcode solo quando necessario"""
+    try:
+        import qrcode
+        return qrcode
+    except ImportError:
+        return None
+
+def get_local_ip():
+    """Ottiene l'IP locale del server"""
+    import socket as sock
+    try:
+        s = sock.socket(sock.AF_INET, sock.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+@app.get("/api/qrcode.png")
+async def generate_qr_code(request: Request):
+    """
+    Genera un QR code dinamico per connettere iPhone alla camera.
+    Il QR code contiene l'URL della pagina /camera con l'IP locale del server.
+    """
+    qrcode = get_qr_module()
+    if not qrcode:
+        raise HTTPException(
+            status_code=500,
+            detail="Modulo qrcode non installato. Esegui: pip install qrcode[pil]"
+        )
+
+    try:
+        # Determina protocollo e host
+        # Usa l'header X-Forwarded-Proto se dietro reverse proxy
+        proto = request.headers.get('x-forwarded-proto', 'http')
+
+        # Ottieni l'host dalla richiesta
+        host = request.headers.get('host', '')
+
+        # Se siamo in locale (localhost o IP privato), usa IP locale
+        if 'localhost' in host or '127.0.0.1' in host or host.startswith('192.168.') or host.startswith('10.'):
+            local_ip = get_local_ip()
+            # Estrai porta se presente
+            port = host.split(':')[1] if ':' in host else '80'
+            camera_url = f"http://{local_ip}:{port}/camera"
+        else:
+            # Siamo su dominio pubblico
+            camera_url = f"{proto}://{host}/camera"
+
+        print(f"QR Code generato per URL: {camera_url}")
+
+        # Genera QR code
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=10,
+            border=4
+        )
+        qr.add_data(camera_url)
+        qr.make(fit=True)
+
+        img = qr.make_image(fill_color="black", back_color="white")
+
+        # Converti in bytes
+        from io import BytesIO as QRBytesIO
+        buf = QRBytesIO()
+        img.save(buf, format='PNG')
+        buf.seek(0)
+
+        from fastapi.responses import Response
+        return Response(
+            content=buf.getvalue(),
+            media_type="image/png",
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate",
+                "Pragma": "no-cache"
+            }
+        )
+
+    except Exception as e:
+        print(f"Errore generazione QR code: {e}")
+        raise HTTPException(status_code=500, detail=f"Errore generazione QR: {str(e)}")
+
+@app.get("/camera")
+async def camera_page():
+    """
+    Serve la pagina camera per iPhone.
+    Questa pagina usa getUserMedia per accedere alla camera e invia frame via WebSocket.
+    """
+    import os
+    template_path = os.path.join(
+        os.path.dirname(__file__),
+        '..', 'templates', 'camera.html'
+    )
+
+    if not os.path.exists(template_path):
+        raise HTTPException(status_code=404, detail="Template camera.html non trovato")
+
+    return FileResponse(
+        template_path,
+        media_type="text/html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate"
+        }
+    )
+
+@app.get("/api/camera/info")
+async def camera_info(request: Request):
+    """
+    Restituisce informazioni sulla configurazione camera per iPhone.
+    Utile per debugging e verifica connessione.
+    """
+    host = request.headers.get('host', '')
+    proto = request.headers.get('x-forwarded-proto', 'http')
+    local_ip = get_local_ip()
+
+    return {
+        "local_ip": local_ip,
+        "host": host,
+        "protocol": proto,
+        "camera_url": f"{proto}://{host}/camera",
+        "websocket_port": 8765,
+        "qrcode_url": f"{proto}://{host}/qrcode.png"
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     import socket
-    
+
     def find_free_port(start_port=8000, max_attempts=10):
         """Trova una porta libera a partire da start_port"""
         for port in range(start_port, start_port + max_attempts):

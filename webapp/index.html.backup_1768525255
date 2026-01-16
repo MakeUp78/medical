@@ -1,0 +1,1959 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏥 Facial Analysis Application v2.0 - Web Edition</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="stylesheet" href="static/css/main.css">
+    <link rel="stylesheet" href="static/css/components.css">
+    <link rel="stylesheet" href="static/css/tables.css">
+    <link rel="stylesheet" href="static/css/mobile-responsive.css">
+</head>
+
+<body>
+    <!-- Container principale identico alla app desktop -->
+    <div class="main-container">
+        <!-- SIDEBAR SINISTRA - Controlli identici all'app desktop -->
+        <div class="left-sidebar">
+            <div class="scrollable-controls">
+
+                <!-- Sezione UTENTE -->
+                <div class="user-section">
+                    <div class="user-info">
+                        <div class="user-avatar">
+                            <img id="user-avatar-img"
+                                src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23e0e0e0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40' fill='%23666'%3E👤%3C/text%3E%3C/svg%3E"
+                                alt="Avatar" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
+                        </div>
+                        <div class="user-details">
+                            <div class="user-name" id="user-name">Caricamento...</div>
+                            <div class="user-role" id="user-role">
+                                <span class="role-badge operator" id="role-badge">Operatore</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                        <button class="btn-profile" onclick="window.location.href='profile.html'"
+                            style="flex: 1; padding: 0.5rem; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;">
+                            👤 Profilo
+                        </button>
+                        <button class="btn-logout" onclick="logout()" style="flex: 1; padding: 0.5rem;">Esci</button>
+                    </div>
+                </div>
+
+                <!-- Sezione SORGENTE -->
+                <div class="section" data-expanded="false">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">🎯 SORGENTE</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <!-- Griglia pulsanti 2x2 identica -->
+                        <div class="button-grid">
+                            <button class="btn btn-primary" onclick="loadImage()">📁 Carica Immagine</button>
+                            <button class="btn btn-info" onclick="loadVideo()">🎥 Carica Video</button>
+                            <button class="btn btn-success" onclick="startWebcam()">📹 Avvia Webcam</button>
+                            <button class="btn btn-warning" onclick="stopWebcam()">⏹️ Stop Webcam</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sezione ANALISI (unione di Rilevamenti + Misurazioni Predefinite) -->
+                <div class="section" data-expanded="false">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">🔬 ANALISI</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <!-- Griglia unificata 2 colonne - tutti pulsanti arancioni stessa dimensione -->
+                        <div class="analysis-buttons">
+                            <!-- Pulsanti Rilevamenti -->
+                            <button class="btn btn-analysis" id="axis-btn" onclick="toggleAxis()">📏 Asse</button>
+                            <button class="btn btn-analysis" id="landmarks-btn" onclick="toggleLandmarks()">🎯
+                                Landmarks</button>
+                            <button class="btn btn-analysis" id="measure-btn" onclick="toggleMeasureMode()">📐
+                                Misura</button>
+
+                            <!-- Pulsanti Misurazioni Predefinite -->
+                            <button class="btn btn-analysis" onclick="measureFaceWidth(event)">📐 Larghezza
+                                Viso</button>
+                            <button class="btn btn-analysis" onclick="measureFaceHeight(event)">📏 Altezza Viso</button>
+                            <button class="btn btn-analysis" onclick="measureEyeDistance(event)">👁️ Distanza
+                                Occhi</button>
+                            <button class="btn btn-analysis" onclick="measureNoseWidth(event)">👃 Larghezza
+                                Naso</button>
+                            <button class="btn btn-analysis" onclick="measureNoseHeight(event)">📏 Altezza Naso</button>
+                            <button class="btn btn-analysis" onclick="measureMouthWidth(event)">👄 Larghezza
+                                Bocca</button>
+                            <button class="btn btn-analysis" onclick="measureEyebrowAreas(event)">✂️ Aree
+                                Sopracciglia</button>
+                            <button class="btn btn-analysis" onclick="measureEyeAreas(event)">👁️ Aree Occhi</button>
+                            <button class="btn btn-analysis" onclick="measureCheekWidth(event)">😊 Larghezza
+                                Guance</button>
+                            <button class="btn btn-analysis" onclick="measureForeheadWidth(event)">🤔 Larghezza
+                                Fronte</button>
+                            <button class="btn btn-analysis" onclick="measureChinWidth(event)">😮 Larghezza
+                                Mento</button>
+                            <button class="btn btn-analysis" onclick="measureFaceProfile(event)">👤 Profilo
+                                Viso</button>
+                            <button class="btn btn-analysis" onclick="measureNoseAngle(event)">👃 Angolo Naso</button>
+                            <button class="btn btn-analysis" onclick="measureMouthAngle(event)">👄 Angolo Bocca</button>
+                            <button class="btn btn-analysis" onclick="measureFaceProportions(event)">📏
+                                Proporzioni</button>
+                            <button class="btn btn-analysis" onclick="measureKeyDistances(event)">🔍 Distanze
+                                Chiave</button>
+                            <button class="btn btn-analysis" onclick="measureFacialSymmetry(event)">⚖️
+                                Simmetria</button>
+                            <button class="btn btn-analysis" onclick="estimateAge(event)">🎂 Stima Età</button>
+
+                            <!-- Pulsante Analisi Completa - occupa tutta la larghezza -->
+                            <button class="btn btn-analysis btn-analysis-complete"
+                                onclick="performCompleteAnalysis(event)">
+                                🧬 ANALISI VISAGISTICA COMPLETA
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sezione SISTEMA SCORING (NASCOSTA) -->
+                <div class="section" data-expanded="false" style="display: none;">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">⚖️ SISTEMA SCORING</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <!-- Badge info score corrente -->
+                        <div class="scoring-info" id="scoring-info">
+                            Score corrente: 0.000
+                        </div>
+
+                        <!-- Sliders per i pesi -->
+                        <div class="sliders-container">
+                            <div class="slider-row">
+                                <label>👃 Naso:</label>
+                                <input type="range" id="nose-slider" class="slider" min="0" max="1" step="0.01"
+                                    value="0.30" oninput="updateWeight('nose', this.value)">
+                                <span class="value" id="nose-value">0.30</span>
+                            </div>
+
+                            <div class="slider-row">
+                                <label>💋 Bocca:</label>
+                                <input type="range" id="mouth-slider" class="slider" min="0" max="1" step="0.01"
+                                    value="0.25" oninput="updateWeight('mouth', this.value)">
+                                <span class="value" id="mouth-value">0.25</span>
+                            </div>
+
+                            <div class="slider-row">
+                                <label>⚖️ Simm.:</label>
+                                <input type="range" id="symmetry-slider" class="slider" min="0" max="1" step="0.01"
+                                    value="0.25" oninput="updateWeight('symmetry', this.value)">
+                                <span class="value" id="symmetry-value">0.25</span>
+                            </div>
+
+                            <div class="slider-row">
+                                <label>👁️ Occhi:</label>
+                                <input type="range" id="eye-slider" class="slider" min="0" max="1" step="0.01"
+                                    value="0.20" oninput="updateWeight('eye', this.value)">
+                                <span class="value" id="eye-value">0.20</span>
+                            </div>
+                        </div>
+
+                        <!-- Pulsanti preset -->
+                        <div class="preset-buttons">
+                            <button class="btn btn-preset" onclick="resetWeights()">🔄 Reset</button>
+                            <button class="btn btn-preset" onclick="presetNoseFocus()">👃 Focus Naso</button>
+                            <button class="btn btn-preset" onclick="presetLessSymmetry()">⚖️ Meno Simmetria</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sezione CORREZIONE PROGETTAZIONE -->
+                <div class="section" data-expanded="false">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">✂️ CORREZIONE PROGETTAZIONE</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <div class="eyebrow-info">
+                            Quale sopracciglio piace di più alla cliente? Quello alla tua DESTRA o alla tua SINISTRA?
+                        </div>
+
+                        <div class="eyebrow-buttons">
+                            <button class="btn btn-analysis" id="green-dots-btn" onclick="toggleGreenDots()">� Trova
+                                Differenze</button>
+                            <button class="btn btn-eyebrow" onclick="show_left_eyebrow_with_voice()">✂️ Preferenza
+                                Destra</button>
+                            <button class="btn btn-eyebrow" onclick="show_right_eyebrow_with_voice()">✂️ Preferenza
+                                Sinistra</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sezione ASSISTENTE VOCALE -->
+                <div class="section" data-expanded="false" id="voice-assistant-section">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">🎤 ASSISTENTE VOCALE</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <!-- Voice Assistant Content -->
+                        <div id="voice-assistant-sidebar-content">
+                            <!-- Status -->
+                            <div class="voice-status-sidebar" id="voice-status-sidebar">
+                                <div class="status-indicator-sidebar active" id="status-indicator-sidebar">🟢</div>
+                                <span id="status-text-sidebar">Pronto</span>
+                            </div>
+
+                            <!-- Controlli principali -->
+                            <div class="voice-controls-sidebar">
+                                <button class="btn btn-primary" id="toggle-listening-btn-sidebar"
+                                    onclick="toggleVoiceListening()">
+                                    <span id="listening-icon-sidebar">🎤</span>
+                                    <span id="listening-text-sidebar">Avvia Ascolto</span>
+                                </button>
+
+                                <button class="btn btn-secondary" id="toggle-mute-btn-sidebar"
+                                    onclick="toggleVoiceMute()">
+                                    <span id="mute-icon-sidebar">🔊</span>
+                                    <span id="mute-text-sidebar">Muto</span>
+                                </button>
+                            </div>
+
+                            <!-- Info riconoscimento -->
+                            <div class="voice-info-sidebar" id="voice-last-command-sidebar">
+                                Ultimo comando: <span id="last-command-text-sidebar">Nessuno</span>
+                            </div>
+
+                            <!-- Messaggi rapidi -->
+                            <div class="voice-quick-messages-sidebar" style="display:none;">
+                                <div class="quick-msg-title-sidebar">Messaggi Rapidi:</div>
+                                <div class="quick-msg-buttons-sidebar">
+                                    <button class="btn btn-info btn-small"
+                                        onclick="voiceAssistant.speakMessage('welcome')">👋 Benvenuto</button>
+                                    <button class="btn btn-info btn-small"
+                                        onclick="voiceAssistant.speakMessage('axis_on')">📏 Asse On</button>
+                                    <button class="btn btn-info btn-small"
+                                        onclick="voiceAssistant.speakMessage('landmarks_on')">🎯 Landmarks On</button>
+                                </div>
+                            </div>
+
+                            <!-- Lista comandi vocali disponibili -->
+                            <details class="voice-commands-help-sidebar">
+                                <summary>📋 Comandi Vocali</summary>
+                                <div class="commands-list-sidebar">
+                                    <div class="command-item-sidebar">
+                                        <strong>"Kimerika"</strong> → Attiva ascolto comandi
+                                    </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Asse"</strong> → Attiva/disattiva asse di simmetria
+                                    </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Landmarks"</strong> → Attiva/disattiva punti facciali
+                                    </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Punti verdi"</strong> → Rileva punti verdi sopracciglia
+                                    </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Avvia webcam"</strong> → Avvia webcam
+                                    </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Stop webcam"</strong> → Ferma webcam
+                                    </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Carica immagine"</strong> → Apri caricamento immagine
+                                    </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Carica video"</strong> → Apri caricamento video
+                                    </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Analizza"</strong> → Avvia analisi facciale
+                                    </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Pulisci"</strong> → Pulisci canvas
+                                    </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Simmetria"</strong> → Analisi simmetria viso
+                                    </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Sopracciglio sinistro"</strong> → Analizza sopracciglio sx
+                                    </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Sopracciglio destro"</strong> → Analizza sopracciglio dx
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sezione IMPOSTAZIONI -->
+                <div class="section" data-expanded="false" id="settings-section">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">⚙️ IMPOSTAZIONI</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <!-- Sistema Camera iPhone via Browser -->
+                        <div class="settings-info">
+                            <h4 style="margin-top: 0; color: #333;">Camera iPhone via Browser</h4>
+                            <p style="font-size: 0.9em; color: #555; margin-bottom: 1rem;">
+                                Usa il tuo iPhone come webcam professionale senza installare app.
+                                Scansiona il QR code e inizia subito.
+                            </p>
+
+                            <!-- QR Code Container -->
+                            <div id="iphone-qr-container" style="text-align: center; padding: 1.5rem; background: #f8f9fa; border-radius: 12px; margin-bottom: 1rem;">
+                                <div id="qr-code-wrapper" style="background: white; display: inline-block; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                                    <img id="qr-code-img" src="/api/qrcode.png" alt="QR Code per Camera iPhone" style="width: 180px; height: 180px; display: block;">
+                                </div>
+                                <p style="margin-top: 1rem; font-size: 0.9em; color: #666;">
+                                    Scansiona con la fotocamera del tuo iPhone
+                                </p>
+                                <button onclick="refreshQRCode()" class="btn btn-secondary" style="margin-top: 0.5rem; font-size: 0.85em;">
+                                    Aggiorna QR Code
+                                </button>
+                            </div>
+
+                            <!-- Stato Connessione iPhone -->
+                            <div id="iphone-status-container" style="padding: 1rem; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 1rem;">
+                                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                    <span id="iphone-status-icon" style="font-size: 1.2em;">In attesa</span>
+                                    <span id="iphone-status-text" style="font-size: 0.9em; color: #856404;">Nessun iPhone connesso</span>
+                                </div>
+                                <div id="iphone-device-info" style="display: none; margin-top: 0.5rem; font-size: 0.85em; color: #666;">
+                                    Device ID: <span id="iphone-device-id">--</span>
+                                </div>
+                            </div>
+
+                            <!-- Istruzioni Rapide -->
+                            <details style="margin-bottom: 1rem;">
+                                <summary style="cursor: pointer; font-weight: bold; padding: 0.5rem; background: #667eea; color: white; border-radius: 4px;">
+                                    Come Funziona
+                                </summary>
+                                <div style="padding: 1rem; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; margin-top: 0.5rem; font-size: 0.9em; line-height: 1.6;">
+                                    <ol style="margin-left: 1.2rem; color: #444;">
+                                        <li><strong>Scansiona il QR</strong> con la fotocamera del tuo iPhone</li>
+                                        <li><strong>Apri il link</strong> che appare nella notifica</li>
+                                        <li><strong>Consenti l'accesso</strong> alla fotocamera quando richiesto</li>
+                                        <li><strong>Lo streaming inizia</strong> automaticamente</li>
+                                    </ol>
+
+                                    <div style="margin-top: 1rem; padding: 0.8rem; background: #d1ecf1; border-radius: 4px; border-left: 4px solid #0c5460; color: #0c5460;">
+                                        <strong>Suggerimento:</strong> Dopo la prima connessione, tocca "Aggiungi a Home" per creare un'icona di accesso rapido. Non dovrai piu' scansionare il QR!
+                                    </div>
+
+                                    <div style="margin-top: 1rem;">
+                                        <strong>Vantaggi:</strong>
+                                        <ul style="margin-left: 1.2rem; margin-top: 0.5rem; color: #444;">
+                                            <li>Nessuna app da installare</li>
+                                            <li>Funziona su iPhone e iPad</li>
+                                            <li>Qualita' video professionale</li>
+                                            <li>Configurazione salvata automaticamente</li>
+                                            <li>Accesso rapido dalla home screen</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </details>
+
+                            <!-- Note WiFi -->
+                            <div style="padding: 0.8rem; background: #fff3cd; border-radius: 4px; border-left: 4px solid #ffc107; font-size: 0.85em; color: #856404;">
+                                <strong>Requisito:</strong> iPhone e PC devono essere sulla stessa rete WiFi.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- CANVAS CENTRALE identico al matplotlib canvas -->
+        <div class="canvas-container">
+            <!-- Toolbar strumenti -->
+            <div class="canvas-toolbar">
+                <button class="tool-btn" data-tool="pan" onclick="setTool('pan')" title="Sposta vista canvas">✋
+                    Pan</button>
+                <button class="tool-btn" data-tool="zoom-in" onclick="setTool('zoom-in')"
+                    title="Ingrandisci al click">🔍+ Zoom In</button>
+                <button class="tool-btn" data-tool="zoom-out" onclick="setTool('zoom-out')"
+                    title="Rimpicciolisci al click">🔍- Zoom Out</button>
+                <button class="tool-btn" onclick="rotateImageClockwise()" title="Ruota immagine 1° in senso orario">↻
+                    Ruota ⟲</button>
+                <button class="tool-btn" onclick="rotateImageCounterClockwise()"
+                    title="Ruota immagine 1° in senso antiorario">↺ Ruota ⟳</button>
+                <button class="tool-btn" data-tool="line" onclick="setTool('line')" title="Disegna linea">📏
+                    Linea</button>
+                <button class="tool-btn" onclick="clearAllMeasurementOverlays()" title="Pulisci tutte le misurazioni">📐
+                    Pulisci Mis.</button>
+                <button class="tool-btn" onclick="clearCanvas()" title="Pulisci canvas completamente">🧹
+                    Pulisci</button>
+            </div>
+
+            <!-- Canvas principale -->
+            <div class="canvas-wrapper">
+                <canvas id="main-canvas"></canvas>
+            </div>
+
+            <!-- Video webcam nascosto -->
+            <video id="webcam-video" autoplay muted style="position: absolute; left: -9999px; top: -9999px;"></video>
+
+            <!-- Info cursore -->
+            <div class="cursor-info" id="cursor-info">
+                Mouse: (0, 0) | Zoom: 100%
+            </div>
+        </div>
+
+        <!-- SIDEBAR DESTRA identica alla colonna destra dell'app -->
+        <div class="right-sidebar">
+
+            <!-- Anteprima - PRIMA POSIZIONE -->
+            <div class="section" data-expanded="false">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <button class="toggle-btn">📹 ANTEPRIMA</button>
+                    <span class="icon">►</span>
+                </div>
+                <div class="section-content webcam-preview-content" style="display: none;">
+                    <canvas id="webcam-preview-canvas"></canvas>
+                    <div id="webcam-preview-info">Anteprima non attiva</div>
+
+                    <!-- Monitor debug websocket -->
+                    <div class="status-info-frame">
+                        <div class="best-frame-info" id="best-frame-info">
+                            Nessun frame analizzato
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sezione Dati Analisi Unificata -->
+            <div class="section" data-expanded="false">
+                <div class="section-header" onclick="toggleSection(this)">
+                    <button class="toggle-btn">📊 DATI ANALISI</button>
+                    <span class="icon">►</span>
+                </div>
+                <div class="section-content" style="display: none;">
+                    <!-- Tabs per selezionare il tipo di dati -->
+                    <div class="unified-tabs">
+                        <button class="unified-tab active" data-tab="measurements"
+                            onclick="switchUnifiedTab('measurements', event)">
+                            📏 Misurazioni
+                        </button>
+                        <button class="unified-tab" data-tab="landmarks" onclick="switchUnifiedTab('landmarks', event)">
+                            🎯 Landmarks
+                        </button>
+                        <button class="unified-tab" data-tab="debug" onclick="switchUnifiedTab('debug', event)">
+                            🐛 Debug
+                        </button>
+                    </div>
+
+                    <!-- Tabella Unificata -->
+                    <div class="table-container">
+                        <table class="data-table" id="unified-table">
+                            <thead id="unified-table-head">
+                                <!-- Header dinamico basato sul tab selezionato -->
+                            </thead>
+                            <tbody id="unified-table-body">
+                                <!-- Dati dinamici verranno inseriti qui -->
+                            </tbody>
+                        </table>
+                    </div>
+
+
+                </div>
+            </div>
+
+            <!-- Sezioni originali (nascoste, ma mantengono i dati per compatibilità) -->
+            <div style="display: none;">
+                <!-- Sezione Misurazioni Originale (nascosta) -->
+                <div class="section" data-expanded="false">
+                    <div class="section-content">
+                        <div class="table-container">
+                            <table class="data-table" id="measurements-table">
+                                <thead>
+                                    <tr>
+                                        <th>📏 Tipo Misurazione</th>
+                                        <th>📊 Valore</th>
+                                        <th>📐 Unità</th>
+                                        <th>✅ Stato</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="measurements-data">
+                                    <!-- Dati dinamici verranno inseriti qui -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sezione Landmarks Originale (nascosta) -->
+                <div class="section" data-expanded="false">
+                    <div class="section-content">
+                        <div class="table-container">
+                            <table class="data-table" id="landmarks-table">
+                                <thead>
+                                    <tr>
+                                        <th>🎨</th>
+                                        <th>ID</th>
+                                        <th>Nome</th>
+                                        <th>X</th>
+                                        <th>Y</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="landmarks-data">
+                                    <!-- Dati landmarks verranno inseriti qui -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Controlli paginazione landmarks -->
+                        <div class="landmarks-controls" id="landmarks-pagination" style="display: none;">
+                            <button class="btn btn-mini" onclick="showLandmarksPage('prev')" id="landmarks-prev">◀
+                                Prec</button>
+                            <span class="landmarks-page-info" id="landmarks-page-info">Pagina 1/1</span>
+                            <button class="btn btn-mini" onclick="showLandmarksPage('next')" id="landmarks-next">Succ
+                                ▶</button>
+                            <button class="btn btn-mini" onclick="showAllLandmarks()"
+                                title="Mostra tutti i landmarks in una nuova finestra">📋 Tutti</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Debug Analysis Originale (nascosta) -->
+                <div class="section" data-expanded="false">
+                    <div class="section-content debug-content">
+                        <div class="table-container">
+                            <table class="data-table debug-table" id="debug-table">
+                                <thead>
+                                    <tr>
+                                        <th>Frame</th>
+                                        <th>Tempo</th>
+                                        <th>Score</th>
+                                        <th>Yaw</th>
+                                        <th>Pitch</th>
+                                        <th>Roll</th>
+                                        <th>Stato</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="debug-data">
+                                    <!-- Dati debug verranno inseriti qui -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="debug-controls">
+                            <button class="btn btn-small" onclick="clearDebugLogs()">Pulisci</button>
+                            <button class="btn btn-small" onclick="ensureSidebarSectionsVisible()"
+                                title="Ripristina visibilità sezioni">🔧 Ripristina UI</button>
+                            <label class="auto-scroll-label">
+                                <input type="checkbox" id="auto-scroll"> Auto
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    </div>
+
+    <!-- Finestra modale per anteprima video -->
+    <div id="preview-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Anteprima Video - Analisi in corso</h3>
+                <span class="close" onclick="closeVideoPreview()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Player video per anteprima in tempo reale -->
+                <div id="video-player-container" style="display: none;">
+                    <video id="preview-video" width="640" height="480" controls>
+                        Il tuo browser non supporta il tag video.
+                    </video>
+                    <div class="video-controls">
+                        <button id="analyze-current-frame" class="btn btn-primary">🎯 Analizza Frame Corrente</button>
+                        <button id="auto-analyze" class="btn btn-success">🤖 Analisi Automatica</button>
+                        <button id="stop-analysis" class="btn btn-danger" style="display: none;">⏹️ Ferma</button>
+                    </div>
+                </div>
+
+                <!-- Canvas per risultati analisi -->
+                <canvas id="preview-canvas" width="640" height="480" style="display: none;"></canvas>
+
+                <!-- Area info/status -->
+                <div class="preview-info" id="preview-info">
+                    In attesa del video...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal separato per l'analisi video automatica -->
+    <div id="video-analysis-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Analisi Video Automatica</h3>
+                <span class="close" onclick="closeVideoAnalysis()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="video-analysis-status">
+                    <div class="analysis-progress">
+                        <div class="spinner"></div>
+                        <p>Analisi in corso...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Analisi Visagistica Completa -->
+    <div id="analysis-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 90%; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <span style="opacity: 0.6; margin-right: 10px; font-size: 20px;">⋮⋮</span>
+                <h3>🧬 Analisi Visagistica Completa</h3>
+                <span class="close" onclick="closeAnalysisModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Loading spinner -->
+                <div id="analysis-loading" style="text-align: center; padding: 40px; display: none;">
+                    <div class="spinner"
+                        style="width: 60px; height: 60px; border: 5px solid #f3f3f3; border-top: 5px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;">
+                    </div>
+                    <p style="margin-top: 20px; font-size: 16px; color: #667eea;">Analisi in corso...</p>
+                </div>
+
+                <!-- Report completo -->
+                <div id="analysis-report" style="display: none;">
+                    <div
+                        style="margin-bottom: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                        <button class="btn btn-success" onclick="generateAnalysisPDF()"
+                            style="font-size: 16px; padding: 12px 24px;">
+                            📄 Genera PDF
+                        </button>
+                        <button class="btn btn-info" id="read-report-btn" onclick="toggleReportReading()"
+                            style="font-size: 16px; padding: 12px 24px;">
+                            🔊 Leggi Report
+                        </button>
+                        <button class="btn btn-secondary" onclick="closeAnalysisModal()"
+                            style="font-size: 16px; padding: 12px 24px;">
+                            ✖️ Chiudi
+                        </button>
+                    </div>
+
+                    <div id="report-content"
+                        style="background: #f9f9f9; padding: 20px; border-radius: 8px; font-family: 'Courier New', monospace; white-space: pre-wrap; line-height: 1.6; color: #333;">
+                        <!-- Il report verrà inserito qui -->
+                    </div>
+
+                    <!-- Immagini debug (opzionale) -->
+                    <div id="debug-images-container" style="margin-top: 30px; display: none;">
+                        <h4 style="margin-bottom: 15px;">📸 Immagini di Analisi</h4>
+                        <div id="debug-images-grid"
+                            style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
+                            <!-- Le immagini verranno inserite qui -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+        <div class="status-text" id="status-text">Pronto</div>
+        <div class="progress-container" id="progress-container" style="display: none;">
+            <div class="progress-bar" id="progress-bar"></div>
+            <span class="progress-text" id="progress-text">0%</span>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <!-- Patch per bug textBaseline PRIMA di Fabric.js -->
+    <script>
+        console.log('🔧 Applicando patch preventivo per textBaseline...');
+
+        // Patch preventivo per il CanvasRenderingContext2D
+        if (typeof CanvasRenderingContext2D !== 'undefined') {
+            const descriptor = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'textBaseline');
+            if (descriptor && descriptor.set) {
+                const originalSetter = descriptor.set;
+                Object.defineProperty(CanvasRenderingContext2D.prototype, 'textBaseline', {
+                    set: function (value) {
+                        // Correggi automaticamente il valore errato PRIMA che causi errori
+                        if (value === 'alphabetical') {
+                            // Correzione silenziosa per evitare spam nella console
+                            value = 'alphabetic';
+                        }
+                        return originalSetter.call(this, value);
+                    },
+                    get: descriptor.get,
+                    enumerable: true,
+                    configurable: true
+                });
+            }
+        }
+
+        console.log('🔧 Patch preventivo applicato!');
+    </script>
+
+    <!-- Fabric.js per canvas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+
+    <!-- jsPDF per generazione PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <script src="static/js/api-client.js"></script>
+    <script src="static/js/face-detection.js"></script>
+    <script src="static/js/measurements.js"></script>
+    <script src="static/js/scoring.js"></script>
+    <script src="static/js/canvas.js"></script>
+    <!-- Sistema modalità canvas (PAN, ZOOM, SELEZIONE) -->
+    <script src="static/js/canvas-modes.js"></script>
+    <!-- NUOVO FILE PULITO - Correzione sopracciglia -->
+    <script src="static/js/eyebrow-correction.js"></script>
+    <!-- Analisi Visagistica Completa -->
+    <script src="static/js/face-analysis-complete.js"></script>
+    <!-- Frame Processor Unificato -->
+    <script src="static/js/frame-processor.js"></script>
+    <script src="static/js/main.js"></script>
+
+    <!-- Script di test per debug -->
+    <script>
+        console.log('🧪 TEST SCRIPT CARICATO');
+
+        // Test dopo il caricamento completo
+        window.addEventListener('load', function () {
+            console.log('🧪 PAGINA COMPLETAMENTE CARICATA');
+            console.log('🧪 Stato variabili globali:', {
+                currentLandmarks: typeof currentLandmarks !== 'undefined' ? currentLandmarks?.length : 'undefined',
+                fabricCanvas: typeof fabricCanvas !== 'undefined' ? !!fabricCanvas : 'undefined',
+                transformLandmarkCoordinate: typeof window.transformLandmarkCoordinate !== 'undefined' ? 'function available' : 'undefined',
+                measureFaceWidth: typeof measureFaceWidth !== 'undefined' ? 'function available' : 'undefined'
+            });
+
+            // Test diretto della funzione di misurazione (disabilitato)
+            // setTimeout(() => {
+            //     console.log('🧪 TEST DIRETTO - Chiamata measureFaceWidth()');
+            //     if (typeof measureFaceWidth === 'function') {
+            //         try {
+            //             measureFaceWidth();
+            //         } catch (e) {
+            //             console.error('🧪 ERRORE in measureFaceWidth:', e);
+            //         }
+            //     } else {
+            //         console.error('🧪 measureFaceWidth NON DEFINITA');
+            //     }
+            // }, 2000);
+        });
+    </script>
+
+    <!-- MediaPipe per face detection -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+
+    <!-- ========================================
+         VOICE ASSISTANT INTEGRATION
+         ======================================== -->
+
+    <!-- Voice Assistant Script -->
+    <script src="static/js/voice_assistant.js"></script>
+
+    <!-- Voice Widget Container (NASCOSTO - ora è nella sidebar) -->
+    <div id="voice-widget-container" style="display: none;"></div>
+
+    <script>
+        // Carica widget voice assistant (nascosto, manteniamo solo per compatibilità script)
+        fetch('templates/voice_widget.html')
+            .then(response => response.text())
+            .then(html => {
+                document.getElementById('voice-widget-container').innerHTML = html;
+            })
+            .catch(err => console.warn('Voice widget non caricato:', err));
+    </script>
+
+    <!-- Integrazione Voice Feedback nelle funzioni esistenti -->
+    <script>
+        // Attendi che voiceAssistant sia disponibile
+        if (typeof voiceAssistant !== 'undefined') {
+
+            // Non sovrascrivere loadImage, loadVideo, startWebcam, stopWebcam
+            // perché ora il voice assistant simula click sui pulsanti
+
+            // Aggiungi listener per il caricamento immagine/video
+            // (il feedback vocale verrà dato quando il file è effettivamente caricato)
+            const originalHandleFileLoad = window.handleFileLoad;
+            if (originalHandleFileLoad) {
+                window.handleFileLoad = function (file) {
+                    const result = originalHandleFileLoad(file);
+                    // Feedback vocale dopo il caricamento
+                    setTimeout(() => {
+                        voiceAssistant.speakMessage('image_loaded');
+                    }, 500);
+                    return result;
+                };
+            }
+
+            // SORGENTE - Avvia Webcam
+            const originalStartWebcam = window.startWebcam;
+            window.startWebcam = async function () {
+                if (originalStartWebcam) await originalStartWebcam();
+                voiceAssistant.speakMessage('webcam_started');
+            };
+
+            // SORGENTE - Stop Webcam
+            const originalStopWebcam = window.stopWebcam;
+            window.stopWebcam = async function () {
+                // ✅ Se iPhone era attivo, richiedi i best frames prima di fermare
+                if (window.isIPhoneStreamActive && webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+                    console.log('📱 Richiesta best frames da iPhone...');
+                    updateStatus('📱 Recupero migliore frame iPhone...');
+                    
+                    try {
+                        // Richiedi i best frames
+                        webcamWebSocket.send(JSON.stringify({
+                            action: 'get_results'
+                        }));
+                        
+                        // Attendi risposta (più lungo per dare tempo al server)
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    } catch (error) {
+                        console.error('Errore richiesta best frames:', error);
+                    }
+                }
+                
+                // Reset stato iPhone
+                window.isIPhoneStreamActive = false;
+                
+                // Chiama la funzione originale
+                if (originalStopWebcam) {
+                    try {
+                        originalStopWebcam();
+                    } catch (error) {
+                        console.error('Errore stopWebcam:', error);
+                    }
+                }
+                
+                voiceAssistant.speakMessage('webcam_stopped');
+            };
+
+            // TOGGLE - Asse di Simmetria
+            const originalToggleAxis = window.toggleAxis;
+            window.toggleAxis = function () {
+                if (originalToggleAxis) originalToggleAxis();
+
+                // Non emettere feedback vocale se siamo in modalità suppress
+                if (window.suppressVoiceFeedback) {
+                    console.log('🔇 [ASSE] Feedback vocale soppresso (suppressVoiceFeedback attivo)');
+                    return;
+                }
+
+                const axisBtn = document.getElementById('axis-btn');
+                if (axisBtn && axisBtn.classList.contains('active')) {
+                    voiceAssistant.speakMessage('axis_on');
+                } else {
+                    voiceAssistant.speakMessage('axis_off');
+                }
+            };
+
+            // TOGGLE - Landmarks
+            const originalToggleLandmarks = window.toggleLandmarks;
+            window.toggleLandmarks = function () {
+                if (originalToggleLandmarks) originalToggleLandmarks();
+
+                // Non emettere feedback vocale se siamo in modalità suppress
+                if (window.suppressVoiceFeedback) {
+                    console.log('🔇 [LANDMARKS] Feedback vocale soppresso (suppressVoiceFeedback attivo)');
+                    return;
+                }
+
+                const landmarksBtn = document.getElementById('landmarks-btn');
+                if (landmarksBtn && landmarksBtn.classList.contains('active')) {
+                    voiceAssistant.speakMessage('landmarks_on');
+                } else {
+                    voiceAssistant.speakMessage('landmarks_off');
+                }
+            };
+
+            // TOGGLE - Green Dots
+            // Il feedback vocale delle differenze è ora gestito automaticamente in main.js
+            // dopo il completamento dell'analisi green dots
+            const originalToggleGreenDots = window.toggleGreenDots;
+            window.toggleGreenDots = function () {
+                if (originalToggleGreenDots) originalToggleGreenDots();
+
+                // Non emettere feedback vocale se siamo in modalità suppress (es: durante analisi progettazione)
+                if (window.suppressVoiceFeedback) {
+                    console.log('🔇 [GREEN DOTS] Feedback vocale soppresso (suppressVoiceFeedback attivo)');
+                    return;
+                }
+
+                // I messaggi generici on/off non servono più perché ora c'è l'analisi dettagliata
+                // gestita da main.js che pronuncia le differenze tra i sopraccigli
+            };
+
+            // Funzione per comando vocale "preferenza destra" - analizza spostamenti sopracciglio sinistro
+            window.show_left_eyebrow_with_voice = async function () {
+                console.log('🎯 [PREFERENZA DESTRA] Inizio analisi preferenza destra');
+                console.log('🔍 [PREFERENZA DESTRA] Verifica funzioni disponibili:', {
+                    showLeftEyebrow: typeof window.showLeftEyebrow,
+                    voiceAssistant: typeof voiceAssistant,
+                    greenDotsDetected: !!window.greenDotsDetected
+                });
+
+                // Verifica prerequisiti
+                if (!window.greenDotsDetected || !window.greenDotsData?.success) {
+                    console.error('❌ [PREFERENZA DESTRA] Green dots non rilevati');
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('Prima devi rilevare i punti verdi con il pulsante green dots');
+                    }
+                    return;
+                }
+
+                // Step 1: Apri il popup della correzione sopracciglio sinistro
+                if (typeof window.showLeftEyebrow === 'function') {
+                    console.log('📊 [PREFERENZA DESTRA] Apertura popup correzione...');
+                    try {
+                        window.showLeftEyebrow();
+                        console.log('✅ [PREFERENZA DESTRA] Popup aperto con successo');
+                    } catch (error) {
+                        console.error('❌ [PREFERENZA DESTRA] Errore apertura popup:', error);
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('Errore apertura finestra correzione');
+                        }
+                        return;
+                    }
+
+                    // Step 2: Aspetta che il popup sia aperto (breve delay)
+                    await new Promise(resolve => setTimeout(resolve, 800));
+
+                    // Step 3: Analizza gli spostamenti dalla tabella
+                    console.log('📏 [PREFERENZA DESTRA] Analisi spostamenti dalla tabella...');
+                    const instructions = window.analyzeLeftEyebrowMovements();
+
+                    if (instructions) {
+                        console.log('🔊 [PREFERENZA DESTRA] Pronuncia indicazioni:', instructions);
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak(instructions);
+                        }
+                    } else {
+                        console.error('❌ [PREFERENZA DESTRA] Impossibile generare indicazioni');
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('Non ho trovato abbastanza dati per generare le indicazioni');
+                        }
+                    }
+                } else {
+                    console.error('❌ [PREFERENZA DESTRA] Funzione showLeftEyebrow non disponibile');
+                    console.error('    window.showLeftEyebrow:', window.showLeftEyebrow);
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('Funzione correzione non disponibile');
+                    }
+                }
+            };
+
+            // Funzione per analizzare gli spostamenti necessari del sopracciglio sinistro
+            window.analyzeLeftEyebrowMovements = function () {
+                console.log('📊 [MOVIMENTI SX] Analisi movimenti sopracciglio sinistro');
+
+                const measurementsTable = document.getElementById('measurements-data');
+                if (!measurementsTable) {
+                    console.error('❌ [MOVIMENTI SX] Tabella misurazioni non trovata');
+                    return null;
+                }
+
+                const rows = measurementsTable.querySelectorAll('tr[data-type="green-dots"]');
+                if (rows.length === 0) {
+                    console.error('❌ [MOVIMENTI SX] Nessun dato green dots trovato');
+                    return null;
+                }
+
+                // Mappa per raccogliere i dati: punto -> {horizontal, vertical}
+                const movements = {
+                    'LA': { horizontal: 0, vertical: 0 },
+                    'LA0': { horizontal: 0, vertical: 0 },
+                    'LC1': { horizontal: 0, vertical: 0 },
+                    'LB': { horizontal: 0, vertical: 0 },
+                    'LC': { horizontal: 0, vertical: 0 }
+                };
+
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length < 2) return;
+
+                    const label = cells[0].textContent.trim();
+                    const value = cells[1].textContent.trim();
+
+                    // Estrai le distanze e determina gli spostamenti
+                    // Formato: "LA: 40.2px | RA: 40.9px RA più esterno (+0.7px)"
+
+                    // LA vs RA - Distanza Asse (orizzontale)
+                    if (label.includes('LA vs RA') && label.includes('Distanza Asse')) {
+                        const laMatch = value.match(/LA:\s*([\d.]+)px/);
+                        const raMatch = value.match(/RA:\s*([\d.]+)px/);
+                        if (laMatch && raMatch) {
+                            const laDist = parseFloat(laMatch[1]);
+                            const raDist = parseFloat(raMatch[1]);
+                            movements['LA'].horizontal = raDist - laDist; // positivo = spostare più esterno
+                        }
+                    }
+
+                    // LA vs RA - Altezza (verticale)
+                    if (label.includes('LA vs RA') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            // Se RA più alto, LA deve salire (negativo)
+                            movements['LA'].vertical = value.includes('RA più alto') ? -pixels : pixels;
+                        }
+                    }
+
+                    // LA0 vs RA0 - Distanza Asse
+                    if (label.includes('LA0 vs RA0') && label.includes('Distanza Asse')) {
+                        const la0Match = value.match(/LA0:\s*([\d.]+)px/);
+                        const ra0Match = value.match(/RA0:\s*([\d.]+)px/);
+                        if (la0Match && ra0Match) {
+                            const la0Dist = parseFloat(la0Match[1]);
+                            const ra0Dist = parseFloat(ra0Match[1]);
+                            movements['LA0'].horizontal = ra0Dist - la0Dist;
+                        }
+                    }
+
+                    // LC1 vs RC1 - Distanza Asse
+                    if (label.includes('LC1 vs RC1') && label.includes('Distanza Asse')) {
+                        const lc1Match = value.match(/LC1:\s*([\d.]+)px/);
+                        const rc1Match = value.match(/RC1:\s*([\d.]+)px/);
+                        if (lc1Match && rc1Match) {
+                            const lc1Dist = parseFloat(lc1Match[1]);
+                            const rc1Dist = parseFloat(rc1Match[1]);
+                            movements['LC1'].horizontal = rc1Dist - lc1Dist;
+                        }
+                    }
+
+                    // LC1 vs RC1 - Altezza
+                    if (label.includes('LC1 vs RC1') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            movements['LC1'].vertical = value.includes('RC1 più alto') ? -pixels : pixels;
+                        }
+                    }
+
+                    // LB vs RB - Distanza Asse
+                    if (label.includes('LB vs RB') && label.includes('Distanza Asse')) {
+                        const lbMatch = value.match(/LB:\s*([\d.]+)px/);
+                        const rbMatch = value.match(/RB:\s*([\d.]+)px/);
+                        if (lbMatch && rbMatch) {
+                            const lbDist = parseFloat(lbMatch[1]);
+                            const rbDist = parseFloat(rbMatch[1]);
+                            movements['LB'].horizontal = rbDist - lbDist;
+                        }
+                    }
+
+                    // LB vs RB - Altezza
+                    if (label.includes('LB vs RB') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            movements['LB'].vertical = value.includes('RB più alto') ? -pixels : pixels;
+                        }
+                    }
+
+                    // LC vs RC - Distanza Asse
+                    if (label.includes('LC vs RC') && label.includes('Distanza Asse')) {
+                        const lcMatch = value.match(/LC:\s*([\d.]+)px/);
+                        const rcMatch = value.match(/RC:\s*([\d.]+)px/);
+                        if (lcMatch && rcMatch) {
+                            const lcDist = parseFloat(lcMatch[1]);
+                            const rcDist = parseFloat(rcMatch[1]);
+                            movements['LC'].horizontal = rcDist - lcDist;
+                        }
+                    }
+
+                    // LC vs RC - Altezza
+                    if (label.includes('LC vs RC') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            movements['LC'].vertical = value.includes('RC più alto') ? -pixels : pixels;
+                        }
+                    }
+                });
+
+                console.log('📏 [MOVIMENTI SX] Movimenti calcolati:', movements);
+
+                // Genera le istruzioni vocali nell'ordine richiesto: LA, LA0, LC1, LB, LC
+                const pointsOrder = ['LA', 'LA0', 'LC1', 'LB', 'LC'];
+                let instructions = '';
+                let instructionCount = 0;
+
+                pointsOrder.forEach((point, index) => {
+                    const move = movements[point];
+                    const parts = [];
+
+                    // Formatta il nome del punto per pronuncia corretta
+                    const pointSpeech = formatPointNameForSpeech(point);
+
+                    // Movimento verticale
+                    if (Math.abs(move.vertical) > 0.5) {
+                        const intensity = getIntensity(Math.abs(move.vertical));
+                        const direction = move.vertical < 0 ? 'più in alto' : 'più in basso';
+                        parts.push(`${intensity}${direction}`);
+                    }
+
+                    // Movimento orizzontale
+                    if (Math.abs(move.horizontal) > 0.5) {
+                        const intensity = getIntensity(Math.abs(move.horizontal));
+                        const direction = move.horizontal > 0 ? 'più esternamente' : 'più internamente';
+                        parts.push(`${intensity}${direction}`);
+                    }
+
+                    // Determina il connettore in base alla posizione nell'istruzione
+                    const connector = instructionCount === 0 ? 'Sposta' : 'sposta';
+
+                    if (parts.length > 0) {
+                        instructions += `${connector} ${pointSpeech} ${parts.join(' e ')}. `;
+                        instructionCount++;
+                    } else {
+                        // Anche se non ci sono movimenti, menziona il punto
+                        instructions += `${connector} ${pointSpeech} è già posizionato correttamente. `;
+                        instructionCount++;
+                    }
+                });
+
+                return instructions.trim() || null;
+            };
+
+            // Funzione per comando vocale "preferenza sinistra" - analizza spostamenti sopracciglio destro
+            window.show_right_eyebrow_with_voice = async function () {
+                console.log('🎯 [PREFERENZA SINISTRA] Inizio analisi preferenza sinistra');
+                console.log('🔍 [PREFERENZA SINISTRA] Verifica funzioni disponibili:', {
+                    showRightEyebrow: typeof window.showRightEyebrow,
+                    voiceAssistant: typeof voiceAssistant,
+                    greenDotsDetected: !!window.greenDotsDetected
+                });
+
+                // Verifica prerequisiti
+                if (!window.greenDotsDetected || !window.greenDotsData?.success) {
+                    console.error('❌ [PREFERENZA SINISTRA] Green dots non rilevati');
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('Prima devi rilevare i punti verdi con il pulsante green dots');
+                    }
+                    return;
+                }
+
+                // Step 1: Apri il popup della correzione sopracciglio destro
+                if (typeof window.showRightEyebrow === 'function') {
+                    console.log('📊 [PREFERENZA SINISTRA] Apertura popup correzione...');
+                    try {
+                        window.showRightEyebrow();
+                        console.log('✅ [PREFERENZA SINISTRA] Popup aperto con successo');
+                    } catch (error) {
+                        console.error('❌ [PREFERENZA SINISTRA] Errore apertura popup:', error);
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('Errore apertura finestra correzione');
+                        }
+                        return;
+                    }
+
+                    // Step 2: Aspetta che il popup sia aperto (breve delay)
+                    await new Promise(resolve => setTimeout(resolve, 800));
+
+                    // Step 3: Analizza gli spostamenti dalla tabella
+                    console.log('📏 [PREFERENZA SINISTRA] Analisi spostamenti dalla tabella...');
+                    const instructions = window.analyzeRightEyebrowMovements();
+
+                    if (instructions) {
+                        console.log('🔊 [PREFERENZA SINISTRA] Pronuncia indicazioni:', instructions);
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak(instructions);
+                        }
+                    } else {
+                        console.error('❌ [PREFERENZA SINISTRA] Impossibile generare indicazioni');
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('Non ho trovato abbastanza dati per generare le indicazioni');
+                        }
+                    }
+                } else {
+                    console.error('❌ [PREFERENZA SINISTRA] Funzione showRightEyebrow non disponibile');
+                    console.error('    window.showRightEyebrow:', window.showRightEyebrow);
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('Funzione correzione non disponibile');
+                    }
+                }
+            };
+
+            // Funzione per analizzare gli spostamenti necessari del sopracciglio destro
+            window.analyzeRightEyebrowMovements = function () {
+                console.log('📊 [MOVIMENTI DX] Analisi movimenti sopracciglio destro');
+
+                const measurementsTable = document.getElementById('measurements-data');
+                if (!measurementsTable) {
+                    console.error('❌ [MOVIMENTI DX] Tabella misurazioni non trovata');
+                    return null;
+                }
+
+                const rows = measurementsTable.querySelectorAll('tr[data-type="green-dots"]');
+                if (rows.length === 0) {
+                    console.error('❌ [MOVIMENTI DX] Nessun dato green dots trovato');
+                    return null;
+                }
+
+                // Mappa per raccogliere i dati: punto -> {horizontal, vertical}
+                const movements = {
+                    'RA': { horizontal: 0, vertical: 0 },
+                    'RA0': { horizontal: 0, vertical: 0 },
+                    'RC1': { horizontal: 0, vertical: 0 },
+                    'RB': { horizontal: 0, vertical: 0 },
+                    'RC': { horizontal: 0, vertical: 0 }
+                };
+
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length < 2) return;
+
+                    const label = cells[0].textContent.trim();
+                    const value = cells[1].textContent.trim();
+
+                    // RA vs LA - Distanza Asse (orizzontale) - inverso rispetto a LA
+                    if (label.includes('LA vs RA') && label.includes('Distanza Asse')) {
+                        const laMatch = value.match(/LA:\s*([\d.]+)px/);
+                        const raMatch = value.match(/RA:\s*([\d.]+)px/);
+                        if (laMatch && raMatch) {
+                            const laDist = parseFloat(laMatch[1]);
+                            const raDist = parseFloat(raMatch[1]);
+                            movements['RA'].horizontal = laDist - raDist; // positivo = spostare più esterno
+                        }
+                    }
+
+                    // RA vs LA - Altezza (verticale)
+                    if (label.includes('LA vs RA') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            // Se LA più alto, RA deve salire (negativo)
+                            movements['RA'].vertical = value.includes('LA più alto') ? -pixels : pixels;
+                        }
+                    }
+
+                    // RA0 vs LA0 - Distanza Asse
+                    if (label.includes('LA0 vs RA0') && label.includes('Distanza Asse')) {
+                        const la0Match = value.match(/LA0:\s*([\d.]+)px/);
+                        const ra0Match = value.match(/RA0:\s*([\d.]+)px/);
+                        if (la0Match && ra0Match) {
+                            const la0Dist = parseFloat(la0Match[1]);
+                            const ra0Dist = parseFloat(ra0Match[1]);
+                            movements['RA0'].horizontal = la0Dist - ra0Dist;
+                        }
+                    }
+
+                    // RC1 vs LC1 - Distanza Asse
+                    if (label.includes('LC1 vs RC1') && label.includes('Distanza Asse')) {
+                        const lc1Match = value.match(/LC1:\s*([\d.]+)px/);
+                        const rc1Match = value.match(/RC1:\s*([\d.]+)px/);
+                        if (lc1Match && rc1Match) {
+                            const lc1Dist = parseFloat(lc1Match[1]);
+                            const rc1Dist = parseFloat(rc1Match[1]);
+                            movements['RC1'].horizontal = lc1Dist - rc1Dist;
+                        }
+                    }
+
+                    // RC1 vs LC1 - Altezza
+                    if (label.includes('LC1 vs RC1') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            movements['RC1'].vertical = value.includes('LC1 più alto') ? -pixels : pixels;
+                        }
+                    }
+
+                    // RB vs LB - Distanza Asse
+                    if (label.includes('LB vs RB') && label.includes('Distanza Asse')) {
+                        const lbMatch = value.match(/LB:\s*([\d.]+)px/);
+                        const rbMatch = value.match(/RB:\s*([\d.]+)px/);
+                        if (lbMatch && rbMatch) {
+                            const lbDist = parseFloat(lbMatch[1]);
+                            const rbDist = parseFloat(rbMatch[1]);
+                            movements['RB'].horizontal = lbDist - rbDist;
+                        }
+                    }
+
+                    // RB vs LB - Altezza
+                    if (label.includes('LB vs RB') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            movements['RB'].vertical = value.includes('LB più alto') ? -pixels : pixels;
+                        }
+                    }
+
+                    // RC vs LC - Distanza Asse
+                    if (label.includes('LC vs RC') && label.includes('Distanza Asse')) {
+                        const lcMatch = value.match(/LC:\s*([\d.]+)px/);
+                        const rcMatch = value.match(/RC:\s*([\d.]+)px/);
+                        if (lcMatch && rcMatch) {
+                            const lcDist = parseFloat(lcMatch[1]);
+                            const rcDist = parseFloat(rcMatch[1]);
+                            movements['RC'].horizontal = lcDist - rcDist;
+                        }
+                    }
+
+                    // RC vs LC - Altezza
+                    if (label.includes('LC vs RC') && label.includes('Altezza')) {
+                        const diff = value.match(/\(([\d.]+)px\)/);
+                        if (diff) {
+                            const pixels = parseFloat(diff[1]);
+                            movements['RC'].vertical = value.includes('LC più alto') ? -pixels : pixels;
+                        }
+                    }
+                });
+
+                console.log('📏 [MOVIMENTI DX] Movimenti calcolati:', movements);
+
+                // Genera le istruzioni vocali nell'ordine richiesto: RA, RA0, RC1, RB, RC
+                const pointsOrder = ['RA', 'RA0', 'RC1', 'RB', 'RC'];
+                let instructions = '';
+                let instructionCount = 0;
+
+                pointsOrder.forEach((point, index) => {
+                    const move = movements[point];
+                    const parts = [];
+
+                    // Formatta il nome del punto per pronuncia corretta
+                    const pointSpeech = formatPointNameForSpeech(point);
+
+                    // Movimento verticale
+                    if (Math.abs(move.vertical) > 0.5) {
+                        const intensity = getIntensity(Math.abs(move.vertical));
+                        const direction = move.vertical < 0 ? 'più in alto' : 'più in basso';
+                        parts.push(`${intensity}${direction}`);
+                    }
+
+                    // Movimento orizzontale
+                    if (Math.abs(move.horizontal) > 0.5) {
+                        const intensity = getIntensity(Math.abs(move.horizontal));
+                        const direction = move.horizontal > 0 ? 'più esternamente' : 'più internamente';
+                        parts.push(`${intensity}${direction}`);
+                    }
+
+                    // Determina il connettore in base alla posizione nell'istruzione
+                    const connector = instructionCount === 0 ? 'Sposta' : 'sposta';
+
+                    if (parts.length > 0) {
+                        instructions += `${connector} ${pointSpeech} ${parts.join(' e ')}. `;
+                        instructionCount++;
+                    } else {
+                        // Anche se non ci sono movimenti, menziona il punto
+                        instructions += `${connector} ${pointSpeech} è già posizionato correttamente. `;
+                        instructionCount++;
+                    }
+                });
+
+                return instructions.trim() || null;
+            };
+
+            // Funzione helper per determinare l'intensità dello spostamento
+            function getIntensity(pixels) {
+                if (pixels < 2) return '';
+                if (pixels < 5) return 'leggermente ';
+                if (pixels < 10) return '';
+                if (pixels < 20) return 'molto ';
+                return 'molto ';
+            }
+
+            // Funzione helper per formattare i nomi dei punti per pronuncia corretta
+            function formatPointNameForSpeech(pointName) {
+                // Mappa caratteri a pronuncia italiana rallentata
+                const letterMap = {
+                    'L': 'Elle',      // Pronuncia normale senza accenti
+                    'R': 'Erre',
+                    'A': 'A',
+                    'B': 'Bi',
+                    'C': 'Ci',
+                    '0': 'Zero',
+                    '1': 'Uno'
+                };
+
+                // Separa ogni carattere del punto con pause per rallentare
+                const letters = pointName.split('').map(char => letterMap[char] || char);
+
+                // Aggiunge piccola pausa prima e dopo, e virgole tra le lettere per rallentare
+                return '. ' + letters.join(', ') + ' .';
+            }
+
+            // === GESTIONE CAMERA IPHONE VIA BROWSER ===
+            
+            // ✅ Variabile globale per tracciare stato iPhone reale
+            window.isIPhoneStreamActive = false;
+
+            // Aggiorna il QR code (forza refresh)
+            window.refreshQRCode = function() {
+                const qrImg = document.getElementById('qr-code-img');
+                if (qrImg) {
+                    // Aggiungi timestamp per forzare refresh
+                    qrImg.src = '/api/qrcode.png?t=' + Date.now();
+                }
+            };
+
+            // Aggiorna stato connessione iPhone nell'UI
+            function updateIPhoneStatus(connected, deviceId) {
+                const container = document.getElementById('iphone-status-container');
+                const icon = document.getElementById('iphone-status-icon');
+                const text = document.getElementById('iphone-status-text');
+                const deviceInfo = document.getElementById('iphone-device-info');
+                const deviceIdSpan = document.getElementById('iphone-device-id');
+
+                if (connected) {
+                    container.style.background = '#d4edda';
+                    container.style.borderLeftColor = '#28a745';
+                    icon.textContent = 'Connesso';
+                    text.textContent = 'iPhone connesso e streaming attivo';
+                    text.style.color = '#155724';
+                    deviceInfo.style.display = 'block';
+                    deviceIdSpan.textContent = deviceId || '--';
+
+                    showToast('iPhone connesso!', 'success');
+
+                    // ✅ Apri automaticamente la sezione webcam per mostrare i frame iPhone
+                    if (typeof openWebcamSection === 'function') {
+                        openWebcamSection();
+                    }
+
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('iPhone connesso. Lo streaming e attivo.');
+                    }
+                } else {
+                    container.style.background = '#fff3cd';
+                    container.style.borderLeftColor = '#ffc107';
+                    icon.textContent = 'In attesa';
+                    text.textContent = 'Nessun iPhone connesso';
+                    text.style.color = '#856404';
+                    deviceInfo.style.display = 'none';
+                }
+            }
+
+            // Registra questo client come desktop per ricevere notifiche iPhone
+            function registerDesktopForIPhoneNotifications() {
+                // Usa il WebSocket esistente se disponibile
+                if (typeof webcamWebSocket !== 'undefined' && webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+                    webcamWebSocket.send(JSON.stringify({
+                        action: 'register_desktop'
+                    }));
+                    console.log('Desktop registrato per notifiche iPhone');
+                }
+            }
+
+            // Handler per messaggi iPhone dal WebSocket
+            function handleIPhoneWebSocketMessage(data) {
+                console.log('📱 Messaggio iPhone ricevuto:', data.action);
+                
+                if (data.action === 'iphone_connected') {
+                    console.log('✅ iPhone connesso:', data.deviceIdShort);
+                    window.isIPhoneStreamActive = true;
+                    updateIPhoneStatus(true, data.deviceIdShort);
+                } else if (data.action === 'iphone_disconnected') {
+                    console.log('❌ iPhone disconnesso:', data.deviceId);
+                    window.isIPhoneStreamActive = false;
+                    updateIPhoneStatus(false);
+                } else if (data.action === 'iphone_frame_processed') {
+                    // ✅ Frame iPhone ricevuto - marca stream come attivo
+                    window.isIPhoneStreamActive = true;
+                    
+                    // 🔍 DEBUG: Vediamo cosa contiene il messaggio
+                    console.log('� Frame iPhone #' + data.score + ' (faces: ' + data.faces_detected + ')');
+                    
+                    // ⚠️ NON visualizzare ogni frame sul canvas (causerebbe chiamate API inutili)
+                    // Il WebSocket accumula automaticamente i migliori frame lato server
+                    // Quando l'utente preme "Ottieni Risultati", verrà mostrato il frame migliore
+                    
+                    // Opzionale: mostra anteprima in un elemento separato (non sul canvas principale)
+                    // TODO: aggiungere elemento <video> o <img> per preview iPhone
+                } else if (data.action === 'desktop_registered') {
+                    console.log('Desktop registrato, iPhone connessi:', data.connected_iphones.length);
+                    if (data.connected_iphones.length > 0) {
+                        updateIPhoneStatus(true, data.connected_iphones[0].deviceIdShort);
+                        window.isIPhoneStreamActive = true;
+                    }
+                } else if (data.action === 'best_frames_result' || data.action === 'results') {
+                    // ✅ Risultati best frames ricevuti
+                    console.log('📊 Best frames ricevuti:', data.best_frames?.length || 0);
+                    
+                    if (data.best_frames && data.best_frames.length > 0) {
+                        // Prendi il frame con score più alto
+                        const bestFrame = data.best_frames[0];
+                        console.log('🏆 Miglior frame - Score:', bestFrame.score);
+                        
+                        // Carica sul canvas principale
+                        const img = new Image();
+                        img.onload = () => {
+                            if (typeof displayImageOnCanvas === 'function') {
+                                displayImageOnCanvas(img);
+                            }
+                            
+                            // Aggiorna landmarks se disponibili
+                            if (bestFrame.landmarks) {
+                                window.currentLandmarks = bestFrame.landmarks;
+                                if (typeof updateCanvasDisplay === 'function') {
+                                    updateCanvasDisplay();
+                                }
+                            }
+                            
+                            updateStatus(`✅ Miglior frame iPhone caricato (Score: ${bestFrame.score})`);
+                            showToast(`Frame migliore: score ${bestFrame.score}`, 'success');
+                        };
+                        img.src = 'data:image/jpeg;base64,' + bestFrame.image_data;
+                    } else {
+                        showToast('Nessun frame iPhone disponibile', 'warning');
+                    }
+                } else if (data.action === 'iphone_status') {
+                    if (data.connected_count > 0 && data.devices.length > 0) {
+                        updateIPhoneStatus(true, data.devices[0].deviceIdShort);
+                    } else {
+                        updateIPhoneStatus(false);
+                    }
+                }
+            }
+
+            // Estendi il handler WebSocket esistente per gestire messaggi iPhone
+            const originalWebSocketMessageHandler = window.handleWebSocketMessage;
+            window.handleWebSocketMessage = function(data) {
+                // Gestisci messaggi iPhone
+                if (data.action && data.action.startsWith('iphone_') || data.action === 'desktop_registered') {
+                    handleIPhoneWebSocketMessage(data);
+                    return;
+                }
+                // Passa al handler originale se esiste
+                if (typeof originalWebSocketMessageHandler === 'function') {
+                    originalWebSocketMessageHandler(data);
+                }
+            };
+
+            // Inizializza sistema iPhone al caricamento pagina
+            document.addEventListener('DOMContentLoaded', function () {
+                // ✅ Reset stato iPhone all'avvio (assume nessun iPhone connesso)
+                updateIPhoneStatus(false);
+                
+                // ✅ CREA SUBITO IL WEBSOCKET per ricevere notifiche iPhone
+                // (anche se la webcam non è attiva)
+                setTimeout(async function() {
+                    if (typeof connectWebcamWebSocket !== 'undefined') {
+                        try {
+                            await connectWebcamWebSocket();
+                            console.log('✅ WebSocket desktop connesso per notifiche iPhone');
+                            
+                            // Ora registra il desktop
+                            registerDesktopForIPhoneNotifications();
+                            
+                            // Richiedi stato iPhone attuale
+                            if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+                                webcamWebSocket.send(JSON.stringify({
+                                    action: 'get_iphone_status'
+                                }));
+                            }
+                        } catch (err) {
+                            console.error('❌ Errore connessione WebSocket desktop:', err);
+                        }
+                    }
+                }, 1000);
+            });
+
+            // Funzione per analizzare la progettazione sopraccigliare
+            window.analyze_eyebrow_design = async function () {
+                console.log('🔍 [ANALISI PROGETTAZIONE] Inizio analisi progettazione sopraccigliare');
+
+                // Flag per disabilitare feedback vocali automatici durante questa operazione
+                window.suppressVoiceFeedback = true;
+
+                // Step 0: Verifica se ci sono già dati disponibili nella tabella
+                const measurementsTable = document.getElementById('measurements-data');
+                let existingGreenDotsRows = measurementsTable ? measurementsTable.querySelectorAll('tr[data-type="green-dots"]') : [];
+
+                console.log('📊 [ANALISI PROGETTAZIONE] Righe green dots esistenti:', existingGreenDotsRows.length);
+
+                // Step 1: Se non ci sono dati o il pulsante non è attivo, esegui analisi green dots
+                const greenDotsBtn = document.getElementById('green-dots-btn');
+                const needsAnalysis = existingGreenDotsRows.length === 0 ||
+                    !greenDotsBtn ||
+                    !greenDotsBtn.classList.contains('active');
+
+                if (needsAnalysis) {
+                    console.log('🟢 [ANALISI PROGETTAZIONE] Esecuzione analisi green dots necessaria...');
+
+                    // Attiva il pulsante se non lo è già
+                    if (greenDotsBtn && !greenDotsBtn.classList.contains('active')) {
+                        greenDotsBtn.classList.add('active');
+                        console.log('✅ [ANALISI PROGETTAZIONE] Pulsante green dots attivato');
+                    }
+
+                    // Chiama direttamente detectGreenDots() invece di toggleGreenDots()
+                    if (typeof detectGreenDots === 'function') {
+                        console.log('🔄 [ANALISI PROGETTAZIONE] Chiamata detectGreenDots()...');
+                        await detectGreenDots();
+                    } else {
+                        console.error('❌ [ANALISI PROGETTAZIONE] detectGreenDots non disponibile');
+                        window.suppressVoiceFeedback = false;
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('Errore: funzione green dots non disponibile');
+                        }
+                        return;
+                    }
+
+                    // Step 2: Aspetta che i risultati siano disponibili (max 5 secondi)
+                    console.log('⏳ [ANALISI PROGETTAZIONE] Attesa risultati green dots...');
+                    let attempts = 0;
+                    const maxAttempts = 50; // 5 secondi con check ogni 100ms
+
+                    const waitForResults = () => {
+                        return new Promise((resolve) => {
+                            const checkResults = () => {
+                                const table = document.getElementById('measurements-data');
+                                const rows = table ? table.querySelectorAll('tr[data-type="green-dots"]') : [];
+
+                                console.log(`🔄 [ANALISI PROGETTAZIONE] Check ${attempts + 1}/${maxAttempts}: trovate ${rows.length} righe green dots`);
+
+                                if (rows.length > 0 || attempts >= maxAttempts) {
+                                    resolve(rows.length > 0);
+                                } else {
+                                    attempts++;
+                                    setTimeout(checkResults, 100);
+                                }
+                            };
+                            checkResults();
+                        });
+                    };
+
+                    const resultsAvailable = await waitForResults();
+
+                    // Riabilita feedback vocali
+                    window.suppressVoiceFeedback = false;
+
+                    if (!resultsAvailable) {
+                        console.error('❌ [ANALISI PROGETTAZIONE] Timeout: risultati green dots non disponibili');
+                        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                            voiceAssistant.speak('Non sono riuscita a ottenere i risultati dell\'analisi');
+                        }
+                        return;
+                    }
+                } else {
+                    console.log('✅ [ANALISI PROGETTAZIONE] Dati già disponibili, uso quelli esistenti');
+                    // Riabilita feedback vocali subito
+                    window.suppressVoiceFeedback = false;
+                }
+
+                // Step 3: Analizza i dati dalla tabella
+                console.log('📊 [ANALISI PROGETTAZIONE] Analisi dati dalla tabella...');
+                const feedback = analyzeEyebrowDesignFromTable();
+
+                if (feedback) {
+                    console.log('✅ [ANALISI PROGETTAZIONE] Feedback generato:', feedback);
+                    // Step 4: L'assistente pronuncia il feedback usando speak() per testo personalizzato
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        console.log('🔊 [ANALISI PROGETTAZIONE] Invio feedback a voice assistant');
+                        voiceAssistant.speak(feedback);
+                    } else {
+                        console.error('❌ [ANALISI PROGETTAZIONE] voiceAssistant.speak non disponibile');
+                    }
+                } else {
+                    console.error('❌ [ANALISI PROGETTAZIONE] Impossibile generare feedback');
+                    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+                        voiceAssistant.speak('Non ho trovato abbastanza dati per l\'analisi');
+                    }
+                }
+            };
+
+            // Funzione per analizzare i dati dalla tabella misurazioni
+            window.analyzeEyebrowDesignFromTable = function () {
+                console.log('📊 Analisi dati tabella misurazioni');
+
+                const measurementsTable = document.getElementById('measurements-data');
+                if (!measurementsTable) {
+                    console.error('❌ Tabella misurazioni non trovata');
+                    return null;
+                }
+
+                const rows = measurementsTable.querySelectorAll('tr[data-type="green-dots"]');
+                if (rows.length === 0) {
+                    console.error('❌ Nessun dato green dots trovato');
+                    return null;
+                }
+
+                console.log(`📋 Trovate ${rows.length} righe di dati green dots`);
+
+                // Estrai i dati rilevanti
+                let externalEyebrow = null; // Quale sopracciglio inizia più esternamente (punto A più lontano dall'asse)
+                let higherEyebrow = null; // Quale sopracciglio è più alto (punto C1)
+                let longerTail = null; // Quale ha la coda più lunga (punto B)
+                let thickerEyebrow = null; // Quale è più spesso (area)
+
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length < 2) return;
+
+                    const label = cells[0].textContent.trim();
+                    const value = cells[1].textContent.trim();
+
+                    console.log(`   📝 ${label}: ${value}`);
+
+                    // Analisi punto A (distanza dall'asse) - Il punto PIÙ LONTANO inizia più esternamente
+                    if (label.includes('LA vs RA') && label.includes('Distanza Asse')) {
+                        // Cerca "LA più esterno" o "RA più esterno" nel nuovo formato
+                        if (value.includes('LA più esterno')) {
+                            externalEyebrow = 'sinistro'; // LA più lontano = sopracciglio sinistro inizia più esternamente
+                        } else if (value.includes('RA più esterno')) {
+                            externalEyebrow = 'destro'; // RA più lontano = sopracciglio destro inizia più esternamente
+                        }
+                    }
+
+                    // Analisi punto C1 (altezza)
+                    if (label.includes('LC1 vs RC1') && label.includes('Altezza')) {
+                        if (value.includes('LC1')) {
+                            higherEyebrow = 'sinistro';
+                        } else if (value.includes('RC1')) {
+                            higherEyebrow = 'destro';
+                        }
+                    }
+
+                    // Analisi punto B (coda più lunga) - Il punto PIÙ LONTANO dall'asse ha la coda più lunga
+                    if (label.includes('LB vs RB') && label.includes('Distanza Asse')) {
+                        // Cerca "LB più esterno" o "RB più esterno" nel nuovo formato
+                        if (value.includes('LB più esterno')) {
+                            longerTail = 'sinistro'; // LB più lontano = coda sinistra più lunga
+                        } else if (value.includes('RB più esterno')) {
+                            longerTail = 'destro'; // RB più lontano = coda destra più lunga
+                        }
+                    }
+
+                    // Analisi area (spessore)
+                    if ((label.includes('Poligono Sinistro') || label.includes('Poligono Destro')) && value.includes('MAGGIORE')) {
+                        if (label.includes('Sinistro')) {
+                            thickerEyebrow = 'sinistro';
+                        } else if (label.includes('Destro')) {
+                            thickerEyebrow = 'destro';
+                        }
+                    }
+                });
+
+                console.log('🔍 Risultati analisi:', {
+                    externalEyebrow,
+                    higherEyebrow,
+                    longerTail,
+                    thickerEyebrow
+                });
+
+                // Genera il feedback testuale
+                if (!externalEyebrow || !higherEyebrow || !longerTail || !thickerEyebrow) {
+                    console.warn('⚠️ Alcuni dati mancanti per generare feedback completo');
+                }
+
+                // Costruisci la frase seguendo esattamente il formato richiesto
+                let feedback = '';
+
+                // 1. Quale sopracciglio inizia più esternamente (punto A più lontano dall'asse)
+                if (externalEyebrow === 'destro') {
+                    feedback += 'Il sopracciglio alla tua destra inizia più esternamente. ';
+                } else if (externalEyebrow === 'sinistro') {
+                    feedback += 'Il sopracciglio alla tua sinistra inizia più esternamente. ';
+                }
+
+                // 2. Quale sopracciglio è più alto (C1)
+                if (higherEyebrow === 'sinistro') {
+                    feedback += 'Il sopracciglio alla tua sinistra è più alto rispetto l\'altro. ';
+                } else if (higherEyebrow === 'destro') {
+                    feedback += 'Il sopracciglio alla tua destra è più alto rispetto l\'altro. ';
+                }
+
+                // 3. Quale ha la coda più lunga (B)
+                if (longerTail === 'sinistro') {
+                    feedback += 'La coda del sopracciglio alla tua sinistra è più lunga. ';
+                } else if (longerTail === 'destro') {
+                    feedback += 'La coda del sopracciglio alla tua destra è più lunga. ';
+                }
+
+                // 4. Quale è più spesso (area)
+                if (thickerEyebrow === 'sinistro') {
+                    feedback += 'Ed infine il sopracciglio sinistro è più spesso.';
+                } else if (thickerEyebrow === 'destro') {
+                    feedback += 'Ed infine il sopracciglio destro è più spesso.';
+                }
+
+                return feedback || null;
+            };
+
+            // ANALISI - Volto
+            const originalAnalyzeFace = window.analyzeFace;
+            window.analyzeFace = async function () {
+                voiceAssistant.speakMessage('analysis_start');
+
+                if (originalAnalyzeFace) {
+                    try {
+                        await originalAnalyzeFace();
+                        voiceAssistant.speakMessage('analysis_complete');
+                    } catch (error) {
+                        voiceAssistant.speakMessage('analysis_failed');
+                    }
+                }
+            };
+
+            // CANVAS - Pulisci
+            const originalClearCanvas = window.clearCanvas;
+            window.clearCanvas = function () {
+                if (originalClearCanvas) originalClearCanvas();
+                voiceAssistant.speak('Canvas pulito');
+            };
+
+            // MISURAZIONI - Feedback vocale gestito direttamente in measurements.js
+            console.log('✅ Voice Assistant integrato con successo');
+        }
+    </script>
+
+    <!-- Voice Widget Control Functions (Global) -->
+    <script>
+        // Variabili globali per il widget
+        let isVoiceWidgetMinimized = false;
+        let isVoiceListening = false;
+        let isVoiceMuted = false;
+
+        function toggleVoiceWidget() {
+            isVoiceWidgetMinimized = !isVoiceWidgetMinimized;
+            const widget = document.getElementById('voice-assistant-widget');
+            const btn = document.querySelector('.voice-minimize-btn');
+
+            if (widget && btn) {
+                if (isVoiceWidgetMinimized) {
+                    widget.classList.add('minimized');
+                    btn.textContent = '+';
+                } else {
+                    widget.classList.remove('minimized');
+                    btn.textContent = '−';
+                }
+            }
+        }
+
+        function toggleVoiceListening() {
+            if (typeof voiceAssistant === 'undefined') {
+                console.error('voiceAssistant non disponibile');
+                return;
+            }
+
+            // Supporta sia il widget originale che la sidebar
+            const btn = document.getElementById('toggle-listening-btn-sidebar') || document.getElementById('toggle-listening-btn');
+            const indicator = document.getElementById('status-indicator-sidebar') || document.getElementById('status-indicator');
+            const statusText = document.getElementById('status-text-sidebar') || document.getElementById('status-text');
+            const icon = document.getElementById('listening-icon-sidebar');
+            const text = document.getElementById('listening-text-sidebar');
+
+            isVoiceListening = voiceAssistant.toggleListening();
+
+            if (btn) {
+                if (isVoiceListening) {
+                    btn.classList.add('active');
+                    if (icon) icon.textContent = '🔴';
+                    if (text) text.textContent = 'Stop Ascolto';
+                    if (btn.querySelector('.btn-text')) btn.querySelector('.btn-text').textContent = 'Stop Ascolto';
+                    if (btn.querySelector('.btn-icon')) btn.querySelector('.btn-icon').textContent = '🔴';
+                    if (indicator) {
+                        indicator.textContent = '🔴';
+                        indicator.classList.add('listening');
+                    }
+                    if (statusText) statusText.textContent = 'In ascolto...';
+                } else {
+                    btn.classList.remove('active');
+                    if (icon) icon.textContent = '🎤';
+                    if (text) text.textContent = 'Avvia Ascolto';
+                    if (btn.querySelector('.btn-text')) btn.querySelector('.btn-text').textContent = 'Avvia Ascolto';
+                    if (btn.querySelector('.btn-icon')) btn.querySelector('.btn-icon').textContent = '🎤';
+                    if (indicator) {
+                        indicator.textContent = '🟢';
+                        indicator.classList.remove('listening');
+                        indicator.classList.add('active');
+                    }
+                    if (statusText) statusText.textContent = 'Pronto';
+                }
+            }
+        }
+
+        function toggleVoiceMute() {
+            if (typeof voiceAssistant === 'undefined') {
+                console.error('voiceAssistant non disponibile');
+                return;
+            }
+
+            // Supporta sia il widget originale che la sidebar
+            const btn = document.getElementById('toggle-mute-btn-sidebar') || document.getElementById('toggle-mute-btn');
+            const icon = document.getElementById('mute-icon-sidebar');
+            const text = document.getElementById('mute-text-sidebar');
+
+            isVoiceMuted = voiceAssistant.toggleMute();
+
+            if (btn) {
+                if (isVoiceMuted) {
+                    btn.classList.add('active');
+                    if (icon) icon.textContent = '🔇';
+                    if (text) text.textContent = 'Unmute';
+                    if (btn.querySelector('.btn-text')) btn.querySelector('.btn-text').textContent = 'Unmute';
+                    if (btn.querySelector('.btn-icon')) btn.querySelector('.btn-icon').textContent = '🔇';
+                } else {
+                    btn.classList.remove('active');
+                    if (icon) icon.textContent = '🔊';
+                    if (text) text.textContent = 'Muto';
+                    if (btn.querySelector('.btn-text')) btn.querySelector('.btn-text').textContent = 'Muto';
+                    if (btn.querySelector('.btn-icon')) btn.querySelector('.btn-icon').textContent = '🔊';
+                }
+            }
+        }
+
+        // Inizializza voice assistant nella sidebar
+        window.addEventListener('load', async () => {
+            // Aspetta che voiceAssistant sia disponibile
+            let attempts = 0;
+            const maxAttempts = 50;
+
+            const waitForVoiceAssistant = () => {
+                if (typeof voiceAssistant !== 'undefined') {
+                    initVoiceSidebar();
+                } else if (attempts < maxAttempts) {
+                    attempts++;
+                    setTimeout(waitForVoiceAssistant, 100);
+                } else {
+                    console.error('Voice Assistant non disponibile');
+                    const indicator = document.getElementById('status-indicator-sidebar');
+                    const statusText = document.getElementById('status-text-sidebar');
+                    if (indicator) indicator.textContent = '🔴';
+                    if (statusText) statusText.textContent = 'Non disponibile';
+                }
+            };
+
+            waitForVoiceAssistant();
+        });
+
+        async function initVoiceSidebar() {
+            const indicator = document.getElementById('status-indicator-sidebar');
+            const statusText = document.getElementById('status-text-sidebar');
+
+            try {
+                const status = await voiceAssistant.getStatus();
+
+                if (status && status.available) {
+                    indicator.textContent = '🟢';
+                    indicator.classList.add('active');
+                    statusText.textContent = 'Connesso';
+                } else {
+                    indicator.textContent = '🟢';
+                    indicator.classList.add('active');
+                    statusText.textContent = 'Pronto';
+                }
+            } catch (error) {
+                console.log('Voice status check fallito, ma TTS potrebbe funzionare');
+                indicator.textContent = '🟢';
+                indicator.classList.add('active');
+                statusText.textContent = 'Pronto';
+            }
+        }
+    </script>
+
+</body>
+
+</html>

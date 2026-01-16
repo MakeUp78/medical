@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Kimerika Camera">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="apple-touch-icon" href="/static/img/icon-192.png">
+    <link rel="icon" type="image/png" href="/static/img/icon-192.png">
+    <title>Kimerika Camera</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000;
+            color: white;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        #video-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #111;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #status {
+            position: fixed;
+            top: env(safe-area-inset-top, 20px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 13px;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            max-width: calc(100% - 40px);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .status-connected {
+            background: #00ff00;
+            box-shadow: 0 0 8px #00ff00;
+        }
+
+        .status-disconnected {
+            background: #ff3b30;
+        }
+
+        .status-streaming {
+            background: #ffcc00;
+            animation: pulse 1s infinite;
+        }
+
+        .status-connecting {
+            background: #007AFF;
+            animation: pulse 0.5s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        #controls {
+            position: fixed;
+            bottom: calc(env(safe-area-inset-bottom, 20px) + 20px);
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            z-index: 100;
+        }
+
+        .control-btn {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 14px 24px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-btn:active {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(0.95);
+        }
+
+        .control-btn.active {
+            background: rgba(0, 122, 255, 0.8);
+            border-color: rgba(0, 122, 255, 0.8);
+        }
+
+        #fps-counter {
+            position: fixed;
+            top: calc(env(safe-area-inset-top, 20px) + 50px);
+            right: 20px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 5px 10px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-family: monospace;
+            z-index: 100;
+        }
+
+        #install-banner {
+            position: fixed;
+            bottom: calc(env(safe-area-inset-bottom, 20px) + 100px);
+            left: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.98);
+            color: #000;
+            padding: 20px;
+            border-radius: 16px;
+            z-index: 200;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            display: none;
+        }
+
+        #install-banner h3 {
+            margin-bottom: 12px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #install-banner p {
+            font-size: 14px;
+            color: #333;
+            line-height: 1.5;
+        }
+
+        #install-banner ol {
+            margin: 12px 0;
+            padding-left: 24px;
+            font-size: 14px;
+            color: #333;
+        }
+
+        #install-banner ol li {
+            margin: 8px 0;
+        }
+
+        #install-banner .dismiss-btn {
+            background: #007AFF;
+            color: white;
+            border: none;
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+
+        #error-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.95);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            z-index: 300;
+            text-align: center;
+        }
+
+        #error-overlay h2 {
+            font-size: 24px;
+            margin-bottom: 15px;
+        }
+
+        #error-overlay p {
+            font-size: 15px;
+            color: #aaa;
+            margin-bottom: 25px;
+            line-height: 1.6;
+        }
+
+        #error-overlay button {
+            background: #007AFF;
+            color: white;
+            border: none;
+            padding: 14px 40px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        #device-info {
+            position: fixed;
+            bottom: calc(env(safe-area-inset-bottom, 20px) + 80px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.6);
+            padding: 6px 14px;
+            border-radius: 10px;
+            font-size: 11px;
+            z-index: 100;
+            font-family: monospace;
+        }
+
+        canvas {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="status">
+        <span class="status-dot status-connecting"></span>
+        <span id="status-text">Inizializzazione...</span>
+    </div>
+
+    <div id="fps-counter">-- FPS | -- KB/s</div>
+
+    <div id="device-info"></div>
+
+    <div id="install-banner">
+        <h3>Accesso Rapido</h3>
+        <p>Per usare questa camera senza scansionare il QR ogni volta:</p>
+        <ol>
+            <li>Tocca l'icona <strong>Condividi</strong> in basso</li>
+            <li>Scorri e tocca <strong>"Aggiungi a Home"</strong></li>
+            <li>Conferma con <strong>"Aggiungi"</strong></li>
+        </ol>
+        <p style="margin-top: 12px; font-size: 13px; color: #666;">
+            La prossima volta apri direttamente l'icona dalla home screen.
+        </p>
+        <button class="dismiss-btn" onclick="dismissInstallBanner()">Ho capito</button>
+    </div>
+
+    <div id="error-overlay">
+        <h2>Errore Camera</h2>
+        <p id="error-message">Impossibile accedere alla fotocamera.</p>
+        <button onclick="retryCamera()">Riprova</button>
+    </div>
+
+    <div id="video-container">
+        <video id="video" autoplay playsinline muted></video>
+    </div>
+
+    <div id="controls">
+        <button class="control-btn" id="toggle-camera" onclick="toggleCamera()">
+            <span>Cambia Camera</span>
+        </button>
+        <button class="control-btn active" id="toggle-stream" onclick="toggleStream()">
+            <span id="stream-btn-text">Streaming</span>
+        </button>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        // === CONFIGURAZIONE ===
+        const CONFIG_KEY = 'kimerika_camera_config';
+        const WS_PORT = 8765;
+
+        // === ELEMENTI DOM ===
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('status-text');
+        const statusDot = document.querySelector('.status-dot');
+        const fpsCounter = document.getElementById('fps-counter');
+        const deviceInfo = document.getElementById('device-info');
+        const errorOverlay = document.getElementById('error-overlay');
+        const errorMessage = document.getElementById('error-message');
+        const streamBtn = document.getElementById('toggle-stream');
+        const streamBtnText = document.getElementById('stream-btn-text');
+
+        // === STATO ===
+        let config = {};
+        let socket = null;
+        let stream = null;
+        let streamingInterval = null;
+        let currentFacingMode = 'user';
+        let isStreaming = false;
+        let reconnectAttempts = 0;
+        let maxReconnectAttempts = 10;
+        let framesSent = 0;
+        let lastFpsUpdate = Date.now();
+        let bytesSent = 0;
+
+        // === CONFIGURAZIONE ===
+        function loadConfig() {
+            const saved = localStorage.getItem(CONFIG_KEY);
+            if (saved) {
+                config = JSON.parse(saved);
+                console.log('Configurazione caricata:', config.deviceId.substring(0, 8) + '...');
+            } else {
+                config = {
+                    deviceId: generateDeviceId(),
+                    serverUrl: window.location.origin,
+                    wsUrl: null,
+                    savedAt: new Date().toISOString(),
+                    cameraPreference: 'user',
+                    quality: 0.75,
+                    fps: 15,
+                    installPromptShown: false
+                };
+                saveConfig();
+                console.log('Nuova configurazione creata');
+
+                // Mostra banner installazione alla prima connessione
+                setTimeout(showInstallBanner, 3000);
+            }
+
+            // Imposta URL WebSocket
+            const host = window.location.hostname;
+            // ✅ Usa il proxy NGINX /ws invece della porta diretta
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            config.wsUrl = `${wsProtocol}//${host}/ws`;
+
+            console.log('📡 WebSocket URL:', config.wsUrl);
+
+            // Mostra info device
+            deviceInfo.textContent = `Device: ${config.deviceId.substring(0, 8)}...`;
+
+            return config;
+        }
+
+        function saveConfig() {
+            localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+        }
+
+        function generateDeviceId() {
+            // Genera UUID v4
+            if (crypto.randomUUID) {
+                return crypto.randomUUID();
+            }
+            // Fallback per browser meno recenti
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // === BANNER INSTALLAZIONE ===
+        function showInstallBanner() {
+            if (config.installPromptShown) return;
+
+            // Mostra solo su iOS Safari
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            const isStandalone = window.navigator.standalone === true;
+
+            if (isIOS && !isStandalone) {
+                document.getElementById('install-banner').style.display = 'block';
+            }
+        }
+
+        function dismissInstallBanner() {
+            document.getElementById('install-banner').style.display = 'none';
+            config.installPromptShown = true;
+            saveConfig();
+        }
+
+        // === WEBSOCKET ===
+        function connectWebSocket() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                return;
+            }
+
+            updateStatus('Connessione...', 'connecting');
+
+            try {
+                socket = new WebSocket(config.wsUrl);
+
+                socket.onopen = function () {
+                    console.log('WebSocket connesso');
+                    reconnectAttempts = 0;
+
+                    // Invia handshake con deviceId
+                    socket.send(JSON.stringify({
+                        action: 'iphone_connect',
+                        deviceId: config.deviceId,
+                        userAgent: navigator.userAgent,
+                        timestamp: Date.now()
+                    }));
+
+                    updateStatus('Connesso', 'connected');
+
+                    // Avvia streaming se non gia' attivo
+                    if (!isStreaming && stream) {
+                        startStreaming();
+                    }
+                };
+
+                socket.onclose = function (event) {
+                    console.log('WebSocket chiuso:', event.code, event.reason);
+                    updateStatus('Disconnesso', 'disconnected');
+
+                    // Riconnessione automatica
+                    if (reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 10000);
+                        console.log(`Riconnessione in ${delay}ms (tentativo ${reconnectAttempts}/${maxReconnectAttempts})`);
+                        setTimeout(connectWebSocket, delay);
+                    } else {
+                        updateStatus('Connessione persa', 'disconnected');
+                    }
+                };
+
+                socket.onerror = function (error) {
+                    console.error('WebSocket errore:', error);
+                };
+
+                socket.onmessage = function (event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        handleServerMessage(data);
+                    } catch (e) {
+                        console.warn('Messaggio non JSON:', event.data);
+                    }
+                };
+
+            } catch (error) {
+                console.error('Errore creazione WebSocket:', error);
+                updateStatus('Errore connessione', 'disconnected');
+            }
+        }
+
+        function handleServerMessage(data) {
+            if (data.action === 'connected') {
+                console.log('Device registrato sul server:', data.deviceId);
+            } else if (data.action === 'frame_processed') {
+                // Feedback dal server sull'elaborazione frame
+                if (data.current_score) {
+                    console.log('Score:', data.current_score);
+                }
+            } else if (data.action === 'error') {
+                console.error('Errore server:', data.message);
+            }
+        }
+
+        // === CAMERA ===
+        async function startCamera(facingMode = 'user') {
+            try {
+                updateStatus('Avvio camera...', 'connecting');
+
+                // Ferma stream precedente
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+
+                const constraints = {
+                    video: {
+                        facingMode: facingMode,
+                        width: { ideal: 1280 },
+                        height: { ideal: 960 },
+                        frameRate: { ideal: 30, max: 30 }
+                    },
+                    audio: false
+                };
+
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+
+                // Aspetta che il video sia pronto
+                await new Promise(resolve => {
+                    video.onloadedmetadata = resolve;
+                });
+
+                await video.play();
+
+                currentFacingMode = facingMode;
+                config.cameraPreference = facingMode;
+                saveConfig();
+
+                // Nascondi errore se visibile
+                errorOverlay.style.display = 'none';
+
+                updateStatus('Camera attiva', 'streaming');
+
+                // Avvia streaming se connesso
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    startStreaming();
+                }
+
+            } catch (error) {
+                console.error('Errore camera:', error);
+                showError(getCameraErrorMessage(error));
+            }
+        }
+
+        function getCameraErrorMessage(error) {
+            if (error.name === 'NotAllowedError') {
+                return 'Permesso fotocamera negato.\n\nVai in Impostazioni > Safari > Camera e consenti l\'accesso.';
+            } else if (error.name === 'NotFoundError') {
+                return 'Nessuna fotocamera trovata sul dispositivo.';
+            } else if (error.name === 'NotReadableError') {
+                return 'La fotocamera e\' in uso da un\'altra applicazione.';
+            } else if (error.name === 'OverconstrainedError') {
+                return 'La fotocamera non supporta le impostazioni richieste.';
+            }
+            return 'Impossibile accedere alla fotocamera: ' + error.message;
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorOverlay.style.display = 'flex';
+            updateStatus('Errore', 'disconnected');
+        }
+
+        function retryCamera() {
+            errorOverlay.style.display = 'none';
+            startCamera(currentFacingMode);
+        }
+
+        function toggleCamera() {
+            const newMode = currentFacingMode === 'user' ? 'environment' : 'user';
+            startCamera(newMode);
+        }
+
+        // === STREAMING ===
+        function startStreaming() {
+            if (streamingInterval) {
+                clearInterval(streamingInterval);
+            }
+
+            isStreaming = true;
+            streamBtn.classList.add('active');
+            streamBtnText.textContent = 'Streaming';
+
+            const fps = config.fps || 15;
+            const quality = config.quality || 0.75;
+            const interval = 1000 / fps;
+
+            framesSent = 0;
+            bytesSent = 0;
+            lastFpsUpdate = Date.now();
+
+            streamingInterval = setInterval(() => {
+                if (!socket || socket.readyState !== WebSocket.OPEN || !isStreaming) {
+                    return;
+                }
+
+                if (!video.videoWidth || !video.videoHeight) {
+                    return;
+                }
+
+                // Ridimensiona per ottimizzare banda
+                const maxWidth = 640;
+                const scale = Math.min(1, maxWidth / video.videoWidth);
+                canvas.width = Math.round(video.videoWidth * scale);
+                canvas.height = Math.round(video.videoHeight * scale);
+
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                canvas.toBlob((blob) => {
+                    if (!blob) return;
+
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64data = reader.result.split(',')[1];
+
+                        const message = {
+                            action: 'iphone_frame',
+                            deviceId: config.deviceId,
+                            frame: base64data,
+                            timestamp: Date.now(),
+                            width: canvas.width,
+                            height: canvas.height
+                        };
+
+                        try {
+                            const jsonStr = JSON.stringify(message);
+                            socket.send(jsonStr);
+
+                            framesSent++;
+                            bytesSent += jsonStr.length;
+
+                            updateFpsCounter();
+                        } catch (e) {
+                            console.error('Errore invio frame:', e);
+                        }
+                    };
+                    reader.readAsDataURL(blob);
+                }, 'image/jpeg', quality);
+
+            }, interval);
+
+            updateStatus('Streaming attivo', 'streaming');
+        }
+
+        function stopStreaming() {
+            isStreaming = false;
+            streamBtn.classList.remove('active');
+            streamBtnText.textContent = 'Avvia';
+
+            if (streamingInterval) {
+                clearInterval(streamingInterval);
+                streamingInterval = null;
+            }
+
+            updateStatus('Stream in pausa', 'connected');
+        }
+
+        function toggleStream() {
+            if (isStreaming) {
+                stopStreaming();
+            } else {
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    startStreaming();
+                } else {
+                    connectWebSocket();
+                }
+            }
+        }
+
+        function updateFpsCounter() {
+            const now = Date.now();
+            const elapsed = (now - lastFpsUpdate) / 1000;
+
+            if (elapsed >= 1) {
+                const fps = Math.round(framesSent / elapsed);
+                const kbps = Math.round((bytesSent / 1024) / elapsed);
+
+                fpsCounter.textContent = `${fps} FPS | ${kbps} KB/s`;
+
+                framesSent = 0;
+                bytesSent = 0;
+                lastFpsUpdate = now;
+            }
+        }
+
+        // === UI ===
+        function updateStatus(text, type) {
+            statusEl.textContent = text;
+            statusDot.className = 'status-dot status-' + type;
+        }
+
+        // === LIFECYCLE ===
+        window.onload = async function () {
+            loadConfig();
+
+            // Connetti WebSocket prima
+            connectWebSocket();
+
+            // Poi avvia camera
+            await startCamera(config.cameraPreference || 'user');
+        };
+
+        window.onbeforeunload = function () {
+            stopStreaming();
+
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+
+            if (socket) {
+                // Invia messaggio di disconnessione
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({
+                        action: 'iphone_disconnect',
+                        deviceId: config.deviceId
+                    }));
+                }
+                socket.close();
+            }
+        };
+
+        // Gestisci visibilita' pagina (quando l'utente switcha app)
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) {
+                stopStreaming();
+            } else {
+                if (socket && socket.readyState === WebSocket.OPEN && stream) {
+                    startStreaming();
+                }
+            }
+        });
+
+        // Previeni zoom involontario su iOS
+        document.addEventListener('gesturestart', function (e) {
+            e.preventDefault();
+        });
+    </script>
+</body>
+
+</html>

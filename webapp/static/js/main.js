@@ -1653,45 +1653,71 @@ function startRealTimeFaceDetection(video) {
 
 async function startWebcam() {
   try {
+    // ✅ Controlla se c'è un iPhone attivamente in streaming
+    console.log('🔍 Controllo iPhone stream:', window.isIPhoneStreamActive);
+
+    if (window.isIPhoneStreamActive) {
+      console.log('📱 Avvio visualizzazione iPhone stream');
+      updateStatus('📱 iPhone Camera attiva - Anteprima in corso...');
+      showToast('iPhone Camera avviata - Anteprima in corso', 'success');
+
+      // ✅ INVIA start_webcam al server per iniziare a ricevere frames
+      if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+        webcamWebSocket.send(JSON.stringify({
+          action: 'start_webcam'
+        }));
+        console.log('✅ Inviato start_webcam al server');
+      }
+
+      // Apri sezione ANTEPRIMA per mostrare frame iPhone
+      if (typeof openWebcamSection === 'function') {
+        openWebcamSection();
+      }
+
+      // ✅ MOSTRA canvas preview per iPhone
+      const previewCanvas = document.getElementById('webcam-preview-canvas');
+      const previewInfo = document.getElementById('webcam-preview-info');
+      if (previewCanvas) {
+        previewCanvas.classList.add('active');
+        previewCanvas.style.display = 'block';
+        console.log('✅ Canvas preview iPhone mostrato');
+      }
+
+      // Aggiorna info preview
+      if (previewInfo) {
+        previewInfo.innerHTML = '📱 iPhone Camera attiva - Anteprima in tempo reale';
+      }
+
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+        voiceAssistant.speak('iPhone camera avviata');
+      }
+
+      // Marca webcam come attiva per permettere rendering frame
+      isWebcamActive = true;
+      updateWebcamBadge(true);
+
+      return;
+    }
+
+    console.log('✅ Nessun iPhone attivo, avvio webcam PC');
+
     // ✅ RESET COMPLETO prima di avviare webcam
     resetForNewAnalysis('Avvio nuova sessione webcam');
 
     updateStatus('Avvio webcam...');
 
-    // Rileva dispositivi disponibili e dai priorità a IRIUN
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videoDevices = devices.filter(device => device.kind === 'videoinput');
-
-    // Cerca IRIUN Webcam
-    const iriunDevice = videoDevices.find(device =>
-      device.label.toLowerCase().includes('iriun')
-    );
-
     // Configura constraints video - LARGHEZZA TARGET 464px (altezza proporzionale)
-    // ✅ COMPRESSIONE A MONTE: riduci stream webcam SUBITO mantenendo aspect ratio
+    // Compressione a monte: riduci stream webcam mantenendo aspect ratio
     let videoConstraints = {
       width: { ideal: 464 },
       facingMode: 'user'
       // height: calcolata automaticamente per mantenere aspect ratio
     };
 
-    // Se IRIUN trovata, usala esplicitamente
-    if (iriunDevice) {
-      console.log('📱 IRIUN Webcam rilevata:', iriunDevice.label);
-      videoConstraints.deviceId = { exact: iriunDevice.deviceId };
-      delete videoConstraints.facingMode; // Rimuovi facingMode quando usi deviceId specifico
-      updateStatus('Avvio IRIUN Webcam...');
+    console.log('Uso webcam integrata del PC');
+    updateStatus('Avvio webcam integrata...');
 
-      // Feedback vocale
-      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
-        voiceAssistant.speak('Avvio webcam IRIUN dal tuo smartphone.');
-      }
-    } else {
-      console.log('💻 Uso webcam integrata del PC');
-      updateStatus('Avvio webcam integrata...');
-    }
-
-    // Avvia stream webcam con il dispositivo selezionato
+    // Avvia stream webcam
     webcamStream = await navigator.mediaDevices.getUserMedia({
       video: videoConstraints
     });
@@ -1745,24 +1771,16 @@ async function startWebcam() {
 
     isWebcamActive = true;
 
-    // Mostra quale webcam è in uso
-    const activeDevice = iriunDevice ? 'IRIUN Smartphone' : 'Webcam PC';
-    updateStatus(`Webcam attiva (${activeDevice}) - Sistema unificato`);
+    // Mostra stato webcam
+    updateStatus('Webcam attiva - Sistema unificato');
     updateWebcamBadge(true);
 
-    showToast(`Webcam avviata: ${activeDevice}`, 'success');
+    showToast('Webcam avviata', 'success');
 
   } catch (error) {
     console.error('Errore avvio webcam:', error);
     updateStatus('Errore: Impossibile accedere alla webcam');
     showToast('Errore accesso webcam: ' + error.message, 'error');
-
-    // Se IRIUN non funziona, suggerisci di verificare configurazione
-    if (error.message.includes('deviceId') || error.message.includes('constraint')) {
-      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
-        voiceAssistant.speak('Errore webcam IRIUN. Verifica che sia in esecuzione su PC e smartphone.');
-      }
-    }
   }
 }
 
@@ -1770,8 +1788,20 @@ function stopWebcam() {
   try {
     console.log('🛑 Stop webcam - pulizia completa');
 
+    // ✅ FERMA SUBITO processing impostando flag a false
+    isWebcamActive = false;
+    updateWebcamBadge(false);
+
     // ✅ Reset score
     currentBestScore = 0;
+
+    // ✅ INVIA stop_webcam al server per smettere di ricevere frames
+    if (window.isIPhoneStreamActive && webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+      webcamWebSocket.send(JSON.stringify({
+        action: 'stop_webcam'
+      }));
+      console.log('✅ Inviato stop_webcam al server - frames iPhone fermati');
+    }
 
     if (window.webcamProcessor) {
       window.webcamProcessor.stop();
@@ -1789,12 +1819,6 @@ function stopWebcam() {
       webcamStream = null;
     }
 
-    // ✅ Chiudi WebSocket
-    if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
-      webcamWebSocket.close();
-      console.log('🔌 WebSocket chiuso - webcam fermata');
-    }
-
     const video = document.getElementById('webcam-video');
     video.srcObject = null;
     video.style.display = 'none';
@@ -1802,12 +1826,20 @@ function stopWebcam() {
     hideWebcamPreview();
     document.getElementById('main-canvas').style.display = 'block';
 
-    disconnectWebcamWebSocket();
+    // ✅ Gestisci WebSocket in base a fonte (iPhone vs Webcam PC)
+    if (!window.isIPhoneStreamActive) {
+      // Webcam PC - chiudi completamente WebSocket
+      if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+        webcamWebSocket.close();
+        console.log('🔌 WebSocket chiuso - webcam PC fermata');
+      }
+      disconnectWebcamWebSocket();
+    } else {
+      // iPhone - mantieni WebSocket aperto per ricevere best frames
+      console.log('📱 WebSocket mantenuto aperto per iPhone');
+    }
 
-    isWebcamActive = false;
     updateStatus('Webcam fermata');
-    updateWebcamBadge(false);
-
     showToast('Webcam fermata', 'info');
 
   } catch (error) {
@@ -1830,6 +1862,12 @@ async function connectWebcamWebSocket() {
       webcamWebSocket.onopen = function () {
         console.log('🔌 WebSocket connesso alla porta 8765');
         updateStatus('WebSocket connesso - Avvio sessione...');
+
+        // ✅ REGISTRA SUBITO IL DESKTOP per ricevere notifiche iPhone
+        webcamWebSocket.send(JSON.stringify({
+          action: 'register_desktop'
+        }));
+        console.log('✅ Desktop registrato per notifiche iPhone');
 
         // Avvia sessione
         const startMessage = {
@@ -1870,9 +1908,12 @@ async function connectWebcamWebSocket() {
 
 function disconnectWebcamWebSocket() {
   if (webcamWebSocket) {
-    // Invia messaggio di stop con protocollo corretto
+    // Richiedi risultati finali con request_id per correlazione
+    const requestId = ++getResultsRequestId;
     const stopMessage = {
-      action: 'get_results'
+      action: 'get_results',
+      request_id: requestId,
+      final: true
     };
 
     try {
@@ -1887,6 +1928,8 @@ function disconnectWebcamWebSocket() {
         webcamWebSocket.close();
         webcamWebSocket = null;
       }
+      // Pulisci richieste pending alla disconnessione
+      pendingGetResultsRequests.clear();
     }, 1000);
   }
 }
@@ -2122,11 +2165,24 @@ let pendingGetResultsRequests = new Set(); // Track richieste in corso
 
 function handleWebSocketMessage(data) {
   try {
+    // ✅ DELEGA messaggi iPhone all'handler in index.html
+    if (data.action && (data.action.startsWith('iphone_') || data.action === 'desktop_registered')) {
+      // Chiama handler iPhone se disponibile
+      if (typeof handleIPhoneWebSocketMessage === 'function') {
+        handleIPhoneWebSocketMessage(data);
+      }
+      return; // Non processare oltre in main.js
+    }
+
     switch (data.action) {
       case 'session_started':
         updateStatus('Sessione avviata - Analisi in corso...');
         console.log('✅ Sessione WebSocket avviata:', data);
-        currentBestScore = 0; // Reset score all'inizio sessione
+        // Reset stato per nuova sessione
+        currentBestScore = 0;
+        pendingGetResultsRequests.clear();
+        lastGetResultsTime = 0;
+        window.lastFramesHash = null;
         break;
 
       case 'frame_processed':
@@ -2172,18 +2228,35 @@ function handleWebSocketMessage(data) {
   }
 }
 
+// ✅ THROTTLING: Limita richieste get_results
+const MAX_PENDING_REQUESTS = 2; // Max richieste in attesa
+let lastGetResultsTime = 0;
+const MIN_REQUEST_INTERVAL = 500; // Minimo 500ms tra richieste
+
 function requestBestFramesUpdate() {
   if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+    const now = Date.now();
+
+    // ✅ THROTTLE 1: Non inviare se ci sono già troppe richieste pending
+    if (pendingGetResultsRequests.size >= MAX_PENDING_REQUESTS) {
+      return; // Skip silenzioso
+    }
+
+    // ✅ THROTTLE 2: Non inviare se l'ultima richiesta è troppo recente
+    if (now - lastGetResultsTime < MIN_REQUEST_INTERVAL) {
+      return; // Skip silenzioso
+    }
+
+    lastGetResultsTime = now;
+
     // Incrementa contatore e traccia richiesta
     const requestId = ++getResultsRequestId;
     pendingGetResultsRequests.add(requestId);
 
-    console.log(`🔍 [REQUEST #${requestId}] get_results inviata - Pending: ${pendingGetResultsRequests.size}`);
-
     const requestMessage = {
       action: 'get_results',
       request_id: requestId,
-      timestamp: Date.now()
+      timestamp: now
     };
     webcamWebSocket.send(JSON.stringify(requestMessage));
   }
@@ -2502,11 +2575,28 @@ function updateDebugTable(bestFrames) {
           while (tableBody.children.length > newRowCount) {
             tableBody.removeChild(tableBody.lastChild);
           }
-
-          // Non serve ri-aggiungere listener, le righe rimanenti hanno già i loro listener
         } else {
-          // Stesso numero di righe - NESSUN aggiornamento necessario (i listener esistono già)
-          console.log('✅ [UNIFIED] Numero righe invariato - nessuna azione necessaria');
+          // ✅ FIX: Stesso numero di righe MA dati potrebbero essere cambiati
+          // Aggiorna il contenuto delle celle esistenti
+          const sourceRows = Array.from(debugTableBody.children);
+          const targetRows = Array.from(tableBody.children);
+
+          sourceRows.forEach((sourceRow, i) => {
+            if (targetRows[i]) {
+              // Copia innerHTML aggiornato dalla source
+              const sourceCells = sourceRow.querySelectorAll('td');
+              const targetCells = targetRows[i].querySelectorAll('td');
+
+              sourceCells.forEach((cell, j) => {
+                if (targetCells[j] && targetCells[j].innerHTML !== cell.innerHTML) {
+                  targetCells[j].innerHTML = cell.innerHTML;
+                  targetCells[j].className = cell.className;
+                }
+              });
+            }
+          });
+
+          console.log('🔄 [UNIFIED] Contenuto righe aggiornato');
         }
       }
     }
@@ -2600,6 +2690,24 @@ function updateDebugTableOnly(bestFrames) {
           while (tableBody.children.length > newRowCount) {
             tableBody.removeChild(tableBody.lastChild);
           }
+        } else {
+          // ✅ FIX: Aggiorna contenuto celle quando numero righe invariato
+          const sourceRows = Array.from(debugTableBody.children);
+          const targetRows = Array.from(tableBody.children);
+
+          sourceRows.forEach((sourceRow, i) => {
+            if (targetRows[i]) {
+              const sourceCells = sourceRow.querySelectorAll('td');
+              const targetCells = targetRows[i].querySelectorAll('td');
+
+              sourceCells.forEach((cell, j) => {
+                if (targetCells[j] && targetCells[j].innerHTML !== cell.innerHTML) {
+                  targetCells[j].innerHTML = cell.innerHTML;
+                  targetCells[j].className = cell.className;
+                }
+              });
+            }
+          });
         }
       }
     }
@@ -2616,6 +2724,43 @@ function getScoreClass(score) {
   if (score >= 0.8) return 'very-good';
   if (score >= 0.7) return 'good';
   return 'poor';
+}
+
+/**
+ * ✅ FONTE UNICA DI VERITÀ: Trasforma i dati WebSocket in formato bestFrames
+ * Usa json_data come fonte primaria per score, pose e timestamp
+ * data.frames fornisce solo le immagini base64
+ */
+function transformWebSocketFrames(data) {
+  if (!data.frames || data.frames.length === 0) {
+    return [];
+  }
+
+  if (data.json_data && data.json_data.frames && data.json_data.frames.length > 0) {
+    // ✅ CASO PRINCIPALE: Costruisci da json_data
+    return data.json_data.frames.map((jsonFrame, index) => ({
+      rank: index + 1,
+      original_frame: jsonFrame.rank,
+      score: jsonFrame.total_score || 0,
+      image_data: data.frames[index]?.data || null,
+      timestamp: jsonFrame.timestamp || Date.now() / 1000,
+      yaw: jsonFrame.pose?.yaw || 0,
+      pitch: jsonFrame.pose?.pitch || 0,
+      roll: jsonFrame.pose?.roll || 0
+    }));
+  } else {
+    // ⚠️ FALLBACK: Se json_data non disponibile
+    return data.frames.map((frame, index) => ({
+      rank: index + 1,
+      original_frame: frame.rank,
+      score: frame.score || 0,
+      image_data: frame.data,
+      timestamp: Date.now() / 1000,
+      yaw: 0,
+      pitch: 0,
+      roll: 0
+    }));
+  }
 }
 
 function showFrameInMainCanvas(frame, index) {
@@ -2651,21 +2796,10 @@ function showFrameInMainCanvas(frame, index) {
 function handleResultsReady(data) {
   try {
     const responseId = data.request_id || 'unknown';
-    const responseTime = Date.now();
 
     // Rimuovi dalla lista pending se presente
     if (typeof responseId === 'number') {
       pendingGetResultsRequests.delete(responseId);
-    }
-
-    // ⚠️ LOG RIDOTTO: Solo se ci sono problemi
-    if (pendingGetResultsRequests.size > 3) {
-      console.log(`📊 [RESPONSE #${responseId}] Pending: ${pendingGetResultsRequests.size}`);
-    }
-
-    // WARNING se ci sono molte richieste pending
-    if (pendingGetResultsRequests.size > 5) {
-      console.warn(`⚠️ RACE CONDITION RILEVATA: ${pendingGetResultsRequests.size} richieste pending!`);
     }
 
     if (data.success && data.frames && data.frames.length > 0) {
@@ -2695,31 +2829,8 @@ function handleResultsReady(data) {
       currentBestScore = newBestScore;
       window.lastFramesHash = data.frames.length + '_' + newBestScore;
 
-      // Trasforma i dati dei frame nel formato atteso
-      // ✅ RANK CORRETTO: usa posizione in tabella (1-10), non frame originale
-      const bestFrames = data.frames.map((frame, index) => ({
-        rank: index + 1, // Posizione in tabella: 1, 2, 3...
-        original_frame: frame.rank, // Frame originale dal video (opzionale)
-        score: frame.score || 0,
-        image_data: frame.data, // Base64 dell'immagine
-        timestamp: Date.now() / 1000,
-        yaw: 0,
-        pitch: 0,
-        roll: 0
-      }));
-
-      // Se sono disponibili i dati JSON dettagliati, usa quelli per pose
-      if (data.json_data && data.json_data.frames) {
-        data.json_data.frames.forEach((jsonFrame, index) => {
-          if (index < bestFrames.length && jsonFrame.pose) {
-            // ⚠️ NO LOG: Troppo verbose
-            bestFrames[index].yaw = jsonFrame.pose.yaw || 0;
-            bestFrames[index].pitch = jsonFrame.pose.pitch || 0;
-            bestFrames[index].roll = jsonFrame.pose.roll || 0;
-            bestFrames[index].timestamp = jsonFrame.timestamp || bestFrames[index].timestamp;
-          }
-        });
-      }
+      // ✅ Usa funzione centralizzata per trasformare i dati
+      const bestFrames = transformWebSocketFrames(data);
 
       // ✅ AGGIORNA: Solo quando i dati cambiano effettivamente
       updateDebugTable(bestFrames);
@@ -2742,29 +2853,8 @@ function handleFinalResults(data) {
 
     // Processa i risultati finali dal server 8765
     if (data.success && data.frames && data.frames.length > 0) {
-      // Converti i frame nel formato della tabella debug
-      const debugFrames = [];
-
-      for (const frameInfo of data.frames) {
-        const frameEntry = {
-          image_data: frameInfo.data,
-          score: frameInfo.score || 0,
-          rank: frameInfo.rank || 0,
-          timestamp: Date.now()
-        };
-
-        // Aggiungi dati pose dal JSON se disponibili
-        if (data.json_data && data.json_data.frames && frameInfo.rank) {
-          const jsonFrame = data.json_data.frames[frameInfo.rank - 1];
-          if (jsonFrame && jsonFrame.pose) {
-            frameEntry.yaw = jsonFrame.pose.yaw || 0;
-            frameEntry.pitch = jsonFrame.pose.pitch || 0;
-            frameEntry.roll = jsonFrame.pose.roll || 0;
-          }
-        }
-
-        debugFrames.push(frameEntry);
-      }
+      // ✅ Usa funzione centralizzata per trasformare i dati
+      const debugFrames = transformWebSocketFrames(data);
 
       // Aggiorna tabella debug
       updateDebugTable(debugFrames);
