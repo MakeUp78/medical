@@ -393,14 +393,15 @@ class WebSocketFrameScorer:
         """Restituisce i migliori 10 frame e il JSON"""
         if len(self.best_frames) == 0:
             return {"error": "Nessun frame processato"}
-        
-        # ✅ ORDINA SEMPRE IL BUFFER PRIMA DI RESTITUIRE I RISULTATI
-        # RISOLVE RACE CONDITION: Frame eccellenti arrivano ma buffer non ancora riordinato
-        # Process_frame() sostituisce frame MA la UI chiede risultati PRIMA del sorting
+
+        # ✅ COPIA ATOMICA: Ordina e copia il buffer per evitare race condition
+        # Durante la preparazione della risposta, process_frame() potrebbe modificare il buffer
+        # Creando una copia snapshot garantiamo che frames_base64 e frames_data siano coerenti
         self.best_frames.sort(key=lambda x: x['score'], reverse=True)
-        
-        # Prendi i migliori max_frames frame
-        best_frames = self.best_frames[:self.max_frames]
+        best_frames_snapshot = [frame.copy() for frame in self.best_frames[:self.max_frames]]
+
+        # Usa lo snapshot invece del buffer originale
+        best_frames = best_frames_snapshot
         
         # Salva i frame e prepara i dati
         frames_base64 = []
@@ -502,37 +503,78 @@ class WebSocketFrameScorer:
 # Istanza globale del scorer
 frame_scorer = WebSocketFrameScorer()
 
+# === GESTIONE DEVICE IPHONE ===
+# Dizionario per tracciare device iPhone connessi
+connected_iphone_devices = {}
+
+# Callback per notificare desktop di nuove connessioni iPhone
+desktop_websockets = set()
+
+# ✅ NUOVO: Set desktop che hanno premuto "Avvia Webcam" e vogliono ricevere frames
+active_desktop_webcams = set()
+
+async def broadcast_to_desktop(message):
+    """Invia messaggio a tutti i client desktop connessi"""
+    if desktop_websockets:
+        disconnected = set()
+        for ws in desktop_websockets:
+            try:
+                await ws.send(json.dumps(message))
+            except Exception:
+                disconnected.add(ws)
+        desktop_websockets.difference_update(disconnected)
+
+async def broadcast_to_active_desktops(message):
+    """Invia messaggio SOLO ai desktop che hanno avviato la webcam"""
+    if active_desktop_webcams:
+        disconnected = set()
+        for ws in active_desktop_webcams:
+            try:
+                await ws.send(json.dumps(message))
+            except Exception:
+                disconnected.add(ws)
+        active_desktop_webcams.difference_update(disconnected)
+
 async def handle_websocket(websocket):
     """Handler principale WebSocket"""
     logger.info(f"Nuova connessione WebSocket da {websocket.remote_address}")
-    
+
+    # Flag per tracciare se questo e' un client desktop
+    is_desktop_client = False
+    iphone_device_id = None
+
     try:
         async for message in websocket:
             try:
                 data = json.loads(message)
                 action = data.get('action')
-                
+
+                # === AZIONI STANDARD (WEBCAM DESKTOP) ===
                 if action == 'start_session':
                     session_id = data.get('session_id', f"session_{int(time.time())}")
                     frame_scorer.start_session(session_id)
-                    
+
+                    # Registra come client desktop
+                    is_desktop_client = True
+                    desktop_websockets.add(websocket)
+
                     response = {
                         "action": "session_started",
                         "session_id": session_id,
                         "message": "Sessione iniziata. Invia frame con action='process_frame'"
                     }
                     await websocket.send(json.dumps(response))
-                
+
                 elif action == 'process_frame':
                     frame_data = data.get('frame_data')
                     if not frame_data:
                         await websocket.send(json.dumps({"error": "frame_data mancante"}))
                         continue
-                    
+
                     result = await frame_scorer.process_frame(frame_data)
                     result['action'] = 'frame_processed'
                     await websocket.send(json.dumps(result))
-                
+
                 elif action == 'get_results':
                     result = frame_scorer.get_best_frames_result()
                     result['action'] = 'results_ready'
@@ -540,23 +582,178 @@ async def handle_websocket(websocket):
                     if 'request_id' in data:
                         result['request_id'] = data['request_id']
                     await websocket.send(json.dumps(result))
-                
+
                 elif action == 'ping':
                     await websocket.send(json.dumps({"action": "pong", "timestamp": time.time()}))
-                
+
+                # === AZIONI IPHONE CAMERA ===
+                elif action == 'iphone_connect':
+                    # iPhone si connette per la prima volta
+                    device_id = data.get('deviceId')
+                    if device_id:
+                        iphone_device_id = device_id
+                        connected_iphone_devices[device_id] = {
+                            'websocket': websocket,
+                            'connected_at': time.time(),
+                            'user_agent': data.get('userAgent', 'Unknown'),
+                            'last_frame': None
+                        }
+                        logger.info(f"iPhone connesso: {device_id[:8]}...")
+
+                        # Avvia sessione automaticamente per iPhone
+                        session_id = f"iphone_{device_id[:8]}_{int(time.time())}"
+                        frame_scorer.start_session(session_id)
+
+                        # Conferma connessione all'iPhone
+                        await websocket.send(json.dumps({
+                            "action": "connected",
+                            "deviceId": device_id,
+                            "session_id": session_id,
+                            "message": "Connesso al server Kimerika"
+                        }))
+
+                        # Notifica i client desktop
+                        await broadcast_to_desktop({
+                            "action": "iphone_connected",
+                            "deviceId": device_id,
+                            "deviceIdShort": device_id[:8] + "...",
+                            "timestamp": time.time()
+                        })
+
+                elif action == 'iphone_frame':
+                    # iPhone invia un frame
+                    device_id = data.get('deviceId')
+                    frame_data = data.get('frame')
+
+                    if not frame_data:
+                        await websocket.send(json.dumps({"error": "frame mancante"}))
+                        continue
+
+                    # Aggiorna timestamp ultimo frame
+                    if device_id and device_id in connected_iphone_devices:
+                        connected_iphone_devices[device_id]['last_frame'] = time.time()
+
+                    # Processa il frame con lo stesso sistema usato per webcam
+                    result = await frame_scorer.process_frame(frame_data)
+                    result['action'] = 'frame_processed'
+                    result['source'] = 'iphone'
+                    result['deviceId'] = device_id
+
+                    # Rispondi all'iPhone
+                    await websocket.send(json.dumps(result))
+
+                    # ✅ Invia frame processato SOLO ai desktop che hanno avviato webcam
+                    desktop_message = {
+                        "action": "iphone_frame_processed",
+                        "deviceId": device_id,
+                        "score": result.get('current_score', 0),
+                        "faces_detected": result.get('faces_detected', 0),
+                        "timestamp": time.time(),
+                        "frame_data": frame_data  # Invia frame corrente
+                    }
+                    
+                    await broadcast_to_active_desktops(desktop_message)
+
+                elif action == 'iphone_disconnect':
+                    # iPhone si disconnette esplicitamente
+                    device_id = data.get('deviceId')
+                    if device_id and device_id in connected_iphone_devices:
+                        del connected_iphone_devices[device_id]
+                        logger.info(f"iPhone disconnesso: {device_id[:8]}...")
+
+                        await broadcast_to_desktop({
+                            "action": "iphone_disconnected",
+                            "deviceId": device_id,
+                            "timestamp": time.time()
+                        })
+
+                elif action == 'register_desktop':
+                    # Client desktop si registra per ricevere notifiche iPhone
+                    is_desktop_client = True
+                    desktop_websockets.add(websocket)
+
+                    # Invia lista device attualmente connessi
+                    connected_list = [
+                        {
+                            "deviceId": did,
+                            "deviceIdShort": did[:8] + "...",
+                            "connected_at": info['connected_at']
+                        }
+                        for did, info in connected_iphone_devices.items()
+                    ]
+
+                    await websocket.send(json.dumps({
+                        "action": "desktop_registered",
+                        "connected_iphones": connected_list
+                    }))
+
+                elif action == 'start_webcam':
+                    # ✅ Desktop ha premuto "Avvia Webcam" - inizia a ricevere frames iPhone
+                    is_desktop_client = True
+                    desktop_websockets.add(websocket)
+                    active_desktop_webcams.add(websocket)
+                    logger.info(f"🎥 Desktop avviato - ora riceve frames iPhone")
+                    
+                    await websocket.send(json.dumps({
+                        "action": "webcam_started",
+                        "message": "Desktop pronto a ricevere frames iPhone"
+                    }))
+
+                elif action == 'stop_webcam':
+                    # ✅ Desktop ha premuto "Ferma Webcam" - smetti di inviare frames
+                    active_desktop_webcams.discard(websocket)
+                    logger.info(f"⏸️ Desktop fermato - non riceve più frames iPhone")
+                    
+                    await websocket.send(json.dumps({
+                        "action": "webcam_stopped",
+                        "message": "Desktop fermato"
+                    }))
+
+                elif action == 'get_iphone_status':
+                    # Desktop richiede stato iPhone
+                    connected_list = [
+                        {
+                            "deviceId": did,
+                            "deviceIdShort": did[:8] + "...",
+                            "connected_at": info['connected_at'],
+                            "last_frame": info.get('last_frame')
+                        }
+                        for did, info in connected_iphone_devices.items()
+                    ]
+
+                    await websocket.send(json.dumps({
+                        "action": "iphone_status",
+                        "connected_count": len(connected_iphone_devices),
+                        "devices": connected_list
+                    }))
+
                 else:
                     await websocket.send(json.dumps({"error": f"Azione sconosciuta: {action}"}))
-                    
+
             except json.JSONDecodeError:
                 await websocket.send(json.dumps({"error": "Messaggio JSON non valido"}))
             except Exception as e:
                 logger.error(f"Errore handling message: {e}")
                 await websocket.send(json.dumps({"error": f"Errore server: {str(e)}"}))
-                
+
     except websockets.exceptions.ConnectionClosed:
         logger.info("Connessione WebSocket chiusa")
     except Exception as e:
         logger.error(f"Errore WebSocket: {e}")
+    finally:
+        # Cleanup alla disconnessione
+        if is_desktop_client:
+            desktop_websockets.discard(websocket)
+            active_desktop_webcams.discard(websocket)  # ✅ Rimuovi anche da active
+
+        if iphone_device_id and iphone_device_id in connected_iphone_devices:
+            del connected_iphone_devices[iphone_device_id]
+            logger.info(f"iPhone rimosso (disconnessione): {iphone_device_id[:8]}...")
+            await broadcast_to_desktop({
+                "action": "iphone_disconnected",
+                "deviceId": iphone_device_id,
+                "timestamp": time.time()
+            })
 
 async def main():
     """Avvia il server WebSocket"""

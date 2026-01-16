@@ -128,10 +128,10 @@ async function analyzeImageViaAPI(imageBase64, config = null) {
       return result;
     } else {
       const error = await response.json();
-      // Silenzia errori normali: frame video senza volto
-      const isNoFaceError = error.detail && error.detail.includes('Nessun volto rilevato');
+      // Silenzia errori normali: frame video senza volto (422)
+      const isNoFaceError = response.status === 422 || (error.detail && error.detail.includes('Nessun volto rilevato'));
       if (!isNoFaceError) {
-        console.error('❌ Dettagli errore API:', error);
+        console.error('❌ API Error:', response.status, error);
       }
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
