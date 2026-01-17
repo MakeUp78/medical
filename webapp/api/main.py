@@ -1047,6 +1047,8 @@ async def analyze_video(file: UploadFile = File(...)):
     """
     Analizza video per trovare il miglior frame frontale.
     Replica la funzionalità di video_analyzer.py
+    
+    ✅ OTTIMIZZAZIONE: Accetta anche singole immagini JPEG/PNG come "video" (frame centrale)
     """
     try:
         print(f"🎥 Analisi video iniziata: {file.filename}")
@@ -1055,6 +1057,59 @@ async def analyze_video(file: UploadFile = File(...)):
         content = await file.read()
         print(f"📁 File letto: {len(content)} bytes")
         
+        # ✅ OTTIMIZZAZIONE: Se è un'immagine JPEG/PNG, analizzala direttamente
+        if file.content_type and file.content_type.startswith('image/'):
+            print(f"🖼️ Rilevato singolo frame (immagine), analisi diretta...")
+            
+            # Decodifica immagine
+            nparr = np.frombuffer(content, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if frame is None:
+                raise HTTPException(status_code=400, detail="Impossibile decodificare l'immagine")
+            
+            best_landmarks = []
+            best_score = 0.5
+            
+            if MEDIAPIPE_AVAILABLE and face_mesh:
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = face_mesh.process(rgb_frame)
+                
+                if results.multi_face_landmarks:
+                    landmarks_3d = results.multi_face_landmarks[0]
+                    best_score = calculate_frontality_score_from_landmarks(landmarks_3d, frame.shape)
+                    
+                    h, w = frame.shape[:2]
+                    landmarks_list = []
+                    for landmark in landmarks_3d.landmark:
+                        x = landmark.x * w
+                        y = landmark.y * h
+                        z = landmark.z
+                        landmarks_list.append({
+                            "x": float(x),
+                            "y": float(y), 
+                            "z": float(z),
+                            "visibility": float(getattr(landmark, 'visibility', 1.0))
+                        })
+                    best_landmarks = landmarks_list
+            
+            # Converti frame in base64
+            _, buffer = cv2.imencode('.jpg', frame)
+            frame_b64 = base64.b64encode(buffer).decode('utf-8')
+            
+            print(f"✅ Immagine analizzata con score: {best_score}")
+            
+            return {
+                "success": True,
+                "best_frame": frame_b64,
+                "landmarks": best_landmarks,
+                "score": best_score,
+                "total_frames": 1,
+                "analyzed_frames": 1,
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        # Altrimenti procedi con analisi video normale
         # Scrivi temporaneamente il file (opencv richiede un file)
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
             tmp_file.write(content)
@@ -1081,9 +1136,12 @@ async def analyze_video(file: UploadFile = File(...)):
         # Parametri analisi (replica video_analyzer.py)
         fps = cap.get(cv2.CAP_PROP_FPS) or 30
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        skip_frames = max(1, int(fps / 5))  # Analizza 5 frame al secondo
+        skip_frames = max(1, int(fps / 10))  # ✅ OTTIMIZZATO: Analizza 10 frame al secondo (era 5) per velocità
         
-        print(f"🎬 Video info: {total_frames} frames, {fps} FPS, skip ogni {skip_frames} frames")
+        # ✅ LIMITA DURATA: Analizza max 30 secondi per video molto lunghi
+        max_frames_to_analyze = int(min(total_frames, fps * 30))
+        
+        print(f"🎬 Video info: {total_frames} frames, {fps} FPS, skip ogni {skip_frames} frames, max {max_frames_to_analyze} frames")
         
         while True:
             ret, frame = cap.read()
@@ -1091,6 +1149,11 @@ async def analyze_video(file: UploadFile = File(...)):
                 break
                 
             frame_count += 1
+            
+            # ✅ LIMITA DURATA: Ferma analisi dopo max_frames_to_analyze
+            if frame_count > max_frames_to_analyze:
+                print(f"⏸️ Limite frame raggiunto: {max_frames_to_analyze}")
+                break
             
             # Salta frame per ottimizzazione
             if frame_count % skip_frames != 0:
@@ -1198,31 +1261,41 @@ async def get_landmarks_info():
 async def preprocess_video(file: UploadFile = File(...)):
     """
     Preprocessa video riducendolo a larghezza 464px (altezza proporzionale per mantenere aspect ratio).
-    Sovrascrive il video originale con versione compressa.
+    Salva il video preprocessato e restituisce un URL temporaneo.
     Target: ~1.5MB, H264, bitrate 1500k
     """
     import subprocess
+    import hashlib
+    from datetime import datetime
     
     try:
         print(f"🎬 Preprocessing video: {file.filename}")
-        print(f"📦 Dimensione originale: {file.size / (1024*1024):.2f} MB")
         
         # Leggi contenuto originale
         content = await file.read()
+        original_size_mb = len(content) / (1024*1024)
+        print(f"📦 Dimensione originale: {original_size_mb:.2f} MB")
         
         # File temporanei
         with tempfile.NamedTemporaryFile(delete=False, suffix='_input.mp4') as tmp_input:
             tmp_input.write(content)
             input_path = tmp_input.name
         
-        output_path = tempfile.NamedTemporaryFile(delete=False, suffix='_output.mp4').name
+        # Genera nome univoco per file output
+        file_hash = hashlib.md5((file.filename + str(datetime.now())).encode()).hexdigest()[:12]
+        output_filename = f"preprocessed_{file_hash}.mp4"
+        
+        # Salva nella cartella best_frontal_frames (già esistente)
+        output_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'best_frontal_frames')
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, output_filename)
         
         # Comando ffmpeg per ridimensionare e comprimere
-        # Target: larghezza 464px, altezza proporzionale (-1 preserva aspect ratio)
+        # Target: larghezza 464px, altezza proporzionale (-2 forza dimensione pari per H264)
         # H264, bitrate 1500k, audio rimosso
         ffmpeg_cmd = [
             'ffmpeg', '-i', input_path,
-            '-vf', 'scale=464:-1',  # Larghezza 464px, altezza proporzionale
+            '-vf', 'scale=464:-2',  # Larghezza 464px, altezza pari (richiesto da libx264)
             '-c:v', 'libx264',
             '-preset', 'medium',
             '-b:v', '1500k',
@@ -1253,33 +1326,30 @@ async def preprocess_video(file: UploadFile = File(...)):
                 pass
             raise HTTPException(status_code=500, detail=f"Errore preprocessing: {result.stderr[:200]}")
         
-        # Leggi video processato
-        with open(output_path, 'rb') as f:
-            processed_content = f.read()
-        
-        # Cleanup file temporanei
+        # Cleanup file input temporaneo
         try:
             os.remove(input_path)
-            os.remove(output_path)
         except Exception as e:
-            print(f"⚠️ Errore cleanup: {e}")
+            print(f"⚠️ Errore cleanup input: {e}")
         
-        output_size_mb = len(processed_content) / (1024*1024)
-        compression_ratio = (1 - len(processed_content) / len(content)) * 100
+        # Ottieni dimensione file output
+        output_size_mb = os.path.getsize(output_path) / (1024*1024)
+        compression_ratio = (1 - output_size_mb / original_size_mb) * 100
         
         print(f"✅ Video preprocessato:")
         print(f"   Dimensione finale: {output_size_mb:.2f} MB")
         print(f"   Compressione: {compression_ratio:.1f}%")
+        print(f"   Salvato in: {output_path}")
         
-        # Ritorna video processato come base64
-        processed_base64 = base64.b64encode(processed_content).decode('utf-8')
+        # Ritorna URL per scaricare il video preprocessato
+        video_url = f"/best_frontal_frames/{output_filename}"
         
         return {
             "success": True,
-            "original_size_mb": file.size / (1024*1024),
+            "original_size_mb": original_size_mb,
             "processed_size_mb": output_size_mb,
             "compression_ratio": f"{compression_ratio:.1f}%",
-            "video_data": processed_base64,
+            "video_url": video_url,
             "mime_type": "video/mp4"
         }
         
