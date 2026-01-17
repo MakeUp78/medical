@@ -217,8 +217,8 @@ class GreenDotsProcessor:
             avg_saturation = sum(p["s"] for p in cluster) / len(cluster)
             score = len(cluster) * (1 + avg_saturation / 100)
             
-            # FILTRA: puntini bianchi (bassa saturazione) devono avere almeno 4 pixel
-            if avg_saturation <= 20 and len(cluster) < 4:
+            # FILTRA: puntini bianchi (bassa saturazione) devono avere almeno 3 pixel
+            if avg_saturation <= 20 and len(cluster) < 3:
                 continue  # Scarta puntino bianco troppo piccolo
             
             # FILTRA: esclude puntini con bordi non definiti (pixel dispersi)
@@ -249,7 +249,8 @@ class GreenDotsProcessor:
             )
 
         # Filtra puntini troppo vicini, mantieni solo quello con score più alto
-        dots = self.filter_close_dots(dots, min_distance=15)
+        # Distanza ridotta a 10px per permettere punti più vicini
+        dots = self.filter_close_dots(dots, min_distance=10)
 
         results = {
             "dots": dots,
