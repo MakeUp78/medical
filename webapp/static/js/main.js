@@ -6,17 +6,7 @@
  * ULTIMO AGGIORNAMENTO: Corretto openUnifiedAnalysisSection con log dettagliati
  */
 
-// 🚀 VERSION CHECK - main.js v6.17 - AUTH SYSTEM + LEFT SIDEBAR FIX + CANVAS MODES
-console.log('🚀🚀🚀 main.js v6.17 - AUTH SYSTEM + LEFT SIDEBAR FIX + CANVAS MODES! 🚀🚀🚀');
-console.log('   ✅ Cerca CORREZIONE SOPRACCIGLIA nella LEFT sidebar (non right!)');
-console.log('   ✅ Debug dettagliato per trovare la sezione');
-console.log('   ✅ Ora il calcolo usa la distanza perpendicolare dalla linea di simmetria');
-console.log('   ✅ Non più solo distanza orizzontale (X)!');
-console.log('   ✅ Canvas modes system - immagine bloccata di default');
-console.log('   ℹ️ Se vedi ancora calcoli errati:');
-console.log('   1️⃣ Premi Ctrl+F5 per forzare reload');
-console.log('   2️⃣ Ripremi il pulsante GREEN DOTS per rigenerare la tabella');
-console.log('   ✅ window.toggleSection definita:', typeof window.toggleSection === 'function');
+// main.js v6.17
 
 // Variabili globali (controllo per evitare ridichiarazioni)
 if (typeof currentTool === 'undefined') var currentTool = 'selection';
@@ -46,7 +36,6 @@ async function checkAuthentication() {
   const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
 
   if (!token) {
-    console.log('🔒 Nessun token trovato, redirect a landing.html');
     window.location.href = '/landing.html';
     return false;
   }
@@ -61,18 +50,15 @@ async function checkAuthentication() {
     const data = await response.json();
 
     if (data.success && data.user) {
-      console.log('✅ Utente autenticato:', data.user.email);
       updateUserUI(data.user);
       return true;
     } else {
-      console.log('❌ Token invalido, redirect a landing.html');
       localStorage.removeItem('auth_token');
       sessionStorage.removeItem('auth_token');
       window.location.href = '/landing.html';
       return false;
     }
   } catch (error) {
-    console.error('❌ Errore verifica autenticazione:', error);
     window.location.href = '/landing.html';
     return false;
   }
@@ -112,19 +98,12 @@ function updateUserUI(user) {
     avatarElement.src = user.profile_image + '?t=' + Date.now();
   }
 
-  console.log('👤 UI utente aggiornata:', {
-    name: `${user.firstname} ${user.lastname}`,
-    role: user.role,
-    plan: user.plan,
-    has_avatar: !!user.profile_image
-  });
 }
 
 /**
  * Logout utente
  */
 function logout() {
-  console.log('👋 Logout utente');
   localStorage.removeItem('auth_token');
   sessionStorage.removeItem('auth_token');
   window.location.href = '/landing.html';
@@ -260,19 +239,15 @@ async function detectLandmarksSilent() {
       canvas.height = fabricElement.height || fabricElement.naturalHeight;
       ctx.drawImage(fabricElement, 0, 0);
 
-      // ✅ Normalizza e comprimi moderatamente
-      const normalized = normalizeTo72DPI(canvas);
-      const compressed = compressImage(normalized, 1920, 0.85);
-      base64Image = compressed.toDataURL('image/jpeg', 0.85);
+      // Converti direttamente senza elaborazioni aggiuntive
+      base64Image = canvas.toDataURL('image/jpeg', 0.98);
     } else if (currentImage.width && currentImage.height) {
       canvas.width = currentImage.width;
       canvas.height = currentImage.height;
       ctx.drawImage(currentImage, 0, 0);
 
-      // ✅ Normalizza e comprimi moderatamente
-      const normalized = normalizeTo72DPI(canvas);
-      const compressed = compressImage(normalized, 1920, 0.85);
-      base64Image = compressed.toDataURL('image/jpeg', 0.85);
+      // Converti direttamente senza elaborazioni aggiuntive
+      base64Image = canvas.toDataURL('image/jpeg', 0.98);
     } else {
       // Fabric canvas - crea temp canvas, normalizza e comprimi
       const tempCanvas = document.createElement('canvas');
@@ -281,9 +256,8 @@ async function detectLandmarksSilent() {
       const tempCtx = tempCanvas.getContext('2d');
       tempCtx.drawImage(fabricCanvas.lowerCanvasEl, 0, 0);
 
-      const normalized = normalizeTo72DPI(tempCanvas);
-      const compressed = compressImage(normalized, 1920, 0.85);
-      base64Image = compressed.toDataURL('image/jpeg', 0.85);
+      // Converti direttamente senza elaborazioni aggiuntive
+      base64Image = tempCanvas.toDataURL('image/jpeg', 0.98);
     }
 
     // Chiama API tramite percorso relativo (nginx proxy)
@@ -418,27 +392,22 @@ function resetForNewAnalysis(reason) {
   // Reset status
   updateStatus('Pronto per nuova analisi');
 
-  console.log('✅ Reset completato - pronto per nuovo caricamento');
 }
 
 // Inizializzazione al caricamento pagina
 document.addEventListener('DOMContentLoaded', function () {
-  console.log('🏥 Facial Analysis Web App - Inizializzazione...');
-
   // Verifica che Fabric.js sia caricato
   if (typeof fabric === 'undefined') {
-    console.error('❌ Fabric.js non è caricato!');
+    console.error('Fabric.js non caricato');
     return;
   }
-
-  console.log('✅ Fabric.js disponibile');
 
   // Inizializza componenti
   initializeSections();
 
   // Ritardo per assicurarsi che tutto sia caricato
   setTimeout(() => {
-    initializeFabricCanvas();  // Usa Fabric.js canvas invece del canvas HTML5
+    initializeFabricCanvas();
     initializeFileHandlers();
     initializeKeyboardShortcuts();
 
@@ -446,7 +415,6 @@ document.addEventListener('DOMContentLoaded', function () {
     setTimeout(() => {
       if (typeof resizeCanvas === 'function') {
         resizeCanvas();
-        console.log('🔧 Ridimensionamento canvas post-inizializzazione');
       }
     }, 300);
   }, 100);
@@ -454,15 +422,12 @@ document.addEventListener('DOMContentLoaded', function () {
   // Aggiorna status iniziale
   updateStatus('Pronto - Interfaccia web caricata');
   updateBadges();
-
-  console.log('✅ Inizializzazione completata');
 });
 
 // === GESTIONE SEZIONI COLLASSABILI ===
 
 function initializeSections() {
   // Le sezioni sono già configurate nel HTML con onclick
-  console.log('📂 Sezioni collassabili inizializzate');
 }
 
 // Funzione toggleSection ora è definita globalmente sopra
@@ -551,7 +516,7 @@ function compressImage(sourceCanvas, maxWidth = 1280, quality = 0.7) {
    * ⚠️ DEPRECATED: Usato solo per codice legacy che non è stato ancora refactorizzato
    * La compressione dovrebbe avvenire A MONTE (video preprocessing, riduzione stream webcam, riduzione immagini all'upload)
    */
-  console.warn('⚠️ compressImage() è DEPRECATED - la compressione dovrebbe avvenire A MONTE');
+  // NOTA: Funzione deprecata - warning rimosso per evitare spam console
 
   const originalWidth = sourceCanvas.width;
   const originalHeight = sourceCanvas.height;
@@ -584,7 +549,7 @@ function normalizeTo72DPI(sourceCanvas) {
    * ⚠️ DEPRECATED: La normalizzazione DPI non è necessaria - i canvas non hanno DPI
    * Questa funzione ora fa solo una copia del canvas
    */
-  console.warn('⚠️ normalizeTo72DPI() è DEPRECATED - i canvas non hanno DPI');
+  // NOTA: Funzione deprecata - warning rimosso per evitare spam console
 
   const normalizedCanvas = document.createElement('canvas');
   normalizedCanvas.width = sourceCanvas.width;
@@ -625,8 +590,9 @@ async function handleUnifiedFileLoad(file, type) {
         const rawCtx = rawCanvas.getContext('2d');
         rawCtx.drawImage(img, 0, 0);
 
-        // Target: larghezza fissa 464px, altezza proporzionale per mantenere aspect ratio
-        const targetWidth = 464;
+        // Target: larghezza fissa 1200px, altezza proporzionale per mantenere aspect ratio
+        // ✅ OTTIMIZZATO: 1200px per bilanciare qualità e performance nel rilevamento punti
+        const targetWidth = 1200;
         let finalWidth = rawCanvas.width;
         let finalHeight = rawCanvas.height;
 
@@ -634,32 +600,30 @@ async function handleUnifiedFileLoad(file, type) {
           const ratio = targetWidth / finalWidth;
           finalWidth = targetWidth;
           finalHeight = Math.round(finalHeight * ratio);
-          console.log(`📐 Riduzione immagine a ${finalWidth}x${finalHeight} (larghezza fissa: 464px, aspect ratio preservato)`);
+          console.log(`📐 Riduzione immagine a ${finalWidth}x${finalHeight} (larghezza fissa: ${targetWidth}px, aspect ratio preservato)`);
         } else {
-          console.log(`✅ Immagine già piccola: ${finalWidth}x${finalHeight}px (no riduzione)`);
+          console.log(`✅ Immagine già ottima: ${finalWidth}x${finalHeight}px (no riduzione)`);
         }
 
-        // Comprimi a dimensioni target
-        const compressedCanvas = document.createElement('canvas');
-        compressedCanvas.width = finalWidth;
-        compressedCanvas.height = finalHeight;
-        const compressedCtx = compressedCanvas.getContext('2d');
-        compressedCtx.imageSmoothingEnabled = true;
-        compressedCtx.imageSmoothingQuality = 'high';
-        compressedCtx.drawImage(rawCanvas, 0, 0, finalWidth, finalHeight);
+        // Crea canvas finale con dimensioni target (solo ridimensionamento, nessuna altra elaborazione)
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = finalWidth;
+        finalCanvas.height = finalHeight;
+        const finalCtx = finalCanvas.getContext('2d');
+        finalCtx.drawImage(rawCanvas, 0, 0, finalWidth, finalHeight);
 
-        // ✅ Converti in base64 dal canvas ridotto (quality 0.85)
-        const base64Image = compressedCanvas.toDataURL('image/jpeg', 0.85);
+        // Converti in base64 dal canvas ridimensionato (quality 0.98 per massima qualità)
+        const base64Image = finalCanvas.toDataURL('image/jpeg', 0.98);
         const base64Data = base64Image.split(',')[1];
 
-        // ✅ STEP 3: Carica immagine normalizzata sul canvas (con cache bust)
+        // Carica immagine sul canvas
         updateCanvasWithBestFrame(base64Data, img._originalMimeType);
 
-        updateStatus(`Immagine caricata (72 DPI): ${file.name}`);
+        updateStatus(`Immagine caricata: ${file.name}`);
         showToast('Immagine caricata con successo', 'success');
-        console.log(`✅ Immagine normalizzata a 72 DPI e caricata - Cache bust: ${cacheBust}`);
+        console.log(`✅ Immagine ridimensionata e caricata - Dimensioni: ${finalWidth}x${finalHeight} - Cache bust: ${cacheBust}`);
 
-        // ✅ FORCE REPAINT: Ricarica visuale canvas
+        // Force repaint canvas
         if (window.canvas && window.canvas.renderAll) {
           window.canvas.renderAll();
         }
@@ -680,14 +644,56 @@ async function handleUnifiedFileLoad(file, type) {
 
   } else if (type === 'video') {
     // RIPRISTINO SISTEMA ORIGINALE: Analisi automatica via WebSocket
-    console.log('🎥 handleVideoLoad iniziato:', {
-      fileName: file.name,
-      fileSize: file.size,
-      fileType: file.type
-    });
-
     try {
       collapseDetectionSections();
+
+      // ========================================================================
+      // PREPROCESSING VIDEO: Ridimensiona e comprimi PRIMA dell'uso per video >2MB
+      // Target: 464x832 come simul_camera.mp4
+      // ========================================================================
+      const fileSizeMB = file.size / (1024 * 1024);
+      if (fileSizeMB > 2) {
+        updateStatus('Preprocessing video in corso...');
+
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+
+          const preprocessResponse = await fetch(`${API_CONFIG.baseURL}/api/preprocess-video`, {
+            method: 'POST',
+            body: formData
+          });
+
+          if (preprocessResponse.ok) {
+            const preprocessData = await preprocessResponse.json();
+
+            console.log('✅ Preprocessing completato:', {
+              original: preprocessData.original_size_mb.toFixed(2) + ' MB',
+              compressed: preprocessData.processed_size_mb.toFixed(2) + ' MB',
+              ratio: preprocessData.compression_ratio
+            });
+
+            // Scarica video preprocessato dall'URL
+            const videoResponse = await fetch(preprocessData.video_url);
+            if (videoResponse.ok) {
+              const processedBlob = await videoResponse.blob();
+
+              // SOSTITUISCI file originale con versione processata
+              file = new File([processedBlob], file.name, { type: 'video/mp4' });
+
+              showToast(`Video ridotto: ${preprocessData.original_size_mb.toFixed(1)}MB → ${preprocessData.processed_size_mb.toFixed(1)}MB`, 'success');
+            } else {
+              console.error('❌ Errore download video preprocessato');
+              showToast('Errore preprocessing, uso video originale', 'warning');
+            }
+          }
+        } catch (preprocessError) {
+          console.error('❌ Errore preprocessing:', preprocessError);
+          showToast('Errore preprocessing, uso video originale', 'warning');
+        }
+      }
+      // ========================================================================
+
       updateStatus('Avvio analisi video...');
 
       // Crea elemento video nascosto per elaborazione
@@ -698,7 +704,7 @@ async function handleUnifiedFileLoad(file, type) {
       video.style.top = '-9999px';
       document.body.appendChild(video);
 
-      // Carica file video
+      // Carica file video (PREPROCESSATO)
       const url = URL.createObjectURL(file);
       video.src = url;
 
@@ -709,30 +715,22 @@ async function handleUnifiedFileLoad(file, type) {
 
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      console.log('Video caricato:', {
-        width: video.videoWidth,
-        height: video.videoHeight,
-        duration: video.duration
-      });
-
       // Imposta video per riproduzione singola (NO LOOP)
       video.loop = false;
 
       // Handler per fermare quando finisce
       video.addEventListener('ended', () => {
-        console.log('🎬 Video terminato - fermo anteprima');
         stopLivePreview();
 
-        // ✅ Attendi 2 secondi prima di chiudere il WebSocket
+        // Attendi 2 secondi prima di chiudere il WebSocket
         // per permettere al backend di processare gli ultimi frame
         setTimeout(() => {
-          currentBestScore = 0;
           if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
             // Richiesta finale risultati prima di chiudere
             requestBestFramesUpdate();
             setTimeout(() => {
               webcamWebSocket.close();
-              console.log('🔌 WebSocket chiuso - tutti i frame processati');
+              currentBestScore = 0;
             }, 1000);
           }
         }, 2000);
@@ -747,7 +745,6 @@ async function handleUnifiedFileLoad(file, type) {
 
       // Ora avvia il video e l'anteprima
       video.play().then(() => {
-        console.log('▶️ Video avviato - play singolo');
         startLivePreview(video); // Anteprima continua
         startVideoFrameProcessing(video, file.name); // Elaborazione frame
       }).catch(e => console.error('Errore play video:', e));
@@ -766,125 +763,9 @@ async function handleUnifiedFileLoad(file, type) {
 // Sostituita da handleUnifiedFileLoad() in frame-processor.js
 // Rimossa durante l'unificazione del 2024-01-12
 
-
-async function handleVideoLoad(file) {
-  console.log('🎥 handleVideoLoad iniziato:', {
-    fileName: file.name,
-    fileSize: file.size,
-    fileType: file.type
-  });
-
-  try {
-    // Espandi sezioni dopo upload video
-    collapseDetectionSections();
-
-    // ========================================================================
-    // PREPROCESSING VIDEO: Ridimensiona e comprimi PRIMA dell'uso per video >2MB
-    // Target: 464x832 come simul_camera.mp4
-    // ========================================================================
-    const fileSizeMB = file.size / (1024 * 1024);
-    if (fileSizeMB > 2) {
-      updateStatus('Preprocessing video in corso...');
-      console.log('🔄 Invio video per preprocessing:', fileSizeMB.toFixed(2) + ' MB');
-
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const preprocessResponse = await fetch(`${API_CONFIG.baseURL}/api/preprocess-video`, {
-          method: 'POST',
-          body: formData
-        });
-
-        if (preprocessResponse.ok) {
-          const preprocessData = await preprocessResponse.json();
-          console.log('✅ Preprocessing completato:', {
-            originalSize: preprocessData.original_size_mb.toFixed(2) + ' MB',
-            processedSize: preprocessData.processed_size_mb.toFixed(2) + ' MB',
-            compression: preprocessData.compression_ratio
-          });
-
-          // Decodifica video processato da base64
-          const binaryString = atob(preprocessData.video_data);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          const processedBlob = new Blob([bytes], { type: 'video/mp4' });
-
-          // SOSTITUISCI file originale con versione processata
-          file = new File([processedBlob], file.name, { type: 'video/mp4' });
-          console.log('🔄 File originale sostituito con versione preprocessata');
-        } else {
-          console.warn('⚠️ Preprocessing fallito, uso video originale');
-        }
-      } catch (preprocessError) {
-        console.warn('⚠️ Errore preprocessing, uso video originale:', preprocessError);
-      }
-    } else {
-      console.log('📊 Video già piccolo (' + fileSizeMB.toFixed(2) + ' MB), skip preprocessing');
-    }
-    // ========================================================================
-
-    updateStatus('Avvio analisi video...');
-
-    // Crea elemento video nascosto per elaborazione
-    const video = document.createElement('video');
-    video.muted = true;
-    video.style.position = 'absolute';
-    video.style.left = '-9999px';
-    video.style.top = '-9999px';
-    document.body.appendChild(video);
-
-    // Carica file video (PREPROCESSATO)
-    const url = URL.createObjectURL(file);
-    video.src = url;
-
-    // Aspetta caricamento video
-    await new Promise(resolve => {
-      video.onloadedmetadata = resolve;
-    });
-
-    // Aspetta un po' per assicurarsi che il video sia completamente caricato
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    console.log('Video caricato:', {
-      width: video.videoWidth,
-      height: video.videoHeight,
-      duration: video.duration
-    });
-
-    // Imposta video per riproduzione singola (NO LOOP)
-    video.loop = false;
-
-    // Handler per fermare quando finisce
-    video.addEventListener('ended', () => {
-      console.log('🎬 Video terminato - fermo anteprima');
-      stopLivePreview();
-    });
-
-    // PROCESSO UNICO: Setup anteprima + elaborazione
-    openWebcamSection();
-    showWebcamPreview(video);
-
-    // Aspetta WebSocket PRIMA di avviare il video
-    await connectWebcamWebSocket();
-
-    // Ora avvia il video e l'anteprima
-    video.play().then(() => {
-      console.log('▶️ Video avviato - play singolo');
-      startLivePreview(video); // Anteprima continua
-      startVideoFrameProcessing(video, file.name); // Elaborazione frame
-    }).catch(e => console.error('Errore play video:', e));
-
-    showToast('Video in elaborazione - stesso sistema della webcam', 'success');
-
-  } catch (error) {
-    console.error('Errore analisi video:', error);
-    updateStatus('Errore: Impossibile analizzare il video');
-    showToast('Errore analisi video', 'error');
-  }
-}
+// ⚠️ FUNZIONE LEGACY RIMOSSA: handleVideoLoad
+// Codice consolidato in handleUnifiedFileLoad() - branch 'video'
+// Eliminata duplicazione del 2024-01-16
 
 function startVideoFrameProcessing(video, fileName) {
   let frameCount = 0;
@@ -895,7 +776,6 @@ function startVideoFrameProcessing(video, fileName) {
   const processInterval = setInterval(() => {
     if (frameCount >= totalFrames || !webcamWebSocket || webcamWebSocket.readyState !== WebSocket.OPEN) {
       clearInterval(processInterval);
-      console.log('🏁 Elaborazione video completata - attesa frame finali');
       return;
     }
 
@@ -1205,9 +1085,14 @@ async function runAutomaticVideoAnalysis(file) {
 
   // Continua con l'analisi automatica esistente (tutto il codice che c'era prima)
   try {
+    // ✅ OTTIMIZZAZIONE: Comprimi video prima dell'upload per velocizzare analisi
+    console.log('🔧 Compressione video per ottimizzazione...');
+    const compressedBlob = await compressVideoForAnalysis(file, 720); // Max 720px width
+    console.log(`📦 Video compresso: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(compressedBlob.size / 1024 / 1024).toFixed(2)}MB`);
+    
     // Prepara FormData per upload
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', compressedBlob, file.name);
 
     console.log('📤 Invio video al backend...');
 
@@ -1611,9 +1496,8 @@ function displayImageOnCanvas(image) {
     const landmarksDetected = await autoDetectLandmarksOnImageChange();
     if (landmarksDetected) {
       console.log(`✅ Landmarks disponibili globalmente: ${currentLandmarks.length}`);
-    } else {
-      console.warn('⚠️ Auto-rilevamento landmarks fallito in displayImageOnCanvas');
     }
+    // Auto-rilevamento silenzioso - warning rimosso per evitare spam
   }, 100);
 }
 
@@ -1664,12 +1548,11 @@ async function startWebcam() {
       // ✅ Reset miglior score all'avvio
       window.bestIPhoneScore = 0;
 
-      // ✅ INVIA start_webcam al server per iniziare a ricevere frames
+      // Invia start_webcam al server per iniziare a ricevere frames
       if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
         webcamWebSocket.send(JSON.stringify({
           action: 'start_webcam'
         }));
-        console.log('✅ Inviato start_webcam al server');
       }
 
       // Apri sezione ANTEPRIMA per mostrare frame iPhone
@@ -1677,13 +1560,12 @@ async function startWebcam() {
         openWebcamSection();
       }
 
-      // ✅ MOSTRA canvas preview per iPhone
+      // Mostra canvas preview per iPhone
       const previewCanvas = document.getElementById('webcam-preview-canvas');
       const previewInfo = document.getElementById('webcam-preview-info');
       if (previewCanvas) {
         previewCanvas.classList.add('active');
         previewCanvas.style.display = 'block';
-        console.log('✅ Canvas preview iPhone mostrato');
       }
 
       // Aggiorna info preview
@@ -1702,22 +1584,20 @@ async function startWebcam() {
       return;
     }
 
-    console.log('✅ Nessun iPhone attivo, avvio webcam PC');
-
-    // ✅ RESET COMPLETO prima di avviare webcam
+    // Reset completo prima di avviare webcam
     resetForNewAnalysis('Avvio nuova sessione webcam');
+
+    // Riconnetti WebSocket DOPO il reset
+    await connectWebcamWebSocket();
 
     updateStatus('Avvio webcam...');
 
     // Configura constraints video - LARGHEZZA TARGET 464px (altezza proporzionale)
-    // Compressione a monte: riduci stream webcam mantenendo aspect ratio
     let videoConstraints = {
       width: { ideal: 464 },
       facingMode: 'user'
-      // height: calcolata automaticamente per mantenere aspect ratio
     };
 
-    console.log('Uso webcam integrata del PC');
     updateStatus('Avvio webcam integrata...');
 
     // Avvia stream webcam
@@ -1736,7 +1616,6 @@ async function startWebcam() {
 
     // IMPORTANTE: Avvia la riproduzione del video prima di disegnarlo sul canvas
     await video.play();
-    console.log('▶️ Webcam video play avviato');
 
     // Mantieni canvas centrale visibile per mostrare i migliori frame
     const canvas = document.getElementById('main-canvas');
@@ -1747,35 +1626,14 @@ async function startWebcam() {
     showWebcamPreview(video);
     startLivePreview(video);
 
-    // NUOVO: Usa sistema unificato per webcam
-    const frameSource = new FrameSource(video, 'webcam');
-    const processor = new UnifiedFrameProcessor();
-
-    window.webcamProcessor = processor;
-
-    processor.processStream(frameSource, {
-      onProgress: (frameData) => {
-        if (processor.buffer.size > 0 && frameData.result.frontality_score > processor.buffer.worstScore) {
-          const best = processor.buffer.getBest();
-          if (best && best.canvas) {
-            const img = new Image();
-            img.onload = () => {
-              displayImageOnCanvas(img);
-              currentLandmarks = best.result.landmarks;
-              window.currentLandmarks = currentLandmarks;
-              updateCanvasDisplay();
-            };
-            // ✅ NO COMPRESSIONE - stream webcam già ridotto a monte (464x832)
-            img.src = best.canvas.toDataURL('image/jpeg', 0.85);
-          }
-        }
-      }
-    });
+    // ✅ WEBCAM: usa WebSocket per buffer circolare lato server
+    // Invia frame a 2 FPS → server analizza e mantiene buffer migliori 40 frame
+    startFrameCapture(video);
 
     isWebcamActive = true;
 
     // Mostra stato webcam
-    updateStatus('Webcam attiva - Sistema unificato');
+    updateStatus('Webcam attiva - WebSocket streaming');
     updateWebcamBadge(true);
 
     showToast('Webcam avviata', 'success');
@@ -1789,28 +1647,18 @@ async function startWebcam() {
 
 function stopWebcam() {
   try {
-    console.log('🛑 Stop webcam - pulizia completa');
-
-    // ✅ FERMA SUBITO processing impostando flag a false
+    // Ferma processing impostando flag a false
     isWebcamActive = false;
     updateWebcamBadge(false);
 
-    // ✅ Reset score
-    currentBestScore = 0;
-
-    // ✅ INVIA stop_webcam al server per smettere di ricevere frames
+    // Invia stop_webcam al server per smettere di ricevere frames
     if (window.isIPhoneStreamActive && webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
       webcamWebSocket.send(JSON.stringify({
         action: 'stop_webcam'
       }));
-      console.log('✅ Inviato stop_webcam al server - frames iPhone fermati');
     }
 
-    if (window.webcamProcessor) {
-      window.webcamProcessor.stop();
-      window.webcamProcessor = null;
-    }
-
+    // Ferma cattura frame webcam
     if (captureInterval) {
       clearInterval(captureInterval);
       captureInterval = null;
@@ -1829,17 +1677,24 @@ function stopWebcam() {
     hideWebcamPreview();
     document.getElementById('main-canvas').style.display = 'block';
 
-    // ✅ Gestisci WebSocket in base a fonte (iPhone vs Webcam PC)
+    // Gestisci WebSocket in base a fonte (iPhone vs Webcam PC)
     if (!window.isIPhoneStreamActive) {
-      // Webcam PC - chiudi completamente WebSocket
+      // Webcam PC - chiudi WebSocket
       if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
-        webcamWebSocket.close();
-        console.log('🔌 WebSocket chiuso - webcam PC fermata');
+        setTimeout(() => {
+          if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+            webcamWebSocket.close();
+          }
+          disconnectWebcamWebSocket();
+          currentBestScore = 0;
+        }, 100);
+      } else {
+        disconnectWebcamWebSocket();
+        currentBestScore = 0;
       }
-      disconnectWebcamWebSocket();
     } else {
       // iPhone - mantieni WebSocket aperto per ricevere best frames
-      console.log('📱 WebSocket mantenuto aperto per iPhone');
+      currentBestScore = 0;
     }
 
     updateStatus('Webcam fermata');
@@ -1854,23 +1709,39 @@ function stopWebcam() {
 async function connectWebcamWebSocket() {
   return new Promise((resolve, reject) => {
     try {
+      // Chiudi WebSocket esistente prima di crearne uno nuovo
+      if (webcamWebSocket) {
+        try {
+          webcamWebSocket.onclose = null;
+          webcamWebSocket.onerror = null;
+          webcamWebSocket.onmessage = null;
+
+          if (webcamWebSocket.readyState === WebSocket.OPEN ||
+            webcamWebSocket.readyState === WebSocket.CONNECTING) {
+            webcamWebSocket.close();
+          }
+        } catch (e) {
+          // Ignora errori chiusura
+        }
+        webcamWebSocket = null;
+      }
+
       // Connessione al server WebSocket tramite Nginx proxy
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const hostname = window.location.hostname;
       const wsUrl = `${protocol}//${hostname}/ws`;
 
-      console.log(`🔗 Connessione WebSocket a: ${wsUrl}`);
-      webcamWebSocket = new WebSocket(wsUrl);
+      const newWebSocket = new WebSocket(wsUrl);
 
-      webcamWebSocket.onopen = function () {
-        console.log('🔌 WebSocket connesso alla porta 8765');
+      newWebSocket.onopen = function () {
+        // ✅ FIX: Assegna solo dopo che è connesso
+        webcamWebSocket = newWebSocket;
         updateStatus('WebSocket connesso - Avvio sessione...');
 
-        // ✅ REGISTRA SUBITO IL DESKTOP per ricevere notifiche iPhone
+        // Registra desktop per ricevere notifiche iPhone
         webcamWebSocket.send(JSON.stringify({
           action: 'register_desktop'
         }));
-        console.log('✅ Desktop registrato per notifiche iPhone');
 
         // Avvia sessione
         const startMessage = {
@@ -1879,11 +1750,10 @@ async function connectWebcamWebSocket() {
         };
         webcamWebSocket.send(JSON.stringify(startMessage));
 
-        console.log('✅ WebSocket pronto per l\'invio dei frame');
-        resolve(); // Risolvi promise quando connesso
+        resolve();
       };
 
-      webcamWebSocket.onmessage = function (event) {
+      newWebSocket.onmessage = function (event) {
         try {
           const data = JSON.parse(event.data);
           handleWebSocketMessage(data);
@@ -1892,12 +1762,14 @@ async function connectWebcamWebSocket() {
         }
       };
 
-      webcamWebSocket.onclose = function () {
-        console.log('🔌 WebSocket disconnesso');
-        webcamWebSocket = null;
+      newWebSocket.onclose = function () {
+        // Imposta null solo se è ancora questo WebSocket
+        if (webcamWebSocket === newWebSocket) {
+          webcamWebSocket = null;
+        }
       };
 
-      webcamWebSocket.onerror = function (error) {
+      newWebSocket.onerror = function (error) {
         console.error('Errore WebSocket:', error);
         reject(error);
       };
@@ -1911,36 +1783,47 @@ async function connectWebcamWebSocket() {
 
 function disconnectWebcamWebSocket() {
   if (webcamWebSocket) {
-    // Richiedi risultati finali con request_id per correlazione
-    const requestId = ++getResultsRequestId;
-    const stopMessage = {
-      action: 'get_results',
-      request_id: requestId,
-      final: true
-    };
+    if (webcamWebSocket.readyState === WebSocket.OPEN) {
+      // Richiedi risultati finali con request_id per correlazione
+      const requestId = ++getResultsRequestId;
+      const stopMessage = {
+        action: 'get_results',
+        request_id: requestId,
+        final: true
+      };
 
-    try {
-      webcamWebSocket.send(JSON.stringify(stopMessage));
-    } catch (error) {
-      console.error('Errore invio messaggio stop:', error);
-    }
-
-    // Chiudi connessione dopo breve delay per ricevere risultati
-    setTimeout(() => {
-      if (webcamWebSocket) {
-        webcamWebSocket.close();
-        webcamWebSocket = null;
+      try {
+        webcamWebSocket.send(JSON.stringify(stopMessage));
+      } catch (error) {
+        // Ignora errori invio
       }
-      // Pulisci richieste pending alla disconnessione
+
+      // Chiudi connessione dopo breve delay per ricevere risultati
+      const wsToClose = webcamWebSocket;
+      setTimeout(() => {
+        try {
+          if (wsToClose && wsToClose.readyState === WebSocket.OPEN) {
+            wsToClose.close();
+          }
+        } catch (e) {
+          // Ignora errori chiusura
+        }
+        pendingGetResultsRequests.clear();
+      }, 1000);
+    } else {
       pendingGetResultsRequests.clear();
-    }, 1000);
+    }
   }
 }
 
 function startFrameCapture(video) {
-  frameCounter = 0;
+  // Previeni interval duplicati
+  if (captureInterval) {
+    clearInterval(captureInterval);
+    captureInterval = null;
+  }
 
-  console.log('📡 Avvio cattura frame webcam per server (2 FPS)');
+  frameCounter = 0;
 
   captureInterval = setInterval(() => {
     if (isWebcamActive && webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
@@ -1954,14 +1837,20 @@ function startFrameCapture(video) {
 
         context.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
 
-        // ✅ STEP 2: Normalizza a 72 DPI
-        const normalizedCanvas = normalizeTo72DPI(rawCanvas);
+        // Ridimensiona se necessario (max 1280px per performance)
+        let finalCanvas = rawCanvas;
+        if (Math.max(rawCanvas.width, rawCanvas.height) > 1280) {
+          const scale = 1280 / Math.max(rawCanvas.width, rawCanvas.height);
+          const resizedCanvas = document.createElement('canvas');
+          resizedCanvas.width = Math.round(rawCanvas.width * scale);
+          resizedCanvas.height = Math.round(rawCanvas.height * scale);
+          const resizedCtx = resizedCanvas.getContext('2d');
+          resizedCtx.drawImage(rawCanvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
+          finalCanvas = resizedCanvas;
+        }
 
-        // ✅ STEP 3: Comprimi frame webcam (max 1280px, quality 0.6)
-        const compressedCanvas = compressImage(normalizedCanvas, 1280, 0.6);
-
-        // ✅ STEP 4: Converti in base64 e invia
-        const frameBase64 = compressedCanvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+        // Converti in base64 (quality 0.7 per bilanciare qualità e banda)
+        const frameBase64 = finalCanvas.toDataURL('image/jpeg', 0.7).split(',')[1];
 
         // Invia frame via WebSocket (protocollo unificato)
         const frameMessage = {
@@ -1969,11 +1858,6 @@ function startFrameCapture(video) {
           frame_data: frameBase64
         };
         webcamWebSocket.send(JSON.stringify(frameMessage));
-
-        // Log occasionale
-        if (frameCounter % 10 === 0) {
-          console.log(`📡 Frame webcam #${frameCounter} inviato`);
-        }
         frameCounter++;
       } catch (err) {
         console.error('❌ Errore cattura/invio frame webcam:', err);
@@ -2002,14 +1886,6 @@ function showWebcamPreview(video) {
   const previewCanvas = document.getElementById('webcam-preview-canvas');
   const previewInfo = document.getElementById('webcam-preview-info');
 
-  console.log('📺 showWebcamPreview chiamata:', {
-    canvas: !!previewCanvas,
-    previewInfo: !!previewInfo,
-    video: !!video,
-    videoSrc: video?.src,
-    videoType: video?.constructor?.name
-  });
-
   if (previewCanvas && video) {
     // Mostra il canvas
     previewCanvas.classList.add('active');
@@ -2022,28 +1898,15 @@ function showWebcamPreview(video) {
       container.style.visibility = 'visible';
     }
 
-    console.log('🎨 Canvas pronto per anteprima:', {
-      display: previewCanvas.style.display,
-      visibility: previewCanvas.style.visibility,
-      classList: previewCanvas.classList.toString()
-    });
-
     // Distingui tra webcam e video file
     if (video.src && video.src.startsWith('blob:')) {
       previewInfo.innerHTML = 'Video in elaborazione - Anteprima frame';
-      console.log('🎬 Tipo rilevato: Video file');
     } else {
       previewInfo.innerHTML = 'Webcam attiva - Anteprima in tempo reale';
-      console.log('📹 Tipo rilevato: Webcam stream');
     }
 
     // Setup iniziale
     updateWebcamPreview(video);
-  } else {
-    console.error('❌ Elementi mancanti per anteprima:', {
-      previewCanvas: !!previewCanvas,
-      video: !!video
-    });
   }
 }
 
@@ -2054,7 +1917,9 @@ function hideWebcamPreview() {
   if (previewCanvas) {
     previewCanvas.style.display = 'none';
     previewCanvas.classList.remove('active');
-    previewInfo.innerHTML = 'Anteprima webcam non attiva';
+    if (previewInfo) {
+      previewInfo.innerHTML = 'Anteprima webcam non attiva';
+    }
   }
 
   // Ferma anteprima live
@@ -2067,24 +1932,10 @@ function startLivePreview(video) {
     clearInterval(window.livePreviewId);
   }
 
-  console.log('🎥 Avvio anteprima LIVE:', {
-    video: !!video,
-    videoWidth: video?.videoWidth,
-    videoHeight: video?.videoHeight,
-    readyState: video?.readyState,
-    srcObject: !!video?.srcObject
-  });
-
-  // Loop per anteprima live continua (30 FPS) - NO render immediato per evitare scatto
+  // Loop per anteprima live continua (30 FPS)
   window.livePreviewId = setInterval(() => {
     if (video && video.videoWidth > 0) {
       renderLivePreview(video);
-    } else {
-      console.warn('⚠️ Video non pronto per rendering:', {
-        video: !!video,
-        videoWidth: video?.videoWidth,
-        readyState: video?.readyState
-      });
     }
   }, 33); // 30 FPS
 }
@@ -2092,13 +1943,7 @@ function startLivePreview(video) {
 function renderLivePreview(video) {
   const previewCanvas = document.getElementById('webcam-preview-canvas');
 
-  if (!previewCanvas) {
-    console.error('❌ Canvas webcam-preview-canvas NON TROVATO!');
-    return;
-  }
-
-  if (!video) {
-    console.error('❌ Video element NON FORNITO!');
+  if (!previewCanvas || !video) {
     return;
   }
 
@@ -2152,13 +1997,11 @@ function stopLivePreview() {
   if (window.livePreviewId) {
     clearInterval(window.livePreviewId);
     window.livePreviewId = null;
-    console.log('🛑 Anteprima live fermata');
   }
 }
 
 function updateWebcamPreview(video) {
   // Questa funzione ora serve solo per il setup iniziale
-  console.log('🎥 Setup iniziale anteprima per:', video?.constructor?.name);
 }
 
 // Variabile globale per tracciare miglior score finora
@@ -2180,7 +2023,6 @@ function handleWebSocketMessage(data) {
     switch (data.action) {
       case 'session_started':
         updateStatus('Sessione avviata - Analisi in corso...');
-        console.log('✅ Sessione WebSocket avviata:', data);
         // Reset stato per nuova sessione
         currentBestScore = 0;
         pendingGetResultsRequests.clear();
@@ -2190,17 +2032,17 @@ function handleWebSocketMessage(data) {
 
       case 'frame_processed':
         // Frame elaborato dal server
-        // ⚠️ LOG RIDOTTO: Non stampare ogni frame
         updateFrameProcessingStats(data);
 
-        // ✅ RICHIEDI get_results SOLO SE:
-        // - È il primo frame (currentBestScore === 0)
-        // - Lo score migliora di almeno 0.5 punti
-        // - Ogni 10 frame per verificare
-        if (data.total_frames_collected && data.total_frames_collected > 0) {
+        // Richiedi get_results se ci sono frame validi
+        const hasFrames = (data.total_frames_collected && data.total_frames_collected > 0) ||
+          (data.faces_detected && data.faces_detected > 0);
+
+        if (hasFrames) {
+          const frameCount = data.total_frames_collected || 1;
           const shouldRequest = currentBestScore === 0 ||
             (data.current_score && data.current_score > currentBestScore + 0.5) ||
-            (data.total_frames_collected % 10 === 0);
+            (frameCount % 5 === 0);
 
           if (shouldRequest) {
             requestBestFramesUpdate();
@@ -2210,8 +2052,12 @@ function handleWebSocketMessage(data) {
 
       case 'results_ready':
         // Risultati finali dal server
-        console.log('📊 Risultati finali ricevuti:', data);
         handleResultsReady(data);
+
+        // ✅ APRI automaticamente sezione DATI ANALISI per mostrare tabella debug
+        // (sia durante streaming webcam che al termine)
+        openUnifiedAnalysisSection();
+        switchUnifiedTab('debug');
         break;
 
       case 'pong':
@@ -2220,10 +2066,8 @@ function handleWebSocketMessage(data) {
 
       default:
         if (data.error) {
-          console.error('❌ Errore dal server:', data.error);
+          console.error('Errore dal server:', data.error);
           showToast(data.error, 'error');
-        } else {
-          console.log('📨 Messaggio WebSocket:', data);
         }
     }
   } catch (error) {
@@ -2232,37 +2076,39 @@ function handleWebSocketMessage(data) {
 }
 
 // ✅ THROTTLING: Limita richieste get_results
-const MAX_PENDING_REQUESTS = 2; // Max richieste in attesa
+const MAX_PENDING_REQUESTS = 3; // ✅ FIX: Aumentato da 2 a 3
 let lastGetResultsTime = 0;
-const MIN_REQUEST_INTERVAL = 500; // Minimo 500ms tra richieste
+const MIN_REQUEST_INTERVAL = 300; // ✅ FIX: Ridotto da 500ms a 300ms per aggiornamenti più frequenti
 
-function requestBestFramesUpdate() {
-  if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
-    const now = Date.now();
-
-    // ✅ THROTTLE 1: Non inviare se ci sono già troppe richieste pending
-    if (pendingGetResultsRequests.size >= MAX_PENDING_REQUESTS) {
-      return; // Skip silenzioso
-    }
-
-    // ✅ THROTTLE 2: Non inviare se l'ultima richiesta è troppo recente
-    if (now - lastGetResultsTime < MIN_REQUEST_INTERVAL) {
-      return; // Skip silenzioso
-    }
-
-    lastGetResultsTime = now;
-
-    // Incrementa contatore e traccia richiesta
-    const requestId = ++getResultsRequestId;
-    pendingGetResultsRequests.add(requestId);
-
-    const requestMessage = {
-      action: 'get_results',
-      request_id: requestId,
-      timestamp: now
-    };
-    webcamWebSocket.send(JSON.stringify(requestMessage));
+function requestBestFramesUpdate(force = false) {
+  if (!webcamWebSocket || webcamWebSocket.readyState !== WebSocket.OPEN) {
+    return;
   }
+
+  const now = Date.now();
+
+  // Throttle: non inviare se troppe richieste pending o troppo recente
+  if (!force && pendingGetResultsRequests.size >= MAX_PENDING_REQUESTS) {
+    return;
+  }
+
+  if (!force && now - lastGetResultsTime < MIN_REQUEST_INTERVAL) {
+    return;
+  }
+
+  lastGetResultsTime = now;
+
+  // Incrementa contatore e traccia richiesta
+  const requestId = ++getResultsRequestId;
+  pendingGetResultsRequests.add(requestId);
+
+  const requestMessage = {
+    action: 'get_results',
+    request_id: requestId,
+    timestamp: now
+  };
+
+  webcamWebSocket.send(JSON.stringify(requestMessage));
 }
 
 function updateFrameProcessingStats(data) {
@@ -2279,7 +2125,6 @@ function updateFrameProcessingStats(data) {
   // Notifica audio per frame con score > 95
   if (data.current_score && data.current_score > 95) {
     playHighScoreSound();
-    console.log(`🔔 Frame con score ${data.current_score.toFixed(2)} - suono riprodotto`);
   }
 }
 
@@ -2809,39 +2654,26 @@ function handleResultsReady(data) {
       const newBestScore = data.best_score || 0;
       const scoreDiff = newBestScore - currentBestScore;
 
-      // ✅ AGGIORNA SOLO SE CAMBIA:
-      // - Primo frame
-      // - Score migliora
-      // - Numero frame diverso
+      // Aggiorna solo se cambia: primo frame, score migliora, o numero frame diverso
       const isFirstFrame = currentBestScore === 0;
-      const hasImproved = scoreDiff > 0.1; // Soglia minima 0.1
-      const framesChanged = !window.lastFramesHash || window.lastFramesHash !== data.frames.length + '_' + newBestScore;
+      const hasImproved = scoreDiff > 0.05;
+      const framesChanged = !window.lastFramesHash || window.lastFramesHash !== data.frames.length + '_' + newBestScore.toFixed(2);
 
       if (!isFirstFrame && !hasImproved && !framesChanged) {
-        // ⚠️ SKIP: Dati identici, non aggiornare
         return;
-      }
-
-      if (isFirstFrame) {
-        console.log(`🎯 Primo frame: score ${newBestScore.toFixed(3)}`);
-      } else if (hasImproved) {
-        console.log(`🔺 Score migliorato: ${currentBestScore.toFixed(3)} → ${newBestScore.toFixed(3)} (+${scoreDiff.toFixed(3)})`);
       }
 
       // Aggiorna score e hash
       currentBestScore = newBestScore;
       window.lastFramesHash = data.frames.length + '_' + newBestScore;
 
-      // ✅ Usa funzione centralizzata per trasformare i dati
+      // Usa funzione centralizzata per trasformare i dati
       const bestFrames = transformWebSocketFrames(data);
 
-      // ✅ AGGIORNA: Solo quando i dati cambiano effettivamente
+      // Aggiorna quando i dati cambiano effettivamente
       updateDebugTable(bestFrames);
 
       updateStatus(`Ricevuti ${bestFrames.length} migliori frame dal server`);
-
-    } else {
-      console.warn('Nessun frame valido nei risultati:', data);
     }
 
   } catch (error) {
@@ -5472,8 +5304,9 @@ async function detectGreenDots() {
     updateStatus('🔄 Rilevamento green dots in corso...');
     showToast('⏳ Elaborazione in corso... Può richiedere 10-60 secondi', 'info');
 
-    // Ottieni l'immagine del canvas come base64 con resize a max 1600px per velocizzare
-    const canvasImageData = getCanvasImageAsBase64(1600);
+    // Ottieni l'immagine del canvas come base64 con resize a max 2400px per preservare dettagli
+    // ✅ CORREZIONE: aumentato da 1600px a 2400px per migliorare rilevamento punti bianchi
+    const canvasImageData = getCanvasImageAsBase64(2400);
     if (!canvasImageData) {
       throw new Error('Impossibile ottenere dati immagine dal canvas');
     }
@@ -5686,14 +5519,9 @@ function getCanvasImageAsBase64(maxDimension = null) {
     // Disegna l'immagine (con resize se necessario)
     tempCtx.drawImage(imageElement, 0, 0, finalWidth, finalHeight);
 
-    // ✅ NORMALIZZA A 72 DPI prima della conversione
-    const normalizedCanvas = normalizeTo72DPI(tempCanvas);
-
-    // ✅ COMPRIMI moderatamente (max 1920px, quality 0.85)
-    const compressedCanvas = compressImage(normalizedCanvas, 1920, 0.85);
-
-    // Converti in JPEG con compressione moderata
-    const base64Data = compressedCanvas.toDataURL('image/jpeg', 0.85);
+    // Converti direttamente in base64 senza ulteriori elaborazioni
+    // Quality massima (0.98) per preservare tutti i dettagli
+    const base64Data = tempCanvas.toDataURL('image/jpeg', 0.98);
     console.log('✅ Immagine convertita in base64:', {
       original: `${origWidth}x${origHeight}`,
       final: `${finalWidth}x${finalHeight}`,

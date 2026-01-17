@@ -685,8 +685,6 @@
     <!-- Scripts -->
     <!-- Patch per bug textBaseline PRIMA di Fabric.js -->
     <script>
-        console.log('🔧 Applicando patch preventivo per textBaseline...');
-
         // Patch preventivo per il CanvasRenderingContext2D
         if (typeof CanvasRenderingContext2D !== 'undefined') {
             const descriptor = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'textBaseline');
@@ -694,9 +692,7 @@
                 const originalSetter = descriptor.set;
                 Object.defineProperty(CanvasRenderingContext2D.prototype, 'textBaseline', {
                     set: function (value) {
-                        // Correggi automaticamente il valore errato PRIMA che causi errori
                         if (value === 'alphabetical') {
-                            // Correzione silenziosa per evitare spam nella console
                             value = 'alphabetic';
                         }
                         return originalSetter.call(this, value);
@@ -707,8 +703,6 @@
                 });
             }
         }
-
-        console.log('🔧 Patch preventivo applicato!');
     </script>
 
     <!-- Fabric.js per canvas -->
@@ -731,36 +725,6 @@
     <!-- Frame Processor Unificato -->
     <script src="static/js/frame-processor.js"></script>
     <script src="static/js/main.js"></script>
-
-    <!-- Script di test per debug -->
-    <script>
-        console.log('🧪 TEST SCRIPT CARICATO');
-
-        // Test dopo il caricamento completo
-        window.addEventListener('load', function () {
-            console.log('🧪 PAGINA COMPLETAMENTE CARICATA');
-            console.log('🧪 Stato variabili globali:', {
-                currentLandmarks: typeof currentLandmarks !== 'undefined' ? currentLandmarks?.length : 'undefined',
-                fabricCanvas: typeof fabricCanvas !== 'undefined' ? !!fabricCanvas : 'undefined',
-                transformLandmarkCoordinate: typeof window.transformLandmarkCoordinate !== 'undefined' ? 'function available' : 'undefined',
-                measureFaceWidth: typeof measureFaceWidth !== 'undefined' ? 'function available' : 'undefined'
-            });
-
-            // Test diretto della funzione di misurazione (disabilitato)
-            // setTimeout(() => {
-            //     console.log('🧪 TEST DIRETTO - Chiamata measureFaceWidth()');
-            //     if (typeof measureFaceWidth === 'function') {
-            //         try {
-            //             measureFaceWidth();
-            //         } catch (e) {
-            //             console.error('🧪 ERRORE in measureFaceWidth:', e);
-            //         }
-            //     } else {
-            //         console.error('🧪 measureFaceWidth NON DEFINITA');
-            //     }
-            // }, 2000);
-        });
-    </script>
 
     <!-- MediaPipe per face detection -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -901,9 +865,8 @@
             window.toggleGreenDots = function () {
                 if (originalToggleGreenDots) originalToggleGreenDots();
 
-                // Non emettere feedback vocale se siamo in modalità suppress (es: durante analisi progettazione)
+                // Non emettere feedback vocale se siamo in modalità suppress
                 if (window.suppressVoiceFeedback) {
-                    console.log('🔇 [GREEN DOTS] Feedback vocale soppresso (suppressVoiceFeedback attivo)');
                     return;
                 }
 
@@ -913,57 +876,41 @@
 
             // Funzione per comando vocale "preferenza destra" - analizza spostamenti sopracciglio sinistro
             window.show_left_eyebrow_with_voice = async function () {
-                console.log('🎯 [PREFERENZA DESTRA] Inizio analisi preferenza destra');
-                console.log('🔍 [PREFERENZA DESTRA] Verifica funzioni disponibili:', {
-                    showLeftEyebrow: typeof window.showLeftEyebrow,
-                    voiceAssistant: typeof voiceAssistant,
-                    greenDotsDetected: !!window.greenDotsDetected
-                });
-
                 // Verifica prerequisiti
                 if (!window.greenDotsDetected || !window.greenDotsData?.success) {
-                    console.error('❌ [PREFERENZA DESTRA] Green dots non rilevati');
                     if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                         voiceAssistant.speak('Prima devi rilevare i punti verdi con il pulsante green dots');
                     }
                     return;
                 }
 
-                // Step 1: Apri il popup della correzione sopracciglio sinistro
+                // Apri il popup della correzione sopracciglio sinistro
                 if (typeof window.showLeftEyebrow === 'function') {
-                    console.log('📊 [PREFERENZA DESTRA] Apertura popup correzione...');
                     try {
                         window.showLeftEyebrow();
-                        console.log('✅ [PREFERENZA DESTRA] Popup aperto con successo');
                     } catch (error) {
-                        console.error('❌ [PREFERENZA DESTRA] Errore apertura popup:', error);
                         if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                             voiceAssistant.speak('Errore apertura finestra correzione');
                         }
                         return;
                     }
 
-                    // Step 2: Aspetta che il popup sia aperto (breve delay)
+                    // Aspetta che il popup sia aperto
                     await new Promise(resolve => setTimeout(resolve, 800));
 
-                    // Step 3: Analizza gli spostamenti dalla tabella
-                    console.log('📏 [PREFERENZA DESTRA] Analisi spostamenti dalla tabella...');
+                    // Analizza gli spostamenti dalla tabella
                     const instructions = window.analyzeLeftEyebrowMovements();
 
                     if (instructions) {
-                        console.log('🔊 [PREFERENZA DESTRA] Pronuncia indicazioni:', instructions);
                         if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                             voiceAssistant.speak(instructions);
                         }
                     } else {
-                        console.error('❌ [PREFERENZA DESTRA] Impossibile generare indicazioni');
                         if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                             voiceAssistant.speak('Non ho trovato abbastanza dati per generare le indicazioni');
                         }
                     }
                 } else {
-                    console.error('❌ [PREFERENZA DESTRA] Funzione showLeftEyebrow non disponibile');
-                    console.error('    window.showLeftEyebrow:', window.showLeftEyebrow);
                     if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
                         voiceAssistant.speak('Funzione correzione non disponibile');
                     }
@@ -1481,10 +1428,18 @@
                 img.src = 'data:image/jpeg;base64,' + frameData;
             };
 
+            // ✅ AudioContext singleton per evitare errori multipli
+            window.audioContextInstance = null;
+
             // ✅ Funzione per riprodurre beep quando score è alto
-            window.playBeep = function() {
+            window.playBeep = function () {
                 try {
-                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    // Usa singleton AudioContext
+                    if (!window.audioContextInstance) {
+                        window.audioContextInstance = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+
+                    const audioContext = window.audioContextInstance;
                     const oscillator = audioContext.createOscillator();
                     const gainNode = audioContext.createGain();
 
@@ -1503,6 +1458,51 @@
                     console.error('Errore riproduzione beep:', e);
                 }
             };
+
+            // ✅ Popola tabella DATI ANALISI con misurazioni dal frame
+            async function populateTableFromLandmarks(landmarks, frameBase64) {
+                try {
+                    console.log('📊 Popolamento tabella da landmarks iPhone...');
+
+                    // Chiama API per ottenere misurazioni
+                    const response = await fetch('/api/canvas/analyze', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            image_data: frameBase64,
+                            landmarks: landmarks
+                        })
+                    });
+
+                    if (!response.ok) {
+                        console.warn('⚠️ Errore API analisi:', response.status);
+                        return;
+                    }
+
+                    const analysisData = await response.json();
+                    console.log('✅ Dati analisi ricevuti:', analysisData);
+
+                    // Apri sezione DATI ANALISI se chiusa
+                    if (typeof openUnifiedAnalysisSection === 'function') {
+                        openUnifiedAnalysisSection();
+                    }
+
+                    // Switcha al tab Measurements
+                    if (typeof switchUnifiedTab === 'function') {
+                        switchUnifiedTab('measurements');
+                    }
+
+                    // Aggiungi misurazioni alla tabella usando funzione esistente
+                    if (typeof addMeasurementToTable === 'function' && analysisData.measurements) {
+                        analysisData.measurements.forEach(m => {
+                            addMeasurementToTable(m.name, m.value, m.unit);
+                        });
+                    }
+
+                } catch (error) {
+                    console.error('❌ Errore popolamento tabella:', error);
+                }
+            }
 
             // ❌ RIMOSSA FUNZIONE DUPLICATA renderIPhoneFramePreview (era definita 2 volte)
 
@@ -1554,58 +1554,57 @@
                     // ✅ Score alto? Mostra SUBITO frame nel canvas principale e aggiorna tabella
                     const score = data.score || 0;
                     const HIGH_SCORE_THRESHOLD = 85;
-                    
+
+                    // 🔍 LOG SCORE per debug
+                    if (score > 75) {
+                        console.log('📊 Score ricevuto:', score, '| Threshold:', HIGH_SCORE_THRESHOLD, '| Best:', window.bestIPhoneScore);
+                    }
+
                     // ✅ AGGIORNA SOLO SE score migliora (o è il primo ≥85)
                     if (score >= HIGH_SCORE_THRESHOLD && score > window.bestIPhoneScore) {
                         console.log('🏆 NUOVO MIGLIOR SCORE!', score, '(precedente:', window.bestIPhoneScore, ')');
-                        
+
                         // Aggiorna miglior score
                         window.bestIPhoneScore = score;
-                        
+
                         // ✅ BEEP acustico per segnalare nuovo miglior frame
                         if (typeof playBeep === 'function') {
                             playBeep();
                         }
-                        
+
                         // ✅ Carica frame nel canvas PRINCIPALE (non solo preview)
                         if (data.frame_data) {
                             const img = new Image();
-                            img.onload = function() {
+                            img.onload = function () {
                                 // Usa displayImageOnCanvas per caricare nel canvas principale
                                 if (typeof displayImageOnCanvas === 'function') {
                                     displayImageOnCanvas(img);
                                     console.log('✅ Frame miglior score caricato nel canvas principale');
                                 }
-                                
+
                                 // Aggiorna landmarks se disponibili
                                 if (data.landmarks) {
                                     window.currentLandmarks = data.landmarks;
                                     if (typeof updateCanvasDisplay === 'function') {
                                         updateCanvasDisplay();
                                     }
-                                }
-                                
-                                // ✅ Richiedi analisi completa per popolare tabella
-                                if (typeof analyzeLandmarks === 'function') {
-                                    analyzeLandmarks();
+
+                                    // ✅ Popola tabella con API /api/canvas/analyze
+                                    populateTableFromLandmarks(data.landmarks, data.frame_data);
                                 }
                             };
                             img.src = 'data:image/jpeg;base64,' + data.frame_data;
                         }
-                    } else if (score >= 70) {
-                        // Score medio-alto: solo beep più leggero
-                        if (typeof playBeep === 'function') {
-                            playBeep();
-                        }
                     }
 
-                    // Richiedi best frames se score migliora (come per video)
+                    // ✅ Richiedi best frames periodicamente per aggiornare tabella debug (come webcam sistema)
                     if (data.total_frames_collected && data.total_frames_collected > 0) {
-                        const shouldRequest = (typeof currentBestScore !== 'undefined' && currentBestScore === 0) ||
-                            (score > (currentBestScore || 0) + 0.5) ||
-                            (data.total_frames_collected % 10 === 0);
+                        const shouldRequest = window.bestIPhoneScore === 0 ||  // Prima volta
+                            (score > window.bestIPhoneScore + 0.5) ||  // Score migliora significativamente
+                            (data.total_frames_collected % 5 === 0);  // Ogni 5 frame
 
                         if (shouldRequest && typeof requestBestFramesUpdate === 'function') {
+                            console.log('📊 [iPhone] Richiesta aggiornamento tabella debug (frame:', data.total_frames_collected, ')');
                             requestBestFramesUpdate();
                         }
                     }
@@ -1615,37 +1614,6 @@
                         updateIPhoneStatus(true, data.connected_iphones[0].deviceIdShort);
                         window.isIPhoneStreamActive = true;
                     }
-                } else if (data.action === 'best_frames_result' || data.action === 'results') {
-                    // ✅ Risultati best frames ricevuti
-                    console.log('📊 Best frames ricevuti:', data.best_frames?.length || 0);
-
-                    if (data.best_frames && data.best_frames.length > 0) {
-                        // Prendi il frame con score più alto
-                        const bestFrame = data.best_frames[0];
-                        console.log('🏆 Miglior frame - Score:', bestFrame.score);
-
-                        // Carica sul canvas principale
-                        const img = new Image();
-                        img.onload = () => {
-                            if (typeof displayImageOnCanvas === 'function') {
-                                displayImageOnCanvas(img);
-                            }
-
-                            // Aggiorna landmarks se disponibili
-                            if (bestFrame.landmarks) {
-                                window.currentLandmarks = bestFrame.landmarks;
-                                if (typeof updateCanvasDisplay === 'function') {
-                                    updateCanvasDisplay();
-                                }
-                            }
-
-                            updateStatus(`✅ Miglior frame iPhone caricato (Score: ${bestFrame.score})`);
-                            showToast(`Frame migliore: score ${bestFrame.score}`, 'success');
-                        };
-                        img.src = 'data:image/jpeg;base64,' + bestFrame.image_data;
-                    } else {
-                        showToast('Nessun frame iPhone disponibile', 'warning');
-                    }
                 } else if (data.action === 'iphone_status') {
                     if (data.connected_count > 0 && data.devices.length > 0) {
                         updateIPhoneStatus(true, data.devices[0].deviceIdShort);
@@ -1653,6 +1621,9 @@
                         updateIPhoneStatus(false);
                     }
                 }
+                // ⚠️ NOTA: best_frames_result e results_ready NON vengono gestiti qui
+                // perché devono essere processati da main.js handleResultsReady()
+                // che chiama updateDebugTable(), openUnifiedAnalysisSection() e switchUnifiedTab('debug')
             }
 
             // ❌ RIMOSSO WRAPPER DUPLICATO - handleWebSocketMessage già gestito in main.js
