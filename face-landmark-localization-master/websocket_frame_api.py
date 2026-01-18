@@ -61,8 +61,6 @@ class WebSocketFrameScorer:
         self.session_dir = os.path.join(self.output_dir, f"session_{session_id}")
         if not os.path.exists(self.session_dir):
             os.makedirs(self.session_dir)
-        
-        logger.info(f"Nuova sessione iniziata: {session_id}")
     
     def get_all_mediapipe_landmarks(self, mediapipe_landmarks, img_width, img_height):
         """Estrae TUTTI i landmark MediaPipe (468 punti)"""
@@ -337,8 +335,7 @@ class WebSocketFrameScorer:
                                     # Riordina e aggiorna soglia quando raggiungi buffer_size
                                     if len(self.best_frames) == self.buffer_size:
                                         self.best_frames.sort(key=lambda x: x['score'], reverse=True)
-                                        self.min_score_threshold = max(70, self.best_frames[-1]['score'])  # Min 70
-                                        logger.info(f"✅ Buffer pieno ({self.buffer_size}), soglia aggiornata: {self.min_score_threshold:.2f}")
+                                        self.min_score_threshold = max(70, self.best_frames[-1]['score'])
                             elif score > self.min_score_threshold or is_excellent:
                                 # Buffer pieno - sostituisci il peggiore se questo è migliore O se è eccellente
                                 self.best_frames[-1] = frame_data
@@ -349,9 +346,7 @@ class WebSocketFrameScorer:
                                 old_threshold = self.min_score_threshold
                                 self.min_score_threshold = max(70, self.best_frames[-1]['score'])
                                 
-                                if is_excellent:
-                                    logger.info(f"🌟 Frame ECCELLENTE #{current_frame_number} score={score:.2f}")
-                                # ⚠️ LOG RIDOTTO: Non stampare ogni sostituzione
+                                # Log solo per frame eccellenti (score >= 95) - ridotto per performance
                             else:
                                 # ⚠️ LOG RIDOTTO: Non stampare ogni frame scartato
                                 pass
@@ -537,7 +532,6 @@ async def broadcast_to_active_desktops(message):
 
 async def handle_websocket(websocket):
     """Handler principale WebSocket"""
-    logger.info(f"Nuova connessione WebSocket da {websocket.remote_address}")
 
     # Flag per tracciare se questo e' un client desktop
     is_desktop_client = False
@@ -598,8 +592,6 @@ async def handle_websocket(websocket):
                             'user_agent': data.get('userAgent', 'Unknown'),
                             'last_frame': None
                         }
-                        logger.info(f"iPhone connesso: {device_id[:8]}...")
-
                         # Avvia sessione automaticamente per iPhone
                         session_id = f"iphone_{device_id[:8]}_{int(time.time())}"
                         frame_scorer.start_session(session_id)
@@ -661,8 +653,6 @@ async def handle_websocket(websocket):
                     device_id = data.get('deviceId')
                     if device_id and device_id in connected_iphone_devices:
                         del connected_iphone_devices[device_id]
-                        logger.info(f"iPhone disconnesso: {device_id[:8]}...")
-
                         await broadcast_to_desktop({
                             "action": "iphone_disconnected",
                             "deviceId": device_id,
@@ -690,22 +680,16 @@ async def handle_websocket(websocket):
                     }))
 
                 elif action == 'start_webcam':
-                    # ✅ Desktop ha premuto "Avvia Webcam" - inizia a ricevere frames iPhone
                     is_desktop_client = True
                     desktop_websockets.add(websocket)
                     active_desktop_webcams.add(websocket)
-                    logger.info(f"🎥 Desktop avviato - ora riceve frames iPhone")
-                    
                     await websocket.send(json.dumps({
                         "action": "webcam_started",
                         "message": "Desktop pronto a ricevere frames iPhone"
                     }))
 
                 elif action == 'stop_webcam':
-                    # ✅ Desktop ha premuto "Ferma Webcam" - smetti di inviare frames
                     active_desktop_webcams.discard(websocket)
-                    logger.info(f"⏸️ Desktop fermato - non riceve più frames iPhone")
-                    
                     await websocket.send(json.dumps({
                         "action": "webcam_stopped",
                         "message": "Desktop fermato"
@@ -739,18 +723,16 @@ async def handle_websocket(websocket):
                 await websocket.send(json.dumps({"error": f"Errore server: {str(e)}"}))
 
     except websockets.exceptions.ConnectionClosed:
-        logger.info("Connessione WebSocket chiusa")
+        pass
     except Exception as e:
         logger.error(f"Errore WebSocket: {e}")
     finally:
-        # Cleanup alla disconnessione
         if is_desktop_client:
             desktop_websockets.discard(websocket)
-            active_desktop_webcams.discard(websocket)  # ✅ Rimuovi anche da active
+            active_desktop_webcams.discard(websocket)
 
         if iphone_device_id and iphone_device_id in connected_iphone_devices:
             del connected_iphone_devices[iphone_device_id]
-            logger.info(f"iPhone rimosso (disconnessione): {iphone_device_id[:8]}...")
             await broadcast_to_desktop({
                 "action": "iphone_disconnected",
                 "deviceId": iphone_device_id,
@@ -759,20 +741,14 @@ async def handle_websocket(websocket):
 
 async def main():
     """Avvia il server WebSocket"""
-    host = "0.0.0.0"  # Ascolta su tutte le interfacce di rete
+    host = "0.0.0.0"
     port = 8765
-    
-    logger.info(f"Avvio server WebSocket su {host}:{port}")
-    logger.info("Protocollo supportato:")
-    logger.info("1. Invia: {'action': 'start_session', 'session_id': 'optional_id'}")
-    logger.info("2. Invia frame: {'action': 'process_frame', 'frame_data': 'base64_encoded_image'}")
-    logger.info("3. Ottieni risultati: {'action': 'get_results'}")
-    
+    logger.info(f"WebSocket server avviato su {host}:{port}")
     async with websockets.serve(handle_websocket, host, port):
-        await asyncio.Future()  # Mantiene il server in esecuzione
+        await asyncio.Future()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Server fermato dall'utente")
+        pass

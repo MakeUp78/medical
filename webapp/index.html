@@ -1514,82 +1514,50 @@
 
             // Handler per messaggi iPhone dal WebSocket
             function handleIPhoneWebSocketMessage(data) {
-                console.log('📱 Messaggio iPhone ricevuto:', data.action);
-
                 if (data.action === 'iphone_connected') {
-                    console.log('✅ iPhone connesso:', data.deviceIdShort);
                     window.isIPhoneStreamActive = true;
-                    window.bestIPhoneScore = 0;  // Reset score al nuovo collegamento
+                    window.bestIPhoneScore = 0;
                     updateIPhoneStatus(true, data.deviceIdShort);
-
-                    // NON espandere sezione - aspetta che l'utente prema "Avvia Webcam"
-                    console.log('📱 iPhone connesso - In attesa che utente prema Avvia Webcam');
-
-                    // Mostra messaggio che iPhone è pronto
                     if (typeof showToast === 'function') {
                         showToast('iPhone connesso - Premi Avvia Webcam per iniziare', 'success');
                     }
                 } else if (data.action === 'iphone_disconnected') {
-                    console.log('❌ iPhone disconnesso:', data.deviceId);
                     window.isIPhoneStreamActive = false;
-                    window.bestIPhoneScore = 0;  // Reset score alla disconnessione
+                    window.bestIPhoneScore = 0;
                     updateIPhoneStatus(false);
                 } else if (data.action === 'iphone_frame_processed') {
-                    // Frame iPhone ricevuto - marca iPhone come attivo
                     window.isIPhoneStreamActive = true;
 
-                    // ✅ Server manda frames SOLO quando desktop ha premuto "Avvia Webcam"
-                    // Non serve più controllo qui - se arriva, va processato
-
-                    // Visualizza frame in anteprima (come video usa renderLivePreview)
                     if (data.frame_data && typeof window.renderIPhoneFramePreview === 'function') {
                         window.renderIPhoneFramePreview(data.frame_data);
                     }
 
-                    // Aggiorna statistiche frame (come per video)
                     if (typeof updateFrameProcessingStats === 'function') {
                         updateFrameProcessingStats(data);
                     }
 
-                    // ✅ Score alto? Mostra SUBITO frame nel canvas principale e aggiorna tabella
                     const score = data.score || 0;
                     const HIGH_SCORE_THRESHOLD = 75;
 
-                    // 🔍 LOG SCORE per debug
-                    if (score > 70) {
-                        console.log('📊 Score ricevuto:', score, '| Threshold:', HIGH_SCORE_THRESHOLD, '| Best:', window.bestIPhoneScore);
-                    }
-
-                    // ✅ AGGIORNA SOLO SE score migliora (o è il primo ≥75)
+                    // Aggiorna canvas solo se score migliora
                     if (score >= HIGH_SCORE_THRESHOLD && score > window.bestIPhoneScore) {
-                        console.log('🏆 NUOVO MIGLIOR SCORE!', score, '(precedente:', window.bestIPhoneScore, ')');
-
-                        // Aggiorna miglior score
                         window.bestIPhoneScore = score;
 
-                        // ✅ BEEP acustico per segnalare nuovo miglior frame
                         if (typeof playBeep === 'function') {
                             playBeep();
                         }
 
-                        // ✅ Carica frame nel canvas PRINCIPALE (non solo preview)
                         if (data.frame_data) {
                             const img = new Image();
                             img.onload = function () {
-                                // Usa displayImageOnCanvas per caricare nel canvas principale
                                 if (typeof displayImageOnCanvas === 'function') {
                                     displayImageOnCanvas(img);
-                                    console.log('✅ Frame miglior score caricato nel canvas principale');
                                 }
-
-                                // Aggiorna landmarks se disponibili
                                 if (data.landmarks) {
                                     window.currentLandmarks = data.landmarks;
                                     if (typeof updateCanvasDisplay === 'function') {
                                         updateCanvasDisplay();
                                     }
-
-                                    // ✅ Popola tabella con API /api/canvas/analyze
                                     populateTableFromLandmarks(data.landmarks, data.frame_data);
                                 }
                             };
@@ -1597,19 +1565,17 @@
                         }
                     }
 
-                    // ✅ Richiedi best frames periodicamente per aggiornare tabella debug (come webcam sistema)
+                    // Richiedi best frames ogni 10 frame (ridotto da 5)
                     if (data.total_frames_collected && data.total_frames_collected > 0) {
-                        const shouldRequest = window.bestIPhoneScore === 0 ||  // Prima volta
-                            (score > window.bestIPhoneScore + 0.5) ||  // Score migliora significativamente
-                            (data.total_frames_collected % 5 === 0);  // Ogni 5 frame
+                        const shouldRequest = window.bestIPhoneScore === 0 ||
+                            (score > window.bestIPhoneScore + 0.5) ||
+                            (data.total_frames_collected % 10 === 0);
 
                         if (shouldRequest && typeof requestBestFramesUpdate === 'function') {
-                            console.log('📊 [iPhone] Richiesta aggiornamento tabella debug (frame:', data.total_frames_collected, ')');
                             requestBestFramesUpdate();
                         }
                     }
                 } else if (data.action === 'desktop_registered') {
-                    console.log('Desktop registrato, iPhone connessi:', data.connected_iphones.length);
                     if (data.connected_iphones.length > 0) {
                         updateIPhoneStatus(true, data.connected_iphones[0].deviceIdShort);
                         window.isIPhoneStreamActive = true;
