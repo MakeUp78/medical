@@ -1398,34 +1398,48 @@
             }
 
 
-            // Funzione per rendere frame iPhone nel canvas preview (come video)
+            // Cache per preview fluido
+            let _previewCanvas = null;
+            let _previewCtx = null;
+            let _previewImg = new Image();
+            let _previewInitialized = false;
+
+            // Funzione per rendere frame iPhone nel canvas preview - OTTIMIZZATA
             window.renderIPhoneFramePreview = function (frameData) {
-                const previewCanvas = document.getElementById('webcam-preview-canvas');
-                if (!previewCanvas || !frameData) return;
+                if (!frameData) return;
 
-                const ctx = previewCanvas.getContext('2d');
-                const img = new Image();
-                img.onload = function () {
-                    // Calcola dimensioni (come renderLivePreview per video)
-                    const containerWidth = previewCanvas.parentElement.offsetWidth - 16;
-                    const aspectRatio = img.width / img.height;
-                    const canvasWidth = containerWidth;
-                    const canvasHeight = canvasWidth / aspectRatio;
+                // Cache elementi DOM (una sola volta)
+                if (!_previewCanvas) {
+                    _previewCanvas = document.getElementById('webcam-preview-canvas');
+                    if (!_previewCanvas) return;
+                    _previewCtx = _previewCanvas.getContext('2d', { alpha: false });
+                }
 
-                    previewCanvas.width = img.width;
-                    previewCanvas.height = img.height;
-                    previewCanvas.style.width = canvasWidth + 'px';
-                    previewCanvas.style.height = canvasHeight + 'px';
-
-                    ctx.drawImage(img, 0, 0, previewCanvas.width, previewCanvas.height);
-
-                    // Mostra canvas
-                    if (previewCanvas.style.display === 'none') {
-                        previewCanvas.style.display = 'block';
-                        previewCanvas.classList.add('active');
+                // Usa sempre lo stesso oggetto Image per evitare allocazioni
+                _previewImg.onload = function () {
+                    // Inizializza dimensioni canvas solo una volta
+                    if (!_previewInitialized) {
+                        // Dimensioni fisse piccole per anteprima fluida (240px larghezza)
+                        const maxWidth = 240;
+                        const aspectRatio = _previewImg.width / _previewImg.height;
+                        _previewCanvas.width = maxWidth;
+                        _previewCanvas.height = Math.round(maxWidth / aspectRatio);
+                        _previewCanvas.style.width = maxWidth + 'px';
+                        _previewCanvas.style.height = _previewCanvas.height + 'px';
+                        _previewCanvas.style.display = 'block';
+                        _previewCanvas.classList.add('active');
+                        _previewInitialized = true;
                     }
+
+                    // Disegna frame scalato
+                    _previewCtx.drawImage(_previewImg, 0, 0, _previewCanvas.width, _previewCanvas.height);
                 };
-                img.src = 'data:image/jpeg;base64,' + frameData;
+                _previewImg.src = 'data:image/jpeg;base64,' + frameData;
+            };
+
+            // Reset preview cache quando si ferma webcam
+            window.resetPreviewCache = function () {
+                _previewInitialized = false;
             };
 
             // ✅ AudioContext singleton per evitare errori multipli

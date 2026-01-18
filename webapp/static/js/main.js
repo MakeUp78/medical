@@ -282,6 +282,61 @@ async function detectLandmarksSilent() {
 }
 
 // ============================================================================
+// HARD REFRESH PER NUOVA SESSIONE
+// ============================================================================
+/**
+ * Esegue un hard refresh completo della pagina prima di iniziare una nuova sessione.
+ * Chiamato dai pulsanti AVVIA WEBCAM, CARICA VIDEO, CARICA IMMAGINE.
+ * Pulisce cache, stato e ricarica la pagina per garantire uno stato pulito.
+ */
+function hardRefreshForNewSession(actionType) {
+  // Salva il tipo di azione da eseguire dopo il refresh
+  sessionStorage.setItem('pendingAction', actionType);
+  sessionStorage.setItem('pendingActionTime', Date.now().toString());
+
+  // Esegui hard refresh (ignora cache)
+  window.location.reload(true);
+}
+
+/**
+ * Controlla se c'è un'azione pendente dopo un hard refresh
+ * Chiamato all'avvio dell'app
+ */
+function checkPendingAction() {
+  const pendingAction = sessionStorage.getItem('pendingAction');
+  const pendingTime = sessionStorage.getItem('pendingActionTime');
+
+  if (!pendingAction || !pendingTime) return;
+
+  // Verifica che l'azione sia recente (max 5 secondi)
+  const elapsed = Date.now() - parseInt(pendingTime);
+  if (elapsed > 5000) {
+    sessionStorage.removeItem('pendingAction');
+    sessionStorage.removeItem('pendingActionTime');
+    return;
+  }
+
+  // Pulisci sessionStorage
+  sessionStorage.removeItem('pendingAction');
+  sessionStorage.removeItem('pendingActionTime');
+
+  // Esegui l'azione dopo un breve delay per permettere inizializzazione
+  setTimeout(() => {
+    switch (pendingAction) {
+      case 'webcam':
+        if (typeof startWebcamDirect === 'function') startWebcamDirect();
+        break;
+      case 'video':
+        if (typeof loadVideoDirect === 'function') loadVideoDirect();
+        break;
+      case 'image':
+        if (typeof loadImageDirect === 'function') loadImageDirect();
+        break;
+    }
+  }, 500);
+}
+
+// ============================================================================
 // RESET GLOBALE PER NUOVA ANALISI
 // ============================================================================
 function resetForNewAnalysis() {
@@ -433,6 +488,11 @@ function initializeFileHandlers() {
 }
 
 function loadImage() {
+  // Hard refresh prima di caricare nuova immagine
+  hardRefreshForNewSession('image');
+}
+
+function loadImageDirect() {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
@@ -464,6 +524,11 @@ function collapseDetectionSections() {
 }
 
 function loadVideo() {
+  // Hard refresh prima di caricare nuovo video
+  hardRefreshForNewSession('video');
+}
+
+function loadVideoDirect() {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'video/*';
@@ -1487,12 +1552,22 @@ function startRealTimeFaceDetection(video) {
 }
 
 async function startWebcam() {
-  try {
-    // ✅ Controlla se c'è un iPhone attivamente in streaming
-    console.log('🔍 Controllo iPhone stream:', window.isIPhoneStreamActive);
+  // Hard refresh se non c'è iPhone connesso (webcam locale richiede pagina pulita)
+  // Se iPhone è connesso, procede direttamente senza refresh
+  if (!window.isIPhoneStreamActive && !sessionStorage.getItem('webcamRefreshDone')) {
+    sessionStorage.setItem('webcamRefreshDone', 'true');
+    hardRefreshForNewSession('webcam');
+    return;
+  }
+  sessionStorage.removeItem('webcamRefreshDone');
 
+  // Procedi con startWebcamDirect
+  await startWebcamDirect();
+}
+
+async function startWebcamDirect() {
+  try {
     if (window.isIPhoneStreamActive) {
-      console.log('📱 Avvio visualizzazione iPhone stream');
       updateStatus('📱 iPhone Camera attiva - Anteprima in corso...');
       showToast('iPhone Camera avviata - Anteprima in corso', 'success');
 
@@ -6920,29 +6995,22 @@ function syncGreenDotsOverlayWithViewport() {
 // ===================================
 
 window.addEventListener('DOMContentLoaded', async () => {
-  console.log('🚀 Inizializzazione applicazione Medical Face Analysis');
+  // STEP 0: Controlla se c'è un'azione pendente da hard refresh
+  checkPendingAction();
 
   // STEP 1: Verifica autenticazione
   const isAuthenticated = await checkAuthentication();
 
   if (!isAuthenticated) {
-    console.log('❌ Autenticazione fallita, app non inizializzata');
     return;
   }
 
-  console.log('✅ Autenticazione completata, inizializzazione app...');
-
   // STEP 2: Messaggio di benvenuto personalizzato
   if (window.currentUserName && typeof voiceAssistant !== 'undefined') {
-    // Aspetta un piccolo ritardo per dare tempo all'interfaccia di caricarsi
     setTimeout(() => {
       voiceAssistant.speakWelcome(window.currentUserName);
-      console.log(`👋 Messaggio di benvenuto per ${window.currentUserName}`);
     }, 1000);
   }
-
-  // STEP 3: Inizializza il resto dell'applicazione
-  // (il resto del codice di inizializzazione esistente continua qui)
 });
 
 // ===================================
