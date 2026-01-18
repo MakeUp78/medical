@@ -1033,68 +1033,37 @@ function redrawCanvas() {
 // === SINCRONIZZAZIONE OVERLAY CON TRASFORMAZIONI IMMAGINE ===
 
 function setupImageTransformSync(img) {
-  /**
-   * Configura event listeners per sincronizzare gli overlay quando l'immagine viene trasformata
-   * Gli overlay includono: landmarks, asse simmetria, misurazioni, green dots
-   */
   if (!img || !fabricCanvas) return;
 
-  console.log('🔄 Configurazione sincronizzazione overlay con trasformazioni immagine');
-
-  // Event: Immagine in movimento
   fabricCanvas.on('object:moving', function(e) {
-    if (e.target === currentImage) {
-      console.log('🔄 Immagine in movimento...');
-      // Durante il movimento, aggiorna continuamente i landmarks
-      if (originalLandmarks && originalLandmarks.length > 0) {
-        redrawLandmarks();
-      }
+    if (e.target === currentImage && originalLandmarks && originalLandmarks.length > 0) {
+      redrawLandmarks();
     }
   });
 
-  // Event: Immagine in scala
   fabricCanvas.on('object:scaling', function(e) {
-    if (e.target === currentImage) {
-      console.log('🔄 Immagine in scala...');
-      // Durante lo scaling, aggiorna continuamente i landmarks
-      if (originalLandmarks && originalLandmarks.length > 0) {
-        redrawLandmarks();
-      }
+    if (e.target === currentImage && originalLandmarks && originalLandmarks.length > 0) {
+      redrawLandmarks();
     }
   });
 
-  // Event: Immagine in rotazione
   fabricCanvas.on('object:rotating', function(e) {
-    if (e.target === currentImage) {
-      console.log('🔄 Immagine in rotazione...');
-      // Durante la rotazione, aggiorna continuamente i landmarks
-      if (originalLandmarks && originalLandmarks.length > 0) {
-        redrawLandmarks();
-      }
+    if (e.target === currentImage && originalLandmarks && originalLandmarks.length > 0) {
+      redrawLandmarks();
     }
   });
 
-  // Event: Trasformazione completata (mouse up)
   fabricCanvas.on('object:modified', function(e) {
     if (e.target === currentImage) {
-      console.log('✅ Trasformazione immagine completata - sincronizzazione overlay');
-
-      // Ridisegna tutti gli overlay
       if (originalLandmarks && originalLandmarks.length > 0) {
         setTimeout(() => redrawLandmarks(), 50);
       }
-
-      // Sincronizza green dots overlay se presente
       if (window.currentGreenDotsOverlay && typeof syncGreenDotsOverlayWithViewport === 'function') {
         setTimeout(() => syncGreenDotsOverlayWithViewport(), 100);
       }
-
-      // Ridisegna misurazioni se presenti
       if (typeof redrawAllMeasurementOverlays === 'function') {
         setTimeout(() => redrawAllMeasurementOverlays(), 100);
       }
     }
   });
-
-  console.log('✅ Sincronizzazione overlay configurata');
 }

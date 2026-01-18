@@ -124,46 +124,28 @@ let scoringWeights = {
   eye: 0.20
 };
 
-// Funzione globale per gestione sezioni (deve essere disponibile immediatamente)
+// Funzione globale per gestione sezioni
 window.toggleSection = function (headerElement) {
-  console.log('🔧 toggleSection chiamata', headerElement);
-
   const section = headerElement.parentElement;
-  console.log('📦 Section element:', section);
-
   const content = section.querySelector('.section-content');
-  console.log('📄 Content element:', content);
-
   const icon = headerElement.querySelector('.icon');
-  console.log('🔽 Icon element:', icon);
 
-  if (!content) {
-    console.error('❌ Impossibile trovare .section-content');
-    return;
-  }
+  if (!content) return;
 
   const isExpanded = section.dataset.expanded === 'true';
-  console.log('📊 isExpanded:', isExpanded);
 
   if (isExpanded) {
-    // Chiudi sezione
     content.style.setProperty('display', 'none', 'important');
     section.dataset.expanded = 'false';
     if (icon) icon.textContent = '►';
-    console.log('📁 Sezione chiusa:', headerElement.querySelector('.toggle-btn')?.textContent);
   } else {
-    // Apri sezione
     content.style.setProperty('display', 'block', 'important');
     section.dataset.expanded = 'true';
     if (icon) icon.textContent = '▼';
-    console.log('📂 Sezione aperta:', headerElement.querySelector('.toggle-btn')?.textContent);
   }
 
-  // Forza ridimensionamento canvas dopo cambi nel layout
   setTimeout(() => {
-    if (typeof resizeCanvas === 'function') {
-      resizeCanvas();
-    }
+    if (typeof resizeCanvas === 'function') resizeCanvas();
   }, 300);
 };
 
@@ -181,11 +163,9 @@ async function autoDetectLandmarksOnImageChange() {
   // Evita rilevamento multiplo sulla stessa immagine
   const currentImageSignature = getImageSignature(currentImage);
   if (currentImageSignature === lastImageProcessed) {
-    console.log('🔄 Immagine già processata, landmarks disponibili');
     return true;
   }
 
-  console.log('🚀 AUTO-RILEVAMENTO LANDMARKS per nuova immagine');
   isDetectingLandmarks = true;
 
   try {
@@ -193,11 +173,9 @@ async function autoDetectLandmarksOnImageChange() {
     if (success) {
       landmarksAutoDetected = true;
       lastImageProcessed = currentImageSignature;
-      console.log('✅ Landmarks auto-rilevati:', currentLandmarks.length);
     }
     return success;
   } catch (error) {
-    console.error('❌ Errore auto-rilevamento landmarks:', error);
     return false;
   } finally {
     isDetectingLandmarks = false;
@@ -294,16 +272,11 @@ async function detectLandmarksSilent() {
         return { x, y, z: lm.z || 0, visibility: lm.visibility || 1.0 };
       });
 
-      // Sincronizza con window.currentLandmarks
       window.currentLandmarks = currentLandmarks;
-
-      console.log(`🎯 Landmarks auto-rilevati: ${currentLandmarks.length}`);
       return true;
     }
-
     return false;
   } catch (error) {
-    console.error('Errore detectLandmarksSilent:', error);
     return false;
   }
 }
@@ -311,9 +284,7 @@ async function detectLandmarksSilent() {
 // ============================================================================
 // RESET GLOBALE PER NUOVA ANALISI
 // ============================================================================
-function resetForNewAnalysis(reason) {
-  console.log(`🔄 Reset completo webapp - Motivo: ${reason}`);
-
+function resetForNewAnalysis() {
   // Reset score globale
   if (typeof currentBestScore !== 'undefined') {
     currentBestScore = 0;
@@ -322,7 +293,6 @@ function resetForNewAnalysis(reason) {
   // Chiudi WebSocket precedente
   if (typeof webcamWebSocket !== 'undefined' && webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
     webcamWebSocket.close();
-    console.log('🔌 WebSocket precedente chiuso');
   }
 
   // Ferma webcam se attiva
@@ -1454,8 +1424,6 @@ function displayImageOnCanvas(image) {
   const x = (canvasWidth - scaledWidth) / 2;
   const y = (canvasHeight - scaledHeight) / 2;
 
-  console.log(`🖼️ Immagine: ${image.width}x${image.height}, Canvas: ${canvasWidth}x${canvasHeight}, Scale: ${scale.toFixed(3)}`);
-  console.log(`📍 Posizione: (${x.toFixed(1)}, ${y.toFixed(1)}), Dimensioni: ${scaledWidth.toFixed(1)}x${scaledHeight.toFixed(1)}`);
 
   // Crea oggetto immagine Fabric.js
   const fabricImage = new fabric.Image(image, {
@@ -1480,25 +1448,8 @@ function displayImageOnCanvas(image) {
   window.imageScale = scale;
   window.imageOffset = { x: x, y: y };
 
-  console.log('📐 IMPOSTAZIONI SCALA IMMAGINE:', {
-    originalSize: `${image.width}x${image.height}`,
-    canvasSize: `${fabricCanvas.width}x${fabricCanvas.height}`,
-    scale: scale.toFixed(3),
-    offset: `(${x.toFixed(1)}, ${y.toFixed(1)})`,
-    fabricPosition: `left=${fabricImage.left}, top=${fabricImage.top}`,
-    fabricScale: `scaleX=${fabricImage.scaleX?.toFixed(3)}, scaleY=${fabricImage.scaleY?.toFixed(3)}`
-  });
-
-  // === AUTO-RILEVAMENTO LANDMARKS ===
-  // Rileva SEMPRE i landmarks quando cambia l'immagine (come nell'app desktop)
-  setTimeout(async () => {
-    console.log('📸 displayImageOnCanvas: Avvio auto-rilevamento landmarks');
-    const landmarksDetected = await autoDetectLandmarksOnImageChange();
-    if (landmarksDetected) {
-      console.log(`✅ Landmarks disponibili globalmente: ${currentLandmarks.length}`);
-    }
-    // Auto-rilevamento silenzioso - warning rimosso per evitare spam
-  }, 100);
+  // Auto-rilevamento landmarks
+  setTimeout(() => autoDetectLandmarksOnImageChange(), 100);
 }
 
 // === GESTIONE WEBCAM ===
@@ -2175,13 +2126,7 @@ function updateBestFramesDisplay(data) {
 
 function updateCanvasWithBestFrame(imageData, mimeType = 'image/jpeg') {
   try {
-    console.log('🖼️ Aggiornamento canvas con frame video...');
-
-    // Verifica che Fabric.js sia inizializzato
-    if (!fabricCanvas) {
-      console.error('Fabric canvas non inizializzato');
-      return;
-    }
+    if (!fabricCanvas) return;
 
     // Mostra canvas se nascosto
     const canvasElement = document.getElementById('main-canvas');
@@ -2212,7 +2157,6 @@ function updateCanvasWithBestFrame(imageData, mimeType = 'image/jpeg') {
           5  // padding ancora più ridotto per video/webcam
         );
 
-        console.log('📐 Frame video - dimensioni ottimizzate:', sizing);
 
         // Applica il ridimensionamento
         img.scale(sizing.scale);
@@ -2264,7 +2208,6 @@ function updateCanvasWithBestFrame(imageData, mimeType = 'image/jpeg') {
 
         fabricCanvas.renderAll();
 
-        console.log('✅ Canvas aggiornato con miglior frame - Dimensioni originali:', img.width, 'x', img.height, 'Scale:', sizing.scale);
 
         // Aggiorna info immagine se disponibile
         if (typeof updateImageInfo === 'function') {
@@ -2404,8 +2347,6 @@ function updateDebugTable(bestFrames) {
         const newRowCount = debugTableBody.children.length;
 
         if (currentRowCount < newRowCount) {
-          // CI SONO NUOVE RIGHE - Aggiungi SOLO le righe mancanti (evita re-render completo)
-          console.log(`➕ [UNIFIED] Nuove righe rilevate (${currentRowCount} → ${newRowCount}) - aggiunta incrementale`);
 
           // Aggiungi solo le righe dalla posizione currentRowCount in poi
           const newRows = Array.from(debugTableBody.children).slice(currentRowCount);
@@ -2417,8 +2358,6 @@ function updateDebugTable(bestFrames) {
           // Ri-aggiungi event listener SOLO alle nuove righe appena aggiunte
           reattachDebugTableListeners(tableBody, debugTableBody, currentRowCount);
         } else if (currentRowCount > newRowCount) {
-          // CI SONO MENO RIGHE - Rimuovi le righe in eccesso
-          console.log(`➖ [UNIFIED] Righe rimosse (${currentRowCount} → ${newRowCount}) - rimozione`);
 
           while (tableBody.children.length > newRowCount) {
             tableBody.removeChild(tableBody.lastChild);
@@ -2444,19 +2383,14 @@ function updateDebugTable(bestFrames) {
             }
           });
 
-          console.log('🔄 [UNIFIED] Contenuto righe aggiornato');
         }
       }
     }
-
-    console.log('🔄 [UNIFIED] Aggiornamento tab DEBUG completato');
 
     // Mostra automaticamente il miglior frame (primo della lista) nel canvas centrale
     if (bestFrames.length > 0 && bestFrames[0].image_data) {
       updateCanvasWithBestFrame(bestFrames[0].image_data);
     }
-
-    console.log(`📊 Tabella debug aggiornata con ${bestFrames.length} frame`);
 
     // Scroll automatico DISABILITATO - la colonna rimane in alto
     // const autoScroll = document.getElementById('auto-scroll');
@@ -7024,8 +6958,13 @@ window.unifiedTableCurrentTab = 'measurements';
  * Cambia il tab attivo nella tabella unificata
  * @param {string} tabName - Nome del tab ('measurements', 'landmarks', 'debug')
  */
+// Cache per evitare switch ripetuti
+let _lastUnifiedTab = null;
+
 function switchUnifiedTab(tabName, event = null) {
-  console.log(`🔄 Cambio tab unificato: ${tabName}`);
+  // Evita switch se già sul tab corretto
+  if (_lastUnifiedTab === tabName && !event) return;
+  _lastUnifiedTab = tabName;
 
   // Aggiorna variabile globale
   window.unifiedTableCurrentTab = tabName;
@@ -7112,14 +7051,10 @@ function updateUnifiedTableForMeasurements(tableHead, tableBody) {
     const originalTableBody = document.getElementById('measurements-data');
     if (originalTableBody && originalTableBody.children.length > 0) {
       tableBody.innerHTML = originalTableBody.innerHTML;
-      console.log('📋 Copiate misurazioni da tabella originale');
     } else {
       tableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nessuna misurazione disponibile</td></tr>';
-      console.log('ℹ️ Nessuna misurazione disponibile');
     }
   }
-
-  console.log('✅ Tabella unificata aggiornata: Misurazioni');
 }
 
 /**
@@ -7144,8 +7079,6 @@ function updateUnifiedTableForLandmarks(tableHead, tableBody) {
   } else {
     tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Nessun landmark disponibile</td></tr>';
   }
-
-  console.log('✅ Tabella unificata aggiornata: Landmarks');
 }
 
 /**
@@ -7213,62 +7146,43 @@ function updateUnifiedTableForDebug(tableHead, tableBody) {
   } else {
     tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Nessun dato di debug disponibile</td></tr>';
   }
-
-  console.log('✅ Tabella unificata aggiornata: Debug con ' + (originalTableBody ? originalTableBody.children.length : 0) + ' righe');
 }
 
 /**
  * Apre automaticamente la sezione DATI ANALISI quando arrivano nuovi dati
  * Versione 2.0 - Semplificata e robusta
  */
+// Cache per evitare ricerche ripetute
+let _unifiedSectionCache = null;
+
 function openUnifiedAnalysisSection() {
-  // LOG IMMEDIATO - per verificare se la funzione viene chiamata
-  console.log('%c🔴 [UNIFIED v2.0] FUNZIONE CHIAMATA!', 'color: red; font-weight: bold; font-size: 14px');
-
   try {
-    // Cerca tutte le sezioni
-    const allSections = document.querySelectorAll('.section');
-    console.log(`🔍 [UNIFIED] Trovate ${allSections.length} sezioni totali`);
-
-    // Trova la sezione DATI ANALISI
-    let targetSection = null;
-    let targetContent = null;
-    let targetIcon = null;
-
-    allSections.forEach((section, index) => {
-      const btn = section.querySelector('.toggle-btn');
-      if (btn) {
-        const text = btn.textContent || btn.innerText || '';
-        console.log(`   [${index}] Pulsante: "${text.trim()}"`);
-
-        if (text.includes('DATI ANALISI') || text.includes('📊')) {
-          targetSection = section;
-          targetContent = section.querySelector('.section-content');
-          targetIcon = section.querySelector('.icon');
-          console.log(`🎯 [UNIFIED] TROVATA sezione target all'indice ${index}!`);
+    // Usa cache se disponibile
+    if (!_unifiedSectionCache) {
+      const allSections = document.querySelectorAll('.section');
+      for (const section of allSections) {
+        const btn = section.querySelector('.toggle-btn');
+        if (btn && (btn.textContent.includes('DATI ANALISI') || btn.textContent.includes('📊'))) {
+          _unifiedSectionCache = {
+            section: section,
+            content: section.querySelector('.section-content'),
+            icon: section.querySelector('.icon')
+          };
+          break;
         }
       }
-    });
-
-    if (!targetSection) {
-      console.error('%c❌ [UNIFIED] SEZIONE NON TROVATA!', 'color: red; font-weight: bold');
-      return;
     }
 
-    // Apri la sezione
-    if (targetContent) {
-      const wasHidden = targetContent.style.display === 'none';
-      targetContent.style.display = 'block';
-      if (targetIcon) targetIcon.textContent = '▼';
-      targetSection.setAttribute('data-expanded', 'true');
+    if (!_unifiedSectionCache || !_unifiedSectionCache.content) return;
 
-      console.log('%c✅ [UNIFIED] Sezione APERTA! (era nascosta: ' + wasHidden + ')', 'color: green; font-weight: bold');
-    } else {
-      console.error('❌ [UNIFIED] section-content non trovato');
+    // Apri solo se non già aperta
+    if (_unifiedSectionCache.content.style.display !== 'block') {
+      _unifiedSectionCache.content.style.display = 'block';
+      if (_unifiedSectionCache.icon) _unifiedSectionCache.icon.textContent = '▼';
+      _unifiedSectionCache.section.setAttribute('data-expanded', 'true');
     }
-
   } catch (error) {
-    console.error('❌ [UNIFIED] ERRORE:', error);
+    // Ignora errori silenziosi
   }
 }
 
