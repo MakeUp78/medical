@@ -355,11 +355,16 @@ function resetForNewAnalysis(reason) {
     window.currentBestFrames = [];
   }
 
-  // ✅ RESET COMPLETO CANVAS E LANDMARKS
+  // ✅ RESET CANVAS: Rimuovi oggetti ma mantieni l'inizializzazione
   if (typeof fabricCanvas !== 'undefined' && fabricCanvas) {
-    fabricCanvas.clear();
+    // Rimuovi tutti gli oggetti tranne l'immagine di sfondo (se presente)
+    const objectsToRemove = fabricCanvas.getObjects().filter(obj => !obj.isBackgroundImage);
+    objectsToRemove.forEach(obj => fabricCanvas.remove(obj));
+    
+    // Imposta sfondo grigio chiaro
     fabricCanvas.backgroundColor = '#f0f0f0';
     fabricCanvas.renderAll();
+    console.log('✅ Canvas pulito - inizializzazione preservata');
   }
 
   // Pulisci landmarks globali
@@ -565,12 +570,8 @@ function normalizeTo72DPI(sourceCanvas) {
 // HANDLER UNIFICATO PER IMMAGINI E VIDEO
 // ============================================================================
 async function handleUnifiedFileLoad(file, type) {
-  // ✅ RESET COMPLETO + HARD REFRESH della sessione
+  // ✅ RESET STATO APPLICAZIONE per nuovo caricamento
   resetForNewAnalysis(`Caricamento nuovo ${type === 'image' ? 'immagine' : 'video'}`);
-
-  // ✅ FORCE CACHE BUST: Aggiungi timestamp per forzare hard refresh
-  const cacheBust = Date.now();
-  console.log(`🔄 Hard refresh sessione utente: ${cacheBust}`);
 
   updateStatus(`Caricamento ${type === 'image' ? 'immagine' : 'video'}...`);
 
@@ -621,7 +622,7 @@ async function handleUnifiedFileLoad(file, type) {
 
         updateStatus(`Immagine caricata: ${file.name}`);
         showToast('Immagine caricata con successo', 'success');
-        console.log(`✅ Immagine ridimensionata e caricata - Dimensioni: ${finalWidth}x${finalHeight} - Cache bust: ${cacheBust}`);
+        console.log(`✅ Immagine ridimensionata e caricata - Dimensioni: ${finalWidth}x${finalHeight}`);
 
         // Force repaint canvas
         if (window.canvas && window.canvas.renderAll) {
