@@ -355,27 +355,11 @@ function resetForNewAnalysis(reason) {
     window.currentBestFrames = [];
   }
 
-  // ✅ RESET CANVAS: Rimuovi oggetti ma mantieni l'inizializzazione
+  // ✅ RESET COMPLETO CANVAS E LANDMARKS
   if (typeof fabricCanvas !== 'undefined' && fabricCanvas) {
-    try {
-      // Rimuovi tutti gli oggetti tranne l'immagine di sfondo (se presente)
-      const allObjects = fabricCanvas.getObjects();
-      if (allObjects && allObjects.length > 0) {
-        const objectsToRemove = allObjects.filter(obj => !obj.isBackgroundImage);
-        objectsToRemove.forEach(obj => fabricCanvas.remove(obj));
-      }
-      
-      // Imposta sfondo grigio chiaro
-      fabricCanvas.backgroundColor = '#f0f0f0';
-      fabricCanvas.renderAll();
-      console.log('✅ Canvas pulito - inizializzazione preservata');
-    } catch (error) {
-      console.error('⚠️ Errore durante reset canvas:', error);
-      // Fallback al metodo originale se c'è un errore
-      fabricCanvas.clear();
-      fabricCanvas.backgroundColor = '#f0f0f0';
-      fabricCanvas.renderAll();
-    }
+    fabricCanvas.clear();
+    fabricCanvas.backgroundColor = '#f0f0f0';
+    fabricCanvas.renderAll();
   }
 
   // Pulisci landmarks globali
@@ -581,8 +565,12 @@ function normalizeTo72DPI(sourceCanvas) {
 // HANDLER UNIFICATO PER IMMAGINI E VIDEO
 // ============================================================================
 async function handleUnifiedFileLoad(file, type) {
-  // ✅ RESET STATO APPLICAZIONE per nuovo caricamento
+  // ✅ RESET COMPLETO + HARD REFRESH della sessione
   resetForNewAnalysis(`Caricamento nuovo ${type === 'image' ? 'immagine' : 'video'}`);
+
+  // ✅ FORCE CACHE BUST: Aggiungi timestamp per forzare hard refresh
+  const cacheBust = Date.now();
+  console.log(`🔄 Hard refresh sessione utente: ${cacheBust}`);
 
   updateStatus(`Caricamento ${type === 'image' ? 'immagine' : 'video'}...`);
 
@@ -633,7 +621,7 @@ async function handleUnifiedFileLoad(file, type) {
 
         updateStatus(`Immagine caricata: ${file.name}`);
         showToast('Immagine caricata con successo', 'success');
-        console.log(`✅ Immagine ridimensionata e caricata - Dimensioni: ${finalWidth}x${finalHeight}`);
+        console.log(`✅ Immagine ridimensionata e caricata - Dimensioni: ${finalWidth}x${finalHeight} - Cache bust: ${cacheBust}`);
 
         // Force repaint canvas
         if (window.canvas && window.canvas.renderAll) {
