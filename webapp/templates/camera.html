@@ -354,8 +354,8 @@
                     wsUrl: null,
                     savedAt: new Date().toISOString(),
                     cameraPreference: 'user',
-                    quality: 0.75,
-                    fps: 15,
+                    quality: 0.6,
+                    fps: 6,
                     installPromptShown: false
                 };
                 saveConfig();
@@ -599,8 +599,8 @@
                     return;
                 }
 
-                // Ridimensiona per ottimizzare banda
-                const maxWidth = 640;
+                // Ridimensiona per ottimizzare banda (480px per ridurre latenza)
+                const maxWidth = 480;
                 const scale = Math.min(1, maxWidth / video.videoWidth);
                 canvas.width = Math.round(video.videoWidth * scale);
                 canvas.height = Math.round(video.videoHeight * scale);

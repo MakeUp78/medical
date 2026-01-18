@@ -1553,14 +1553,14 @@
 
                     // ✅ Score alto? Mostra SUBITO frame nel canvas principale e aggiorna tabella
                     const score = data.score || 0;
-                    const HIGH_SCORE_THRESHOLD = 85;
+                    const HIGH_SCORE_THRESHOLD = 75;
 
                     // 🔍 LOG SCORE per debug
-                    if (score > 75) {
+                    if (score > 70) {
                         console.log('📊 Score ricevuto:', score, '| Threshold:', HIGH_SCORE_THRESHOLD, '| Best:', window.bestIPhoneScore);
                     }
 
-                    // ✅ AGGIORNA SOLO SE score migliora (o è il primo ≥85)
+                    // ✅ AGGIORNA SOLO SE score migliora (o è il primo ≥75)
                     if (score >= HIGH_SCORE_THRESHOLD && score > window.bestIPhoneScore) {
                         console.log('🏆 NUOVO MIGLIOR SCORE!', score, '(precedente:', window.bestIPhoneScore, ')');
 

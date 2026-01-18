@@ -185,12 +185,12 @@ class WebSocketFrameScorer:
         while normalized_roll < -90:
             normalized_roll += 180
         
-        roll_weighted = abs(normalized_roll) * 0.5
-            
-        # Pesi BILANCIATI: YAW=PITCH=1.5 per valutare frontalità completa
-        yaw_weighted = abs(yaw) * 1.5
-        pitch_weighted = abs(pitch) * 1.5
-        
+        roll_weighted = abs(normalized_roll) * 0.3
+
+        # Pesi PRIORITÀ YAW: Yaw ha peso maggiore per privilegiare frontalità orizzontale
+        yaw_weighted = abs(yaw) * 2.5
+        pitch_weighted = abs(pitch) * 1.0
+
         pose_deviation = yaw_weighted + pitch_weighted + roll_weighted
         pose_score = max(0, 100 - pose_deviation * 0.8)
         
