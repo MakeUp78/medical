@@ -357,14 +357,25 @@ function resetForNewAnalysis(reason) {
 
   // ✅ RESET CANVAS: Rimuovi oggetti ma mantieni l'inizializzazione
   if (typeof fabricCanvas !== 'undefined' && fabricCanvas) {
-    // Rimuovi tutti gli oggetti tranne l'immagine di sfondo (se presente)
-    const objectsToRemove = fabricCanvas.getObjects().filter(obj => !obj.isBackgroundImage);
-    objectsToRemove.forEach(obj => fabricCanvas.remove(obj));
-    
-    // Imposta sfondo grigio chiaro
-    fabricCanvas.backgroundColor = '#f0f0f0';
-    fabricCanvas.renderAll();
-    console.log('✅ Canvas pulito - inizializzazione preservata');
+    try {
+      // Rimuovi tutti gli oggetti tranne l'immagine di sfondo (se presente)
+      const allObjects = fabricCanvas.getObjects();
+      if (allObjects && allObjects.length > 0) {
+        const objectsToRemove = allObjects.filter(obj => !obj.isBackgroundImage);
+        objectsToRemove.forEach(obj => fabricCanvas.remove(obj));
+      }
+      
+      // Imposta sfondo grigio chiaro
+      fabricCanvas.backgroundColor = '#f0f0f0';
+      fabricCanvas.renderAll();
+      console.log('✅ Canvas pulito - inizializzazione preservata');
+    } catch (error) {
+      console.error('⚠️ Errore durante reset canvas:', error);
+      // Fallback al metodo originale se c'è un errore
+      fabricCanvas.clear();
+      fabricCanvas.backgroundColor = '#f0f0f0';
+      fabricCanvas.renderAll();
+    }
   }
 
   // Pulisci landmarks globali
