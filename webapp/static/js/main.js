@@ -202,9 +202,14 @@ async function detectLandmarksSilent() {
   /**
    * Versione silenziosa di detectLandmarks() - senza toast/status
    */
-  if (!currentImage) return false;
+  if (!currentImage) {
+    console.warn('⚠️ detectLandmarksSilent: currentImage non disponibile');
+    return false;
+  }
 
   try {
+    console.log('🔍 detectLandmarksSilent: Inizio rilevamento...');
+
     // Converti immagine in base64 (stessa logica di detectLandmarks)
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -273,10 +278,13 @@ async function detectLandmarksSilent() {
       });
 
       window.currentLandmarks = currentLandmarks;
+      console.log(`✅ detectLandmarksSilent: ${currentLandmarks.length} landmarks rilevati`);
       return true;
     }
+    console.warn('⚠️ detectLandmarksSilent: Nessun landmark nella risposta API');
     return false;
   } catch (error) {
+    console.error('❌ detectLandmarksSilent: Errore:', error);
     return false;
   }
 }
@@ -384,7 +392,17 @@ function resetForNewAnalysis() {
   if (typeof fabricCanvas !== 'undefined' && fabricCanvas) {
     fabricCanvas.clear();
     fabricCanvas.backgroundColor = '#f0f0f0';
+
+    // Reset zoom e viewportTransform
+    fabricCanvas.setZoom(1);
+    fabricCanvas.viewportTransform = [1, 0, 0, 1, 0, 0];
+
     fabricCanvas.renderAll();
+  }
+
+  // ✅ PULISCI ASSE DI SIMMETRIA ESPLICITAMENTE
+  if (typeof clearSymmetryAxis === 'function') {
+    clearSymmetryAxis();
   }
 
   // Pulisci landmarks globali
@@ -393,6 +411,12 @@ function resetForNewAnalysis() {
   }
   if (window.currentLandmarks) {
     window.currentLandmarks = [];
+  }
+  if (window.originalLandmarks) {
+    window.originalLandmarks = [];
+  }
+  if (window.currentLandmarkObjects) {
+    window.currentLandmarkObjects = [];
   }
 
   // Pulisci landmarks dal canvas (se la funzione esiste)
@@ -406,6 +430,12 @@ function resetForNewAnalysis() {
     landmarksTableBody.innerHTML = '';
   }
 
+  // Pulisci anche landmarks-data (tabella alternativa)
+  const landmarksData = document.getElementById('landmarks-data');
+  if (landmarksData) {
+    landmarksData.innerHTML = '';
+  }
+
   // Reset immagine corrente
   if (typeof currentImage !== 'undefined') {
     currentImage = null;
@@ -414,9 +444,180 @@ function resetForNewAnalysis() {
     window.currentImage = null;
   }
 
+  // ✅ RESET CANVAS MODES (pulsanti toolbar)
+  if (typeof setCanvasMode === 'function') {
+    setCanvasMode(null);
+  }
+  if (typeof currentCanvasMode !== 'undefined') {
+    currentCanvasMode = null;
+  }
+  if (window.currentCanvasMode !== undefined) {
+    window.currentCanvasMode = null;
+  }
+
+  // ✅ RESET TUTTI I PULSANTI ATTIVI (rimuovi classe 'active')
+  document.querySelectorAll('.btn.active, .toggle-btn.active, button.active').forEach(btn => {
+    btn.classList.remove('active');
+  });
+
+  // ✅ RESET CURSORE CANVAS
+  if (fabricCanvas) {
+    fabricCanvas.defaultCursor = 'default';
+    fabricCanvas.hoverCursor = 'move';
+  }
+
+  // ✅ RESET VIDEO PLAYER
+  const videoPlayer = document.getElementById('video-player');
+  const videoSource = document.getElementById('video-source');
+  if (videoPlayer) {
+    videoPlayer.pause();
+    videoPlayer.currentTime = 0;
+    if (videoSource) {
+      videoSource.src = '';
+    }
+    videoPlayer.load();
+    videoPlayer.style.display = 'none';
+  }
+
+  // ✅ RESET WEBCAM
+  const webcamVideo = document.getElementById('webcam-video');
+  if (webcamVideo && webcamVideo.srcObject) {
+    const stream = webcamVideo.srcObject;
+    stream.getTracks().forEach(track => track.stop());
+    webcamVideo.srcObject = null;
+    webcamVideo.style.display = 'none';
+  }
+
+  // Reset flag webcam
+  if (typeof isWebcamActive !== 'undefined') {
+    isWebcamActive = false;
+  }
+  if (window.isWebcamActive !== undefined) {
+    window.isWebcamActive = false;
+  }
+
+  // ✅ RESET ANALISI VISAGISTICA (chiudi modal e pulisci dati)
+  const analysisModal = document.getElementById('analysis-modal');
+  if (analysisModal) {
+    analysisModal.style.display = 'none';
+  }
+
+  // Pulisci contenuto analisi
+  const analysisContent = document.getElementById('analysis-content');
+  if (analysisContent) {
+    analysisContent.innerHTML = '';
+  }
+
+  // ✅ RESET MODALI CORREZIONE SOPRACCIGLIA (rimuovi tutti i modal generati dinamicamente)
+  document.querySelectorAll('body > div[style*="position: fixed"][style*="z-index: 10000"]').forEach(modal => {
+    modal.remove();
+  });
+
+  // ✅ RESET STILI DINAMICI (animazioni generate da eyebrow-correction)
+  document.querySelectorAll('head > style').forEach(style => {
+    if (style.textContent.includes('blink-arrow') || style.textContent.includes('pulse-glow')) {
+      style.remove();
+    }
+  });
+
+  // ✅ RESET SVG OVERLAYS (frecce, poligoni, ecc. generati da eyebrow-correction)
+  document.querySelectorAll('svg[style*="position: absolute"][style*="pointer-events: none"]').forEach(svg => {
+    svg.remove();
+  });
+
+  // ✅ RESET SVG nel canvas-wrapper
+  const canvasWrapper = document.querySelector('.canvas-wrapper');
+  if (canvasWrapper) {
+    canvasWrapper.querySelectorAll('svg').forEach(svg => {
+      svg.remove();
+    });
+  }
+
+  // ✅ RESET OGGETTI FABRIC.JS CON TAG SPECIFICI (overlays, frecce, asse simmetria, etc)
+  if (typeof fabricCanvas !== 'undefined' && fabricCanvas) {
+    const objectsToRemove = fabricCanvas.getObjects().filter(obj => {
+      return obj.isPerpendicularLine || obj.isEyebrowOverlay || obj.customType ||
+        obj.isSymmetryAxis || obj.isDebugPoint || obj.isLandmark ||
+        obj.isGreenDot || obj.isGreenDotsOverlay || obj.isGreenDotsGroup;
+    });
+    objectsToRemove.forEach(obj => {
+      fabricCanvas.remove(obj);
+    });
+  }
+
+  // ✅ RESET FLAG ASSE DI SIMMETRIA
+  if (window.symmetryAxisVisible !== undefined) {
+    window.symmetryAxisVisible = false;
+  }
+
+  // ✅ RESET FLAG E MODALITÀ LANDMARKS
+  if (window.landmarksVisible !== undefined) {
+    window.landmarksVisible = false;
+  }
+  if (typeof landmarksVisible !== 'undefined') {
+    landmarksVisible = false;
+  }
+  if (window.landmarkSelectionMode !== undefined) {
+    window.landmarkSelectionMode = false;
+  }
+  if (typeof landmarksAutoDetected !== 'undefined') {
+    landmarksAutoDetected = false;
+  }
+
+  // ✅ PULISCI LANDMARKS ESPLICITAMENTE
+  if (typeof clearLandmarks === 'function') {
+    clearLandmarks();
+  }
+
+  // ✅ RESET VARIABILI GLOBALI MISURAZIONI
+  if (window.measurementLines) {
+    window.measurementLines = [];
+  }
+  if (window.allMeasurements) {
+    window.allMeasurements = {};
+  }
+
+  // ✅ RESET VARIABILI GLOBALI EYEBROW CORRECTION
+  if (window.greenDotsDetected !== undefined) {
+    window.greenDotsDetected = false;
+  }
+  if (window.greenDotsData) {
+    window.greenDotsData = null;
+  }
+  // NON resettare imageOffset e imageScale - mantieni valori esistenti o default
+  // Verranno sovrascritti quando la nuova immagine viene caricata
+  if (!window.imageOffset) {
+    window.imageOffset = { x: 0, y: 0 };
+  }
+  if (window.imageScale === undefined) {
+    window.imageScale = 1;
+  }
+
+  // ✅ RESET SEZIONI SIDEBAR (chiudi tutte tranne quelle base)
+  const sections = document.querySelectorAll('.left-sidebar .section');
+  sections.forEach(section => {
+    const btnText = section.querySelector('.toggle-btn')?.textContent || '';
+    const content = section.querySelector('.section-content');
+    const icon = section.querySelector('.icon');
+
+    // Chiudi tutte le sezioni tranne SORGENTE
+    if (!btnText.includes('SORGENTE') && content && icon) {
+      content.style.display = 'none';
+      icon.textContent = '▶';
+      section.setAttribute('data-expanded', 'false');
+    }
+  });
+
   // Reset status
   updateStatus('Pronto per nuova analisi');
 
+  console.log('🔄 Reset completo eseguito');
+  console.log('   ✓ Canvas pulito e zoom resettato');
+  console.log('   ✓ Landmarks e misurazioni pulite');
+  console.log('   ✓ Video/Webcam fermate');
+  console.log('   ✓ Pulsanti attivi resettati');
+  console.log('   ✓ Sezioni sidebar chiuse');
+  console.log('   ✓ Tabelle pulite');
 }
 
 // Inizializzazione al caricamento pagina
@@ -488,8 +689,9 @@ function initializeFileHandlers() {
 }
 
 function loadImage() {
-  // Hard refresh prima di caricare nuova immagine
-  hardRefreshForNewSession('image');
+  // Reset stato e carica immagine direttamente
+  resetForNewAnalysis();
+  loadImageDirect();
 }
 
 function loadImageDirect() {
@@ -524,8 +726,9 @@ function collapseDetectionSections() {
 }
 
 function loadVideo() {
-  // Hard refresh prima di caricare nuovo video
-  hardRefreshForNewSession('video');
+  // Reset stato e carica video direttamente
+  resetForNewAnalysis();
+  loadVideoDirect();
 }
 
 function loadVideoDirect() {
@@ -1124,7 +1327,7 @@ async function runAutomaticVideoAnalysis(file) {
     console.log('🔧 Compressione video per ottimizzazione...');
     const compressedBlob = await compressVideoForAnalysis(file, 720); // Max 720px width
     console.log(`📦 Video compresso: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(compressedBlob.size / 1024 / 1024).toFixed(2)}MB`);
-    
+
     // Prepara FormData per upload
     const formData = new FormData();
     formData.append('file', compressedBlob, file.name);
@@ -1513,8 +1716,13 @@ function displayImageOnCanvas(image) {
   window.imageScale = scale;
   window.imageOffset = { x: x, y: y };
 
-  // Auto-rilevamento landmarks
-  setTimeout(() => autoDetectLandmarksOnImageChange(), 100);
+  console.log('✅ imageScale e imageOffset impostati:', { scale, offset: { x, y } });
+
+  // Auto-rilevamento landmarks - con delay per assicurarsi che l'immagine sia pronta
+  setTimeout(() => {
+    console.log('🔍 Avvio auto-rilevamento landmarks dopo 300ms...');
+    autoDetectLandmarksOnImageChange();
+  }, 300);
 }
 
 // === GESTIONE WEBCAM ===
@@ -1560,6 +1768,9 @@ async function startWebcam() {
     return;
   }
   sessionStorage.removeItem('webcamRefreshDone');
+
+  // Reset stato prima di avviare webcam
+  resetForNewAnalysis();
 
   // Procedi con startWebcamDirect
   await startWebcamDirect();
@@ -2280,6 +2491,11 @@ function updateCanvasWithBestFrame(imageData, mimeType = 'image/jpeg') {
         // Aggiorna le variabili globali di trasformazione
         window.imageScale = sizing.scale;
         window.imageOffset = { x: sizing.left, y: sizing.top };
+
+        console.log('✅ imageScale e imageOffset impostati:', {
+          scale: sizing.scale,
+          offset: { x: sizing.left, y: sizing.top }
+        });
 
         fabricCanvas.renderAll();
 
@@ -3084,32 +3300,21 @@ async function detectLandmarks() {
 function displayLandmarksOnCanvas() {
   /**
    * Mostra i landmarks già rilevati sul canvas
+   * DELEGA a canvas.js per la trasformazione corretta
    */
   if (!currentLandmarks || currentLandmarks.length === 0 || !fabricCanvas) {
     console.warn('⚠️ Nessun landmark da visualizzare');
     return;
   }
 
-  console.log(`🎯 Visualizzazione ${currentLandmarks.length} landmarks sul canvas`);
+  console.log(`🎯 Visualizzazione ${currentLandmarks.length} landmarks sul canvas - DELEGA a canvas.js`);
 
-  currentLandmarks.forEach((landmark, index) => {
-    if (landmark.visibility > 0.5) {
-      const circle = new fabric.Circle({
-        left: landmark.x - 1,
-        top: landmark.y - 1,
-        radius: 2,
-        fill: 'red',
-        selectable: false,
-        evented: false,
-        isLandmark: true,
-        landmarkIndex: index
-      });
-      fabricCanvas.add(circle);
-    }
-  });
-
-  fabricCanvas.renderAll();
-  console.log(`✅ ${currentLandmarks.length} landmarks visualizzati`);
+  // USA la funzione da canvas.js che applica correttamente imageOffset e imageScale
+  if (typeof window.drawMediaPipeLandmarks === 'function') {
+    window.drawMediaPipeLandmarks(currentLandmarks);
+  } else {
+    console.error('❌ drawMediaPipeLandmarks non disponibile da canvas.js');
+  }
 }
 
 function updateCanvasDisplay() {
@@ -4122,9 +4327,9 @@ function updateMeasurementsFromGreenDots(greenDotsResult) {
 
     // Apri la sezione DATI ANALISI unificata e switcha al tab MISURAZIONI
     openUnifiedAnalysisSection();
-    switchUnifiedTab('measurements'); // Forza il passaggio al tab measurements
+    switchUnifiedTab('measurements', null, true); // FORCE UPDATE per aggiornare anche se già attivo
 
-    console.log('🔄 [UNIFIED] Tab MISURAZIONI attivato automaticamente per green dots');
+    console.log('🔄 [UNIFIED] Tab MISURAZIONI attivato/aggiornato automaticamente per green dots');
 
   } catch (error) {
     console.error('❌ Errore aggiornamento misurazioni green dots:', error);
@@ -7029,9 +7234,12 @@ window.unifiedTableCurrentTab = 'measurements';
 // Cache per evitare switch ripetuti
 let _lastUnifiedTab = null;
 
-function switchUnifiedTab(tabName, event = null) {
-  // Evita switch se già sul tab corretto
-  if (_lastUnifiedTab === tabName && !event) return;
+function switchUnifiedTab(tabName, event = null, forceUpdate = false) {
+  // Evita switch se già sul tab corretto (a meno che non sia forzato)
+  if (_lastUnifiedTab === tabName && !event && !forceUpdate) {
+    console.log('🔄 [UNIFIED] Tab già attivo, skip (usa forceUpdate per aggiornare)');
+    return;
+  }
   _lastUnifiedTab = tabName;
 
   // Aggiorna variabile globale
@@ -7110,18 +7318,37 @@ function updateUnifiedTableForMeasurements(tableHead, tableBody) {
   // Pulisci SEMPRE la tabella quando switchi a measurements
   tableBody.innerHTML = '';
 
-  // Ripristina le righe di misurazione
+  // Ripristina le righe di misurazione dalla tabella unificata (se ci sono già)
+  // MA escludi righe green-dots che verranno ricaricate dalla tabella originale
   if (measurementRows.length > 0) {
-    measurementRows.forEach(row => tableBody.appendChild(row));
-    console.log('✅ Ripristinate', measurementRows.length, 'righe di misurazione');
+    measurementRows.forEach(row => {
+      // Non ripristinare righe green-dots vecchie - verranno ricaricate
+      if (!row.hasAttribute('data-type') || row.getAttribute('data-type') !== 'green-dots') {
+        tableBody.appendChild(row);
+      }
+    });
+    console.log('✅ Ripristinate', tableBody.children.length, 'righe di misurazione (esclusi green-dots)');
+  }
+
+  // SEMPRE copia TUTTE le righe dalla tabella originale
+  const originalTableBody = document.getElementById('measurements-data');
+  if (originalTableBody && originalTableBody.children.length > 0) {
+    console.log('📊 Copiando', originalTableBody.children.length, 'righe da measurements-data...');
+
+    // Copia TUTTE le righe dalla tabella originale
+    Array.from(originalTableBody.children).forEach((row, index) => {
+      tableBody.appendChild(row.cloneNode(true));
+      console.log(`  ✓ Riga ${index + 1}:`, row.querySelector('td')?.textContent?.substring(0, 50) || 'N/A');
+    });
+
+    console.log('📋 Totale righe nella tabella unificata:', tableBody.children.length);
   } else {
-    // Se non ci sono misurazioni, copia dalla tabella originale per retrocompatibilità
-    const originalTableBody = document.getElementById('measurements-data');
-    if (originalTableBody && originalTableBody.children.length > 0) {
-      tableBody.innerHTML = originalTableBody.innerHTML;
-    } else {
-      tableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nessuna misurazione disponibile</td></tr>';
-    }
+    console.warn('⚠️ Tabella measurements-data vuota o non trovata');
+  }
+
+  // Se ancora vuota, mostra messaggio
+  if (tableBody.children.length === 0) {
+    tableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nessuna misurazione disponibile</td></tr>';
   }
 }
 

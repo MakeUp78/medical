@@ -423,6 +423,15 @@ function drawMediaPipeLandmarks(landmarks) {
 
   console.log(`🎯 Disegno ${landmarks.length} landmarks MediaPipe`);
 
+  // 🔍 DIAGNOSTICA: Verifica valori di trasformazione immagine
+  console.log('🔍 DIAGNOSTICA LANDMARKS:', {
+    imageOffset: window.imageOffset,
+    imageScale: window.imageScale,
+    hasCurrentImage: !!currentImage,
+    currentImageScale: currentImage ? { scaleX: currentImage.scaleX, scaleY: currentImage.scaleY } : null,
+    currentImagePosition: currentImage ? { left: currentImage.left, top: currentImage.top } : null
+  });
+
   // Salva i landmark originali per future trasformazioni
   if (currentImage) {
     // Ottieni le dimensioni ORIGINALI dell'immagine (non scalate)
@@ -1035,25 +1044,25 @@ function redrawCanvas() {
 function setupImageTransformSync(img) {
   if (!img || !fabricCanvas) return;
 
-  fabricCanvas.on('object:moving', function(e) {
+  fabricCanvas.on('object:moving', function (e) {
     if (e.target === currentImage && originalLandmarks && originalLandmarks.length > 0) {
       redrawLandmarks();
     }
   });
 
-  fabricCanvas.on('object:scaling', function(e) {
+  fabricCanvas.on('object:scaling', function (e) {
     if (e.target === currentImage && originalLandmarks && originalLandmarks.length > 0) {
       redrawLandmarks();
     }
   });
 
-  fabricCanvas.on('object:rotating', function(e) {
+  fabricCanvas.on('object:rotating', function (e) {
     if (e.target === currentImage && originalLandmarks && originalLandmarks.length > 0) {
       redrawLandmarks();
     }
   });
 
-  fabricCanvas.on('object:modified', function(e) {
+  fabricCanvas.on('object:modified', function (e) {
     if (e.target === currentImage) {
       if (originalLandmarks && originalLandmarks.length > 0) {
         setTimeout(() => redrawLandmarks(), 50);
