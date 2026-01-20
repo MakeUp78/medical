@@ -4,7 +4,7 @@
  */
 
 // === VARIABILI GLOBALI MODALITÀ ===
-let currentCanvasMode = null; // null | 'pan' | 'zoom-in' | 'zoom-out' | 'selection' | 'line' | 'rectangle' | 'circle'
+let currentCanvasMode = null; // null | 'pan' | 'zoom-in' | 'zoom-out' | 'selection' | 'line' | 'couple' | 'rectangle' | 'circle'
 let isPanning = false;
 let panStart = { x: 0, y: 0 };
 let measureModeActive = false;
@@ -20,6 +20,7 @@ const CURSORS = {
     'zoom-out': 'zoom-out',
     'selection': 'crosshair',
     'line': 'cell', // Cursore a croce per linee perpendicolari
+    'couple': 'cell', // Cursore a croce per coppie di linee verticali speculari
     'rectangle': 'crosshair',
     'circle': 'crosshair'
 };
@@ -67,8 +68,8 @@ function setCanvasMode(mode) {
         // Permetti sempre la selezione di oggetti singoli trascinabili
         const objects = fabricCanvas.getObjects();
         objects.forEach(obj => {
-            // Le linee perpendicolari sono sempre selezionabili
-            if (obj.isPerpendicularLine) {
+            // Le linee perpendicolari e le coppie sono sempre selezionabili
+            if (obj.isPerpendicularLine || obj.isCoupleVerticalLine) {
                 obj.selectable = true;
                 obj.evented = true;
             }
@@ -92,11 +93,11 @@ function updateCanvasCursor(mode) {
     // NON impostare hoverCursor globale - lascia che ogni oggetto gestisca il proprio
     // fabricCanvas.hoverCursor viene gestito automaticamente dagli oggetti
 
-    // Imposta cursore su tutti gli oggetti, TRANNE le linee perpendicolari
+    // Imposta cursore su tutti gli oggetti, TRANNE le linee perpendicolari e coppie
     const objects = fabricCanvas.getObjects();
     objects.forEach(obj => {
-        // Le linee perpendicolari mantengono sempre il cursore 'move'
-        if (!obj.isPerpendicularLine) {
+        // Le linee perpendicolari e coppie mantengono sempre il cursore 'move'
+        if (!obj.isPerpendicularLine && !obj.isCoupleVerticalLine) {
             obj.hoverCursor = cursor;
             obj.moveCursor = cursor;
         }
@@ -211,6 +212,18 @@ function setupCanvasModesHandlers() {
                 }
                 // Altrimenti crea una nuova linea
                 handleDrawStart(opt, pointer);
+                break;
+
+            case 'couple':
+                // Se clicchiamo su una linea verticale accoppiata esistente, NON creare una nuova coppia
+                // Lascia che Fabric.js gestisca il drag
+                if (target && target.isCoupleVerticalLine) {
+                    console.log('🎯 Click su linea coppia esistente - drag mode');
+                    fabricCanvas.setActiveObject(target);
+                    return; // Lascia gestire a Fabric.js
+                }
+                // Altrimenti crea una nuova coppia di linee speculari
+                handleCoupleDrawStart(opt, pointer);
                 break;
 
             case 'rectangle':
@@ -654,11 +667,72 @@ function initializeCanvasModes() {
     console.log('✅ Sistema modalità canvas inizializzato');
 }
 
+// === GESTIONE COPPIA LINEE VERTICALI SPECULARI ===
+
+function handleCoupleDrawStart(opt, pointer) {
+    /**
+     * Gestisce il click per creare una coppia di linee verticali speculari rispetto all'asse
+     */
+    console.log(`⚖️ Inizio creazione coppia linee verticali speculari da`, pointer);
+
+    // Verifica che l'asse di simmetria sia presente
+    if (!window.currentLandmarks || !window.currentLandmarks[9] || !window.currentLandmarks[164]) {
+        showToast('Attiva prima l\'asse di simmetria', 'warning');
+        return;
+    }
+
+    // Attiva automaticamente il pulsante ASSE se non già attivo
+    const axisBtn = document.getElementById('axis-btn');
+    if (axisBtn && !axisBtn.classList.contains('active')) {
+        console.log('⚖️ Attivazione automatica asse di simmetria');
+        if (typeof toggleAxis === 'function') {
+            toggleAxis();
+        }
+    }
+
+    // Calcola le coordinate trasformate dell'asse
+    const glabella = window.currentLandmarks[9];
+    const philtrum = window.currentLandmarks[164];
+    const transGlab = transformLandmarkCoordinate(glabella);
+    const transPhil = transformLandmarkCoordinate(philtrum);
+
+    // Vettore dell'asse di simmetria
+    const axisVecX = transPhil.x - transGlab.x;
+    const axisVecY = transPhil.y - transGlab.y;
+    const axisLength = Math.sqrt(axisVecX * axisVecX + axisVecY * axisVecY);
+    const axisNormX = axisVecX / axisLength;
+    const axisNormY = axisVecY / axisLength;
+
+    // Direzione perpendicolare all'asse (sinistra-destra)
+    const perpX = -axisNormY;
+    const perpY = axisNormX;
+
+    // Calcola la proiezione del click sull'asse per trovare la posizione Y (lungo l'asse)
+    const clickVecX = pointer.x - transGlab.x;
+    const clickVecY = pointer.y - transGlab.y;
+    const projectionOnAxis = (clickVecX * axisVecX + clickVecY * axisVecY) / (axisLength * axisLength);
+
+    // Calcola la distanza perpendicolare del click dall'asse
+    const distanceFromAxis = clickVecX * perpX + clickVecY * perpY;
+
+    console.log(`📍 Click: (${pointer.x.toFixed(1)}, ${pointer.y.toFixed(1)})`);
+    console.log(`📍 Proiezione sull'asse: ${projectionOnAxis.toFixed(3)}`);
+    console.log(`📍 Distanza dall'asse: ${distanceFromAxis.toFixed(1)}`);
+
+    // Chiama la funzione in main.js per creare la coppia
+    if (typeof window.addCoupleVerticalLines === 'function') {
+        window.addCoupleVerticalLines(projectionOnAxis, Math.abs(distanceFromAxis));
+    } else {
+        console.error('❌ Funzione addCoupleVerticalLines non trovata');
+    }
+}
+
 // === ESPORTA FUNZIONI GLOBALI ===
 
 window.setCanvasMode = setCanvasMode;
 window.toggleMeasureMode = toggleMeasureMode;
 window.initializeCanvasModes = initializeCanvasModes;
 window.currentCanvasMode = currentCanvasMode;
+window.handleCoupleDrawStart = handleCoupleDrawStart;
 
 console.log('✅ canvas-modes.js caricato');

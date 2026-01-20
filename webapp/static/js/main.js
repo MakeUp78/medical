@@ -3170,6 +3170,11 @@ function rotateImageClockwise() {
     if (typeof redrawPerpendicularLines === 'function') {
       redrawPerpendicularLines();
     }
+
+    // Ridisegna coppie di linee verticali
+    if (typeof redrawCoupleLines === 'function') {
+      redrawCoupleLines();
+    }
   }, 50);
 
   console.log(`↻ Immagine ruotata: ${currentAngle}° → ${newAngle}°`);
@@ -3215,6 +3220,11 @@ function rotateImageCounterClockwise() {
     // Ridisegna linee perpendicolari
     if (typeof redrawPerpendicularLines === 'function') {
       redrawPerpendicularLines();
+    }
+
+    // Ridisegna coppie di linee verticali
+    if (typeof redrawCoupleLines === 'function') {
+      redrawCoupleLines();
     }
   }, 50);
 
@@ -4069,6 +4079,298 @@ function setupPerpendicularLineHandlers() {
 // Chiama setup quando il canvas è pronto
 if (typeof fabricCanvas !== 'undefined' && fabricCanvas) {
   setupPerpendicularLineHandlers();
+}
+
+// === GESTIONE COPPIE DI LINEE VERTICALI SPECULARI (COUPLE) ===
+
+var coupleLines = []; // Array di coppie: [{id, normalizedAxisPos, distanceFromAxis}]
+let coupleLineCounter = 0; // Contatore per ID univoci
+let isRedrawingCoupleLines = false; // Flag per evitare loop infiniti
+
+function addCoupleVerticalLines(normalizedAxisPos, distanceFromAxis) {
+  /**
+   * Aggiunge una coppia di linee verticali speculari rispetto all'asse di simmetria
+   * normalizedAxisPos: posizione lungo l'asse (0=glabella, 1=philtrum)
+   * distanceFromAxis: distanza orizzontale dall'asse (valore assoluto)
+   */
+  const coupleId = ++coupleLineCounter;
+
+  coupleLines.push({
+    id: coupleId,
+    normalizedAxisPos: normalizedAxisPos,
+    distanceFromAxis: distanceFromAxis
+  });
+  window.coupleLines = coupleLines;
+
+  // Crea le due linee speculari
+  createCoupleLines(coupleId, normalizedAxisPos, distanceFromAxis);
+
+  console.log(`⚖️ Coppia linee verticali aggiunta: id=${coupleId}, axisPos=${normalizedAxisPos.toFixed(3)}, distance=${distanceFromAxis.toFixed(1)}`);
+}
+
+function createCoupleLines(coupleId, normalizedAxisPos, distanceFromAxis) {
+  /**
+   * Crea le due linee verticali speculari sul canvas
+   */
+  if (!currentLandmarks || currentLandmarks.length === 0) return;
+  if (!currentLandmarks[9] || !currentLandmarks[164]) return;
+
+  const glabella = currentLandmarks[9];
+  const philtrum = currentLandmarks[164];
+
+  const transformedGlabella = transformLandmarkCoordinate(glabella);
+  const transformedPhiltrum = transformLandmarkCoordinate(philtrum);
+
+  // Direzione dell'asse
+  const dx = transformedPhiltrum.x - transformedGlabella.x;
+  const dy = transformedPhiltrum.y - transformedGlabella.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const axisX = dx / length;
+  const axisY = dy / length;
+
+  // Direzione perpendicolare (sinistra-destra)
+  const perpX = -axisY;
+  const perpY = axisX;
+
+  // Punto centrale sull'asse
+  const centerX = transformedGlabella.x + axisX * normalizedAxisPos * length;
+  const centerY = transformedGlabella.y + axisY * normalizedAxisPos * length;
+
+  // Lunghezza delle linee verticali (parallele all'asse)
+  const canvasWidth = fabricCanvas.getWidth();
+  const canvasHeight = fabricCanvas.getHeight();
+  const lineLength = Math.sqrt(canvasWidth * canvasWidth + canvasHeight * canvasHeight) * 2;
+
+  // Punti per linea sinistra (distanza negativa dall'asse)
+  const leftCenterX = centerX - perpX * distanceFromAxis;
+  const leftCenterY = centerY - perpY * distanceFromAxis;
+  const leftX1 = leftCenterX - axisX * lineLength / 2;
+  const leftY1 = leftCenterY - axisY * lineLength / 2;
+  const leftX2 = leftCenterX + axisX * lineLength / 2;
+  const leftY2 = leftCenterY + axisY * lineLength / 2;
+
+  // Punti per linea destra (distanza positiva dall'asse)
+  const rightCenterX = centerX + perpX * distanceFromAxis;
+  const rightCenterY = centerY + perpY * distanceFromAxis;
+  const rightX1 = rightCenterX - axisX * lineLength / 2;
+  const rightY1 = rightCenterY - axisY * lineLength / 2;
+  const rightX2 = rightCenterX + axisX * lineLength / 2;
+  const rightY2 = rightCenterY + axisY * lineLength / 2;
+
+  console.log(`📏 Creazione coppia linee: id=${coupleId}, center=(${centerX.toFixed(1)}, ${centerY.toFixed(1)}), distance=${distanceFromAxis.toFixed(1)}`);
+
+  // Crea linea sinistra
+  const leftLine = new fabric.Line([leftX1, leftY1, leftX2, leftY2], {
+    stroke: '#FF00FF', // Magenta
+    strokeWidth: 2,
+    selectable: true,
+    evented: true,
+    lockRotation: true,
+    lockScalingX: true,
+    lockScalingY: true,
+    hasControls: false,
+    hasBorders: false,
+    isCoupleVerticalLine: true,
+    coupleId: coupleId,
+    coupleSide: 'left',
+    normalizedAxisPos: normalizedAxisPos,
+    distanceFromAxis: distanceFromAxis,
+    hoverCursor: 'move',
+    moveCursor: 'move',
+    perPixelTargetFind: true,
+    targetFindTolerance: 3
+  });
+
+  // Crea linea destra
+  const rightLine = new fabric.Line([rightX1, rightY1, rightX2, rightY2], {
+    stroke: '#FF00FF', // Magenta
+    strokeWidth: 2,
+    selectable: true,
+    evented: true,
+    lockRotation: true,
+    lockScalingX: true,
+    lockScalingY: true,
+    hasControls: false,
+    hasBorders: false,
+    isCoupleVerticalLine: true,
+    coupleId: coupleId,
+    coupleSide: 'right',
+    normalizedAxisPos: normalizedAxisPos,
+    distanceFromAxis: distanceFromAxis,
+    hoverCursor: 'move',
+    moveCursor: 'move',
+    perPixelTargetFind: true,
+    targetFindTolerance: 3
+  });
+
+  fabricCanvas.add(leftLine);
+  fabricCanvas.add(rightLine);
+  console.log(`✅ Coppia linee aggiunte al canvas - id=${coupleId}`);
+
+  // Assicurati che l'handler sia attivo
+  setupCoupleLineHandlers();
+
+  fabricCanvas.renderAll();
+}
+
+function clearCoupleLines() {
+  /**
+   * Rimuove tutte le coppie di linee verticali dal canvas
+   */
+  if (fabricCanvas) {
+    const lines = fabricCanvas.getObjects().filter(obj => obj.isCoupleVerticalLine);
+    lines.forEach(line => fabricCanvas.remove(line));
+    fabricCanvas.renderAll();
+  }
+}
+
+function redrawCoupleLines() {
+  /**
+   * Ridisegna tutte le coppie di linee verticali
+   */
+  if (!currentLandmarks || currentLandmarks.length === 0) return;
+  if (!currentLandmarks[9] || !currentLandmarks[164]) return;
+
+  isRedrawingCoupleLines = true;
+
+  // Disabilita temporaneamente l'handler
+  fabricCanvas.off('object:moving');
+
+  clearCoupleLines();
+
+  coupleLines.forEach(couple => {
+    createCoupleLines(couple.id, couple.normalizedAxisPos, couple.distanceFromAxis);
+  });
+
+  fabricCanvas.renderAll();
+
+  // Riabilita handler
+  setupPerpendicularLineHandlers();
+  setupCoupleLineHandlers();
+  isRedrawingCoupleLines = false;
+}
+
+// Event handler per movimento coppie di linee
+let coupleLineHandler = null;
+
+function setupCoupleLineHandlers() {
+  if (!fabricCanvas) return;
+
+  // Rimuovi handler precedente se esiste
+  if (coupleLineHandler) {
+    fabricCanvas.off('object:moving', coupleLineHandler);
+  }
+
+  // Crea nuovo handler
+  coupleLineHandler = function (e) {
+    const obj = e.target;
+
+    if (!obj || !obj.isCoupleVerticalLine) return;
+
+    // IGNORA se stiamo ridisegnando
+    if (isRedrawingCoupleLines) {
+      console.log('⏸️ Ignoring couple move - redrawing in progress');
+      return;
+    }
+
+    console.log(`⚖️ Moving couple line: id=${obj.coupleId}, side=${obj.coupleSide}`);
+
+    // Trova il dato della coppia nell'array
+    const coupleData = coupleLines.find(c => c.id === obj.coupleId);
+    if (!coupleData) return;
+
+    // Calcola nuova posizione
+    if (!currentLandmarks || !currentLandmarks[9] || !currentLandmarks[164]) return;
+
+    const glabella = currentLandmarks[9];
+    const philtrum = currentLandmarks[164];
+    const transGlab = transformLandmarkCoordinate(glabella);
+    const transPhil = transformLandmarkCoordinate(philtrum);
+
+    // Vettore dell'asse
+    const axisVecX = transPhil.x - transGlab.x;
+    const axisVecY = transPhil.y - transGlab.y;
+    const axisLength = Math.sqrt(axisVecX * axisVecX + axisVecY * axisVecY);
+    const axisNormX = axisVecX / axisLength;
+    const axisNormY = axisVecY / axisLength;
+
+    // Direzione perpendicolare
+    const perpX = -axisNormY;
+    const perpY = axisNormX;
+
+    // Centro attuale della linea trascinata
+    const lineCenter = obj.getCenterPoint();
+
+    // Calcola la nuova distanza dall'asse (componente perpendicolare)
+    const vecFromGlabX = lineCenter.x - transGlab.x;
+    const vecFromGlabY = lineCenter.y - transGlab.y;
+    const newDistanceFromAxis = Math.abs(vecFromGlabX * perpX + vecFromGlabY * perpY);
+
+    // Aggiorna la distanza nella coppia
+    coupleData.distanceFromAxis = newDistanceFromAxis;
+    obj.distanceFromAxis = newDistanceFromAxis;
+
+    console.log(`📊 Nuova distanza dall'asse: ${newDistanceFromAxis.toFixed(1)}`);
+
+    // Punto centrale sull'asse per questa posizione
+    const centerX = transGlab.x + axisNormX * coupleData.normalizedAxisPos * axisLength;
+    const centerY = transGlab.y + axisNormY * coupleData.normalizedAxisPos * axisLength;
+
+    // Lunghezza delle linee
+    const canvasWidth = fabricCanvas.getWidth();
+    const canvasHeight = fabricCanvas.getHeight();
+    const lineLength = Math.sqrt(canvasWidth * canvasWidth + canvasHeight * canvasHeight) * 2;
+
+    // Aggiorna la linea trascinata
+    const sign = (obj.coupleSide === 'left') ? -1 : 1;
+    const lineCenterX = centerX + sign * perpX * newDistanceFromAxis;
+    const lineCenterY = centerY + sign * perpY * newDistanceFromAxis;
+
+    obj.set({
+      x1: lineCenterX - axisNormX * lineLength / 2,
+      y1: lineCenterY - axisNormY * lineLength / 2,
+      x2: lineCenterX + axisNormX * lineLength / 2,
+      y2: lineCenterY + axisNormY * lineLength / 2
+    });
+    obj.setCoords();
+
+    // Trova e aggiorna la linea gemella (speculare)
+    const allCoupleLines = fabricCanvas.getObjects().filter(
+      o => o.isCoupleVerticalLine && o.coupleId === obj.coupleId && o !== obj
+    );
+
+    allCoupleLines.forEach(twinLine => {
+      const twinSign = (twinLine.coupleSide === 'left') ? -1 : 1;
+      const twinCenterX = centerX + twinSign * perpX * newDistanceFromAxis;
+      const twinCenterY = centerY + twinSign * perpY * newDistanceFromAxis;
+
+      twinLine.set({
+        x1: twinCenterX - axisNormX * lineLength / 2,
+        y1: twinCenterY - axisNormY * lineLength / 2,
+        x2: twinCenterX + axisNormX * lineLength / 2,
+        y2: twinCenterY + axisNormY * lineLength / 2
+      });
+      twinLine.distanceFromAxis = newDistanceFromAxis;
+      twinLine.setCoords();
+
+      console.log(`⚖️ Linea gemella (${twinLine.coupleSide}) aggiornata specularmente`);
+    });
+
+    fabricCanvas.renderAll();
+  };
+
+  // Aggiungi l'handler al canvas
+  fabricCanvas.on('object:moving', coupleLineHandler);
+}
+
+window.addCoupleVerticalLines = addCoupleVerticalLines;
+window.clearCoupleLines = clearCoupleLines;
+window.redrawCoupleLines = redrawCoupleLines;
+window.coupleLines = coupleLines;
+
+// Chiama setup quando il canvas è pronto
+if (typeof fabricCanvas !== 'undefined' && fabricCanvas) {
+  setupCoupleLineHandlers();
 }
 
 function drawGreenDots() {
@@ -6295,6 +6597,25 @@ function clearAllMeasurementOverlays() {
     );
     measurementObjects.forEach(obj => fabricCanvas.remove(obj));
     fabricCanvas.renderAll();
+  }
+
+  // === PULISCI LINEE PERPENDICOLARI E COPPIE ===
+
+  // Pulisci linee perpendicolari
+  if (typeof clearPerpendicularLines === 'function') {
+    clearPerpendicularLines();
+    perpendicularLines = [];
+    window.perpendicularLines = perpendicularLines;
+    console.log('✅ Linee perpendicolari rimosse');
+  }
+
+  // Pulisci coppie di linee verticali speculari
+  if (typeof clearCoupleLines === 'function') {
+    clearCoupleLines();
+    coupleLines = [];
+    coupleLineCounter = 0;
+    window.coupleLines = coupleLines;
+    console.log('✅ Coppie linee verticali rimosse');
   }
 
   // Nascondi il pulsante "NUOVA MISURAZIONE"
