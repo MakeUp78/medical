@@ -31,6 +31,10 @@ let measurementPoints = [];
 let activeMeasurements = new Map(); // Traccia quali misurazioni sono attive
 let measurementOverlays = new Map(); // Traccia gli overlay delle misurazioni
 
+// Esponi le variabili globalmente per l'accesso da altri moduli
+window.activeMeasurements = activeMeasurements;
+window.measurementOverlays = measurementOverlays;
+
 // === FUNZIONI DI UTILITÀ PER OVERLAY ===
 
 function createMeasurementLine(point1, point2, label, color = '#FF6B35') {
@@ -291,30 +295,7 @@ function hideMeasurementOverlay(measurementType) {
   }
 }
 
-function clearAllMeasurementOverlays() {
-  /**
-   * Rimuove tutti gli overlay di misurazione attivi
-   */
-  measurementOverlays.forEach((overlayObjects, measurementType) => {
-    overlayObjects.forEach(obj => {
-      if (fabricCanvas) {
-        fabricCanvas.remove(obj);
-      }
-    });
-  });
-
-  measurementOverlays.clear();
-  activeMeasurements.clear();
-
-  // Reset tutti i pulsanti
-  document.querySelectorAll('.btn-measure.btn-active').forEach(btn => {
-    btn.classList.remove('btn-active');
-  });
-
-  if (fabricCanvas) {
-    fabricCanvas.renderAll();
-  }
-}
+// Funzione clearAllMeasurementOverlays gestita in main.js (non duplicare)
 
 // === FUNZIONI PRINCIPALI SISTEMA SEMPLIFICATO ===
 
@@ -1180,7 +1161,7 @@ function performEyeAreasMeasurement() {
   }
 
   try {
-    clearPreviousMeasurements();
+    // NON pulire le misurazioni precedenti - ogni pulsante gestisce il proprio overlay
 
     // Verifica che fabricCanvas sia disponibile
     if (!fabricCanvas || typeof fabricCanvas === 'undefined') {
@@ -1330,7 +1311,7 @@ function performForeheadWidthMeasurement() {
   }
 
   try {
-    clearPreviousMeasurements();
+    // NON pulire le misurazioni precedenti - ogni pulsante gestisce il proprio overlay
 
     // Usa landmark più precisi per la larghezza della fronte
     const leftTemple = currentLandmarks[21];   // Tempia sinistra
@@ -1928,8 +1909,7 @@ function measureChinWidth() {
   }
 
   try {
-    // Pulisce misurazioni precedenti
-    clearPreviousMeasurements();
+    // NON pulire le misurazioni precedenti - ogni pulsante gestisce il proprio overlay
 
     // Punti del mento
     const leftJaw = currentLandmarks[172];  // Mandibola sinistra
@@ -1965,8 +1945,7 @@ function measureFaceProfile() {
   }
 
   try {
-    // Pulisce misurazioni precedenti
-    clearPreviousMeasurements();
+    // NON pulire le misurazioni precedenti - ogni pulsante gestisce il proprio overlay
 
     // Punti per il profilo del viso
     const forehead = currentLandmarks[9];   // Fronte
@@ -2004,8 +1983,7 @@ function measureNoseAngle() {
   }
 
   try {
-    // Pulisce misurazioni precedenti
-    clearPreviousMeasurements();
+    // NON pulire le misurazioni precedenti - ogni pulsante gestisce il proprio overlay
 
     // Punti per l'angolo del naso
     const noseBridge = currentLandmarks[6];   // Ponte naso
@@ -2042,8 +2020,7 @@ function measureMouthAngle() {
   }
 
   try {
-    // Pulisce misurazioni precedenti
-    clearPreviousMeasurements();
+    // NON pulire le misurazioni precedenti - ogni pulsante gestisce il proprio overlay
 
     // Punti per l'angolo della bocca
     const leftMouth = currentLandmarks[61];   // Angolo sx bocca
@@ -2081,8 +2058,7 @@ function measureFaceProportions() {
   }
 
   try {
-    // Pulisce misurazioni precedenti
-    clearPreviousMeasurements();
+    // NON pulire le misurazioni precedenti - ogni pulsante gestisce il proprio overlay
 
     // Calcola varie proporzioni
     const faceWidth = calculateDistanceBetweenPoints(currentLandmarks[234], currentLandmarks[454]);
@@ -2119,8 +2095,7 @@ function measureKeyDistances() {
   }
 
   try {
-    // Pulisce misurazioni precedenti
-    clearPreviousMeasurements();
+    // NON pulire le misurazioni precedenti - ogni pulsante gestisce il proprio overlay
 
     // Distanze chiave del viso
     const eyeToNose = calculateDistanceBetweenPoints(currentLandmarks[27], currentLandmarks[1]);
@@ -2588,5 +2563,47 @@ async function estimateAge(event) {
 // Esporta funzioni globali necessarie per altri moduli
 window.ensureMeasurementsSectionOpen = ensureMeasurementsSectionOpen;
 window.addMeasurementToTable = addMeasurementToTable;
+
+/**
+ * Ridisegna tutti gli overlay di misurazione attivi
+ * Chiamata quando il canvas viene ridimensionato o l'immagine cambia
+ */
+function redrawAllMeasurementOverlays() {
+  console.log('🔄 Ridisegno overlay misurazioni attivi...');
+
+  if (!window.measurementOverlays || window.measurementOverlays.size === 0) {
+    console.log('📊 Nessun overlay da ridisegnare');
+    return;
+  }
+
+  // Rimuovi tutti gli overlay esistenti dal canvas
+  window.measurementOverlays.forEach((overlayObjects, measurementType) => {
+    overlayObjects.forEach(obj => {
+      if (fabricCanvas) {
+        fabricCanvas.remove(obj);
+      }
+    });
+  });
+
+  // Riattiva tutte le misurazioni che erano attive
+  const activeTypes = Array.from(window.activeMeasurements.keys());
+
+  // Pulisci le mappe per evitare duplicati
+  window.measurementOverlays.clear();
+
+  // Ricrea ogni misurazione attiva
+  activeTypes.forEach(measurementType => {
+    console.log(`🔄 Ridisegno: ${measurementType}`);
+    showMeasurementOverlay(measurementType);
+  });
+
+  if (fabricCanvas) {
+    fabricCanvas.renderAll();
+  }
+
+  console.log('✅ Ridisegno overlay completato');
+}
+
+window.redrawAllMeasurementOverlays = redrawAllMeasurementOverlays;
 
 // === FINE DEL FILE ===

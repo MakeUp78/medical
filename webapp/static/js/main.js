@@ -6176,32 +6176,125 @@ function removeMeasurementOverlaysExceptHighlights() {
 function clearAllMeasurementOverlays() {
   /**
    * Pulisce tutte le misurazioni: resetta contatore punti, rimuove overlay dal canvas,
-   * svuota tabella misurazioni.
+   * svuota tabella misurazioni e landmarks, riporta i pulsanti verdi ad arancioni,
+   * e disattiva tutti gli overlay associati ai pulsanti attivi.
    */
-  console.log('🧹 Pulizia misurazioni...');
+  console.log('🧹 Pulizia misurazioni e reset pulsanti attivi...');
+
+  // === DISATTIVA PULSANTI TOGGLE E LORO OVERLAY ===
+
+  // 1. Disattiva asse di simmetria
+  const axisBtn = document.getElementById('axis-btn');
+  if (axisBtn && axisBtn.classList.contains('active')) {
+    axisBtn.classList.remove('active');
+    window.symmetryAxisVisible = false;
+    if (typeof clearSymmetryAxis === 'function') {
+      clearSymmetryAxis();
+    }
+    console.log('✅ Asse di simmetria disattivato');
+  }
+
+  // 2. Disattiva landmarks
+  const landmarksBtn = document.getElementById('landmarks-btn');
+  if (landmarksBtn && landmarksBtn.classList.contains('active')) {
+    landmarksBtn.classList.remove('active');
+    window.landmarkSelectionMode = false;
+    window.landmarksVisible = false;
+    if (typeof window.clearLandmarks === 'function') {
+      window.clearLandmarks();
+    }
+    console.log('✅ Landmarks disattivati');
+  }
+
+  // 3. Disattiva modalità misura
+  const measureBtn = document.getElementById('measure-btn');
+  if (measureBtn && measureBtn.classList.contains('active')) {
+    measureBtn.classList.remove('active');
+    window.measurementMode = false;
+    if (typeof window.measureModeActive !== 'undefined') {
+      window.measureModeActive = false;
+    }
+    console.log('✅ Modalità misura disattivata');
+  }
+
+  // 4. Disattiva green dots
+  const greenDotsBtn = document.getElementById('green-dots-btn');
+  if (greenDotsBtn && greenDotsBtn.classList.contains('active')) {
+    greenDotsBtn.classList.remove('active');
+    // Rimuovi green dots dal canvas
+    if (fabricCanvas) {
+      const greenDots = fabricCanvas.getObjects().filter(obj => obj.isGreenDot || obj.isGreenDotsOverlay);
+      greenDots.forEach(obj => fabricCanvas.remove(obj));
+    }
+    console.log('✅ Green dots disattivati');
+  }
+
+  // === DISATTIVA TUTTI I PULSANTI DI MISURAZIONE CON OVERLAY ===
+
+  // Trova tutti i pulsanti con classe btn-active (pulsanti di misurazione attivi)
+  document.querySelectorAll('.btn-analysis.btn-active').forEach(btn => {
+    btn.classList.remove('btn-active');
+    console.log('🔄 Disattivato pulsante misurazione:', btn.textContent.trim());
+  });
+
+  // Pulisci tutti gli overlay di misurazione usando la mappa globale
+  if (typeof window.measurementOverlays !== 'undefined' && window.measurementOverlays) {
+    window.measurementOverlays.forEach((overlayObjects, measurementType) => {
+      overlayObjects.forEach(obj => {
+        if (fabricCanvas) {
+          fabricCanvas.remove(obj);
+        }
+      });
+      console.log(`🧹 Rimosso overlay: ${measurementType}`);
+    });
+    window.measurementOverlays.clear();
+  }
+
+  // Pulisci anche activeMeasurements
+  if (typeof window.activeMeasurements !== 'undefined' && window.activeMeasurements) {
+    window.activeMeasurements.clear();
+  }
+
+  // Rimuovi la classe 'active' da tutti gli altri pulsanti .btn-analysis rimasti
+  document.querySelectorAll('.btn-analysis.active').forEach(btn => {
+    btn.classList.remove('active');
+    console.log('🔄 Rimossa classe active da:', btn.textContent.trim());
+  });
+
+  // === PULISCI TABELLE ===
 
   // Reset variabili
   window.selectedLandmarksForMeasurement = [];
   window.measurementResults = [];
 
-  // Pulisci tabella
+  // Pulisci tabella misurazioni
   const tbody = document.getElementById('measurements-data');
   if (tbody) {
     tbody.innerHTML = '';
   }
 
-  // Rimuovi overlay dal canvas
-  if (fabricCanvas) {
-    const measurementObjects = fabricCanvas.getObjects().filter(obj => obj.isMeasurement);
-    measurementObjects.forEach(obj => fabricCanvas.remove(obj));
-    fabricCanvas.renderAll();
+  // Pulisci tabella landmarks
+  const landmarksTbody = document.getElementById('landmarks-data');
+  if (landmarksTbody) {
+    landmarksTbody.innerHTML = '';
   }
 
-  // Ridisegna landmarks se necessario
-  if (window.measurementMode && currentLandmarks && currentLandmarks.length > 0) {
-    if (typeof drawMediaPipeLandmarks === 'function') {
-      drawMediaPipeLandmarks(currentLandmarks);
-    }
+  // Pulisci la tabella unificata se sta mostrando misurazioni o landmarks (ma non debug)
+  const unifiedTableBody = document.getElementById('unified-table-body');
+  const currentTab = window.unifiedTableCurrentTab;
+  if (unifiedTableBody && (currentTab === 'measurements' || currentTab === 'landmarks')) {
+    unifiedTableBody.innerHTML = '';
+  }
+
+  // === PULISCI OVERLAY DAL CANVAS ===
+
+  // Rimuovi tutti gli overlay di misurazione generici dal canvas
+  if (fabricCanvas) {
+    const measurementObjects = fabricCanvas.getObjects().filter(obj =>
+      obj.isMeasurement || obj.isMeasurementOverlay || obj.isMeasurementLine || obj.isMeasurementLabel
+    );
+    measurementObjects.forEach(obj => fabricCanvas.remove(obj));
+    fabricCanvas.renderAll();
   }
 
   // Nascondi il pulsante "NUOVA MISURAZIONE"
@@ -6210,8 +6303,8 @@ function clearAllMeasurementOverlays() {
     completeBtn.style.display = 'none';
   }
 
-  updateStatus('🧹 Misurazioni pulite - Riparti da zero');
-  console.log('✅ Misurazioni pulite completamente');
+  updateStatus('🧹 Tutti i pulsanti e overlay puliti - Riparti da zero');
+  console.log('✅ Pulizia completa: pulsanti, overlay, tabelle misurazioni e landmarks');
 }
 
 function completeMeasurement() {
