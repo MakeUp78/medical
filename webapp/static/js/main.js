@@ -380,6 +380,9 @@ function resetForNewAnalysis() {
     unifiedTableBody.innerHTML = '';
   }
 
+  // Reset flag per forzare apertura tab debug al prossimo caricamento
+  window._shouldOpenDebugTab = true;
+
   // Reset frame buffer globale
   if (typeof currentBestFrames !== 'undefined') {
     currentBestFrames = [];
@@ -782,6 +785,114 @@ function compressImage(sourceCanvas, maxWidth = 1280, quality = 0.7) {
   return compressedCanvas;
 }
 
+// ============================================================================
+// PREPROCESSING VIDEO LATO CLIENT - Riduce PRIMA dell'upload
+// ============================================================================
+async function preprocessVideoClientSide(file, maxWidth = 720, progressCallback = null) {
+  /**
+   * Preprocessa video lato client riducendo risoluzione PRIMA dell'upload.
+   * Usa Canvas per catturare frame e MediaRecorder per ricreare video compresso.
+   * 
+   * @param {File} file - File video originale
+   * @param {number} maxWidth - Larghezza massima target
+   * @param {function} progressCallback - Callback per progress (0-100)
+   * @returns {Promise<Blob>} - Video compresso come Blob
+   */
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+
+    const url = URL.createObjectURL(file);
+    video.src = url;
+
+    video.onloadedmetadata = async () => {
+      try {
+        // Calcola dimensioni ridotte mantenendo aspect ratio
+        let targetWidth = video.videoWidth;
+        let targetHeight = video.videoHeight;
+
+        if (targetWidth > maxWidth) {
+          const ratio = maxWidth / targetWidth;
+          targetWidth = maxWidth;
+          targetHeight = Math.round(targetHeight * ratio);
+          // Forza dimensioni pari per encoder
+          if (targetHeight % 2 !== 0) targetHeight++;
+        }
+
+        console.log(`🎬 Preprocessing video lato client: ${video.videoWidth}x${video.videoHeight} → ${targetWidth}x${targetHeight}`);
+
+        // Canvas per cattura frame
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+
+        // MediaRecorder per ricreare video
+        const stream = canvas.captureStream(30); // 30 FPS
+        const options = {
+          mimeType: 'video/webm;codecs=vp8',
+          videoBitsPerSecond: 1500000 // 1.5 Mbps
+        };
+
+        const mediaRecorder = new MediaRecorder(stream, options);
+        const chunks = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) chunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          URL.revokeObjectURL(url);
+          console.log(`✅ Video preprocessato: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
+          resolve(blob);
+        };
+
+        mediaRecorder.start();
+        video.play();
+
+        // Cattura frame durante riproduzione
+        const fps = 30;
+        const interval = 1000 / fps;
+        let lastTime = 0;
+
+        const captureFrame = () => {
+          if (video.ended || video.paused) {
+            mediaRecorder.stop();
+            return;
+          }
+
+          const currentTime = video.currentTime;
+          if (currentTime - lastTime >= interval / 1000) {
+            ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
+            lastTime = currentTime;
+
+            // Progress callback
+            if (progressCallback) {
+              const progress = (currentTime / video.duration) * 100;
+              progressCallback(Math.round(progress));
+            }
+          }
+
+          requestAnimationFrame(captureFrame);
+        };
+
+        video.onplay = () => captureFrame();
+
+      } catch (error) {
+        URL.revokeObjectURL(url);
+        reject(error);
+      }
+    };
+
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Errore caricamento video'));
+    };
+  });
+}
+
 function normalizeTo72DPI(sourceCanvas) {
   /**
    * ⚠️ DEPRECATED: La normalizzazione DPI non è necessaria - i canvas non hanno DPI
@@ -886,48 +997,37 @@ async function handleUnifiedFileLoad(file, type) {
       collapseDetectionSections();
 
       // ========================================================================
-      // PREPROCESSING VIDEO: Ridimensiona e comprimi PRIMA dell'uso per video >2MB
-      // Target: 464x832 come simul_camera.mp4
+      // PREPROCESSING VIDEO LATO CLIENT: Riduce dimensioni PRIMA dell'upload
+      // ⚡ VELOCE: No upload file originale, no FFmpeg server, solo client-side
       // ========================================================================
       const fileSizeMB = file.size / (1024 * 1024);
-      if (fileSizeMB > 2) {
-        updateStatus('Preprocessing video in corso...');
+      if (fileSizeMB > 5) {  // Solo per video >5MB (soglia aumentata)
+        updateStatus('🔧 Preprocessing video lato client...');
+        showToast('Compressione video in corso...', 'info');
 
         try {
-          const formData = new FormData();
-          formData.append('file', file);
-
-          const preprocessResponse = await fetch(`${API_CONFIG.baseURL}/api/preprocess-video`, {
-            method: 'POST',
-            body: formData
-          });
-
-          if (preprocessResponse.ok) {
-            const preprocessData = await preprocessResponse.json();
-
-            console.log('✅ Preprocessing completato:', {
-              original: preprocessData.original_size_mb.toFixed(2) + ' MB',
-              compressed: preprocessData.processed_size_mb.toFixed(2) + ' MB',
-              ratio: preprocessData.compression_ratio
-            });
-
-            // Scarica video preprocessato dall'URL
-            const videoResponse = await fetch(preprocessData.video_url);
-            if (videoResponse.ok) {
-              const processedBlob = await videoResponse.blob();
-
-              // SOSTITUISCI file originale con versione processata
-              file = new File([processedBlob], file.name, { type: 'video/mp4' });
-
-              showToast(`Video ridotto: ${preprocessData.original_size_mb.toFixed(1)}MB → ${preprocessData.processed_size_mb.toFixed(1)}MB`, 'success');
-            } else {
-              console.error('❌ Errore download video preprocessato');
-              showToast('Errore preprocessing, uso video originale', 'warning');
+          // Progress callback per feedback utente
+          let lastProgress = 0;
+          const progressCallback = (progress) => {
+            if (progress - lastProgress >= 10) {  // Aggiorna ogni 10%
+              updateStatus(`🔧 Preprocessing: ${progress}% completato`);
+              lastProgress = progress;
             }
-          }
+          };
+
+          // Preprocessing lato client con MediaRecorder
+          const processedBlob = await preprocessVideoClientSide(file, 720, progressCallback);
+
+          // Sostituisci file originale
+          file = new File([processedBlob], file.name.replace(/\.[^.]+$/, '.webm'), { type: 'video/webm' });
+
+          const compressionRatio = ((1 - processedBlob.size / (fileSizeMB * 1024 * 1024)) * 100).toFixed(1);
+          console.log(`✅ Video compresso lato client: ${fileSizeMB.toFixed(2)}MB → ${(processedBlob.size / 1024 / 1024).toFixed(2)}MB (-${compressionRatio}%)`);
+          showToast(`Video compresso: ${fileSizeMB.toFixed(1)}MB → ${(processedBlob.size / 1024 / 1024).toFixed(1)}MB`, 'success');
+
         } catch (preprocessError) {
-          console.error('❌ Errore preprocessing:', preprocessError);
-          showToast('Errore preprocessing, uso video originale', 'warning');
+          console.warn('⚠️ Preprocessing fallito, uso video originale:', preprocessError);
+          showToast('Preprocessing fallito, uso video originale', 'warning');
         }
       }
       // ========================================================================
@@ -942,7 +1042,7 @@ async function handleUnifiedFileLoad(file, type) {
       video.style.top = '-9999px';
       document.body.appendChild(video);
 
-      // Carica file video (PREPROCESSATO)
+      // Carica file video (PREPROCESSATO se era >5MB)
       const url = URL.createObjectURL(file);
       video.src = url;
 
@@ -1323,14 +1423,56 @@ async function runAutomaticVideoAnalysis(file) {
 
   // Continua con l'analisi automatica esistente (tutto il codice che c'era prima)
   try {
-    // ✅ OTTIMIZZAZIONE: Comprimi video prima dell'upload per velocizzare analisi
-    console.log('🔧 Compressione video per ottimizzazione...');
-    const compressedBlob = await compressVideoForAnalysis(file, 720); // Max 720px width
-    console.log(`📦 Video compresso: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(compressedBlob.size / 1024 / 1024).toFixed(2)}MB`);
+    // ✅ PREPROCESSING LATO CLIENT: Comprimi video PRIMA dell'upload per video >5MB
+    const fileSizeMB = file.size / (1024 * 1024);
+    let fileToUpload = file;
+
+    if (fileSizeMB > 5) {
+      console.log(`🔧 Preprocessing video lato client (${fileSizeMB.toFixed(2)}MB)...`);
+
+      if (statusDiv) {
+        statusDiv.innerHTML = `
+          <div class="analysis-progress">
+            <div class="spinner"></div>
+            <p>Compressione video...</p>
+            <p id="preprocess-progress">0% completato</p>
+          </div>
+        `;
+      }
+
+      try {
+        // Progress callback
+        const progressCallback = (progress) => {
+          const progressEl = document.getElementById('preprocess-progress');
+          if (progressEl) {
+            progressEl.textContent = `${progress}% completato`;
+          }
+        };
+
+        const processedBlob = await preprocessVideoClientSide(file, 720, progressCallback);
+        fileToUpload = new File([processedBlob], file.name.replace(/\.[^.]+$/, '.webm'), { type: 'video/webm' });
+
+        console.log(`✅ Video compresso: ${fileSizeMB.toFixed(2)}MB → ${(fileToUpload.size / 1024 / 1024).toFixed(2)}MB`);
+
+      } catch (preprocessError) {
+        console.warn('⚠️ Preprocessing fallito, uso video originale:', preprocessError);
+      }
+
+      // Aggiorna status per mostrare che il preprocessing è completato
+      if (statusDiv) {
+        statusDiv.innerHTML = `
+          <div class="analysis-progress">
+            <div class="spinner"></div>
+            <p>Analizzando ${file.name}...</p>
+            <p>Ricerca del miglior frame frontale...</p>
+          </div>
+        `;
+      }
+    }
 
     // Prepara FormData per upload
     const formData = new FormData();
-    formData.append('file', compressedBlob, file.name);
+    formData.append('file', fileToUpload);
 
     console.log('📤 Invio video al backend...');
 
@@ -2622,14 +2764,16 @@ function updateDebugTable(bestFrames) {
     });
 
     // Apri la sezione DATI ANALISI unificata e switcha al tab DEBUG
-    // SOLO se la tabella unificata è vuota o se il tab corrente non è già debug
+    // SEMPRE quando riceviamo i primi frame di un nuovo video (forza apertura)
     const currentTab = window.unifiedTableCurrentTab;
     const unifiedTableBody = document.getElementById('unified-table-body');
+    const shouldForceOpen = window._shouldOpenDebugTab === true;
 
-    if (!currentTab || currentTab !== 'debug' || !unifiedTableBody || unifiedTableBody.children.length === 0) {
-      console.log('🔄 [UNIFIED] Prima apertura tab DEBUG - switch necessario');
+    if (!currentTab || currentTab !== 'debug' || !unifiedTableBody || unifiedTableBody.children.length === 0 || shouldForceOpen) {
+      console.log('🔄 [UNIFIED] Apertura forzata tab DEBUG - nuovo video caricato');
       openUnifiedAnalysisSection();
-      switchUnifiedTab('debug');
+      switchUnifiedTab('debug', null, true); // ✅ Forza aggiornamento con terzo parametro
+      window._shouldOpenDebugTab = false; // Reset flag dopo apertura
     } else {
       // La tabella è già sul tab debug - aggiornamento INCREMENTALE per evitare flickering
       const tableBody = document.getElementById('unified-table-body');

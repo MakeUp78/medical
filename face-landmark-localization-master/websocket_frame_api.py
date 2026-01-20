@@ -140,12 +140,15 @@ class WebSocketFrameScorer:
                 singular = sy < 1e-6
                 
                 if not singular:
-                    pitch = np.arctan2(-rotation_matrix[2,0], sy) * 180.0 / np.pi
-                    yaw = np.arctan2(rotation_matrix[1,0], rotation_matrix[0,0]) * 180.0 / np.pi
+                    # ✅ YAW/PITCH SWAP FIX: Le formule erano invertite!
+                    # Yaw (rotazione orizzontale) usa R[2,0] non R[1,0]
+                    # Pitch (rotazione verticale) usa R[1,0] non R[2,0]
+                    yaw = np.arctan2(-rotation_matrix[2,0], sy) * 180.0 / np.pi
+                    pitch = -np.arctan2(rotation_matrix[1,0], rotation_matrix[0,0]) * 180.0 / np.pi
                     roll = np.arctan2(rotation_matrix[2,1], rotation_matrix[2,2]) * 180.0 / np.pi
                 else:
-                    pitch = np.arctan2(-rotation_matrix[2,0], sy) * 180.0 / np.pi
                     yaw = 0
+                    pitch = np.arctan2(-rotation_matrix[2,0], sy) * 180.0 / np.pi
                     roll = np.arctan2(-rotation_matrix[1,2], rotation_matrix[1,1]) * 180.0 / np.pi
                 
                 return np.array([pitch, yaw, roll])
@@ -189,8 +192,14 @@ class WebSocketFrameScorer:
         yaw_weighted = abs(yaw) * 2.5
         pitch_weighted = abs(pitch) * 1.0
 
+        # BIAS: Penalità extra per Yaw fuori dalla soglia ottimale [-3, +3]
+        yaw_penalty = 0
+        if abs(yaw) > 3:
+            # Penalità progressiva: ogni grado oltre ±3 costa 5 punti
+            yaw_penalty = (abs(yaw) - 3) * 5
+
         pose_deviation = yaw_weighted + pitch_weighted + roll_weighted
-        pose_score = max(0, 100 - pose_deviation * 0.8)
+        pose_score = max(0, 100 - pose_deviation * 0.8 - yaw_penalty)
         
         # 2. SIZE SCORE (0-100) - 30% del punteggio - Premia volti PIÙ GRANDI
         face_width = face_bbox[1] - face_bbox[0]

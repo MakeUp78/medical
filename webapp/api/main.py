@@ -151,6 +151,11 @@ webapp_dir = os.path.join(os.path.dirname(__file__), '..')
 app.mount("/static", StaticFiles(directory=os.path.join(webapp_dir, "static")), name="static")
 app.mount("/templates", StaticFiles(directory=os.path.join(webapp_dir, "templates")), name="templates")
 
+# Monta la cartella best_frontal_frames per video preprocessati
+best_frontal_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'best_frontal_frames')
+os.makedirs(best_frontal_dir, exist_ok=True)
+app.mount("/best_frontal_frames", StaticFiles(directory=best_frontal_dir), name="best_frontal_frames")
+
 print(f"📁 Webapp directory: {webapp_dir}")
 
 # === MODELLI PYDANTIC ===
