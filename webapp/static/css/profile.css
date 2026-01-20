@@ -1030,6 +1030,14 @@ body {
   .profile-stats {
     grid-template-columns: 1fr;
   }
+
+  .admin-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .admin-usage-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (max-width: 768px) {
@@ -1049,4 +1057,430 @@ body {
   .profile-content {
     padding: 1.5rem;
   }
+
+  .admin-stats-grid,
+  .admin-usage-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-quick-actions {
+    grid-template-columns: 1fr;
+  }
 }
+
+/* ===================================
+   ADMIN DASHBOARD IN PROFILE
+   =================================== */
+
+.admin-overview-card {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: var(--shadow);
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.admin-header p {
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.admin-stat-card {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.admin-stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+}
+
+.admin-stat-card .stat-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+}
+
+.admin-stat-card .stat-icon.users {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+.admin-stat-card .stat-icon.active {
+  background: linear-gradient(135deg, #4caf50, #45a049);
+}
+
+.admin-stat-card .stat-icon.new {
+  background: linear-gradient(135deg, #ff9800, #f57c00);
+}
+
+.admin-stat-card .stat-icon.analyses {
+  background: linear-gradient(135deg, #2196f3, #1976d2);
+}
+
+.admin-stat-card .stat-content h3 {
+  font-size: 2rem;
+  font-weight: bold;
+  margin-bottom: 0.25rem;
+  color: var(--text-primary);
+}
+
+.admin-stat-card .stat-content p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.admin-section-divider {
+  margin: 2rem 0 1.5rem;
+}
+
+.admin-section-divider h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--primary-color);
+  font-size: 1.3rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.admin-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.usage-stat {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.usage-stat .usage-icon {
+  width: 45px;
+  height: 45px;
+  border-radius: 8px;
+  background: var(--primary-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  color: white;
+}
+
+.usage-stat .usage-content h4 {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 0.25rem;
+  color: var(--text-primary);
+}
+
+.usage-stat .usage-content p {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.admin-recent-activity {
+  margin-bottom: 2rem;
+}
+
+.admin-activity-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.admin-activity-table thead {
+  background: rgba(102, 126, 234, 0.2);
+}
+
+.admin-activity-table th,
+.admin-activity-table td {
+  padding: 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.admin-activity-table th {
+  font-weight: 600;
+  color: var(--primary-color);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.admin-activity-table td {
+  color: var(--text-secondary);
+}
+
+.admin-activity-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.admin-activity-table .plan-badge {
+  display: inline-block;
+  padding: 0.3rem 0.8rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.admin-activity-table .plan-badge.none {
+  background: #9e9e9e;
+  color: white;
+}
+
+.admin-activity-table .plan-badge.monthly {
+  background: #2196f3;
+  color: white;
+}
+
+.admin-activity-table .plan-badge.annual {
+  background: #9c27b0;
+  color: white;
+}
+
+.admin-activity-table .status-badge {
+  display: inline-block;
+  padding: 0.3rem 0.8rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: bold;
+}
+
+.admin-activity-table .status-badge.active {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.admin-activity-table .status-badge.inactive {
+  background: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+}
+
+.admin-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.admin-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+  color: white;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.admin-action-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 15px rgba(33, 150, 243, 0.4);
+}
+
+.admin-action-btn i {
+  font-size: 1.3rem;
+}
+
+.nav-item.admin-only {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+}
+
+.nav-item.admin-only:hover {
+  background: linear-gradient(135deg, #764ba2, #667eea);
+}
+
+/* ===================================
+   NEW SUBSCRIPTION SECTION STYLES
+   =================================== */
+
+.plans-grid-two {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2rem;
+}
+
+.plan-option.current {
+  border-color: var(--success-color);
+  box-shadow: 0 0 20px rgba(76, 175, 80, 0.3);
+}
+
+.plan-option.current::after {
+  content: "PIANO ATTIVO";
+  position: absolute;
+  top: -10px;
+  right: 20px;
+  background: var(--success-color);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: bold;
+}
+
+.plan-option {
+  position: relative;
+}
+
+.plan-billing-info {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.savings-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #4caf50, #45a049);
+  color: white;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin: 0.5rem 0 1rem;
+}
+
+.plan-commitment {
+  text-align: center;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  margin: 1rem 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.plan-commitment.featured {
+  background: linear-gradient(135deg, rgba(33, 150, 243, 0.1) 0%, rgba(25, 118, 210, 0.1) 100%);
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.cancellation-section {
+  background: rgba(255, 152, 0, 0.1);
+  border: 1px solid rgba(255, 152, 0, 0.3);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-top: 2rem;
+}
+
+.cancellation-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--warning-color);
+  margin-bottom: 0.75rem;
+}
+
+.cancellation-section p {
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+.btn-danger-outline {
+  background: transparent;
+  border: 2px solid var(--danger-color);
+  color: var(--danger-color);
+}
+
+.btn-danger-outline:hover {
+  background: var(--danger-color);
+  color: white;
+}
+
+.payment-info-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-top: 2rem;
+}
+
+.payment-info-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-primary);
+  margin-bottom: 1rem;
+}
+
+.payment-methods-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.payment-methods-list span {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.payment-methods-list span i {
+  font-size: 1.2rem;
+  color: var(--primary-color);
+}
+
+.payment-secure {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--success-color);
+  font-size: 0.85rem;
+}
+
+.btn-full {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .plans-grid-two {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-methods-list {
+    flex-direction: column;
+  }

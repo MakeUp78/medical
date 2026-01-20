@@ -58,11 +58,21 @@ function switchSection(sectionName) {
   });
   document.querySelector(`[data-section="${sectionName}"]`).classList.add('active');
 
-  // Update content sections
+  // Update content sections - hide all first
   document.querySelectorAll('.content-section').forEach(section => {
     section.classList.remove('active');
+    section.style.display = 'none';
   });
-  document.getElementById(`${sectionName}-section`).classList.add('active');
+  const targetSection = document.getElementById(`${sectionName}-section`);
+  if (targetSection) {
+    targetSection.classList.add('active');
+    targetSection.style.display = 'block';
+  }
+
+  // Load admin stats when switching to admin section
+  if (sectionName === 'admin' && currentUser && currentUser.role === 'admin') {
+    loadAdminStats();
+  }
 }
 
 // ===================================
@@ -190,6 +200,16 @@ function displayUserProfile(user) {
     document.getElementById('current-password').required = false;
     document.getElementById('delete-password-group').style.display = 'none';
   }
+
+  // Show admin dashboard link if user is admin
+  if (user.role === 'admin') {
+    const adminNavBtn = document.getElementById('admin-nav-btn');
+    if (adminNavBtn) {
+      adminNavBtn.style.display = 'flex';
+    }
+    // Load admin stats when profile loads
+    loadAdminStats();
+  }
 }
 
 async function loadSubscriptionData() {
@@ -225,18 +245,10 @@ async function loadSubscriptionData() {
     document.getElementById('current-plan-badge').textContent = sub.plan_name;
 
     // Status
-    if (sub.trial_active) {
-      document.getElementById('subscription-status').textContent =
-        `Periodo di prova (${sub.trial_days_left} giorni rimanenti)`;
-      document.getElementById('trial-card').style.display = 'flex';
-      document.getElementById('trial-text').textContent =
-        `Ti restano ${sub.trial_days_left} giorni di prova gratuita`;
-    } else if (sub.subscription_active) {
+    if (sub.subscription_active) {
       document.getElementById('subscription-status').textContent = 'Attivo';
-      document.getElementById('trial-card').style.display = 'none';
     } else {
-      document.getElementById('subscription-status').textContent = 'Scaduto';
-      document.getElementById('trial-card').style.display = 'none';
+      document.getElementById('subscription-status').textContent = 'Non attivo';
     }
 
     // Expiry
@@ -244,19 +256,27 @@ async function loadSubscriptionData() {
       const expiryDate = new Date(sub.subscription_ends_at);
       document.getElementById('subscription-expiry').textContent =
         `Scade il ${formatDate(expiryDate)}`;
-    } else if (sub.trial_ends_at) {
-      const trialDate = new Date(sub.trial_ends_at);
-      document.getElementById('subscription-expiry').textContent =
-        `Trial scade il ${formatDate(trialDate)}`;
+    } else if (sub.subscription_active && (sub.plan === 'monthly' || sub.plan === 'annual')) {
+      // Piano attivo senza scadenza specificata
+      document.getElementById('subscription-expiry').textContent = 'Attivo';
     } else {
-      document.getElementById('subscription-expiry').textContent = 'Nessuna scadenza';
+      document.getElementById('subscription-expiry').textContent = '-';
     }
 
-    // Analyses
-    const analysesText = sub.analyses_limit === -1
-      ? 'Analisi illimitate'
-      : `${sub.analyses_limit} analisi al mese`;
-    document.getElementById('subscription-analyses').textContent = analysesText;
+    // Billing type
+    const billingEl = document.getElementById('subscription-billing');
+    if (billingEl) {
+      if (sub.plan === 'monthly') {
+        billingEl.textContent = 'Mensile (€69/mese)';
+      } else if (sub.plan === 'annual') {
+        billingEl.textContent = 'Annuale (€49/mese - €588/anno)';
+      } else {
+        billingEl.textContent = '-';
+      }
+    }
+
+    // Update plan UI cards
+    updatePlanUI(sub.plan);
 
   } catch (error) {
     console.error('Error loading subscription:', error);
@@ -514,12 +534,102 @@ async function handleSettingsUpdate(e) {
 }
 
 // ===================================
-// UPGRADE PLAN
+// PLAN SELECTION & MANAGEMENT
 // ===================================
 
-function upgradePlan(plan) {
-  showToast('Funzionalità in arrivo! Contatta il supporto per upgrade', 'warning');
-  // TODO: Implement payment integration (Stripe, PayPal, etc.)
+function selectPlan(plan) {
+  // Reindirizza alla pagina di pagamento/prenotazione demo
+  const calendlyBaseUrl = 'https://calendly.com/kimerika/demo';
+
+  // Costruisci URL con parametri
+  const params = new URLSearchParams();
+  params.set('plan', plan);
+
+  if (currentUser && currentUser.email) {
+    params.set('email', currentUser.email);
+    params.set('name', `${currentUser.firstname} ${currentUser.lastname}`);
+  }
+
+  const calendlyUrl = `${calendlyBaseUrl}?${params.toString()}`;
+
+  // Apri Calendly
+  window.open(calendlyUrl, '_blank');
+
+  showToast(`Ti stiamo reindirizzando per attivare il piano ${getPlanName(plan)}...`, 'info');
+}
+
+function cancelSubscription() {
+  if (!currentUser) return;
+
+  // Verifica che sia un piano mensile
+  if (currentUser.plan !== 'monthly') {
+    showToast('Il piano annuale non può essere cancellato anticipatamente.', 'warning');
+    return;
+  }
+
+  if (!confirm('Sei sicuro di voler cancellare il tuo abbonamento? Manterrai l\'accesso fino alla fine del periodo di fatturazione corrente.')) {
+    return;
+  }
+
+  // TODO: Implementare API per cancellazione
+  showToast('Per cancellare l\'abbonamento, contatta il supporto via WhatsApp o email.', 'info');
+}
+
+function updatePlanUI(plan) {
+  const monthlyCard = document.getElementById('plan-monthly');
+  const annualCard = document.getElementById('plan-annual');
+  const btnMonthly = document.getElementById('btn-monthly');
+  const btnAnnual = document.getElementById('btn-annual');
+  const cancellationSection = document.getElementById('cancellation-section');
+
+  // Reset classes
+  if (monthlyCard) monthlyCard.classList.remove('current');
+  if (annualCard) annualCard.classList.remove('current');
+
+  // Mark current plan
+  if (plan === 'monthly') {
+    if (monthlyCard) monthlyCard.classList.add('current');
+    if (btnMonthly) {
+      btnMonthly.textContent = 'Piano Attuale';
+      btnMonthly.disabled = true;
+    }
+    if (btnAnnual) {
+      btnAnnual.innerHTML = '<i class="fas fa-arrow-up"></i> Passa all\'Annuale';
+      btnAnnual.disabled = false;
+    }
+    if (cancellationSection) {
+      cancellationSection.style.display = 'block';
+      document.getElementById('cancellation-info').textContent =
+        'Il tuo abbonamento mensile può essere cancellato in qualsiasi momento.';
+    }
+  } else if (plan === 'annual') {
+    if (annualCard) annualCard.classList.add('current');
+    if (btnAnnual) {
+      btnAnnual.textContent = 'Piano Attuale';
+      btnAnnual.disabled = true;
+    }
+    if (btnMonthly) {
+      btnMonthly.innerHTML = 'Seleziona Mensile';
+      btnMonthly.disabled = false;
+    }
+    if (cancellationSection) {
+      cancellationSection.style.display = 'block';
+      document.getElementById('cancellation-info').textContent =
+        'Il piano annuale prevede un impegno di 12 mesi. La cancellazione anticipata non è prevista.';
+      document.getElementById('btn-cancel').style.display = 'none';
+    }
+  } else {
+    // No active plan or legacy plan
+    if (btnMonthly) {
+      btnMonthly.innerHTML = 'Seleziona Mensile';
+      btnMonthly.disabled = false;
+    }
+    if (btnAnnual) {
+      btnAnnual.innerHTML = 'Seleziona Annuale';
+      btnAnnual.disabled = false;
+    }
+    if (cancellationSection) cancellationSection.style.display = 'none';
+  }
 }
 
 // ===================================
@@ -576,6 +686,107 @@ async function confirmDeleteAccount() {
 }
 
 // ===================================
+// ADMIN DASHBOARD SECTION
+// ===================================
+
+async function loadAdminStats() {
+  try {
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+
+    // Load dashboard stats
+    const statsResponse = await fetch(`${API_URL}/admin/dashboard/stats`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    const statsData = await statsResponse.json();
+
+    if (statsData.success) {
+      const stats = statsData.stats;
+
+      // Main stats - with null checks
+      const totalUsers = document.getElementById('admin-total-users');
+      if (totalUsers) totalUsers.textContent = stats.users.total;
+
+      const activeUsers = document.getElementById('admin-active-users');
+      if (activeUsers) activeUsers.textContent = stats.users.active;
+
+      const newMonth = document.getElementById('admin-new-month');
+      if (newMonth) newMonth.textContent = stats.users.new_month;
+
+      const totalAnalyses = document.getElementById('admin-total-analyses');
+      if (totalAnalyses) totalAnalyses.textContent = stats.usage.total_analyses.toLocaleString();
+
+      // Usage stats - with null checks
+      const analysesToday = document.getElementById('admin-analyses-today');
+      if (analysesToday) analysesToday.textContent = stats.usage.analyses_today || '0';
+
+      const analysesWeek = document.getElementById('admin-analyses-week');
+      if (analysesWeek) analysesWeek.textContent = stats.usage.analyses_week || '0';
+
+      const active24h = document.getElementById('admin-active-24h');
+      if (active24h) active24h.textContent = stats.users.recent_active_24h;
+
+      const trials = document.getElementById('admin-trials');
+      if (trials) trials.textContent = stats.usage.active_trials;
+    }
+
+    // Load recent users
+    const usersResponse = await fetch(`${API_URL}/admin/users?per_page=5&sort=created_at&order=desc`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    const usersData = await usersResponse.json();
+
+    if (usersData.success) {
+      const tbody = document.getElementById('admin-recent-users');
+      if (tbody) {
+        tbody.innerHTML = usersData.users.map(user => `
+          <tr>
+            <td>${escapeHtml(user.firstname)} ${escapeHtml(user.lastname)}</td>
+            <td>${escapeHtml(user.email)}</td>
+            <td><span class="plan-badge ${user.plan}">${capitalizeFirst(user.plan)}</span></td>
+            <td>${formatDateShort(user.created_at)}</td>
+            <td><span class="status-badge ${user.is_active ? 'active' : 'inactive'}">${user.is_active ? 'Attivo' : 'Inattivo'}</span></td>
+          </tr>
+        `).join('');
+      }
+    }
+  } catch (error) {
+    console.error('Error loading admin stats:', error);
+    // Don't show toast for admin stats errors - it's not critical
+  }
+}
+
+function capitalizeFirst(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function formatDateShort(dateStr) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffTime = Math.abs(now - date);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'Oggi';
+  if (diffDays === 1) return 'Ieri';
+  if (diffDays < 7) return `${diffDays} giorni fa`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} settimane fa`;
+
+  return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+}
+
+function escapeHtml(text) {
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text ? text.replace(/[&<>"']/g, m => map[m]) : '';
+}
+
+// ===================================
 // LOGOUT
 // ===================================
 
@@ -592,9 +803,9 @@ function logout() {
 
 function getPlanName(plan) {
   const plans = {
-    'starter': 'Starter',
-    'professional': 'Professional',
-    'enterprise': 'Enterprise'
+    'none': 'Nessun Piano',
+    'monthly': 'Mensile',
+    'annual': 'Annuale'
   };
   return plans[plan] || plan;
 }

@@ -20,7 +20,9 @@
       "Bash(sudo systemctl reload:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nOttimizzazione streaming iPhone e priorità Yaw per pose frontale\n\n- camera.html: ridotto FPS da 15 a 6, quality da 0.75 a 0.6, risoluzione da 640 a 480px\n- index.html: abbassato threshold visualizzazione best frame da 85 a 75\n- websocket_frame_api.py: peso Yaw aumentato a 2.5 \\(da 1.5\\), Pitch ridotto a 1.0, Roll a 0.3\n\nRisultato atteso: -70% banda, latenza ridotta, migliore selezione frame frontali\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nRimossi log eccessivi per migliorare performance\n\n- index.html: rimossi 15+ console.log nel handler iPhone\n- websocket_frame_api.py: rimossi logger.info per connessioni/frame\n- Ridotta frequenza richiesta best frames da ogni 5 a ogni 10 frame\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(find:*)",
+      "Bash(python migrations/migrate_plans.py:*)"
     ]
   }
 }

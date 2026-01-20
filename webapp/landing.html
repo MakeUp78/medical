@@ -30,7 +30,7 @@
                 </div>
                 <div class="nav-actions">
                     <button class="btn-secondary" onclick="showAuthModal('login')">Accedi</button>
-                    <button class="btn-primary" onclick="showAuthModal('signup')">Inizia Gratis</button>
+                    <button class="btn-primary" onclick="bookDemo()">Prenota Demo</button>
                 </div>
                 <div class="mobile-actions">
                     <button class="btn-secondary mobile-login-btn" onclick="showAuthModal('login')">Accedi</button>
@@ -59,13 +59,13 @@
                         Incanta le tue clienti con tecnologia AI di precisione millimetrica.
                     </p>
                     <div class="hero-cta">
-                        <button class="btn-primary btn-large" onclick="showAuthModal('signup')">
-                            Prova Gratuita 14 Giorni
+                        <button class="btn-primary btn-large" onclick="bookDemo()">
+                            Prenota Demo Gratuita
                             <span class="arrow">→</span>
                         </button>
-                        <button class="btn-outline btn-large" onclick="scrollToSection('demo')">
-                            Guarda Demo
-                            <span class="play-icon">▶</span>
+                        <button class="btn-outline btn-large" onclick="scrollToSection('pricing')">
+                            Vedi i Piani
+                            <span class="arrow">→</span>
                         </button>
                     </div>
                     <div class="hero-stats">
@@ -282,67 +282,207 @@
     <section id="pricing" class="pricing">
         <div class="container">
             <div class="section-header">
-                <h2 class="section-title">Piani Tariffari Semplici e Trasparenti</h2>
-                <p class="section-description">Investi in tecnologia che ripaga da subito. Nessun costo nascosto.</p>
+                <h2 class="section-title">Scegli il Tuo Piano Kimerika</h2>
+                <p class="section-description">Due modi per accedere. Stesse identiche funzionalità.</p>
             </div>
-            <div class="pricing-grid">
+
+            <!-- Pricing Cards -->
+            <div class="pricing-grid pricing-two-cols">
                 <div class="pricing-card">
                     <div class="pricing-header">
-                        <h3 class="plan-name">Starter</h3>
+                        <h3 class="plan-name">Mensile</h3>
                         <div class="plan-price">
                             <span class="currency">€</span>
-                            <span class="amount">29</span>
+                            <span class="amount">69</span>
                             <span class="period">/mese</span>
                         </div>
+                        <p class="billing-info">Fatturato mensilmente</p>
                     </div>
                     <ul class="plan-features">
-                        <li><span class="check">✓</span> 50 clienti al mese</li>
-                        <li><span class="check">✓</span> Analisi sopracciglia completa</li>
-                        <li><span class="check">✓</span> Rilevamento 468 punti</li>
-                        <li><span class="check">✓</span> Misurazioni simmetria</li>
-                        <li><span class="check">✓</span> Supporto email</li>
-                        <li class="disabled"><span class="cross">✗</span> Report PDF personalizzati</li>
+                        <li><span class="check">✓</span> Analisi facciale AI</li>
+                        <li><span class="check">✓</span> Progettazione sopracciglia</li>
+                        <li><span class="check">✓</span> Controllo vocale</li>
+                        <li><span class="check">✓</span> Report PDF professionali</li>
+                        <li><span class="check">✓</span> Libreria progetti illimitata</li>
+                        <li><span class="check">✓</span> Onboarding 1-1 (60 min)</li>
+                        <li><span class="check">✓</span> Follow-up 7 giorni</li>
+                        <li><span class="check">✓</span> Supporto WhatsApp/email</li>
+                        <li><span class="check">✓</span> Video tutorial library</li>
+                        <li><span class="check">✓</span> Webinar mensili</li>
+                        <li class="disabled"><span class="cross">✗</span> Badge "Early Adopter"</li>
+                        <li class="disabled"><span class="cross">✗</span> Accesso anticipato features</li>
                     </ul>
-                    <button class="btn-outline" onclick="showAuthModal('signup', 'starter')">Inizia Gratis</button>
+                    <div class="plan-commitment">
+                        <span>Cancelli quando vuoi</span>
+                    </div>
+                    <button class="btn-outline btn-full" onclick="bookDemo('monthly')">Prenota Demo</button>
                 </div>
+
                 <div class="pricing-card featured">
-                    <div class="popular-badge">PIÙ POPOLARE</div>
+                    <div class="popular-badge">RISPARMIA 29%</div>
                     <div class="pricing-header">
-                        <h3 class="plan-name">Professional</h3>
+                        <h3 class="plan-name">Annuale</h3>
                         <div class="plan-price">
                             <span class="currency">€</span>
-                            <span class="amount">79</span>
+                            <span class="amount">49</span>
                             <span class="period">/mese</span>
                         </div>
+                        <p class="billing-info">Fatturato annualmente (€588 totali)</p>
+                        <div class="savings-badge">Risparmi €240/anno</div>
                     </div>
                     <ul class="plan-features">
-                        <li><span class="check">✓</span> 200 clienti al mese</li>
-                        <li><span class="check">✓</span> Report PDF con logo personalizzato</li>
-                        <li><span class="check">✓</span> Overlay e correzioni avanzate</li>
-                        <li><span class="check">✓</span> Analisi video e webcam illimitata</li>
-                        <li><span class="check">✓</span> Storico clienti</li>
-                        <li><span class="check">✓</span> Supporto prioritario</li>
+                        <li><span class="check">✓</span> Analisi facciale AI</li>
+                        <li><span class="check">✓</span> Progettazione sopracciglia</li>
+                        <li><span class="check">✓</span> Controllo vocale</li>
+                        <li><span class="check">✓</span> Report PDF professionali</li>
+                        <li><span class="check">✓</span> Libreria progetti illimitata</li>
+                        <li><span class="check">✓</span> Onboarding 1-1 (60 min)</li>
+                        <li><span class="check">✓</span> Follow-up 7 giorni</li>
+                        <li><span class="check">✓</span> Supporto WhatsApp/email</li>
+                        <li><span class="check">✓</span> Video tutorial library</li>
+                        <li><span class="check">✓</span> Webinar mensili</li>
+                        <li><span class="check">✓</span> Badge "Early Adopter"</li>
+                        <li><span class="check">✓</span> Accesso anticipato features</li>
                     </ul>
-                    <button class="btn-primary" onclick="showAuthModal('signup', 'professional')">Inizia Gratis</button>
+                    <div class="plan-commitment featured">
+                        <span>Impegno 12 mesi (miglior valore)</span>
+                    </div>
+                    <button class="btn-primary btn-full" onclick="bookDemo('annual')">Prenota Demo</button>
                 </div>
-                <div class="pricing-card">
-                    <div class="pricing-header">
-                        <h3 class="plan-name">Enterprise</h3>
-                        <div class="plan-price">
-                            <span class="currency">€</span>
-                            <span class="amount">199</span>
-                            <span class="period">/mese</span>
+            </div>
+
+            <!-- Why Annual Section -->
+            <div class="why-annual">
+                <h3>Perché il 73% Sceglie il Piano Annuale?</h3>
+                <div class="why-annual-grid">
+                    <div class="why-item">
+                        <span class="why-icon">✓</span>
+                        <div>
+                            <strong>Risparmi €240</strong>
+                            <p>Quasi 4 mesi completamente gratis</p>
                         </div>
                     </div>
-                    <ul class="plan-features">
-                        <li><span class="check">✓</span> Clienti illimitate</li>
-                        <li><span class="check">✓</span> Multi-postazione (fino a 5 utenti)</li>
-                        <li><span class="check">✓</span> White-label completo</li>
-                        <li><span class="check">✓</span> Database clienti cloud</li>
-                        <li><span class="check">✓</span> API per integrazioni</li>
-                        <li><span class="check">✓</span> Supporto dedicato 24/7</li>
-                    </ul>
-                    <button class="btn-outline" onclick="showAuthModal('signup', 'enterprise')">Contattaci</button>
+                    <div class="why-item">
+                        <span class="why-icon">✓</span>
+                        <div>
+                            <strong>Ti impegni a padroneggiare</strong>
+                            <p>Il commitment porta risultati concreti</p>
+                        </div>
+                    </div>
+                    <div class="why-item">
+                        <span class="why-icon">✓</span>
+                        <div>
+                            <strong>Status riconosciuto</strong>
+                            <p>Badge "Early Adopter" nella community</p>
+                        </div>
+                    </div>
+                    <div class="why-item">
+                        <span class="why-icon">✓</span>
+                        <div>
+                            <strong>Priorità nello sviluppo</strong>
+                            <p>Le tue richieste contano di più</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Customer Journey Section -->
+    <section class="customer-journey">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Il Tuo Percorso con Kimerika</h2>
+                <p class="section-description">Cosa succede dopo l'acquisto</p>
+            </div>
+            <div class="journey-timeline">
+                <div class="journey-step">
+                    <div class="journey-marker">
+                        <span class="journey-day">OGGI</span>
+                    </div>
+                    <div class="journey-content">
+                        <h4>Prenoti Demo (15 minuti)</h4>
+                        <p>Parliamo via Zoom/Google Meet. Ti mostro Kimerika in azione. Rispondi alle tue domande. Zero pressione.</p>
+                    </div>
+                </div>
+                <div class="journey-step">
+                    <div class="journey-marker">
+                        <span class="journey-day">GIORNO 1</span>
+                    </div>
+                    <div class="journey-content">
+                        <h4>Acquisti e Scheduliamo</h4>
+                        <p>Se decidi di procedere, effettui pagamento e scheduliamo il tuo onboarding entro 48 ore.</p>
+                    </div>
+                </div>
+                <div class="journey-step">
+                    <div class="journey-marker">
+                        <span class="journey-day">GIORNO 2-3</span>
+                    </div>
+                    <div class="journey-content">
+                        <h4>Onboarding 1-1 (60 minuti)</h4>
+                        <p>Sessione personalizzata con me o il mio team. Ti formiamo dall'inizio alla fine. Fai 2-3 casi pratici insieme a noi.</p>
+                    </div>
+                </div>
+                <div class="journey-step">
+                    <div class="journey-marker">
+                        <span class="journey-day">GIORNO 10</span>
+                    </div>
+                    <div class="journey-content">
+                        <h4>Follow-up (15 minuti)</h4>
+                        <p>Check-in veloce per risolvere dubbi e verificare che stai usando Kimerika correttamente.</p>
+                    </div>
+                </div>
+                <div class="journey-step">
+                    <div class="journey-marker">
+                        <span class="journey-day">DA GIORNO 11</span>
+                    </div>
+                    <div class="journey-content">
+                        <h4>Supporto Continuo</h4>
+                        <p>Gruppo WhatsApp, webinar mensili, supporto prioritario. Non sei mai solo.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section id="faq" class="faq-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Domande Frequenti</h2>
+            </div>
+            <div class="faq-grid">
+                <div class="faq-item">
+                    <h4>"Posso provare gratis prima di pagare?"</h4>
+                    <p>No. Kimerika richiede formazione per essere usato correttamente. Offriamo demo gratuita (15 min) per vedere come funziona, poi decidi se procedere.</p>
+                </div>
+                <div class="faq-item">
+                    <h4>"Posso cancellare quando voglio?"</h4>
+                    <p>Sì (solo piano mensile). Nessun vincolo. Cancelli dall'area utente in qualsiasi momento. Il piano annuale è un impegno di 12 mesi.</p>
+                </div>
+                <div class="faq-item">
+                    <h4>"Cosa succede se non riesco a usarlo?"</h4>
+                    <p>Per questo esiste l'onboarding obbligatorio. Ti formiamo personalmente fino a quando non padroneggi lo strumento. Il 95% dei clienti che completano onboarding usa Kimerika con successo.</p>
+                </div>
+                <div class="faq-item">
+                    <h4>"Quanto dura l'onboarding?"</h4>
+                    <p>60 minuti completi, più follow-up 15 minuti dopo 7 giorni.</p>
+                </div>
+                <div class="faq-item">
+                    <h4>"L'onboarding è davvero necessario?"</h4>
+                    <p>Assolutamente sì. È incluso nel prezzo e NON opzionale. Senza formazione corretta, Kimerika non può darti i risultati che meriti.</p>
+                </div>
+                <div class="faq-item">
+                    <h4>"Accettate pagamenti rateali?"</h4>
+                    <p>Solo piano annuale (€588 una tantum). No rateizzazioni attualmente.</p>
+                </div>
+                <div class="faq-item">
+                    <h4>"Cosa include esattamente il supporto?"</h4>
+                    <p>Gruppo WhatsApp privato utenti + supporto email con risposta &lt;24h + webinar mensili live + video tutorial library.</p>
+                </div>
+                <div class="faq-item">
+                    <h4>"E se ho problemi tecnici?"</h4>
+                    <p>Supporto tecnico incluso. Risolviamo qualsiasi problema di setup, browser, webcam, microfono. Sei coperto.</p>
                 </div>
             </div>
         </div>
@@ -403,14 +543,47 @@
     <section class="cta">
         <div class="container">
             <div class="cta-content">
-                <h2 class="cta-title">Trasforma le Sopracciglia in un'Arte Scientifica</h2>
-                <p class="cta-description">Basta frustrazioni con matite e righelli.
-                    Inizia oggi con 14 giorni di prova gratuita e scopri quanto può essere
-                    veloce, preciso e affascinante lavorare con Kimerika.</p>
-                <button class="btn-primary btn-large" onclick="showAuthModal('signup')">
-                    Prova Gratis per 14 Giorni
-                    <span class="arrow">→</span>
-                </button>
+                <h2 class="cta-title">Pronto a Eliminare per Sempre il Problema delle Asimmetrie?</h2>
+                <p class="cta-description">Due opzioni. Stesse funzionalità. Tu scegli.</p>
+
+                <div class="cta-pricing-cards">
+                    <div class="cta-card">
+                        <h3>Mensile</h3>
+                        <div class="cta-price">€69<span>/mese</span></div>
+                        <p>Massima flessibilità</p>
+                        <button class="btn-outline btn-cta-white" onclick="bookDemo('monthly')">
+                            Prenota Demo
+                            <span class="arrow">→</span>
+                        </button>
+                    </div>
+                    <div class="cta-card featured">
+                        <div class="cta-star">⭐</div>
+                        <h3>Annuale</h3>
+                        <div class="cta-price">€49<span>/mese</span></div>
+                        <p>Risparmi €240/anno</p>
+                        <button class="btn-primary btn-cta" onclick="bookDemo('annual')">
+                            Prenota Demo
+                            <span class="arrow">→</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="cta-unsure">
+                    <p>Non sei ancora sicuro?</p>
+                    <button class="btn-outline btn-cta-white" onclick="bookDemo()">
+                        Prenota Demo Gratuita - 15 minuti, zero impegno
+                    </button>
+                </div>
+
+                <div class="payment-methods">
+                    <p>Metodi di pagamento accettati:</p>
+                    <div class="payment-icons">
+                        <span title="Carte di credito/debito">💳 Visa, Mastercard, Amex</span>
+                        <span title="PayPal">💰 PayPal</span>
+                        <span title="Bonifico (solo annuale)">🏦 Bonifico bancario</span>
+                    </div>
+                    <p class="payment-secure">🔒 Pagamento sicuro protetto da crittografia SSL</p>
+                </div>
             </div>
         </div>
     </section>

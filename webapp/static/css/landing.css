@@ -1475,3 +1475,415 @@ body {
 .play-icon {
   display: inline-block;
 }
+
+/* ===================================
+   NEW PRICING SECTION STYLES
+   =================================== */
+
+.pricing-two-cols {
+  grid-template-columns: repeat(2, 1fr);
+  max-width: 900px;
+  margin: 60px auto 0;
+}
+
+.billing-info {
+  font-size: 14px;
+  color: var(--gray);
+  margin-top: 8px;
+}
+
+.savings-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 12px;
+}
+
+.plan-commitment {
+  text-align: center;
+  padding: 12px;
+  background: var(--gray-light);
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  color: var(--gray);
+}
+
+.plan-commitment.featured {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* Why Annual Section */
+.why-annual {
+  margin-top: 60px;
+  padding: 40px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(99, 102, 241, 0.1);
+}
+
+.why-annual h3 {
+  text-align: center;
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 30px;
+  color: var(--dark);
+}
+
+.why-annual-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+.why-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.why-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--secondary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.why-item strong {
+  display: block;
+  font-weight: 700;
+  color: var(--dark);
+  margin-bottom: 4px;
+}
+
+.why-item p {
+  color: var(--gray);
+  font-size: 14px;
+  margin: 0;
+}
+
+/* ===================================
+   CUSTOMER JOURNEY SECTION
+   =================================== */
+
+.customer-journey {
+  padding: 100px 0;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+}
+
+.journey-timeline {
+  max-width: 700px;
+  margin: 60px auto 0;
+  position: relative;
+}
+
+.journey-timeline::before {
+  content: '';
+  position: absolute;
+  left: 70px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--primary) 0%, var(--secondary) 100%);
+}
+
+.journey-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 30px;
+  margin-bottom: 40px;
+  position: relative;
+}
+
+.journey-step:last-child {
+  margin-bottom: 0;
+}
+
+.journey-marker {
+  width: 140px;
+  flex-shrink: 0;
+  text-align: center;
+  position: relative;
+}
+
+.journey-marker::after {
+  content: '';
+  position: absolute;
+  right: -15px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 3px solid white;
+  box-shadow: var(--shadow);
+}
+
+.journey-day {
+  display: inline-block;
+  background: var(--gradient);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.journey-content {
+  flex: 1;
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--gray-light);
+}
+
+.journey-content h4 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--dark);
+  margin-bottom: 8px;
+}
+
+.journey-content p {
+  color: var(--gray);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ===================================
+   FAQ SECTION
+   =================================== */
+
+.faq-section {
+  padding: 100px 0;
+  background: var(--white);
+}
+
+.faq-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+  margin-top: 60px;
+}
+
+.faq-item {
+  background: var(--white);
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--gray-light);
+  transition: all 0.3s ease;
+}
+
+.faq-item:hover {
+  box-shadow: var(--shadow);
+  border-color: var(--primary);
+}
+
+.faq-item h4 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--dark);
+  margin-bottom: 12px;
+  font-style: italic;
+}
+
+.faq-item p {
+  color: var(--gray);
+  line-height: 1.7;
+  margin: 0;
+}
+
+/* ===================================
+   UPDATED CTA SECTION
+   =================================== */
+
+.cta-pricing-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+  max-width: 600px;
+  margin: 40px auto;
+}
+
+.cta-card {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  padding: 30px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  text-align: center;
+  position: relative;
+}
+
+.cta-card.featured {
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  transform: scale(1.05);
+}
+
+.cta-star {
+  position: absolute;
+  top: -15px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 24px;
+}
+
+.cta-card h3 {
+  color: white;
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.cta-price {
+  font-size: 36px;
+  font-weight: 800;
+  color: white;
+  margin-bottom: 8px;
+}
+
+.cta-price span {
+  font-size: 16px;
+  font-weight: 400;
+  opacity: 0.9;
+}
+
+.cta-card p {
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.btn-cta-white {
+  background: transparent;
+  border: 2px solid white;
+  color: white;
+}
+
+.btn-cta-white:hover {
+  background: white;
+  color: var(--primary);
+}
+
+.btn-cta {
+  background: white;
+  color: var(--primary);
+}
+
+.btn-cta:hover {
+  background: rgba(255, 255, 255, 0.9);
+  transform: translateY(-2px);
+}
+
+.cta-unsure {
+  margin-top: 40px;
+}
+
+.cta-unsure p {
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 16px;
+}
+
+.payment-methods {
+  margin-top: 50px;
+  padding-top: 30px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.payment-methods > p {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.payment-icons {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.payment-icons span {
+  color: white;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.payment-secure {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+}
+
+/* ===================================
+   RESPONSIVE FOR NEW SECTIONS
+   =================================== */
+
+@media (max-width: 768px) {
+  .pricing-two-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .why-annual-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .why-annual {
+    padding: 24px;
+  }
+
+  .journey-timeline::before {
+    left: 20px;
+  }
+
+  .journey-step {
+    flex-direction: column;
+    gap: 16px;
+    padding-left: 50px;
+  }
+
+  .journey-marker {
+    width: auto;
+  }
+
+  .journey-marker::after {
+    left: -50px;
+    right: auto;
+  }
+
+  .faq-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cta-pricing-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .cta-card.featured {
+    transform: scale(1);
+  }
+
+  .payment-icons {
+    flex-direction: column;
+    gap: 12px;
+  }
+}

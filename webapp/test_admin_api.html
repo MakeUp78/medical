@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Test Admin API</title>
+</head>
+
+<body>
+    <h1>Test Admin Dashboard API</h1>
+
+    <div>
+        <h2>1. Login Admin</h2>
+        <input type="email" id="email" placeholder="Email" value="admin@kimerika.com">
+        <input type="password" id="password" placeholder="Password" value="admin123">
+        <button onclick="testLogin()">Login</button>
+        <p id="login-result"></p>
+    </div>
+
+    <div>
+        <h2>2. Load Users</h2>
+        <button onclick="testLoadUsers()">Load Users</button>
+        <pre id="users-result"></pre>
+    </div>
+
+    <div>
+        <h2>3. Load Stats</h2>
+        <button onclick="testStats()">Load Stats</button>
+        <pre id="stats-result"></pre>
+    </div>
+
+    <script>
+        let authToken = null;
+
+        async function testLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    authToken = data.token;
+                    document.getElementById('login-result').innerHTML =
+                        `✅ Login successful!<br>Token: ${authToken.substring(0, 50)}...<br>Role: ${data.user.role}`;
+                } else {
+                    document.getElementById('login-result').innerHTML =
+                        `❌ Login failed: ${data.message}`;
+                }
+            } catch (error) {
+                document.getElementById('login-result').innerHTML =
+                    `❌ Error: ${error.message}`;
+            }
+        }
+
+        async function testLoadUsers() {
+            if (!authToken) {
+                alert('Please login first!');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/users?page=1&per_page=20', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const data = await response.json();
+                document.getElementById('users-result').textContent =
+                    JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('users-result').textContent =
+                    `Error: ${error.message}`;
+            }
+        }
+
+        async function testStats() {
+            if (!authToken) {
+                alert('Please login first!');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/dashboard/stats', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const data = await response.json();
+                document.getElementById('stats-result').textContent =
+                    JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('stats-result').textContent =
+                    `Error: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+
+</html>

@@ -51,6 +51,8 @@ async function checkAuthentication() {
 
     if (data.success && data.user) {
       updateUserUI(data.user);
+      // Track login activity
+      trackActivity('login');
       return true;
     } else {
       localStorage.removeItem('auth_token');
@@ -63,6 +65,34 @@ async function checkAuthentication() {
     return false;
   }
 }
+
+/**
+ * Traccia attività utente
+ */
+async function trackActivity(actionType, details = {}) {
+  const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+  if (!token) return;
+
+  try {
+    await fetch(`${AUTH_SERVER_URL}/api/user/track-activity`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        action_type: actionType,
+        details: details
+      })
+    });
+  } catch (error) {
+    // Silently fail - non bloccare l'app se il tracking fallisce
+    console.debug('Activity tracking failed:', error);
+  }
+}
+
+// Esponi trackActivity globalmente
+window.trackActivity = trackActivity;
 
 // Variabile globale per memorizzare il nome utente
 window.currentUserName = '';
@@ -96,6 +126,12 @@ function updateUserUI(user) {
   // Aggiorna avatar se presente
   if (avatarElement && user.profile_image) {
     avatarElement.src = user.profile_image + '?t=' + Date.now();
+  }
+
+  // Mostra pulsante admin se utente e' admin
+  const adminBtn = document.getElementById('admin-btn');
+  if (adminBtn) {
+    adminBtn.style.display = user.role === 'admin' ? 'block' : 'none';
   }
 
 }
@@ -704,6 +740,7 @@ function loadImageDirect() {
   input.onchange = function (e) {
     const file = e.target.files[0];
     if (file) {
+      trackActivity('image_upload', { fileSize: file.size, fileType: file.type });
       handleUnifiedFileLoad(file, 'image');
     }
   };
@@ -741,6 +778,7 @@ function loadVideoDirect() {
   input.onchange = function (e) {
     const file = e.target.files[0];
     if (file) {
+      trackActivity('video_upload', { fileSize: file.size, fileType: file.type });
       handleUnifiedFileLoad(file, 'video');
     }
   };
@@ -1920,6 +1958,9 @@ async function startWebcam() {
 
 async function startWebcamDirect() {
   try {
+    // Track webcam start
+    trackActivity('webcam_start');
+
     if (window.isIPhoneStreamActive) {
       updateStatus('📱 iPhone Camera attiva - Anteprima in corso...');
       showToast('iPhone Camera avviata - Anteprima in corso', 'success');

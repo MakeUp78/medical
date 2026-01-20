@@ -512,6 +512,38 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 // ===================================
+// BOOK DEMO
+// ===================================
+
+function bookDemo(plan = null) {
+    // Store selected plan
+    if (plan) {
+        state.selectedPlan = plan;
+        localStorage.setItem('selected_plan', plan);
+    }
+
+    // Calendly link - sostituire con il tuo link Calendly
+    const calendlyBaseUrl = 'https://calendly.com/kimerika/demo';
+
+    // Aggiungi parametri per tracciamento
+    const params = new URLSearchParams();
+    if (plan) {
+        params.set('plan', plan);
+    }
+
+    const calendlyUrl = params.toString()
+        ? `${calendlyBaseUrl}?${params.toString()}`
+        : calendlyBaseUrl;
+
+    // Apri Calendly in una nuova finestra o mostra modal
+    // Per ora apriamo direttamente il link
+    window.open(calendlyUrl, '_blank');
+
+    // Mostra notifica
+    showNotification('Ti stiamo reindirizzando per prenotare la demo...', 'info');
+}
+
+// ===================================
 // UTILITIES
 // ===================================
 
@@ -549,8 +581,7 @@ function updateNavForLoggedInUser() {
     const navActions = document.querySelector('.nav-actions');
     if (navActions && state.user) {
         navActions.innerHTML = `
-            <span style="color: var(--gray); margin-right: 16px;">Ciao, ${state.user.firstname}!</span>
-            <button class="btn-primary" onclick="window.location.href='/index.html'">Vai all'App</button>
+            <button class="btn-secondary" onclick="window.location.href='/index.html'">Vai all'App</button>
             <button class="btn-secondary" onclick="logout()">Esci</button>
         `;
     }

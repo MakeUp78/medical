@@ -61,7 +61,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=True)  # Nullable per OAuth users
     firstname = db.Column(db.String(50), nullable=False)
     lastname = db.Column(db.String(50), nullable=False)
-    plan = db.Column(db.String(20), default='starter')  # starter, professional, enterprise
+    plan = db.Column(db.String(20), default='none')  # none, monthly, annual
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     last_login = db.Column(db.DateTime)
@@ -76,7 +76,7 @@ class User(db.Model):
 
     # Usage tracking
     analyses_count = db.Column(db.Integer, default=0)
-    analyses_limit = db.Column(db.Integer, default=50)  # Default starter limit
+    analyses_limit = db.Column(db.Integer, default=0)  # 0 = no plan, -1 = unlimited
     
     # Profile image
     profile_image = db.Column(db.String(255), nullable=True)  # Path to profile image
@@ -86,6 +86,9 @@ class User(db.Model):
     bio = db.Column(db.Text, nullable=True)
     language = db.Column(db.String(5), default='it')  # Lingua preferita
     notifications_enabled = db.Column(db.Boolean, default=True)
+
+    # Admin role
+    role = db.Column(db.String(20), default='user', nullable=False)  # 'user' or 'admin'
 
     def set_password(self, password):
         """Hash e salva password"""
@@ -104,6 +107,7 @@ class User(db.Model):
             'email': self.email,
             'firstname': self.firstname,
             'lastname': self.lastname,
+            'role': self.role,
             'plan': self.plan,
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None,
@@ -133,6 +137,35 @@ class PasswordResetToken(db.Model):
     used = db.Column(db.Boolean, default=False)
 
     user = db.relationship('User', backref='reset_tokens')
+
+
+class AdminAuditLog(db.Model):
+    """Audit log per azioni admin"""
+    id = db.Column(db.Integer, primary_key=True)
+    admin_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    action = db.Column(db.String(100), nullable=False)  # e.g., 'user_deactivated', 'plan_changed'
+    target_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    details = db.Column(db.JSON, nullable=True)  # Additional action details
+    ip_address = db.Column(db.String(45), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+    admin = db.relationship('User', foreign_keys=[admin_id], backref='admin_actions')
+    target_user = db.relationship('User', foreign_keys=[target_user_id])
+
+
+class UserActivity(db.Model):
+    """Tracciamento attività utenti nella webapp"""
+    __tablename__ = 'user_activity'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    action_type = db.Column(db.String(50), nullable=False)  # 'login', 'analysis', 'image_upload', 'video_upload', 'webcam_start'
+    action_details = db.Column(db.JSON, nullable=True)  # Additional details
+    ip_address = db.Column(db.String(45), nullable=True)
+    user_agent = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, index=True)
+    
+    user = db.relationship('User', backref='activities')
 
 
 # ===================================
@@ -217,6 +250,38 @@ def token_required(f):
     return decorated
 
 
+def admin_required(f):
+    """Decorator per endpoint solo admin"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            try:
+                token = auth_header.split(' ')[1]
+            except IndexError:
+                return jsonify({'success': False, 'message': 'Token format invalido'}), 401
+
+        if not token:
+            return jsonify({'success': False, 'message': 'Token mancante'}), 401
+
+        payload = decode_token(token)
+        if not payload:
+            return jsonify({'success': False, 'message': 'Token invalido o scaduto'}), 401
+
+        user = User.query.get(payload['user_id'])
+        if not user or not user.is_active:
+            return jsonify({'success': False, 'message': 'Utente non trovato o disabilitato'}), 401
+
+        if user.role != 'admin':
+            return jsonify({'success': False, 'message': 'Accesso non autorizzato - richiesto ruolo admin'}), 403
+
+        return f(user, *args, **kwargs)
+
+    return decorated
+
+
 # ===================================
 # AUTHENTICATION ENDPOINTS
 # ===================================
@@ -240,7 +305,7 @@ def signup():
         password = data['password']
         firstname = data['firstname'].strip()
         lastname = data['lastname'].strip()
-        plan = data.get('plan', 'starter')
+        plan = data.get('plan', 'none')  # Default: nessun piano attivo
 
         # Verifica se email già esiste
         if User.query.filter_by(email=email).first():
@@ -256,23 +321,23 @@ def signup():
                 'message': 'Password deve essere almeno 8 caratteri'
             }), 400
 
-        # Crea utente
+        # Crea utente (senza trial automatico - devono passare per demo + pagamento)
         user = User(
             email=email,
             firstname=firstname,
             lastname=lastname,
-            plan=plan,
-            trial_ends_at=datetime.datetime.utcnow() + datetime.timedelta(days=14)
+            plan=plan
+            # trial_ends_at verrà impostato dopo l'acquisto
         )
         user.set_password(password)
 
         # Imposta limiti in base al piano
-        if plan == 'starter':
-            user.analyses_limit = 50
-        elif plan == 'professional':
-            user.analyses_limit = 200
-        else:  # enterprise
-            user.analyses_limit = -1  # Unlimited
+        plan_limits = {
+            'none': 0,
+            'monthly': -1,  # Illimitato
+            'annual': -1    # Illimitato
+        }
+        user.analyses_limit = plan_limits.get(plan, 0)
 
         db.session.add(user)
         db.session.commit()
@@ -501,7 +566,7 @@ def google_callback():
         lastname = user_info.get('family_name', '')
 
         # Recupera il piano selezionato dalla sessione
-        selected_plan = session.pop('selected_plan', 'starter')
+        selected_plan = session.pop('selected_plan', 'none')
 
         # Trova o crea utente
         user = User.query.filter_by(email=email).first()
@@ -509,21 +574,21 @@ def google_callback():
         if not user:
             # Crea nuovo utente
             # Imposta limiti in base al piano
-            if selected_plan == 'starter':
-                analyses_limit = 50
-            elif selected_plan == 'professional':
-                analyses_limit = 500
-            else:  # enterprise
-                analyses_limit = -1  # illimitato
-            
+            plan_limits = {
+                'none': 0,
+                'monthly': -1,
+                'annual': -1
+            }
+            analyses_limit = plan_limits.get(selected_plan, 0)
+
             user = User(
                 email=email,
                 firstname=firstname,
                 lastname=lastname,
                 google_id=google_id,
                 plan=selected_plan,
-                trial_ends_at=datetime.datetime.utcnow() + datetime.timedelta(days=14),
                 analyses_limit=analyses_limit
+                # trial_ends_at verrà impostato dopo l'acquisto
             )
             db.session.add(user)
         else:
@@ -585,28 +650,28 @@ def apple_callback():
         lastname = user_info.get('family_name', '')
 
         # Recupera il piano selezionato dalla sessione
-        selected_plan = session.pop('selected_plan', 'starter')
+        selected_plan = session.pop('selected_plan', 'none')
 
         # Trova o crea utente
         user = User.query.filter_by(email=email).first()
 
         if not user:
             # Imposta limiti in base al piano
-            if selected_plan == 'starter':
-                analyses_limit = 50
-            elif selected_plan == 'professional':
-                analyses_limit = 500
-            else:  # enterprise
-                analyses_limit = -1  # illimitato
-            
+            plan_limits = {
+                'none': 0,
+                'monthly': -1,
+                'annual': -1
+            }
+            analyses_limit = plan_limits.get(selected_plan, 0)
+
             user = User(
                 email=email,
                 firstname=firstname,
                 lastname=lastname,
                 apple_id=apple_id,
                 plan=selected_plan,
-                trial_ends_at=datetime.datetime.utcnow() + datetime.timedelta(days=14),
                 analyses_limit=analyses_limit
+                # trial_ends_at verrà impostato dopo l'acquisto
             )
             db.session.add(user)
         else:
@@ -855,17 +920,21 @@ def get_subscription(user):
     trial_days_left = (user.trial_ends_at - now).days if trial_active else 0
     
     # Calcola stato subscription
-    subscription_active = user.subscription_ends_at and user.subscription_ends_at > now
-    subscription_days_left = (user.subscription_ends_at - now).days if subscription_active else 0
+    # Un abbonamento è attivo se:
+    # 1. Ha un piano diverso da 'none' E
+    # 2. O non ha data di scadenza (illimitato) O ha una data futura
+    has_paid_plan = user.plan in ['monthly', 'annual']
+    subscription_active = has_paid_plan and (user.subscription_ends_at is None or user.subscription_ends_at > now)
+    subscription_days_left = (user.subscription_ends_at - now).days if user.subscription_ends_at and user.subscription_ends_at > now else 0
     
     # Definizione limiti per piano
     plan_limits = {
-        'starter': {'analyses': 50, 'price': 0, 'name': 'Starter'},
-        'professional': {'analyses': 500, 'price': 29, 'name': 'Professional'},
-        'enterprise': {'analyses': -1, 'price': 99, 'name': 'Enterprise'}
+        'none': {'analyses': 0, 'price': 0, 'name': 'Nessun Piano'},
+        'monthly': {'analyses': -1, 'price': 69, 'name': 'Mensile'},
+        'annual': {'analyses': -1, 'price': 49, 'name': 'Annuale'}
     }
-    
-    current_plan = plan_limits.get(user.plan, plan_limits['starter'])
+
+    current_plan = plan_limits.get(user.plan, plan_limits['none'])
     
     return jsonify({
         'success': True,
@@ -947,6 +1016,534 @@ def get_usage(user):
             'trial_ends_at': user.trial_ends_at.isoformat() if user.trial_ends_at else None
         }
     })
+
+
+# ===================================
+# ADMIN DASHBOARD ENDPOINTS
+# ===================================
+
+@app.route('/api/admin/dashboard/stats', methods=['GET'])
+@admin_required
+def get_dashboard_stats(admin):
+    """Ottieni statistiche dashboard per admin"""
+    try:
+        now = datetime.datetime.utcnow()
+
+        # User counts
+        total_users = User.query.count()
+        active_users = User.query.filter_by(is_active=True).count()
+        inactive_users = User.query.filter_by(is_active=False).count()
+
+        # New users statistics
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today_start - datetime.timedelta(days=7)
+        month_start = today_start - datetime.timedelta(days=30)
+
+        new_users_today = User.query.filter(User.created_at >= today_start).count()
+        new_users_week = User.query.filter(User.created_at >= week_start).count()
+        new_users_month = User.query.filter(User.created_at >= month_start).count()
+
+        # Subscription breakdown
+        plan_stats = db.session.query(
+            User.plan, db.func.count(User.id)
+        ).group_by(User.plan).all()
+
+        # Usage statistics
+        total_analyses = db.session.query(db.func.sum(User.analyses_count)).scalar() or 0
+
+        # Analyses per time period
+        analyses_today = db.session.query(
+            db.func.sum(User.analyses_count)
+        ).join(UserActivity).filter(
+            UserActivity.action_type == 'analysis',
+            UserActivity.created_at >= today_start
+        ).scalar() or 0
+        
+        analyses_week = db.session.query(
+            db.func.sum(User.analyses_count)
+        ).join(UserActivity).filter(
+            UserActivity.action_type == 'analysis',
+            UserActivity.created_at >= week_start
+        ).scalar() or 0
+
+        # Active trials
+        active_trials = User.query.filter(
+            User.trial_ends_at > now,
+            User.subscription_ends_at.is_(None)
+        ).count()
+
+        # Recent activity (users logged in last 24 hours)
+        recent_active = User.query.filter(
+            User.last_login >= now - datetime.timedelta(hours=24)
+        ).count()
+
+        return jsonify({
+            'success': True,
+            'stats': {
+                'users': {
+                    'total': total_users,
+                    'active': active_users,
+                    'inactive': inactive_users,
+                    'new_today': new_users_today,
+                    'new_week': new_users_week,
+                    'new_month': new_users_month,
+                    'recent_active_24h': recent_active
+                },
+                'subscriptions': {
+                    plan: count for plan, count in plan_stats
+                },
+                'usage': {
+                    'total_analyses': total_analyses,
+                    'analyses_today': analyses_today,
+                    'analyses_week': analyses_week,
+                    'active_trials': active_trials
+                }
+            }
+        })
+    except Exception as e:
+        print(f"Dashboard stats error: {e}")
+        return jsonify({'success': False, 'message': 'Errore nel recupero statistiche'}), 500
+
+
+@app.route('/api/admin/dashboard/registrations', methods=['GET'])
+@admin_required
+def get_registration_chart(admin):
+    """Ottieni dati registrazioni per grafici"""
+    try:
+        period = request.args.get('period', 'month')  # week, month, year
+
+        now = datetime.datetime.utcnow()
+
+        if period == 'week':
+            start_date = now - datetime.timedelta(days=7)
+        elif period == 'month':
+            start_date = now - datetime.timedelta(days=30)
+        else:  # year
+            start_date = now - datetime.timedelta(days=365)
+
+        # Query registrations grouped by date
+        registrations = db.session.query(
+            db.func.date(User.created_at).label('date'),
+            db.func.count(User.id).label('count')
+        ).filter(
+            User.created_at >= start_date
+        ).group_by(
+            db.func.date(User.created_at)
+        ).order_by('date').all()
+
+        return jsonify({
+            'success': True,
+            'data': [
+                {'date': r.date.isoformat() if r.date else None, 'count': r.count}
+                for r in registrations
+            ]
+        })
+    except Exception as e:
+        print(f"Registration chart error: {e}")
+        return jsonify({'success': False, 'message': 'Errore nel recupero dati'}), 500
+
+
+@app.route('/api/admin/users', methods=['GET'])
+@admin_required
+def list_users(admin):
+    """Lista tutti gli utenti con paginazione e filtri"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        search = request.args.get('search', '')
+        plan_filter = request.args.get('plan', '')
+        status_filter = request.args.get('status', '')  # active, inactive
+        sort_by = request.args.get('sort', 'created_at')
+        sort_order = request.args.get('order', 'desc')
+
+        query = User.query
+
+        # Search filter
+        if search:
+            search_term = f'%{search}%'
+            query = query.filter(
+                db.or_(
+                    User.email.ilike(search_term),
+                    User.firstname.ilike(search_term),
+                    User.lastname.ilike(search_term)
+                )
+            )
+
+        # Plan filter
+        if plan_filter:
+            query = query.filter(User.plan == plan_filter)
+
+        # Status filter
+        if status_filter == 'active':
+            query = query.filter(User.is_active == True)
+        elif status_filter == 'inactive':
+            query = query.filter(User.is_active == False)
+
+        # Sorting
+        sort_column = getattr(User, sort_by, User.created_at)
+        if sort_order == 'desc':
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
+
+        # Pagination
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        return jsonify({
+            'success': True,
+            'users': [u.to_dict() for u in pagination.items],
+            'pagination': {
+                'page': pagination.page,
+                'per_page': pagination.per_page,
+                'total': pagination.total,
+                'pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev
+            }
+        })
+    except Exception as e:
+        print(f"List users error: {e}")
+        return jsonify({'success': False, 'message': 'Errore nel recupero utenti'}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>', methods=['GET'])
+@admin_required
+def get_user_detail(admin, user_id):
+    """Ottieni dettagli utente"""
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Utente non trovato'}), 404
+
+        return jsonify({
+            'success': True,
+            'user': user.to_dict()
+        })
+    except Exception as e:
+        print(f"Get user detail error: {e}")
+        return jsonify({'success': False, 'message': 'Errore nel recupero utente'}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>/toggle-status', methods=['POST'])
+@admin_required
+def toggle_user_status(admin, user_id):
+    """Attiva/Disattiva un utente"""
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Utente non trovato'}), 404
+
+        # Prevent self-deactivation
+        if user.id == admin.id:
+            return jsonify({'success': False, 'message': 'Non puoi disattivare il tuo account'}), 400
+
+        user.is_active = not user.is_active
+
+        # Log action
+        log = AdminAuditLog(
+            admin_id=admin.id,
+            action='user_activated' if user.is_active else 'user_deactivated',
+            target_user_id=user.id,
+            ip_address=request.remote_addr
+        )
+        db.session.add(log)
+        db.session.commit()
+
+        status = 'attivato' if user.is_active else 'disattivato'
+        return jsonify({
+            'success': True,
+            'message': f'Utente {status} con successo',
+            'user': user.to_dict()
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Toggle user status error: {e}")
+        return jsonify({'success': False, 'message': 'Errore durante operazione'}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>/change-plan', methods=['POST'])
+@admin_required
+def change_user_plan(admin, user_id):
+    """Cambia piano abbonamento utente"""
+    try:
+        data = request.get_json()
+        new_plan = data.get('plan')
+
+        # Piani validi
+        valid_plans = ['none', 'monthly', 'annual']
+        if new_plan not in valid_plans:
+            return jsonify({'success': False, 'message': 'Piano non valido. Piani disponibili: none, monthly, annual'}), 400
+
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Utente non trovato'}), 404
+
+        old_plan = user.plan
+        user.plan = new_plan
+
+        # Update analyses limit based on plan
+        plan_limits = {
+            'none': 0,
+            'monthly': -1,  # Illimitato
+            'annual': -1    # Illimitato
+        }
+        user.analyses_limit = plan_limits.get(new_plan, 0)
+
+        # Log action
+        log = AdminAuditLog(
+            admin_id=admin.id,
+            action='plan_changed',
+            target_user_id=user.id,
+            details={'old_plan': old_plan, 'new_plan': new_plan},
+            ip_address=request.remote_addr
+        )
+        db.session.add(log)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': f'Piano aggiornato a {new_plan}',
+            'user': user.to_dict()
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Change plan error: {e}")
+        return jsonify({'success': False, 'message': 'Errore durante operazione'}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>/reset-password', methods=['POST'])
+@admin_required
+def admin_reset_password(admin, user_id):
+    """Admin reset password utente"""
+    try:
+        data = request.get_json()
+        new_password = data.get('new_password')
+
+        if not new_password or len(new_password) < 8:
+            return jsonify({'success': False, 'message': 'Password deve essere almeno 8 caratteri'}), 400
+
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Utente non trovato'}), 404
+
+        user.set_password(new_password)
+
+        # Log action
+        log = AdminAuditLog(
+            admin_id=admin.id,
+            action='password_reset',
+            target_user_id=user.id,
+            ip_address=request.remote_addr
+        )
+        db.session.add(log)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': 'Password reimpostata con successo'
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Reset password error: {e}")
+        return jsonify({'success': False, 'message': 'Errore durante operazione'}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@admin_required
+def admin_delete_user(admin, user_id):
+    """Elimina account utente"""
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Utente non trovato'}), 404
+
+        # Prevent self-deletion
+        if user.id == admin.id:
+            return jsonify({'success': False, 'message': 'Non puoi eliminare il tuo account'}), 400
+
+        # Prevent deleting other admins
+        if user.role == 'admin':
+            return jsonify({'success': False, 'message': 'Non puoi eliminare altri amministratori'}), 400
+
+        # Delete avatar if exists
+        if user.profile_image:
+            filepath = os.path.join('webapp', user.profile_image.lstrip('/'))
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except:
+                    pass
+
+        # Log action before deletion
+        log = AdminAuditLog(
+            admin_id=admin.id,
+            action='user_deleted',
+            target_user_id=None,  # User will be deleted
+            details={'deleted_email': user.email, 'deleted_name': f'{user.firstname} {user.lastname}'},
+            ip_address=request.remote_addr
+        )
+        db.session.add(log)
+
+        db.session.delete(user)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': 'Utente eliminato con successo'
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Delete user error: {e}")
+        return jsonify({'success': False, 'message': 'Errore durante eliminazione'}), 500
+
+
+@app.route('/api/admin/audit-log', methods=['GET'])
+@admin_required
+def get_audit_log(admin):
+    """Ottieni log audit admin"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+
+        pagination = AdminAuditLog.query.order_by(
+            AdminAuditLog.created_at.desc()
+        ).paginate(page=page, per_page=per_page, error_out=False)
+
+        logs = []
+        for log in pagination.items:
+            logs.append({
+                'id': log.id,
+                'admin_email': log.admin.email if log.admin else 'Unknown',
+                'action': log.action,
+                'target_user_email': log.target_user.email if log.target_user else None,
+                'details': log.details,
+                'ip_address': log.ip_address,
+                'created_at': log.created_at.isoformat() if log.created_at else None
+            })
+
+        return jsonify({
+            'success': True,
+            'logs': logs,
+            'pagination': {
+                'page': pagination.page,
+                'per_page': pagination.per_page,
+                'total': pagination.total,
+                'pages': pagination.pages
+            }
+        })
+    except Exception as e:
+        print(f"Audit log error: {e}")
+        return jsonify({'success': False, 'message': 'Errore nel recupero log'}), 500
+
+
+@app.route('/api/admin/analytics/usage', methods=['GET'])
+@admin_required
+def get_usage_analytics(admin):
+    """Ottieni analytics dettagliate sull'utilizzo della webapp"""
+    try:
+        period = request.args.get('period', 'week')  # week, month, year
+        
+        now = datetime.datetime.utcnow()
+        if period == 'week':
+            start_date = now - datetime.timedelta(days=7)
+        elif period == 'month':
+            start_date = now - datetime.timedelta(days=30)
+        else:  # year
+            start_date = now - datetime.timedelta(days=365)
+        
+        # Activity breakdown by type
+        activity_counts = db.session.query(
+            UserActivity.action_type,
+            db.func.count(UserActivity.id).label('count')
+        ).filter(
+            UserActivity.created_at >= start_date
+        ).group_by(UserActivity.action_type).all()
+        
+        # Daily activity trend
+        daily_activity = db.session.query(
+            db.func.date(UserActivity.created_at).label('date'),
+            db.func.count(UserActivity.id).label('count')
+        ).filter(
+            UserActivity.created_at >= start_date
+        ).group_by(db.func.date(UserActivity.created_at)).order_by('date').all()
+        
+        # Most active users
+        most_active = db.session.query(
+            User.id,
+            User.firstname,
+            User.lastname,
+            User.email,
+            db.func.count(UserActivity.id).label('activity_count')
+        ).join(UserActivity).filter(
+            UserActivity.created_at >= start_date
+        ).group_by(User.id).order_by(db.desc('activity_count')).limit(10).all()
+        
+        # Peak usage hours
+        hourly_usage = db.session.query(
+            db.func.extract('hour', UserActivity.created_at).label('hour'),
+            db.func.count(UserActivity.id).label('count')
+        ).filter(
+            UserActivity.created_at >= start_date
+        ).group_by('hour').order_by('hour').all()
+        
+        return jsonify({
+            'success': True,
+            'analytics': {
+                'activity_breakdown': {act: count for act, count in activity_counts},
+                'daily_trend': [
+                    {'date': d.date.isoformat() if d.date else None, 'count': d.count}
+                    for d in daily_activity
+                ],
+                'most_active_users': [
+                    {
+                        'id': u.id,
+                        'name': f'{u.firstname} {u.lastname}',
+                        'email': u.email,
+                        'activity_count': u.activity_count
+                    }
+                    for u in most_active
+                ],
+                'hourly_usage': [
+                    {'hour': int(h.hour) if h.hour else 0, 'count': h.count}
+                    for h in hourly_usage
+                ]
+            }
+        })
+    except Exception as e:
+        print(f"Usage analytics error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': 'Errore nel recupero analytics'}), 500
+
+
+@app.route('/api/user/track-activity', methods=['POST'])
+@token_required
+def track_user_activity(user):
+    """Traccia attività utente nella webapp"""
+    try:
+        data = request.get_json()
+        action_type = data.get('action_type')  # 'login', 'analysis', 'image_upload', etc.
+        action_details = data.get('details', {})
+        
+        if not action_type:
+            return jsonify({'success': False, 'message': 'Tipo azione richiesto'}), 400
+        
+        activity = UserActivity(
+            user_id=user.id,
+            action_type=action_type,
+            action_details=action_details,
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent')
+        )
+        
+        db.session.add(activity)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Attività tracciata'})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Track activity error: {e}")
+        return jsonify({'success': False, 'message': 'Errore nel tracciamento'}), 500
 
 
 # ===================================
@@ -1046,6 +1643,17 @@ if __name__ == '__main__':
     print("  GET  /api/user/profile - Profilo utente")
     print("  PUT  /api/user/profile - Aggiorna profilo")
     print("  GET  /api/user/usage - Statistiche utilizzo")
+    print("")
+    print("Admin Endpoints:")
+    print("  GET  /api/admin/dashboard/stats - Statistiche dashboard")
+    print("  GET  /api/admin/dashboard/registrations - Dati registrazioni")
+    print("  GET  /api/admin/users - Lista utenti")
+    print("  GET  /api/admin/users/<id> - Dettagli utente")
+    print("  POST /api/admin/users/<id>/toggle-status - Attiva/Disattiva")
+    print("  POST /api/admin/users/<id>/change-plan - Cambia piano")
+    print("  POST /api/admin/users/<id>/reset-password - Reset password")
+    print("  DELETE /api/admin/users/<id> - Elimina utente")
+    print("  GET  /api/admin/audit-log - Log attivita admin")
     print("")
 
     app.run(debug=True, host="0.0.0.0", port=5000)

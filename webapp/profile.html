@@ -60,6 +60,12 @@
                             <i class="fas fa-exclamation-triangle"></i>
                             Zona Pericolosa
                         </button>
+                        <!-- Admin Dashboard (visible only for admins) -->
+                        <button class="nav-item admin-only" id="admin-nav-btn" data-section="admin"
+                            style="display: none;">
+                            <i class="fas fa-shield-alt"></i>
+                            Admin Dashboard
+                        </button>
                     </nav>
                 </aside>
 
@@ -95,7 +101,7 @@
                                 <h2 id="profile-name">Caricamento...</h2>
                                 <p id="profile-email"></p>
                                 <div class="profile-badges">
-                                    <span class="badge" id="plan-badge">Starter</span>
+                                    <span class="badge" id="plan-badge"></span>
                                     <span class="badge oauth-badge" id="google-badge" style="display: none;">
                                         <i class="fab fa-google"></i> Google
                                     </span>
@@ -133,16 +139,6 @@
                                     <i class="fas fa-hourglass-half"></i>
                                     <span id="analyses-remaining">50 analisi rimanenti</span>
                                 </div>
-                            </div>
-                        </div>
-
-                        <div class="trial-card" id="trial-card" style="display: none;">
-                            <div class="trial-icon">
-                                <i class="fas fa-clock"></i>
-                            </div>
-                            <div class="trial-info">
-                                <h3>Periodo di Prova Attivo</h3>
-                                <p id="trial-text">Ti restano 14 giorni di prova gratuita</p>
                             </div>
                         </div>
                     </section>
@@ -278,14 +274,14 @@
                         <div class="subscription-card current-plan">
                             <div class="plan-header">
                                 <h3>Piano Attuale</h3>
-                                <span class="plan-badge-large" id="current-plan-badge">Starter</span>
+                                <span class="plan-badge-large" id="current-plan-badge">-</span>
                             </div>
                             <div class="plan-details">
                                 <div class="plan-detail">
                                     <i class="fas fa-calendar-check"></i>
                                     <div>
                                         <strong>Stato</strong>
-                                        <p id="subscription-status">Attivo</p>
+                                        <p id="subscription-status">-</p>
                                     </div>
                                 </div>
                                 <div class="plan-detail">
@@ -296,58 +292,93 @@
                                     </div>
                                 </div>
                                 <div class="plan-detail">
-                                    <i class="fas fa-chart-line"></i>
+                                    <i class="fas fa-sync-alt"></i>
                                     <div>
-                                        <strong>Analisi Disponibili</strong>
-                                        <p id="subscription-analyses">50 al mese</p>
+                                        <strong>Tipo Fatturazione</strong>
+                                        <p id="subscription-billing">-</p>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="plans-grid">
-                            <div class="plan-option">
-                                <div class="plan-name">Starter</div>
-                                <div class="plan-price">Gratuito</div>
+                        <!-- Upgrade/Switch Plan Section -->
+                        <div class="plans-grid plans-grid-two">
+                            <div class="plan-option" id="plan-monthly">
+                                <div class="plan-name">Mensile</div>
+                                <div class="plan-price">€69<span>/mese</span></div>
+                                <p class="plan-billing-info">Fatturato mensilmente</p>
                                 <ul class="plan-features">
-                                    <li><i class="fas fa-check"></i> 50 analisi al mese</li>
-                                    <li><i class="fas fa-check"></i> Funzionalità base</li>
-                                    <li><i class="fas fa-check"></i> Supporto email</li>
+                                    <li><i class="fas fa-check"></i> Analisi facciale AI</li>
+                                    <li><i class="fas fa-check"></i> Progettazione sopracciglia</li>
+                                    <li><i class="fas fa-check"></i> Controllo vocale</li>
+                                    <li><i class="fas fa-check"></i> Report PDF professionali</li>
+                                    <li><i class="fas fa-check"></i> Libreria progetti illimitata</li>
+                                    <li><i class="fas fa-check"></i> Onboarding 1-1 (60 min)</li>
+                                    <li><i class="fas fa-check"></i> Follow-up 7 giorni</li>
+                                    <li><i class="fas fa-check"></i> Supporto WhatsApp/email</li>
+                                    <li><i class="fas fa-check"></i> Video tutorial library</li>
+                                    <li><i class="fas fa-check"></i> Webinar mensili</li>
+                                    <li class="disabled"><i class="fas fa-times"></i> Badge "Early Adopter"</li>
+                                    <li class="disabled"><i class="fas fa-times"></i> Accesso anticipato features</li>
                                 </ul>
-                                <button class="btn btn-outline" disabled>Piano Attuale</button>
-                            </div>
-
-                            <div class="plan-option featured">
-                                <div class="popular-badge">Più Popolare</div>
-                                <div class="plan-name">Professional</div>
-                                <div class="plan-price">€29<span>/mese</span></div>
-                                <ul class="plan-features">
-                                    <li><i class="fas fa-check"></i> 500 analisi al mese</li>
-                                    <li><i class="fas fa-check"></i> Tutte le funzionalità</li>
-                                    <li><i class="fas fa-check"></i> Supporto prioritario</li>
-                                    <li><i class="fas fa-check"></i> Report avanzati</li>
-                                </ul>
-                                <button class="btn btn-primary" onclick="upgradePlan('professional')">
-                                    <i class="fas fa-arrow-up"></i>
-                                    Upgrade
+                                <p class="plan-commitment">Cancelli quando vuoi</p>
+                                <button class="btn btn-outline btn-full" id="btn-monthly"
+                                    onclick="selectPlan('monthly')">
+                                    Seleziona Mensile
                                 </button>
                             </div>
 
-                            <div class="plan-option">
-                                <div class="plan-name">Enterprise</div>
-                                <div class="plan-price">€99<span>/mese</span></div>
+                            <div class="plan-option featured" id="plan-annual">
+                                <div class="popular-badge">RISPARMIA 29%</div>
+                                <div class="plan-name">Annuale</div>
+                                <div class="plan-price">€49<span>/mese</span></div>
+                                <p class="plan-billing-info">Fatturato annualmente (€588 totali)</p>
+                                <div class="savings-badge">Risparmi €240/anno</div>
                                 <ul class="plan-features">
-                                    <li><i class="fas fa-check"></i> Analisi illimitate</li>
-                                    <li><i class="fas fa-check"></i> Tutte le funzionalità</li>
-                                    <li><i class="fas fa-check"></i> Supporto 24/7</li>
-                                    <li><i class="fas fa-check"></i> API dedicata</li>
-                                    <li><i class="fas fa-check"></i> Manager dedicato</li>
+                                    <li><i class="fas fa-check"></i> Analisi facciale AI</li>
+                                    <li><i class="fas fa-check"></i> Progettazione sopracciglia</li>
+                                    <li><i class="fas fa-check"></i> Controllo vocale</li>
+                                    <li><i class="fas fa-check"></i> Report PDF professionali</li>
+                                    <li><i class="fas fa-check"></i> Libreria progetti illimitata</li>
+                                    <li><i class="fas fa-check"></i> Onboarding 1-1 (60 min)</li>
+                                    <li><i class="fas fa-check"></i> Follow-up 7 giorni</li>
+                                    <li><i class="fas fa-check"></i> Supporto WhatsApp/email</li>
+                                    <li><i class="fas fa-check"></i> Video tutorial library</li>
+                                    <li><i class="fas fa-check"></i> Webinar mensili</li>
+                                    <li><i class="fas fa-check"></i> Badge "Early Adopter"</li>
+                                    <li><i class="fas fa-check"></i> Accesso anticipato features</li>
                                 </ul>
-                                <button class="btn btn-primary" onclick="upgradePlan('enterprise')">
-                                    <i class="fas fa-arrow-up"></i>
-                                    Upgrade
+                                <p class="plan-commitment featured">Impegno 12 mesi (miglior valore)</p>
+                                <button class="btn btn-primary btn-full" id="btn-annual" onclick="selectPlan('annual')">
+                                    Seleziona Annuale
                                 </button>
                             </div>
+                        </div>
+
+                        <!-- Cancellation Section (visible only for active subscriptions) -->
+                        <div class="cancellation-section" id="cancellation-section" style="display: none;">
+                            <h3><i class="fas fa-info-circle"></i> Gestione Abbonamento</h3>
+                            <p id="cancellation-info">Il tuo abbonamento mensile può essere cancellato in qualsiasi
+                                momento.</p>
+                            <button class="btn btn-outline btn-danger-outline" id="btn-cancel"
+                                onclick="cancelSubscription()">
+                                <i class="fas fa-times"></i>
+                                Cancella Abbonamento
+                            </button>
+                        </div>
+
+                        <!-- Payment Methods Info -->
+                        <div class="payment-info-card">
+                            <h3><i class="fas fa-credit-card"></i> Metodi di Pagamento Accettati</h3>
+                            <div class="payment-methods-list">
+                                <span><i class="fab fa-cc-visa"></i> Visa</span>
+                                <span><i class="fab fa-cc-mastercard"></i> Mastercard</span>
+                                <span><i class="fab fa-cc-amex"></i> Amex</span>
+                                <span><i class="fab fa-paypal"></i> PayPal</span>
+                                <span><i class="fas fa-university"></i> Bonifico (solo annuale)</span>
+                            </div>
+                            <p class="payment-secure"><i class="fas fa-lock"></i> Pagamento sicuro protetto da
+                                crittografia SSL</p>
                         </div>
                     </section>
 
@@ -408,6 +439,130 @@
                                 <i class="fas fa-trash-alt"></i>
                                 Elimina Definitivamente
                             </button>
+                        </div>
+                    </section>
+
+                    <!-- Admin Dashboard Section (visible only for admins) -->
+                    <section id="admin-section" class="content-section" style="display: none;">
+                        <h1>
+                            <i class="fas fa-shield-alt"></i>
+                            Admin Dashboard
+                        </h1>
+
+                        <div class="admin-overview-card">
+                            <div class="admin-header">
+                                <p>Panoramica sistema e gestione utenti</p>
+                                <a href="admin.html" class="btn btn-primary">
+                                    <i class="fas fa-external-link-alt"></i>
+                                    Dashboard Completa
+                                </a>
+                            </div>
+
+                            <!-- Quick Stats -->
+                            <div class="admin-stats-grid">
+                                <div class="admin-stat-card">
+                                    <div class="stat-icon users"><i class="fas fa-users"></i></div>
+                                    <div class="stat-content">
+                                        <h3 id="admin-total-users">-</h3>
+                                        <p>Utenti Totali</p>
+                                    </div>
+                                </div>
+                                <div class="admin-stat-card">
+                                    <div class="stat-icon active"><i class="fas fa-user-check"></i></div>
+                                    <div class="stat-content">
+                                        <h3 id="admin-active-users">-</h3>
+                                        <p>Utenti Attivi</p>
+                                    </div>
+                                </div>
+                                <div class="admin-stat-card">
+                                    <div class="stat-icon new"><i class="fas fa-user-plus"></i></div>
+                                    <div class="stat-content">
+                                        <h3 id="admin-new-month">-</h3>
+                                        <p>Nuovi (30gg)</p>
+                                    </div>
+                                </div>
+                                <div class="admin-stat-card">
+                                    <div class="stat-icon analyses"><i class="fas fa-microscope"></i></div>
+                                    <div class="stat-content">
+                                        <h3 id="admin-total-analyses">-</h3>
+                                        <p>Analisi Totali</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Usage Analytics -->
+                            <div class="admin-section-divider">
+                                <h3><i class="fas fa-chart-bar"></i> Statistiche Utilizzo</h3>
+                            </div>
+
+                            <div class="admin-usage-grid">
+                                <div class="usage-stat">
+                                    <div class="usage-icon"><i class="fas fa-calendar-day"></i></div>
+                                    <div class="usage-content">
+                                        <h4 id="admin-analyses-today">-</h4>
+                                        <p>Analisi Oggi</p>
+                                    </div>
+                                </div>
+                                <div class="usage-stat">
+                                    <div class="usage-icon"><i class="fas fa-calendar-week"></i></div>
+                                    <div class="usage-content">
+                                        <h4 id="admin-analyses-week">-</h4>
+                                        <p>Analisi Settimana</p>
+                                    </div>
+                                </div>
+                                <div class="usage-stat">
+                                    <div class="usage-icon"><i class="fas fa-clock"></i></div>
+                                    <div class="usage-content">
+                                        <h4 id="admin-active-24h">-</h4>
+                                        <p>Attivi 24h</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Recent Activity -->
+                            <div class="admin-section-divider">
+                                <h3><i class="fas fa-history"></i> Attività Recenti</h3>
+                            </div>
+
+                            <div class="admin-recent-activity">
+                                <table class="admin-activity-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Utente</th>
+                                            <th>Email</th>
+                                            <th>Piano</th>
+                                            <th>Registrato</th>
+                                            <th>Stato</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="admin-recent-users">
+                                        <tr>
+                                            <td colspan="5" style="text-align: center; padding: 20px;">Caricamento...
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Quick Actions -->
+                            <div class="admin-section-divider">
+                                <h3><i class="fas fa-bolt"></i> Azioni Rapide</h3>
+                            </div>
+
+                            <div class="admin-quick-actions">
+                                <a href="admin.html#users" class="admin-action-btn">
+                                    <i class="fas fa-users-cog"></i>
+                                    <span>Gestione Utenti</span>
+                                </a>
+                                <a href="admin.html#analytics" class="admin-action-btn">
+                                    <i class="fas fa-chart-line"></i>
+                                    <span>Analytics</span>
+                                </a>
+                                <a href="admin.html#audit" class="admin-action-btn">
+                                    <i class="fas fa-file-alt"></i>
+                                    <span>Log Audit</span>
+                                </a>
+                            </div>
                         </div>
                     </section>
                 </div>
