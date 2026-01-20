@@ -462,7 +462,10 @@ function cropImageToBbox(sourceCanvas, bbox) {
 }
 
 function displayCorrectionWindow(croppedCanvas, side) {
-  const sideName = side === 'left' ? 'Sinistro' : 'Destro';
+  // Titoli aggiornati: riferimento all'immagine (opposto al cliente)
+  const sideName = side === 'left'
+    ? 'Sopracciglio a sinistra dell\'immagine (DESTRO DEL CLIENTE)'
+    : 'Sopracciglio a destra dell\'immagine (SINISTRO DEL CLIENTE)';
 
   // Crea modale
   const modal = document.createElement('div');
@@ -494,16 +497,16 @@ function displayCorrectionWindow(croppedCanvas, side) {
 
   // Titolo
   const title = document.createElement('h2');
-  title.textContent = `🔍 Correzione Sopracciglio ${sideName}`;
+  title.textContent = `🔍 Correzione del ${sideName}`;
   title.style.cssText = 'margin: 0; color: #333; font-size: 20px;';
 
   // Legenda
   const legend = document.createElement('div');
-  legend.style.cssText = 'display: flex; gap: 20px; font-size: 14px;';
+  legend.style.cssText = 'display: flex; gap: 20px; font-size: 14px; flex-wrap: wrap;';
   legend.innerHTML = `
-        <span style="color: green;">🟢 Verde: Punti originali del lato selezionato</span>
-        <span style="color: red;">🔴 Rosso: Punti riflessi dal lato opposto</span>
-        <span style="color: black;">➡️ Frecce: Direzione verso punto riflesso</span>
+        <span style="color: green;">🟢 Verde: Punti da spostare del sopracciglio da modificare</span>
+        <span style="color: red;">🔴 Rosso: POSIZIONE DEI NUOVI PUNTI DA DISEGNARE (vicino quelli esistenti)</span>
+        <span style="color: black;">➡️ Frecce: Direzione verso la quale deve essere spostato il punto originale</span>
     `;
 
   // Container per immagine + frecce animate
@@ -545,15 +548,19 @@ function displayCorrectionWindow(croppedCanvas, side) {
   // Aggiungi SVG overlay con frecce animate se ci sono dati
   if (croppedCanvas.arrowPairs && croppedCanvas.arrowPairs.length > 0 && croppedCanvas.bbox) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    // CORREZIONE: SVG deve avere le stesse dimensioni scalate dell'immagine
+    const svgWidth = croppedCanvas.width * scale;
+    const svgHeight = croppedCanvas.height * scale;
     svg.style.cssText = `
       position: absolute;
       top: 0;
       left: 0;
-      width: 100%;
-      height: 100%;
+      width: ${svgWidth}px;
+      height: ${svgHeight}px;
       pointer-events: none;
       z-index: 1000;
     `;
+    // ViewBox mantiene le coordinate originali del canvas, ma SVG è scalato
     svg.setAttribute('viewBox', `0 0 ${croppedCanvas.width} ${croppedCanvas.height}`);
     svg.setAttribute('preserveAspectRatio', 'none');
 

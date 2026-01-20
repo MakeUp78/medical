@@ -144,10 +144,25 @@
     font-size: 15px;
   }
 
-  /* Tabelle - scrollabili orizzontalmente */
+  /* Tabelle - scrollabili orizzontalmente con altezza limitata */
   .table-container {
     overflow-x: auto;
+    overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    max-height: 450px; /* Ridotto per mobile */
+  }
+
+  /* Tab unificata - ottimizzazione mobile */
+  .unified-tabs {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .unified-tab {
+    padding: 8px 12px;
+    font-size: 12px;
+    min-width: 100px;
   }
 
   .data-table {
@@ -277,7 +292,11 @@
     font-size: 12px;
   }
 
-  /* Tabelle ancora più compatte */
+  /* Tabelle ancora più compatte con scroll ottimizzato */
+  .table-container {
+    max-height: 380px; /* Altezza ridotta per schermi piccoli */
+  }
+
   .data-table {
     font-size: 10px;
   }
@@ -369,6 +388,7 @@
   select,
   textarea {
     -webkit-appearance: none;
+    appearance: none;
     border-radius: 0;
   }
 

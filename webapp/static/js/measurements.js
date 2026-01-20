@@ -927,14 +927,17 @@ function performNoseHeightMeasurement() {
 // === FUNZIONI SUPPORTO ===
 
 function addMeasurementToTable(name, value, unit, measurementType = null) {
-  // Aggiunge misurazione alla TABELLA UNIFICATA
+  // Aggiunge misurazione alla TABELLA UNIFICATA e TABELLA ORIGINALE
   const unifiedTableBody = document.getElementById('unified-table-body');
+  const originalTableBody = document.getElementById('measurements-data');
+
   if (!unifiedTableBody) {
     console.error('❌ Tabella unificata non trovata');
     return;
   }
 
-  const row = unifiedTableBody.insertRow();
+  // Crea riga per tabella unificata (inserisci in ALTO)
+  const row = unifiedTableBody.insertRow(0);
   const typeCell = document.createElement('td');
   typeCell.textContent = name;
   if (measurementType) {
@@ -951,6 +954,20 @@ function addMeasurementToTable(name, value, unit, measurementType = null) {
     <td>${unit}</td>
     <td>✅</td>
   `;
+
+  // Aggiungi anche alla tabella originale nascosta per sincronizzazione
+  if (originalTableBody) {
+    const originalRow = originalTableBody.insertRow(0);
+    originalRow.innerHTML = `
+      <td>${name}</td>
+      <td>${valueFormatted}</td>
+      <td>${unit}</td>
+      <td>✅</td>
+    `;
+    if (measurementType) {
+      originalRow.firstElementChild.dataset.measurementType = measurementType;
+    }
+  }
 
   console.log(`✅ Misurazione aggiunta: ${name} = ${valueFormatted} ${unit}`);
 

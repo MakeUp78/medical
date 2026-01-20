@@ -535,6 +535,22 @@
    STILI TABELLA UNIFICATA
    ============================================ */
 
+/* Container tabella unificata con scroll e limite altezza */
+.section-content .table-container {
+  max-height: 600px; /* Circa 20 righe @ 30px per riga */
+  overflow-y: auto;
+  overflow-x: auto;
+  position: relative;
+  display: block;
+}
+
+/* Ottimizzazione per mobile */
+@media (max-width: 768px) {
+  .section-content .table-container {
+    max-height: 500px; /* Altezza ridotta per mobile */
+  }
+}
+
 /* Container per i tabs */
 .unified-tabs {
   display: flex;
@@ -615,4 +631,22 @@
 
 .table-container::-webkit-scrollbar-thumb:hover {
   background: #666666;
+}
+/* Scrollbar ottimizzata per mobile */
+@media (max-width: 768px) {
+  .table-container::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .table-container::-webkit-scrollbar-thumb {
+    background: #666666;
+    border-radius: 4px;
+  }
+  
+  /* Per Firefox su mobile */
+  .table-container {
+    scrollbar-width: thin;
+    scrollbar-color: #666666 #353535;
+  }
 }

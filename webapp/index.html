@@ -9,10 +9,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🏥 Facial Analysis Application v2.0 - Web Edition</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <link rel="stylesheet" href="static/css/main.css">
-    <link rel="stylesheet" href="static/css/components.css">
-    <link rel="stylesheet" href="static/css/tables.css">
-    <link rel="stylesheet" href="static/css/mobile-responsive.css">
+    <link rel="stylesheet" href="static/css/main.css?v=20260120">
+    <link rel="stylesheet" href="static/css/components.css?v=20260120">
+    <link rel="stylesheet" href="static/css/tables.css?v=20260120">
+    <link rel="stylesheet" href="static/css/mobile-responsive.css?v=20260120">
 </head>
 
 <body>
@@ -93,19 +93,25 @@
                             <button class="btn btn-analysis" onclick="measureEyebrowAreas(event)">✂️ Aree
                                 Sopracciglia</button>
                             <button class="btn btn-analysis" onclick="measureEyeAreas(event)">👁️ Aree Occhi</button>
-                            <button class="btn btn-analysis" onclick="measureCheekWidth(event)">😊 Larghezza
+                            <button class="btn btn-analysis" onclick="measureCheekWidth(event)"
+                                style="display: none;">😊 Larghezza
                                 Guance</button>
                             <button class="btn btn-analysis" onclick="measureForeheadWidth(event)">🤔 Larghezza
                                 Fronte</button>
-                            <button class="btn btn-analysis" onclick="measureChinWidth(event)">😮 Larghezza
+                            <button class="btn btn-analysis" onclick="measureChinWidth(event)" style="display: none;">😮
+                                Larghezza
                                 Mento</button>
-                            <button class="btn btn-analysis" onclick="measureFaceProfile(event)">👤 Profilo
+                            <button class="btn btn-analysis" onclick="measureFaceProfile(event)"
+                                style="display: none;">👤 Profilo
                                 Viso</button>
-                            <button class="btn btn-analysis" onclick="measureNoseAngle(event)">👃 Angolo Naso</button>
-                            <button class="btn btn-analysis" onclick="measureMouthAngle(event)">👄 Angolo Bocca</button>
+                            <button class="btn btn-analysis" onclick="measureNoseAngle(event)" style="display: none;">👃
+                                Angolo Naso</button>
+                            <button class="btn btn-analysis" onclick="measureMouthAngle(event)"
+                                style="display: none;">👄 Angolo Bocca</button>
                             <button class="btn btn-analysis" onclick="measureFaceProportions(event)">📏
                                 Proporzioni</button>
-                            <button class="btn btn-analysis" onclick="measureKeyDistances(event)">🔍 Distanze
+                            <button class="btn btn-analysis" onclick="measureKeyDistances(event)"
+                                style="display: none;">🔍 Distanze
                                 Chiave</button>
                             <button class="btn btn-analysis" onclick="measureFacialSymmetry(event)">⚖️
                                 Simmetria</button>
@@ -713,7 +719,7 @@
 
     <script src="static/js/api-client.js"></script>
     <script src="static/js/face-detection.js"></script>
-    <script src="static/js/measurements.js"></script>
+    <script src="static/js/measurements.js?v=20260120-0612"></script>
     <script src="static/js/scoring.js"></script>
     <script src="static/js/canvas.js?v=20260119-2327"></script>
     <!-- Sistema modalità canvas (PAN, ZOOM, SELEZIONE) -->
@@ -724,7 +730,7 @@
     <script src="static/js/face-analysis-complete.js"></script>
     <!-- Frame Processor Unificato -->
     <script src="static/js/frame-processor.js"></script>
-    <script src="static/js/main.js?v=20260119-2354"></script>
+    <script src="static/js/main.js?v=20260120-0618"></script>
 
     <!-- MediaPipe per face detection -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>

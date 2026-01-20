@@ -5357,7 +5357,7 @@ function addLandmarkToTable(landmarkId, landmark, showHighlight = false) {
     <td>${pixelY}</td>
   `;
 
-  tbody.appendChild(row);
+  tbody.appendChild(row); // Aggiungi in fondo - poi verrà invertito da updateUnifiedTableForLandmarks
 
   // SOLO se richiesto esplicitamente, evidenzia il landmark sul canvas
   if (showHighlight) {
@@ -5369,9 +5369,9 @@ function addLandmarkToTable(landmarkId, landmark, showHighlight = false) {
 
   // Apri la sezione DATI ANALISI unificata e switcha al tab LANDMARKS
   openUnifiedAnalysisSection();
-  switchUnifiedTab('landmarks'); // Forza il passaggio al tab landmarks
+  switchUnifiedTab('landmarks', null, true); // Forza il passaggio e l'aggiornamento del tab landmarks
 
-  console.log('🔄 [UNIFIED] Tab LANDMARKS attivato automaticamente');
+  console.log('🔄 [UNIFIED] Tab LANDMARKS attivato/aggiornato automaticamente');
 
   console.log(`📍 Landmark ${landmarkId} (${landmarkName}) aggiunto alla tabella${showHighlight ? ' con highlight' : ''}: (${pixelX}, ${pixelY})`);
 }
@@ -7474,13 +7474,13 @@ function updateUnifiedTableForMeasurements(tableHead, tableBody) {
     console.log('✅ Ripristinate', tableBody.children.length, 'righe di misurazione (esclusi green-dots)');
   }
 
-  // SEMPRE copia TUTTE le righe dalla tabella originale
+  // SEMPRE copia TUTTE le righe dalla tabella originale (in ordine inverso)
   const originalTableBody = document.getElementById('measurements-data');
   if (originalTableBody && originalTableBody.children.length > 0) {
     console.log('📊 Copiando', originalTableBody.children.length, 'righe da measurements-data...');
 
-    // Copia TUTTE le righe dalla tabella originale
-    Array.from(originalTableBody.children).forEach((row, index) => {
+    // Copia TUTTE le righe dalla tabella originale IN ORDINE INVERSO (ultima per prima)
+    Array.from(originalTableBody.children).reverse().forEach((row, index) => {
       tableBody.appendChild(row.cloneNode(true));
       console.log(`  ✓ Riga ${index + 1}:`, row.querySelector('td')?.textContent?.substring(0, 50) || 'N/A');
     });
@@ -7511,10 +7511,14 @@ function updateUnifiedTableForLandmarks(tableHead, tableBody) {
     </tr>
   `;
 
-  // Copia i dati dalla tabella originale
+  // Copia i dati dalla tabella originale IN ORDINE INVERSO
   const originalTableBody = document.getElementById('landmarks-data');
-  if (originalTableBody) {
-    tableBody.innerHTML = originalTableBody.innerHTML;
+  if (originalTableBody && originalTableBody.children.length > 0) {
+    tableBody.innerHTML = '';
+    // Inverti l'ordine: ultima riga per prima
+    Array.from(originalTableBody.children).reverse().forEach(row => {
+      tableBody.appendChild(row.cloneNode(true));
+    });
   } else {
     tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Nessun landmark disponibile</td></tr>';
   }
