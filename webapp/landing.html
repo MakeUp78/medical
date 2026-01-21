@@ -315,7 +315,9 @@
                     <div class="plan-commitment">
                         <span>Cancelli quando vuoi</span>
                     </div>
-                    <button class="btn-outline btn-full" onclick="watchDemo('monthly')">Guarda DEMO</button>
+                    <div id="paypal-button-container-monthly" class="paypal-button-container"></div>
+                    <button class="btn-outline btn-full" onclick="watchDemo('monthly')" style="margin-top: 10px;">Guarda
+                        DEMO</button>
                 </div>
 
                 <div class="pricing-card featured">
@@ -347,7 +349,9 @@
                     <div class="plan-commitment featured">
                         <span>Impegno 12 mesi (miglior valore)</span>
                     </div>
-                    <button class="btn-primary btn-full" onclick="watchDemo('annual')">Guarda DEMO</button>
+                    <div id="paypal-button-container-annual" class="paypal-button-container"></div>
+                    <button class="btn-primary btn-full" onclick="watchDemo('annual')" style="margin-top: 10px;">Guarda
+                        DEMO</button>
                 </div>
             </div>
 
@@ -809,6 +813,166 @@
             </div>
         </div>
     </div>
+
+    <!-- PayPal SDK -->
+    <script
+        src="https://www.paypal.com/sdk/js?client-id=AcWUmFzOAjEl5ImplC92pIeMP8ZDLQRS-c8woiaoMHvJUcpXQhURCO81DaOKiVVX8NP2O3KstnQ1z9Pt&currency=EUR&locale=it_IT"></script>
+
+    <script>
+        // Configurazione PayPal
+        const PAYPAL_CONFIG = {
+            monthly: {
+                amount: '69.00',
+                description: 'Piano Mensile Kimerika Evolution'
+            },
+            annual: {
+                amount: '588.00',
+                description: 'Piano Annuale Kimerika Evolution'
+            }
+        };
+
+        // Funzione per inizializzare i pulsanti PayPal
+        function initPayPalButtons() {
+            // Pulsante per piano mensile
+            if (document.getElementById('paypal-button-container-monthly')) {
+                paypal.Buttons({
+                    style: {
+                        layout: 'vertical',
+                        color: 'gold',
+                        shape: 'rect',
+                        label: 'pay',
+                        height: 45
+                    },
+                    createOrder: async function (data, actions) {
+                        try {
+                            const response = await fetch('/api/paypal/create-order', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ plan_type: 'monthly' })
+                            });
+
+                            if (!response.ok) {
+                                throw new Error('Errore creazione ordine');
+                            }
+
+                            const orderData = await response.json();
+                            return orderData.order_id;
+                        } catch (error) {
+                            console.error('Errore:', error);
+                            alert('Si è verificato un errore. Riprova.');
+                        }
+                    },
+                    onApprove: async function (data, actions) {
+                        try {
+                            const response = await fetch('/api/paypal/capture-order', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ order_id: data.orderID })
+                            });
+
+                            if (!response.ok) {
+                                throw new Error('Errore completamento pagamento');
+                            }
+
+                            const captureData = await response.json();
+
+                            if (captureData.success) {
+                                alert('Pagamento completato con successo! Ti abbiamo inviato una email di conferma.');
+                                // Reindirizza alla dashboard o pagina di successo
+                                window.location.href = '/index.html';
+                            } else {
+                                alert('Il pagamento non è stato completato.');
+                            }
+                        } catch (error) {
+                            console.error('Errore:', error);
+                            alert('Si è verificato un errore durante il completamento del pagamento.');
+                        }
+                    },
+                    onError: function (err) {
+                        console.error('Errore PayPal:', err);
+                        alert('Si è verificato un errore con PayPal. Riprova.');
+                    }
+                }).render('#paypal-button-container-monthly');
+            }
+
+            // Pulsante per piano annuale
+            if (document.getElementById('paypal-button-container-annual')) {
+                paypal.Buttons({
+                    style: {
+                        layout: 'vertical',
+                        color: 'gold',
+                        shape: 'rect',
+                        label: 'pay',
+                        height: 45
+                    },
+                    createOrder: async function (data, actions) {
+                        try {
+                            const response = await fetch('/api/paypal/create-order', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ plan_type: 'annual' })
+                            });
+
+                            if (!response.ok) {
+                                throw new Error('Errore creazione ordine');
+                            }
+
+                            const orderData = await response.json();
+                            return orderData.order_id;
+                        } catch (error) {
+                            console.error('Errore:', error);
+                            alert('Si è verificato un errore. Riprova.');
+                        }
+                    },
+                    onApprove: async function (data, actions) {
+                        try {
+                            const response = await fetch('/api/paypal/capture-order', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ order_id: data.orderID })
+                            });
+
+                            if (!response.ok) {
+                                throw new Error('Errore completamento pagamento');
+                            }
+
+                            const captureData = await response.json();
+
+                            if (captureData.success) {
+                                alert('Pagamento completato con successo! Ti abbiamo inviato una email di conferma.');
+                                // Reindirizza alla dashboard o pagina di successo
+                                window.location.href = '/index.html';
+                            } else {
+                                alert('Il pagamento non è stato completato.');
+                            }
+                        } catch (error) {
+                            console.error('Errore:', error);
+                            alert('Si è verificato un errore durante il completamento del pagamento.');
+                        }
+                    },
+                    onError: function (err) {
+                        console.error('Errore PayPal:', err);
+                        alert('Si è verificato un errore con PayPal. Riprova.');
+                    }
+                }).render('#paypal-button-container-annual');
+            }
+        }
+
+        // Inizializza i pulsanti PayPal quando la pagina è pronta
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initPayPalButtons);
+        } else {
+            initPayPalButtons();
+        }
+    </script>
 
     <script src="static/js/landing.js"></script>
 </body>

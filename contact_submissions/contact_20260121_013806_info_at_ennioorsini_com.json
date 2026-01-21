@@ -1,0 +1,11 @@
+{
+  "firstname": "Nome",
+  "lastname": "non disponibile",
+  "email": "info@ennioorsini.com",
+  "phone": "",
+  "subject": "🚨 SEGNALAZIONE MALFUNZIONAMENTO - Kimerika Evolution",
+  "message": "SEGNALAZIONE AUTOMATICA MALFUNZIONAMENTO PIATTAFORMA KIMERIKA\n\n═══════════════════════════════════════\nINFORMAZIONI SEGNALAZIONE\n═══════════════════════════════════════\n\nData e ora: 21/01/2026, 02:38:05\nUtente loggato: Nome non disponibile\nEmail utente: info@ennioorsini.com\nID utente: 2\n\n═══════════════════════════════════════\nSTATO SERVIZI AL MOMENTO DELLA SEGNALAZIONE\n═══════════════════════════════════════\n\n  - API Server: ✅ Operativo\n  - Web Application: ✅ Operativo\n  - WebSocket Server: ❌ NON DISPONIBILE\n  - Nginx Web Server: ✅ Operativo\n\n═══════════════════════════════════════\nINFORMAZIONI TECNICHE\n═══════════════════════════════════════\n\nBrowser: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36\nRisoluzione schermo: 1280x800\nURL pagina: https://kimerika.cloud/stato-servizio.html\nLingua browser: it-IT\n\n═══════════════════════════════════════\nNOTE\n═══════════════════════════════════════\n\nQuesta è una segnalazione automatica generata dalla pagina Stato Servizi.\nL'utente ha rilevato malfunzionamenti sulla piattaforma.\nSi prega di intervenire tempestivamente.\n\n═══════════════════════════════════════\n\nIl team di Kimerika Evolution",
+  "newsletter": false,
+  "timestamp": "2026-01-21T01:38:05.335Z",
+  "saved_at": "2026-01-21T01:38:06.345644"
+}

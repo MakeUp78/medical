@@ -675,6 +675,12 @@ body {
   color: var(--gray);
 }
 
+/* PayPal Button Container */
+.paypal-button-container {
+  margin: 20px 0;
+  min-height: 45px;
+}
+
 /* ===================================
    TESTIMONIALS SECTION
    =================================== */

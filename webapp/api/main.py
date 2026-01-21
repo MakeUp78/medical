@@ -25,6 +25,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import requests
 import threading
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from urllib.parse import urlparse
 
 # Carica variabili d'ambiente da .env
 try:
@@ -73,6 +76,21 @@ face_mesh = None
 
 # === INIZIALIZZAZIONE VOICE ASSISTANT ===
 voice_assistant = None
+
+# === DATABASE CONNECTION ===
+def get_db_connection():
+    """Crea e restituisce una connessione al database PostgreSQL"""
+    try:
+        database_url = os.environ.get('DATABASE_URL')
+        if not database_url:
+            print("⚠️ DATABASE_URL non configurato")
+            return None
+        
+        conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+        return conn
+    except Exception as e:
+        print(f"❌ Errore connessione database: {e}")
+        return None
 
 def initialize_mediapipe():
     global mp_face_mesh, face_mesh
@@ -3366,3 +3384,248 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Errore avvio server: {e}")
         print("💡 Prova a eseguire come amministratore o usa una porta diversa")
+
+
+# ============================================
+# PAYPAL PAYMENT INTEGRATION
+# ============================================
+
+# PayPal Configuration
+PAYPAL_API = os.environ.get('PAYPAL_API', 'https://api-m.sandbox.paypal.com')
+PAYPAL_CLIENT_ID = os.environ.get('PAYPAL_CLIENT_ID', '')
+PAYPAL_CLIENT_SECRET = os.environ.get('PAYPAL_CLIENT_SECRET', '')
+
+# Pydantic Models for PayPal
+class PayPalOrderRequest(BaseModel):
+    plan_type: str  # 'monthly' or 'annual'
+
+class PayPalOrderResponse(BaseModel):
+    order_id: str
+    approval_url: str
+
+class PayPalCaptureRequest(BaseModel):
+    order_id: str
+
+class PayPalCaptureResponse(BaseModel):
+    success: bool
+    transaction_id: str
+    message: str
+
+def get_paypal_access_token():
+    """Ottiene access token da PayPal usando Client ID e Secret"""
+    try:
+        auth_url = f"{PAYPAL_API}/v1/oauth2/token"
+        auth = (PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET)
+        headers = {
+            'Accept': 'application/json',
+            'Accept-Language': 'it_IT'
+        }
+        data = {'grant_type': 'client_credentials'}
+        
+        response = requests.post(auth_url, auth=auth, headers=headers, data=data)
+        response.raise_for_status()
+        
+        token_data = response.json()
+        return token_data.get('access_token')
+    except Exception as e:
+        print(f"❌ Errore ottenimento PayPal access token: {e}")
+        return None
+
+@app.post("/api/paypal/create-order", response_model=PayPalOrderResponse)
+async def create_paypal_order(order_request: PayPalOrderRequest):
+    """
+    Crea un ordine PayPal per il piano selezionato
+    """
+    try:
+        # Definisci i prezzi
+        plan_prices = {
+            'monthly': {'amount': '69.00', 'description': 'Piano Mensile Kimerika Evolution'},
+            'annual': {'amount': '588.00', 'description': 'Piano Annuale Kimerika Evolution'}
+        }
+        
+        if order_request.plan_type not in plan_prices:
+            raise HTTPException(status_code=400, detail="Piano non valido")
+        
+        plan = plan_prices[order_request.plan_type]
+        
+        # Ottieni access token
+        access_token = get_paypal_access_token()
+        if not access_token:
+            raise HTTPException(status_code=500, detail="Errore autenticazione PayPal")
+        
+        # Crea l'ordine
+        order_url = f"{PAYPAL_API}/v2/checkout/orders"
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {access_token}'
+        }
+        
+        order_data = {
+            'intent': 'CAPTURE',
+            'purchase_units': [{
+                'amount': {
+                    'currency_code': 'EUR',
+                    'value': plan['amount']
+                },
+                'description': plan['description']
+            }],
+            'application_context': {
+                'return_url': f"{os.environ.get('APP_URL', 'http://localhost:3000')}/payment-success",
+                'cancel_url': f"{os.environ.get('APP_URL', 'http://localhost:3000')}/payment-cancel",
+                'brand_name': 'Kimerika Evolution',
+                'landing_page': 'LOGIN',
+                'user_action': 'PAY_NOW',
+                'locale': 'it-IT'
+            }
+        }
+        
+        response = requests.post(order_url, headers=headers, json=order_data)
+        response.raise_for_status()
+        
+        order = response.json()
+        
+        # Trova l'approval URL
+        approval_url = None
+        for link in order.get('links', []):
+            if link.get('rel') == 'approve':
+                approval_url = link.get('href')
+                break
+        
+        if not approval_url:
+            raise HTTPException(status_code=500, detail="Impossibile ottenere URL di approvazione")
+        
+        return PayPalOrderResponse(
+            order_id=order['id'],
+            approval_url=approval_url
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Errore creazione ordine PayPal: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/paypal/capture-order", response_model=PayPalCaptureResponse)
+async def capture_paypal_order(capture_request: PayPalCaptureRequest, request: Request):
+    """
+    Cattura il pagamento dopo l'approvazione dell'utente
+    Aggiorna il database con i dettagli dell'utente e del piano acquistato
+    """
+    try:
+        # Ottieni access token
+        access_token = get_paypal_access_token()
+        if not access_token:
+            raise HTTPException(status_code=500, detail="Errore autenticazione PayPal")
+        
+        # Cattura l'ordine
+        capture_url = f"{PAYPAL_API}/v2/checkout/orders/{capture_request.order_id}/capture"
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {access_token}'
+        }
+        
+        response = requests.post(capture_url, headers=headers)
+        response.raise_for_status()
+        
+        capture_data = response.json()
+        
+        # Verifica che il pagamento sia stato completato
+        if capture_data.get('status') != 'COMPLETED':
+            return PayPalCaptureResponse(
+                success=False,
+                transaction_id='',
+                message='Pagamento non completato'
+            )
+        
+        # Estrai i dati della transazione
+        transaction_id = capture_data['id']
+        payer_info = capture_data.get('payer', {})
+        payer_email = payer_info.get('email_address', '')
+        payer_name = payer_info.get('name', {})
+        firstname = payer_name.get('given_name', 'Utente')
+        lastname = payer_name.get('surname', 'PayPal')
+        amount = capture_data['purchase_units'][0]['payments']['captures'][0]['amount']['value']
+        
+        # Determina il tipo di piano in base all'importo
+        plan_type = 'monthly' if float(amount) < 100 else 'annual'
+        
+        # Salva nel database
+        db_conn = None
+        user_id = None
+        
+        try:
+            db_conn = get_db_connection()
+            if not db_conn:
+                raise Exception("Connessione database non disponibile")
+            
+            cursor = db_conn.cursor()
+            
+            # Cerca se l'utente esiste già
+            cursor.execute("SELECT id, plan FROM \"user\" WHERE email = %s", (payer_email,))
+            user = cursor.fetchone()
+            
+            if user:
+                # Aggiorna utente esistente
+                user_id = user['id']
+                cursor.execute("""
+                    UPDATE \"user\" 
+                    SET plan = %s, subscription_ends_at = NOW() + INTERVAL '30 days'
+                    WHERE id = %s
+                """, (plan_type, user_id))
+                print(f"✅ Utente aggiornato: {payer_email}")
+            else:
+                # Crea nuovo utente
+                cursor.execute("""
+                    INSERT INTO \"user\" (email, firstname, lastname, plan, is_active, subscription_ends_at)
+                    VALUES (%s, %s, %s, %s, true, NOW() + INTERVAL '30 days')
+                    RETURNING id
+                """, (payer_email, firstname, lastname, plan_type))
+                user_id = cursor.fetchone()['id']
+                print(f"✅ Nuovo utente creato: {payer_email}")
+            
+            # Inserisci la transazione
+            cursor.execute("""
+                INSERT INTO payment_transactions 
+                (user_id, transaction_id, plan_type, amount, currency, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (user_id, transaction_id, plan_type, amount, 'EUR', 'completed'))
+            
+            db_conn.commit()
+            print(f"✅ Transazione salvata: {transaction_id}")
+            
+        except Exception as db_error:
+            if db_conn:
+                db_conn.rollback()
+            print(f"❌ Errore database: {db_error}")
+            # Continua comunque, il pagamento è stato completato
+        finally:
+            if db_conn:
+                cursor.close()
+                db_conn.close()
+        
+        print(f"✅ Pagamento completato: {transaction_id}")
+        print(f"📧 Email: {payer_email}")
+        print(f"💰 Importo: €{amount}")
+        print(f"📦 Piano: {plan_type}")
+        
+        return PayPalCaptureResponse(
+            success=True,
+            transaction_id=transaction_id,
+            message='Pagamento completato con successo'
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Errore cattura ordine PayPal: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/paypal/config")
+async def get_paypal_config():
+    """
+    Restituisce la configurazione PayPal per il client
+    """
+    return {
+        'client_id': PAYPAL_CLIENT_ID,
+        'currency': 'EUR'
+    }
