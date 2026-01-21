@@ -4,7 +4,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from starlette.middleware.base import BaseHTTPMiddleware
 from typing import List, Optional, Dict, Any, Tuple
 from contextlib import asynccontextmanager
@@ -19,6 +19,22 @@ from datetime import datetime
 import tempfile
 import os
 import sys
+import smtplib
+import ssl
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import requests
+import threading
+
+# Carica variabili d'ambiente da .env
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("✅ Variabili d'ambiente caricate da .env")
+except ImportError:
+    print("⚠️ python-dotenv non installato, usa variabili d'ambiente di sistema")
+except Exception as e:
+    print(f"⚠️ Errore caricamento .env: {e}")
 
 # Aggiunge il percorso src per importare green_dots_processor
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
@@ -279,6 +295,24 @@ class VoiceKeywordResponse(BaseModel):
     keyword: str
     action: Optional[str] = None
     message: Optional[str] = None
+
+# === MODELLI PYDANTIC PER CONTACT FORM ===
+
+class ContactFormRequest(BaseModel):
+    firstname: str
+    lastname: str
+    email: EmailStr
+    phone: Optional[str] = ""
+    subject: str
+    message: str
+    newsletter: bool = False
+    recaptcha_token: Optional[str] = ""
+    timestamp: str
+
+class ContactFormResponse(BaseModel):
+    success: bool
+    message: str
+    error: Optional[str] = None
 
 # === UTILITY FUNCTIONS ===
 
@@ -878,6 +912,22 @@ async def serve_index():
     if os.path.exists(webapp_path):
         return FileResponse(webapp_path)
     raise HTTPException(status_code=404, detail="index.html not found")
+
+@app.get("/landing.html")
+async def serve_landing():
+    """Serve la landing page"""
+    landing_path = os.path.join(os.path.dirname(__file__), '..', 'landing.html')
+    if os.path.exists(landing_path):
+        return FileResponse(landing_path)
+    raise HTTPException(status_code=404, detail="landing.html not found")
+
+@app.get("/contatti.html")
+async def serve_contatti():
+    """Serve la pagina contatti"""
+    contatti_path = os.path.join(os.path.dirname(__file__), '..', 'contatti.html')
+    if os.path.exists(contatti_path):
+        return FileResponse(contatti_path)
+    raise HTTPException(status_code=404, detail="contatti.html not found")
 
 @app.get("/health")
 async def health_check():
@@ -2847,6 +2897,278 @@ async def generate_qr_code(request: Request):
     except Exception as e:
         print(f"Errore generazione QR code: {e}")
         raise HTTPException(status_code=500, detail=f"Errore generazione QR: {str(e)}")
+
+@app.get("/camera")
+async def camera_page():
+    """
+    Serve la pagina camera per iPhone.
+    Questa pagina usa getUserMedia per accedere alla camera e invia frame via WebSocket.
+    """
+    import os
+    camera_file = os.path.join(webapp_dir, "templates", "camera.html")
+    if not os.path.exists(camera_file):
+        raise HTTPException(status_code=404, detail="Camera page not found")
+    return FileResponse(camera_file)
+
+# === CONTACT FORM HELPERS ===
+
+def send_email_sync(to_email: str, subject: str, html_body: str, text_body: str, reply_to: str = None):
+    """
+    Invia email in modo sincrono (da usare in thread separato).
+    """
+    try:
+        smtp_host = os.getenv('SMTP_HOST', 'smtp.gmail.com')
+        smtp_port = int(os.getenv('SMTP_PORT', '587'))
+        smtp_user = os.getenv('SMTP_USER', '')
+        smtp_password = os.getenv('SMTP_PASSWORD', '')
+        smtp_from_name = os.getenv('SMTP_FROM_NAME', 'Kimerika Evolution')
+        
+        if not smtp_user or not smtp_password:
+            print("⚠️ SMTP non configurato")
+            return False
+        
+        message = MIMEMultipart('alternative')
+        message['Subject'] = subject
+        message['From'] = f"{smtp_from_name} <{smtp_user}>"
+        message['To'] = to_email
+        if reply_to:
+            message['Reply-To'] = reply_to
+        
+        message.attach(MIMEText(text_body, 'plain', 'utf-8'))
+        message.attach(MIMEText(html_body, 'html', 'utf-8'))
+        
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=10) as server:
+                server.login(smtp_user, smtp_password)
+                server.send_message(message)
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+                server.starttls(context=context)
+                server.login(smtp_user, smtp_password)
+                server.send_message(message)
+        
+        print(f"✅ Email inviata a: {to_email}")
+        return True
+    except Exception as e:
+        print(f"❌ Errore invio email: {e}")
+        return False
+
+# === CONTACT FORM ENDPOINT ===
+
+@app.post("/api/contact", response_model=ContactFormResponse)
+async def submit_contact_form(form_data: ContactFormRequest):
+    """
+    Gestisce l'invio del form contatti.
+    Salva i dati localmente e tenta invio email in background.
+    """
+    try:
+        # Log ricevimento
+        print(f"\n📧 === NUOVO CONTATTO RICEVUTO ===")
+        print(f"Nome: {form_data.firstname} {form_data.lastname}")
+        print(f"Email: {form_data.email}")
+        print(f"Oggetto: {form_data.subject}")
+        print(f"================================\n")
+        
+        # Salva immediatamente su file
+        backup_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'contact_submissions')
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+        email_safe = form_data.email.replace('@', '_at_').replace('.', '_')
+        backup_file = os.path.join(backup_dir, f"contact_{timestamp_str}_{email_safe}.json")
+        
+        contact_data = {
+            'firstname': form_data.firstname,
+            'lastname': form_data.lastname,
+            'email': form_data.email,
+            'phone': form_data.phone,
+            'subject': form_data.subject,
+            'message': form_data.message,
+            'newsletter': form_data.newsletter,
+            'timestamp': form_data.timestamp,
+            'saved_at': datetime.now().isoformat()
+        }
+        
+        with open(backup_file, 'w', encoding='utf-8') as f:
+            json.dump(contact_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"✅ Dati salvati in: {backup_file}")
+        
+        # Prepara email
+        subject = f"[Kimerika Contact] {form_data.subject}"
+        html_body = f"""
+        <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                    .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px 10px 0 0; }}
+                    .content {{ background: #f8f9fa; padding: 30px; }}
+                    .field {{ margin-bottom: 15px; }}
+                    .label {{ font-weight: bold; color: #667eea; }}
+                    .value {{ margin-top: 5px; padding: 10px; background: white; border-radius: 5px; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header"><h2>📧 Nuovo Contatto</h2></div>
+                    <div class="content">
+                        <div class="field"><div class="label">👤 Da:</div><div class="value">{form_data.firstname} {form_data.lastname}</div></div>
+                        <div class="field"><div class="label">📧 Email:</div><div class="value"><a href="mailto:{form_data.email}">{form_data.email}</a></div></div>
+                        {f'<div class="field"><div class="label">📱 Telefono:</div><div class="value">{form_data.phone}</div></div>' if form_data.phone else ''}
+                        <div class="field"><div class="label">📋 Oggetto:</div><div class="value">{form_data.subject}</div></div>
+                        <div class="field"><div class="label">💬 Messaggio:</div><div class="value">{form_data.message}</div></div>
+                    </div>
+                </div>
+            </body>
+        </html>
+        """
+        
+        text_body = f"Nuovo contatto da: {form_data.firstname} {form_data.lastname}\nEmail: {form_data.email}\nOggetto: {form_data.subject}\n\n{form_data.message}"
+        
+        # Invia email in thread separato (non blocca la risposta)
+        threading.Thread(
+            target=send_email_sync,
+            args=("info@ennioorsini.com", subject, html_body, text_body, form_data.email),
+            daemon=True
+        ).start()
+        
+        # Rispondi immediatamente
+        return ContactFormResponse(
+            success=True,
+            message="Messaggio ricevuto! Ti risponderemo entro 24 ore."
+        )
+            
+    except Exception as e:
+        print(f"❌ Errore form contatti: {e}")
+        import traceback
+        traceback.print_exc()
+        return ContactFormResponse(
+            success=False,
+            message="Si è verificato un errore. Contattaci via WhatsApp: +39 371 1441066",
+            error=str(e)
+        )
+
+async def verify_recaptcha(token: str) -> bool:
+    """
+    Verifica token reCAPTCHA v3 con Google.
+    Richiede RECAPTCHA_SECRET_KEY nelle variabili d'ambiente.
+    """
+    try:
+        secret_key = os.getenv('RECAPTCHA_SECRET_KEY', '')
+        if not secret_key:
+            print("⚠️ RECAPTCHA_SECRET_KEY non configurata, skip verifica")
+            return True  # Skip verifica se non configurata
+        
+        response = requests.post(
+            'https://www.google.com/recaptcha/api/siteverify',
+            data={
+                'secret': secret_key,
+                'response': token
+            },
+            timeout=5
+        )
+        
+        result = response.json()
+        
+        # reCAPTCHA v3 restituisce uno score (0.0 - 1.0)
+        # 0.0 = bot, 1.0 = umano
+        score = result.get('score', 0)
+        success = result.get('success', False)
+        
+        print(f"🔒 reCAPTCHA score: {score}")
+        
+        # Accetta se score > 0.5 (soglia consigliata)
+        return success and score >= 0.5
+        
+    except Exception as e:
+        print(f"⚠️ Errore verifica reCAPTCHA: {e}")
+        return True  # In caso di errore, accetta comunque (graceful degradation)
+
+async def send_email(
+    to_email: str,
+    subject: str,
+    html_body: str,
+    text_body: str,
+    reply_to: Optional[str] = None
+) -> bool:
+    """
+    Invia email usando SMTP.
+    Configurazione tramite variabili d'ambiente:
+    - SMTP_HOST (es: mail.ennioorsini.com)
+    - SMTP_PORT (465 per SSL, 587 per TLS)
+    - SMTP_USER (email mittente)
+    - SMTP_PASSWORD (password)
+    - SMTP_FROM_NAME (nome mittente, default: Kimerika Evolution)
+    """
+    try:
+        # Leggi configurazione SMTP da variabili d'ambiente
+        smtp_host = os.getenv('SMTP_HOST', 'smtp.gmail.com')
+        smtp_port = int(os.getenv('SMTP_PORT', '587'))
+        smtp_user = os.getenv('SMTP_USER', '')
+        smtp_password = os.getenv('SMTP_PASSWORD', '')
+        smtp_from_name = os.getenv('SMTP_FROM_NAME', 'Kimerika Evolution')
+        
+        if not smtp_user or not smtp_password:
+            print("⚠️ SMTP non configurato (SMTP_USER/SMTP_PASSWORD mancanti)")
+            print(f"📧 Email che sarebbe stata inviata a: {to_email}")
+            print(f"📧 Oggetto: {subject}")
+            print(f"📧 Testo:\n{text_body}")
+            return True  # Simula successo per testing
+        
+        # Crea messaggio
+        message = MIMEMultipart('alternative')
+        message['Subject'] = subject
+        message['From'] = f"{smtp_from_name} <{smtp_user}>"
+        message['To'] = to_email
+        
+        if reply_to:
+            message['Reply-To'] = reply_to
+        
+        # Aggiungi body testuale e HTML
+        part1 = MIMEText(text_body, 'plain', 'utf-8')
+        part2 = MIMEText(html_body, 'html', 'utf-8')
+        
+        message.attach(part1)
+        message.attach(part2)
+        
+        # Crea contesto SSL
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        
+        # Usa SMTP_SSL per porta 465, SMTP con starttls per porta 587
+        if smtp_port == 465:
+            # Porta 465: usa SMTP_SSL
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=5) as server:
+                server.login(smtp_user, smtp_password)
+                server.send_message(message)
+        else:
+            # Porta 587: usa SMTP con starttls
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=5) as server:
+                server.starttls(context=context)
+                server.login(smtp_user, smtp_password)
+                server.send_message(message)
+        
+        print(f"✅ Email inviata con successo a: {to_email}")
+        return True
+        
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"❌ Errore autenticazione SMTP: {e}")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"❌ Errore SMTP: {e}")
+        return False
+    except TimeoutError as e:
+        print(f"❌ Timeout connessione SMTP: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Errore invio email: {e}")
+        return False
 
 @app.get("/camera")
 async def camera_page():

@@ -1,0 +1,11 @@
+{
+  "firstname": "Test",
+  "lastname": "Curl",
+  "email": "test@example.com",
+  "phone": "+39 333 1234567",
+  "subject": "demo",
+  "message": "Questo è un test da curl per verificare invio email",
+  "newsletter": true,
+  "timestamp": "2026-01-21T00:25:00",
+  "saved_at": "2026-01-21T00:20:45.102825"
+}

@@ -522,25 +522,29 @@ function bookDemo(plan = null) {
         localStorage.setItem('selected_plan', plan);
     }
 
-    // Calendly link - sostituire con il tuo link Calendly
-    const calendlyBaseUrl = 'https://calendly.com/kimerika/demo';
+    // Usa WhatsApp per prenotare demo
+    const message = plan
+        ? `Ciao, vorrei prenotare una demo per il piano ${plan}`
+        : 'Ciao, vorrei prenotare una demo di Kimerika Evolution';
 
-    // Aggiungi parametri per tracciamento
-    const params = new URLSearchParams();
-    if (plan) {
-        params.set('plan', plan);
-    }
+    const whatsappUrl = `https://wa.me/393711441066?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
 
-    const calendlyUrl = params.toString()
-        ? `${calendlyBaseUrl}?${params.toString()}`
-        : calendlyBaseUrl;
-
-    // Apri Calendly in una nuova finestra o mostra modal
-    // Per ora apriamo direttamente il link
-    window.open(calendlyUrl, '_blank');
+    // Track event
+    trackWhatsAppClick('demo-booking');
 
     // Mostra notifica
-    showNotification('Ti stiamo reindirizzando per prenotare la demo...', 'info');
+    showNotification('Ti stiamo reindirizzando a WhatsApp...', 'info');
+}
+
+// Track WhatsApp clicks
+function trackWhatsAppClick(source) {
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'whatsapp_click', {
+            'event_category': 'Contact',
+            'event_label': source
+        });
+    }
 }
 
 // ===================================

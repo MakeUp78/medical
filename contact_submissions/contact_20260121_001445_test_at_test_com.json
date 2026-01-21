@@ -1,0 +1,11 @@
+{
+  "firstname": "Test",
+  "lastname": "User",
+  "email": "test@test.com",
+  "phone": "",
+  "subject": "demo",
+  "message": "test messaggio",
+  "newsletter": false,
+  "timestamp": "2026-01-21T00:15:00",
+  "saved_at": "2026-01-21T00:14:45.136079"
+}
