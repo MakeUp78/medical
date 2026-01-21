@@ -1,414 +1,775 @@
 /* ========================================
-   MOBILE RESPONSIVE STYLES
-   Responsive design per dispositivi mobili
+   MOBILE RESPONSIVE STYLES - REDESIGN COMPLETO
+   Interfaccia mobile ottimizzata con bottom nav e pannelli
    ======================================== */
 
-/* Media Query per Tablet e dispositivi medi (max 1024px) */
+/* ========================================
+   VARIABILI CSS MOBILE
+   ======================================== */
+:root {
+  --mobile-nav-height: 60px;
+  --mobile-toolbar-height: 50px;
+  --mobile-panel-bg: #2b2b2b;
+  --mobile-panel-header: #353535;
+  --mobile-accent: #667eea;
+  --mobile-accent-secondary: #764ba2;
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ========================================
+   MEDIA QUERY TABLET (max 1024px)
+   Mantiene layout desktop con sidebar ridotte
+   ======================================== */
 @media (max-width: 1024px) {
   .main-container {
-    grid-template-columns: 300px 1fr 300px;
+    grid-template-columns: 350px 1fr 350px;
   }
 
   .left-sidebar,
   .right-sidebar {
-    width: 300px;
-    max-width: 300px;
+    width: 350px;
+    max-width: 350px;
   }
 }
 
-/* Media Query per dispositivi mobili (max 768px) */
+/* ========================================
+   MEDIA QUERY MOBILE (max 768px)
+   Layout completamente ridisegnato
+   ======================================== */
 @media (max-width: 768px) {
-  /* Layout principale - passa a layout verticale mobile */
+  /* === RESET LAYOUT DESKTOP === */
+  body {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    touch-action: manipulation;
+  }
+
   .main-container {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr auto;
+    display: flex;
+    flex-direction: column;
     height: 100vh;
+    height: calc(var(--vh, 1vh) * 100);
+    grid-template-columns: unset;
+    grid-template-rows: unset;
   }
 
-  /* Sidebar sinistra - sempre visibile in alto su mobile */
-  .left-sidebar {
-    width: 100%;
-    max-width: 100%;
-    height: auto;
-    max-height: 40vh;
-    overflow-y: auto;
-    border-right: none;
-    border-bottom: 2px solid #555555;
-    order: 1;
-  }
-
-  /* Canvas centrale - area principale su mobile */
-  .canvas-container {
-    width: 100%;
-    height: auto;
-    min-height: 300px;
-    flex: 1;
-    border-left: none;
-    border-right: none;
-    order: 2;
-  }
-
-  /* Sidebar destra - sempre visibile in basso su mobile */
+  /* === NASCONDI SIDEBAR ORIGINALI === */
+  .left-sidebar,
   .right-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
     width: 100%;
+    height: 100%;
     max-width: 100%;
-    height: auto;
-    max-height: 30vh;
-    overflow-y: auto;
-    border-left: none;
-    border-top: 2px solid #555555;
-    order: 3;
+    max-height: 100%;
+    z-index: 1000;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background: var(--mobile-panel-bg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    border: none;
+    padding: 0;
   }
 
-  /* Toolbar canvas - pulsanti più grandi su mobile */
+  .left-sidebar.mobile-panel-open,
+  .right-sidebar.mobile-panel-open {
+    transform: translateY(0);
+  }
+
+  /* Right sidebar scroll wrapper */
+  .right-sidebar {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 20px;
+  }
+
+  .right-sidebar > .section {
+    margin: 8px 12px;
+  }
+
+  .right-sidebar > div[style*="display: none"] {
+    margin: 0;
+    padding: 0;
+  }
+
+  /* === HEADER PANNELLO MOBILE === */
+  .mobile-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, var(--mobile-accent), var(--mobile-accent-secondary));
+    color: white;
+    flex-shrink: 0;
+    min-height: 60px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  }
+
+  .mobile-panel-header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .mobile-panel-close {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: white;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    font-size: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+  }
+
+  .mobile-panel-close:active {
+    background: rgba(255,255,255,0.3);
+  }
+
+  /* === CONTENUTO SCROLLABILE PANNELLO === */
+  .scrollable-controls {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* === CANVAS CONTAINER - OCCUPA TUTTO LO SPAZIO === */
+  .canvas-container {
+    flex: 1;
+    width: 100%;
+    height: calc(100vh - var(--mobile-nav-height) - var(--mobile-toolbar-height) - var(--safe-area-bottom));
+    height: calc(var(--vh, 1vh) * 100 - var(--mobile-nav-height) - var(--mobile-toolbar-height) - var(--safe-area-bottom));
+    order: 1;
+    border: none;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  .canvas-wrapper {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1a1a1a;
+    overflow: hidden;
+  }
+
+  #main-canvas {
+    max-width: 100%;
+    max-height: 100%;
+    touch-action: none;
+  }
+
+  /* === TOOLBAR CANVAS MOBILE - COMPATTA E SCROLLABILE === */
   .canvas-toolbar {
-    flex-wrap: wrap;
-    padding: 8px;
-    gap: 8px;
-    height: auto !important;
-    min-height: auto !important;
-    overflow: visible;
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px;
+    background: linear-gradient(180deg, #404040, #353535);
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    min-height: var(--mobile-toolbar-height);
+    align-items: center;
+    border-bottom: 1px solid #555;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .canvas-toolbar::-webkit-scrollbar {
+    display: none;
   }
 
   .tool-btn {
-    padding: 10px 12px;
+    flex-shrink: 0;
+    padding: 10px 14px;
     font-size: 13px;
-    min-height: 40px;
-    flex: 1 1 calc(50% - 8px);
-    min-width: 120px;
-    max-width: 100%;
+    min-height: 38px;
+    min-width: auto;
+    white-space: nowrap;
+    border-radius: 8px;
+    background: #505050;
+    border: 1px solid #666;
+    color: white;
   }
 
-  /* Sezioni collassabili - più grandi su mobile */
+  .tool-btn.active {
+    background: var(--mobile-accent);
+    border-color: var(--mobile-accent);
+  }
+
+  /* === SEZIONI COLLASSABILI OTTIMIZZATE === */
+  .section {
+    margin-bottom: 8px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #444;
+  }
+
   .section-header {
-    padding: 12px;
+    padding: 14px 16px;
+    min-height: 52px;
   }
 
   .toggle-btn {
+    font-size: 15px;
+    padding: 0;
+  }
+
+  .icon {
     font-size: 14px;
-    padding: 10px 0;
+    padding: 8px;
   }
 
-  /* Pulsanti - più grandi e touch-friendly */
-  .btn {
-    padding: 12px 16px;
-    font-size: 14px;
-    min-height: 44px;
-    margin: 4px 2px;
+  .section-content {
+    padding: 12px !important;
   }
 
-  /* Griglie pulsanti - una colonna su mobile */
-  .button-grid,
-  .detection-grid,
-  .eyebrow-buttons {
-    grid-template-columns: 1fr;
-    gap: 6px;
-  }
-
-  /* Sezione Analisi Unificata - due colonne compatte su mobile */
-  .analysis-buttons {
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
-  }
-
-  /* Misurazioni predefinite - due colonne compatte (deprecato) */
-  .predefined-buttons {
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
-  }
-
-  /* Badge - layout verticale su mobile */
-  .badges-container {
-    grid-template-columns: 1fr;
-    gap: 6px;
-  }
-
-  .badge {
-    font-size: 13px;
-    padding: 10px;
-  }
-
-  /* Sezione utente - compatta su mobile */
+  /* === USER SECTION MOBILE === */
   .user-section {
-    padding: 12px;
-    margin-bottom: 10px;
+    margin: 0 0 12px 0;
+    padding: 16px;
+    border-radius: 12px;
+  }
+
+  .user-info {
+    flex-wrap: wrap;
   }
 
   .user-avatar {
-    font-size: 28px;
-    width: 40px;
-    height: 40px;
+    width: 50px;
+    height: 50px;
   }
 
   .user-name {
-    font-size: 15px;
+    font-size: 16px;
   }
 
-  /* Tabelle - scrollabili orizzontalmente con altezza limitata */
+  .user-section > div:last-child {
+    flex-wrap: wrap;
+  }
+
+  .user-section button {
+    flex: 1 1 calc(33% - 0.5rem);
+    min-width: 80px;
+  }
+
+  /* === PULSANTI MOBILE TOUCH-FRIENDLY === */
+  .btn {
+    padding: 14px 18px;
+    font-size: 14px;
+    min-height: 48px;
+    border-radius: 10px;
+    margin: 3px;
+  }
+
+  .btn:active {
+    transform: scale(0.97);
+    opacity: 0.9;
+  }
+
+  /* === GRIGLIA PULSANTI MOBILE === */
+  .button-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .analysis-buttons {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .btn-analysis {
+    padding: 14px 10px;
+    font-size: 13px;
+    min-height: 50px;
+    border-radius: 10px;
+  }
+
+  .btn-analysis-complete {
+    grid-column: 1 / -1;
+    font-size: 15px !important;
+    padding: 16px !important;
+    min-height: 56px;
+  }
+
+  .eyebrow-buttons {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .btn-eyebrow {
+    min-height: 50px;
+  }
+
+  /* === TABELLE MOBILE === */
   .table-container {
     overflow-x: auto;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    max-height: 450px; /* Ridotto per mobile */
-  }
-
-  /* Tab unificata - ottimizzazione mobile */
-  .unified-tabs {
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 6px;
-  }
-
-  .unified-tab {
-    padding: 8px 12px;
-    font-size: 12px;
-    min-width: 100px;
+    max-height: 50vh;
+    border-radius: 8px;
+    border: 1px solid #444;
   }
 
   .data-table {
+    font-size: 12px;
     min-width: 100%;
-    font-size: 11px;
   }
 
   .data-table th,
   .data-table td {
-    padding: 6px 4px;
+    padding: 10px 8px;
     white-space: nowrap;
   }
 
-  /* Modal - adatta a schermo mobile */
+  /* === UNIFIED TABS MOBILE === */
+  .unified-tabs {
+    display: flex;
+    gap: 0;
+    padding: 0;
+    background: #353535;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+
+  .unified-tab {
+    flex: 1;
+    padding: 12px 8px;
+    font-size: 12px;
+    min-width: auto;
+    border-radius: 0;
+    border: none;
+    background: #404040;
+    color: #aaa;
+    text-align: center;
+  }
+
+  .unified-tab.active {
+    background: var(--mobile-accent);
+    color: white;
+  }
+
+  /* === VOICE ASSISTANT MOBILE === */
+  .voice-controls-sidebar {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .voice-controls-sidebar .btn {
+    min-height: 48px;
+    font-size: 13px;
+  }
+
+  .voice-commands-help-sidebar {
+    margin-top: 12px;
+  }
+
+  .commands-list-sidebar {
+    max-height: 40vh;
+  }
+
+  /* === IMPOSTAZIONI MOBILE === */
+  .settings-info {
+    padding: 12px;
+  }
+
+  #qr-code-wrapper {
+    padding: 12px;
+  }
+
+  #qr-code-img {
+    width: 150px !important;
+    height: 150px !important;
+  }
+
+  /* === ANTEPRIMA WEBCAM MOBILE === */
+  .webcam-preview-content {
+    padding: 12px;
+  }
+
+  #webcam-preview-canvas {
+    border-radius: 10px;
+  }
+
+  /* === MODAL MOBILE === */
   .modal-content {
-    width: 95%;
-    max-width: 95%;
-    margin: 2% auto;
-    padding: 20px;
-    max-height: 96vh;
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    margin: 0;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal-header {
+    padding: 16px 20px;
+    flex-shrink: 0;
   }
 
   .modal-header h3 {
     font-size: 16px;
   }
 
-  /* Status bar - più alto per touch */
+  .modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  /* === STATUS BAR NASCOSTA SU MOBILE === */
   .status-bar {
-    height: 40px;
-    font-size: 12px;
+    display: none;
   }
 
-  /* Canvas wrapper - adattato per mobile */
-  .canvas-wrapper {
-    min-height: 250px;
-  }
-
-  #main-canvas {
-    max-width: 100%;
-    height: auto;
-  }
-
-  /* Info cursore - più grande su mobile */
+  /* === CURSOR INFO MOBILE === */
   .cursor-info {
-    font-size: 11px;
-    padding: 6px 10px;
+    display: none;
   }
 
-  /* Preset buttons - layout compatto */
-  .preset-buttons {
-    grid-template-columns: 1fr;
+  /* === SLIDERS MOBILE === */
+  .slider-row {
+    padding: 8px 4px;
+  }
+
+  .slider-row label {
+    font-size: 13px;
+    min-width: 70px;
+  }
+
+  .slider {
+    height: 28px;
+  }
+
+  .slider::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+  }
+
+  .value {
+    font-size: 13px;
+    min-width: 50px;
+  }
+
+  /* === SCROLLBAR MOBILE === */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #666;
+    border-radius: 2px;
+  }
+}
+
+/* ========================================
+   BOTTOM NAVIGATION MOBILE
+   ======================================== */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: calc(var(--mobile-nav-height) + var(--safe-area-bottom));
+    padding-bottom: var(--safe-area-bottom);
+    background: linear-gradient(180deg, #353535, #2b2b2b);
+    border-top: 1px solid #555;
+    z-index: 999;
+    justify-content: space-around;
+    align-items: center;
+    box-shadow: 0 -2px 20px rgba(0,0,0,0.4);
+  }
+
+  .mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    height: 100%;
+    padding: 8px 4px;
+    color: #888;
+    text-decoration: none;
+    font-size: 10px;
+    transition: all 0.2s;
+    background: transparent;
+    border: none;
+    cursor: pointer;
     gap: 4px;
   }
 
-  /* Controlli video - stack verticale */
-  .video-controls {
-    flex-direction: column;
-    gap: 8px;
+  .mobile-nav-item:active {
+    background: rgba(102, 126, 234, 0.2);
   }
 
-  .video-controls .btn {
-    width: 100%;
+  .mobile-nav-item.active {
+    color: var(--mobile-accent);
   }
 
-  /* Voice assistant sidebar - compatto su mobile */
-  .voice-controls-sidebar {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+  .mobile-nav-icon {
+    font-size: 22px;
+    line-height: 1;
   }
 
-  .voice-controls-sidebar .btn {
-    width: 100%;
-  }
-
-  /* Scrollbar più sottile su mobile */
-  ::-webkit-scrollbar {
-    width: 8px;
+  .mobile-nav-label {
+    font-size: 10px;
+    font-weight: 500;
+    white-space: nowrap;
   }
 }
 
-/* Media Query per smartphone piccoli (max 480px) */
+/* ========================================
+   OVERLAY MOBILE
+   ======================================== */
+.mobile-overlay {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 998;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .mobile-overlay.active {
+    display: block;
+    opacity: 1;
+  }
+}
+
+/* ========================================
+   SMARTPHONE PICCOLI (max 480px)
+   ======================================== */
 @media (max-width: 480px) {
-  /* Font base più piccolo per smartphone */
-  body {
-    font-size: 12px;
+  :root {
+    --mobile-nav-height: 56px;
+    --mobile-toolbar-height: 46px;
   }
 
-  /* Sidebar ancora più compatte */
-  .left-sidebar,
-  .right-sidebar {
-    max-height: 35vh;
+  .mobile-panel-header {
+    padding: 14px 16px;
+    min-height: 54px;
   }
 
-  /* Pulsanti più compatti */
+  .mobile-panel-header h2 {
+    font-size: 16px;
+  }
+
+  .mobile-panel-close {
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+  }
+
   .btn {
-    padding: 10px 12px;
+    padding: 12px 14px;
+    font-size: 13px;
+    min-height: 44px;
+  }
+
+  .btn-analysis {
+    padding: 12px 8px;
     font-size: 12px;
-    min-height: 40px;
+    min-height: 46px;
   }
 
   .tool-btn {
-    padding: 8px 10px;
-    font-size: 11px;
-    min-height: 36px;
-    flex: 1 1 calc(50% - 6px);
-    min-width: 100px;
-    max-width: 100%;
+    padding: 8px 12px;
+    font-size: 12px;
+    min-height: 34px;
   }
 
-  /* Sezione Analisi - singola colonna su schermi molto piccoli */
-  .analysis-buttons {
-    grid-template-columns: 1fr;
-  }
-
-  /* Misurazioni predefinite - singola colonna su schermi molto piccoli (deprecato) */
-  .predefined-buttons {
-    grid-template-columns: 1fr;
-  }
-
-  /* Sezioni più compatte */
   .section-header {
-    padding: 10px;
+    padding: 12px 14px;
+    min-height: 48px;
   }
 
   .toggle-btn {
-    font-size: 12px;
+    font-size: 14px;
   }
 
-  /* Tabelle ancora più compatte con scroll ottimizzato */
-  .table-container {
-    max-height: 380px; /* Altezza ridotta per schermi piccoli */
+  .user-section {
+    padding: 14px;
   }
 
-  .data-table {
-    font-size: 10px;
-  }
-
-  .data-table th,
-  .data-table td {
-    padding: 4px 2px;
-  }
-
-  /* User section compatta */
   .user-avatar {
-    font-size: 24px;
-    width: 35px;
-    height: 35px;
+    width: 44px;
+    height: 44px;
   }
 
   .user-name {
-    font-size: 13px;
+    font-size: 15px;
   }
 
-  .role-badge {
-    font-size: 10px;
-    padding: 3px 8px;
+  .mobile-nav-icon {
+    font-size: 20px;
   }
 
-  /* Badge più piccoli */
-  .badge {
-    font-size: 11px;
-    padding: 8px;
+  .mobile-nav-label {
+    font-size: 9px;
   }
 
-  /* Modal full screen su smartphone */
-  .modal-content {
-    width: 100%;
-    max-width: 100%;
-    height: 100%;
-    max-height: 100vh;
-    margin: 0;
-    border-radius: 0;
+  /* Griglia singola colonna per schermi molto piccoli */
+  .analysis-buttons {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
   }
 
-  /* Canvas toolbar compatto */
-  .canvas-toolbar {
-    padding: 6px;
-    height: auto !important;
-    min-height: auto !important;
-    overflow: visible;
-  }
-
-  /* Sliders più grandi per tocco */
-  .slider {
-    height: 24px;
-  }
-
-  .slider::-webkit-slider-thumb,
-  .slider::-moz-range-thumb {
-    width: 18px;
-    height: 18px;
+  .button-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
   }
 }
 
-/* Landscape mode per smartphone */
-@media (max-width: 768px) and (orientation: landscape) {
-  .main-container {
-    grid-template-columns: 250px 1fr 250px;
-    grid-template-rows: 1fr;
-  }
-
-  .left-sidebar,
-  .right-sidebar {
-    max-height: 100vh;
-    height: 100%;
+/* ========================================
+   LANDSCAPE MODE MOBILE
+   ======================================== */
+@media (max-width: 896px) and (orientation: landscape) {
+  :root {
+    --mobile-nav-height: 50px;
+    --mobile-toolbar-height: 44px;
   }
 
   .canvas-container {
-    height: 100%;
+    height: calc(100vh - var(--mobile-nav-height) - var(--mobile-toolbar-height));
+    height: calc(var(--vh, 1vh) * 100 - var(--mobile-nav-height) - var(--mobile-toolbar-height));
+  }
+
+  .left-sidebar.mobile-panel-open,
+  .right-sidebar.mobile-panel-open {
+    width: 60%;
+    left: auto;
+    right: 0;
+    transform: translateX(100%);
+  }
+
+  .left-sidebar.mobile-panel-open {
+    left: 0;
+    right: auto;
+    transform: translateX(-100%);
+  }
+
+  .left-sidebar.mobile-panel-open.mobile-panel-open,
+  .right-sidebar.mobile-panel-open.mobile-panel-open {
+    transform: translateX(0);
+  }
+
+  .mobile-bottom-nav {
+    height: var(--mobile-nav-height);
+    padding-bottom: 0;
+  }
+
+  .mobile-nav-item {
+    flex-direction: row;
+    gap: 6px;
+  }
+
+  .mobile-nav-icon {
+    font-size: 18px;
+  }
+
+  .mobile-nav-label {
+    font-size: 11px;
+  }
+
+  .scrollable-controls {
+    padding: 10px;
+  }
+
+  .section {
+    margin-bottom: 6px;
+  }
+
+  .btn {
+    min-height: 40px;
+    padding: 10px 14px;
   }
 }
 
-/* Fix per dispositivi iOS */
+/* ========================================
+   iOS SPECIFIC FIXES
+   ======================================== */
 @supports (-webkit-touch-callout: none) {
-  /* iOS specific fixes */
-  .main-container {
-    height: -webkit-fill-available;
-  }
+  @media (max-width: 768px) {
+    body {
+      /* Previene il rimbalzo elastico di iOS */
+      overscroll-behavior: none;
+    }
 
-  input,
-  button,
-  select,
-  textarea {
-    -webkit-appearance: none;
-    appearance: none;
-    border-radius: 0;
-  }
+    .main-container {
+      height: -webkit-fill-available;
+    }
 
-  button {
-    border-radius: 8px;
+    .canvas-container {
+      height: calc(-webkit-fill-available - var(--mobile-nav-height) - var(--mobile-toolbar-height));
+    }
+
+    /* Fix per input su iOS */
+    input,
+    button,
+    select,
+    textarea {
+      -webkit-appearance: none;
+      appearance: none;
+      border-radius: 0;
+    }
+
+    button {
+      border-radius: 8px;
+    }
+
+    /* Safe area per iPhone X+ */
+    .mobile-bottom-nav {
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
   }
 }
 
-/* Miglioramenti touch per tutti i dispositivi mobili */
+/* ========================================
+   TOUCH DEVICE IMPROVEMENTS
+   ======================================== */
 @media (hover: none) and (pointer: coarse) {
-  /* Aumenta area touch per tutti gli elementi interattivi */
+  /* Area touch minima 44x44 */
   button,
   .btn,
   .tool-btn,
-  a {
+  a,
+  .section-header {
     min-height: 44px;
-    min-width: 44px;
   }
 
-  /* Rimuovi hover effects su touch devices */
+  /* Rimuovi hover effects */
   .btn:hover,
   .tool-btn:hover,
   .section-header:hover {
@@ -416,30 +777,211 @@
     box-shadow: none;
   }
 
-  /* Aggiungi feedback visivo al tap */
+  /* Active state per feedback touch */
   .btn:active,
   .tool-btn:active {
-    opacity: 0.7;
+    opacity: 0.8;
     transform: scale(0.98);
+  }
+
+  .section-header:active {
+    background: rgba(255,255,255,0.05);
+  }
+
+  /* Disabilita selezione testo involontaria */
+  .mobile-nav-item,
+  .tool-btn,
+  .btn {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
-/* Print styles - nasconde elementi non necessari */
+/* ========================================
+   ANIMAZIONI MOBILE
+   ======================================== */
+@media (max-width: 768px) {
+  /* Animazione apertura pannello */
+  @keyframes slideUp {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideDown {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(100%);
+    }
+  }
+
+  /* Animazione pulsante attivo */
+  @keyframes pulseActive {
+    0%, 100% {
+      box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 8px rgba(102, 126, 234, 0);
+    }
+  }
+
+  .mobile-nav-item.active .mobile-nav-icon {
+    animation: pulseActive 2s infinite;
+  }
+}
+
+/* ========================================
+   ACCESSIBILITÀ MOBILE
+   ======================================== */
+@media (max-width: 768px) {
+  /* Focus visibile per navigazione da tastiera */
+  button:focus-visible,
+  .btn:focus-visible,
+  .mobile-nav-item:focus-visible {
+    outline: 2px solid var(--mobile-accent);
+    outline-offset: 2px;
+  }
+
+  /* Riduzione movimento per utenti che lo preferiscono */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+
+    .left-sidebar,
+    .right-sidebar {
+      transition: none;
+    }
+  }
+}
+
+/* ========================================
+   QUICK PANELS MOBILE
+   ======================================== */
+.mobile-quick-panel {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-quick-panel {
+    display: block;
+    position: fixed;
+    bottom: calc(var(--mobile-nav-height) + var(--safe-area-bottom));
+    left: 0;
+    right: 0;
+    z-index: 997;
+    background: var(--mobile-panel-bg);
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.3s;
+    max-height: 60vh;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .mobile-quick-panel.open {
+    transform: translateY(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .mobile-quick-panel-content {
+    display: flex;
+    flex-direction: column;
+    max-height: 60vh;
+  }
+
+  .mobile-quick-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, var(--mobile-accent), var(--mobile-accent-secondary));
+    color: white;
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+  }
+
+  .mobile-quick-panel-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .mobile-quick-panel-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 16px;
+    overflow-y: auto;
+  }
+
+  .btn-mobile-action {
+    min-height: 56px;
+    font-size: 14px;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .btn-mobile-action.btn-analysis-complete {
+    grid-column: 1 / -1;
+  }
+
+  /* Stato attivo per i tool buttons */
+  .btn-mobile-action.active {
+    background: #28a745 !important;
+    border: 2px solid #1e7e34 !important;
+    box-shadow: 0 0 10px rgba(40, 167, 69, 0.5) !important;
+  }
+}
+
+/* ========================================
+   MOBILE PANEL HEADER (nascosto su desktop)
+   ======================================== */
+.mobile-panel-header {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-panel-header {
+    display: flex;
+  }
+
+}
+
+/* ========================================
+   PRINT - NASCONDE ELEMENTI MOBILE
+   ======================================== */
 @media print {
-  .left-sidebar,
-  .right-sidebar,
-  .canvas-toolbar,
-  .status-bar,
-  .modal {
+  .mobile-bottom-nav,
+  .mobile-overlay,
+  .mobile-panel-header,
+  .mobile-quick-panel {
     display: none !important;
   }
 
-  .canvas-container {
-    border: none;
-  }
-
-  .main-container {
-    grid-template-columns: 1fr;
+  .left-sidebar,
+  .right-sidebar {
+    position: static;
+    transform: none;
+    width: auto;
     height: auto;
   }
 }
