@@ -949,6 +949,130 @@ async def health_check():
         }
     }
 
+@app.get("/api/health-check")
+async def full_health_check():
+    """
+    Verifica completa dello stato di tutti i servizi necessari.
+    Controlla: API server, WebApp, WebSocket, Nginx
+    """
+    import socket
+    import subprocess
+    
+    services_status = {}
+    
+    # 1. API Server (auto-check - se questo risponde, è operativo)
+    services_status['api_server'] = {
+        'name': 'API Server',
+        'status': 'operational',
+        'port': 8001,
+        'message': 'API server risponde correttamente'
+    }
+    
+    # 2. WebSocket Server (porta tipica per websocket_frame_api.py)
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        result = sock.connect_ex(('localhost', 8765))  # Porta WebSocket tipica
+        sock.close()
+        
+        if result == 0:
+            services_status['websocket'] = {
+                'name': 'WebSocket Server',
+                'status': 'operational',
+                'port': 8765,
+                'message': 'WebSocket server in ascolto'
+            }
+        else:
+            services_status['websocket'] = {
+                'name': 'WebSocket Server',
+                'status': 'down',
+                'port': 8765,
+                'message': 'WebSocket server non risponde'
+            }
+    except Exception as e:
+        services_status['websocket'] = {
+            'name': 'WebSocket Server',
+            'status': 'down',
+            'port': 8765,
+            'message': f'Errore: {str(e)}'
+        }
+    
+    # 3. WebApp (start_webapp.py - verifica processo)
+    try:
+        result = subprocess.run(
+            ['pgrep', '-f', 'start_webapp.py'],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            services_status['webapp'] = {
+                'name': 'Web Application',
+                'status': 'operational',
+                'message': 'WebApp in esecuzione'
+            }
+        else:
+            services_status['webapp'] = {
+                'name': 'Web Application',
+                'status': 'down',
+                'message': 'WebApp non in esecuzione'
+            }
+    except Exception as e:
+        services_status['webapp'] = {
+            'name': 'Web Application',
+            'status': 'down',
+            'message': f'Errore: {str(e)}'
+        }
+    
+    # 4. Nginx
+    try:
+        result = subprocess.run(
+            ['systemctl', 'is-active', 'nginx'],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode == 0 and result.stdout.strip() == 'active':
+            services_status['nginx'] = {
+                'name': 'Nginx Web Server',
+                'status': 'operational',
+                'message': 'Nginx attivo e funzionante'
+            }
+        else:
+            services_status['nginx'] = {
+                'name': 'Nginx Web Server',
+                'status': 'down',
+                'message': 'Nginx non attivo'
+            }
+    except Exception as e:
+        services_status['nginx'] = {
+            'name': 'Nginx Web Server',
+            'status': 'down',
+            'message': f'Errore: {str(e)}'
+        }
+    
+    # Determina lo stato complessivo
+    all_operational = all(s['status'] == 'operational' for s in services_status.values())
+    any_down = any(s['status'] == 'down' for s in services_status.values())
+    
+    if all_operational:
+        overall_status = 'operational'
+    elif any_down:
+        overall_status = 'down'
+    else:
+        overall_status = 'degraded'
+    
+    return {
+        'overall_status': overall_status,
+        'timestamp': datetime.now().isoformat(),
+        'services': services_status,
+        'summary': {
+            'total': len(services_status),
+            'operational': sum(1 for s in services_status.values() if s['status'] == 'operational'),
+            'down': sum(1 for s in services_status.values() if s['status'] == 'down')
+        }
+    }
+
 @app.post("/api/analyze", response_model=AnalysisResult)
 async def analyze_image(request: AnalysisRequest):
     """Analizza singola immagine."""

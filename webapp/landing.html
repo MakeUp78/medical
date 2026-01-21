@@ -30,7 +30,7 @@
                 </div>
                 <div class="nav-actions">
                     <button class="btn-secondary" onclick="showAuthModal('login')">Accedi</button>
-                    <button class="btn-primary" onclick="bookDemo()">Prenota Demo</button>
+                    <button class="btn-primary" onclick="watchDemo()">Guarda DEMO</button>
                 </div>
                 <div class="mobile-actions">
                     <button class="btn-secondary mobile-login-btn" onclick="showAuthModal('login')">Accedi</button>
@@ -59,8 +59,8 @@
                         Incanta le tue clienti con tecnologia AI di precisione millimetrica.
                     </p>
                     <div class="hero-cta">
-                        <button class="btn-primary btn-large" onclick="bookDemo()">
-                            Prenota Demo Gratuita
+                        <button class="btn-primary btn-large" onclick="watchDemo()">
+                            Guarda DEMO
                             <span class="arrow">→</span>
                         </button>
                         <button class="btn-outline btn-large" onclick="scrollToSection('pricing')">
@@ -180,9 +180,9 @@
                 <div class="step">
                     <div class="step-number">1</div>
                     <div class="step-content">
-                        <h3>Inquadra la Cliente</h3>
-                        <p>Scatta una foto, carica un'immagine o usa la webcam in tempo reale.
-                            Kimerika funziona con qualsiasi sorgente video.</p>
+                        <h3>Guarda il Video</h3>
+                        <p>Scopri come Kimerika funziona in azione. Visualizza un esempio reale di analisi
+                            delle sopracciglia con tecnologia AI in tempo reale.</p>
                     </div>
                 </div>
                 <div class="step-arrow">→</div>
@@ -315,7 +315,7 @@
                     <div class="plan-commitment">
                         <span>Cancelli quando vuoi</span>
                     </div>
-                    <button class="btn-outline btn-full" onclick="bookDemo('monthly')">Prenota Demo</button>
+                    <button class="btn-outline btn-full" onclick="watchDemo('monthly')">Guarda DEMO</button>
                 </div>
 
                 <div class="pricing-card featured">
@@ -347,7 +347,7 @@
                     <div class="plan-commitment featured">
                         <span>Impegno 12 mesi (miglior valore)</span>
                     </div>
-                    <button class="btn-primary btn-full" onclick="bookDemo('annual')">Prenota Demo</button>
+                    <button class="btn-primary btn-full" onclick="watchDemo('annual')">Guarda DEMO</button>
                 </div>
             </div>
 
@@ -393,7 +393,7 @@
         <div class="container">
             <div class="section-header">
                 <h2 class="section-title">Il Tuo Percorso con Kimerika</h2>
-                <p class="section-description">Cosa succede dopo l'acquisto</p>
+                <p class="section-description">Cosa succede dopo aver guardato la demo</p>
             </div>
             <div class="journey-timeline">
                 <div class="journey-step">
@@ -401,9 +401,9 @@
                         <span class="journey-day">OGGI</span>
                     </div>
                     <div class="journey-content">
-                        <h4>Prenoti Demo (15 minuti)</h4>
-                        <p>Parliamo via Zoom/Google Meet. Ti mostro Kimerika in azione. Rispondi alle tue domande. Zero
-                            pressione.</p>
+                        <h4>Guarda la DEMO (15 minuti)</h4>
+                        <p>Vedi Kimerika in azione attraverso il nostro video dimostrativo. Scopri tutte le funzionalità
+                            e come può trasformare il tuo lavoro.</p>
                     </div>
                 </div>
                 <div class="journey-step">
@@ -455,9 +455,10 @@
             </div>
             <div class="faq-grid">
                 <div class="faq-item">
-                    <h4>"Posso provare gratis prima di pagare?"</h4>
-                    <p>No. Kimerika richiede formazione per essere usato correttamente. Offriamo demo gratuita (15 min)
-                        per vedere come funziona, poi decidi se procedere.</p>
+                    <h4>"Posso vedere la demo prima di acquistare?"</h4>
+                    <p>Assolutamente sì! Abbiamo preparato un video dimostrativo completo che mostra tutte le
+                        funzionalità
+                        di Kimerika in azione. Guarda il video per capire se fa per te.</p>
                 </div>
                 <div class="faq-item">
                     <h4>"Posso cancellare quando voglio?"</h4>
@@ -560,8 +561,8 @@
                         <h3>Mensile</h3>
                         <div class="cta-price">€69<span>/mese</span></div>
                         <p>Massima flessibilità</p>
-                        <button class="btn-outline btn-cta-white" onclick="bookDemo('monthly')">
-                            Prenota Demo
+                        <button class="btn-outline btn-cta-white" onclick="watchDemo('monthly')">
+                            Guarda DEMO
                             <span class="arrow">→</span>
                         </button>
                     </div>
@@ -570,8 +571,8 @@
                         <h3>Annuale</h3>
                         <div class="cta-price">€49<span>/mese</span></div>
                         <p>Risparmi €240/anno</p>
-                        <button class="btn-primary btn-cta" onclick="bookDemo('annual')">
-                            Prenota Demo
+                        <button class="btn-primary btn-cta" onclick="watchDemo('annual')">
+                            Guarda DEMO
                             <span class="arrow">→</span>
                         </button>
                     </div>
@@ -579,8 +580,8 @@
 
                 <div class="cta-unsure">
                     <p>Non sei ancora sicuro?</p>
-                    <button class="btn-outline btn-cta-white" onclick="bookDemo()">
-                        Prenota Demo Gratuita - 15 minuti, zero impegno
+                    <button class="btn-outline btn-cta-white" onclick="watchDemo()">
+                        Guarda la DEMO Completa - Scopri tutte le funzionalità
                     </button>
                 </div>
 
@@ -629,17 +630,13 @@
                     <ul>
                         <li><a href="#features">Funzionalità</a></li>
                         <li><a href="#pricing">Prezzi</a></li>
-                        <li><a href="#demo">Demo</a></li>
-                        <li><a href="#api">API</a></li>
+                        <li><a href="javascript:watchDemo()">Guarda DEMO</a></li>
                     </ul>
                 </div>
                 <div class="footer-section">
                     <h4>Supporto</h4>
                     <ul>
-                        <li><a href="#docs">Documentazione</a></li>
-                        <li><a href="#help">Centro Assistenza</a></li>
                         <li><a href="contatti.html">Contatti</a></li>
-                        <li><a href="#status">Stato Servizio</a></li>
                     </ul>
                 </div>
                 <div class="footer-section">

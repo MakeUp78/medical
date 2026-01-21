@@ -515,26 +515,30 @@ window.addEventListener('DOMContentLoaded', () => {
 // BOOK DEMO
 // ===================================
 
-function bookDemo(plan = null) {
-    // Store selected plan
+function watchDemo(plan = null) {
+    // Store selected plan for later
     if (plan) {
         state.selectedPlan = plan;
         localStorage.setItem('selected_plan', plan);
     }
 
-    // Usa WhatsApp per prenotare demo
-    const message = plan
-        ? `Ciao, vorrei prenotare una demo per il piano ${plan}`
-        : 'Ciao, vorrei prenotare una demo di Kimerika Evolution';
+    // PLACEHOLDER: Sostituisci questo URL con il tuo video Vimeo
+    // Esempio: https://vimeo.com/123456789
+    const vimeoUrl = 'https://vimeo.com/YOUR_VIDEO_ID_HERE';
 
-    const whatsappUrl = `https://wa.me/393711441066?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank');
+    // Apri il video in una nuova scheda
+    window.open(vimeoUrl, '_blank');
 
     // Track event
-    trackWhatsAppClick('demo-booking');
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'demo_video_click', {
+            'event_category': 'Video',
+            'event_label': plan || 'general'
+        });
+    }
 
     // Mostra notifica
-    showNotification('Ti stiamo reindirizzando a WhatsApp...', 'info');
+    showNotification('Apertura video DEMO...', 'info');
 }
 
 // Track WhatsApp clicks

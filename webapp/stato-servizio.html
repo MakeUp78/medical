@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stato Servizio - Kimerika Evolution</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="stylesheet" href="static/css/landing.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <style>
+        .status-page {
+            min-height: 100vh;
+            background: var(--bg-primary);
+            padding-top: 100px;
+            padding-bottom: 60px;
+        }
+
+        .status-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .status-header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .status-header h1 {
+            font-size: 42px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 15px;
+        }
+
+        .status-header p {
+            font-size: 18px;
+            color: var(--text-secondary);
+        }
+
+        .overall-status {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: var(--shadow);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .overall-status.operational {
+            border-left: 5px solid #10B981;
+        }
+
+        .overall-status.degraded {
+            border-left: 5px solid #F59E0B;
+        }
+
+        .overall-status.down {
+            border-left: 5px solid #EF4444;
+        }
+
+        .status-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .status-text {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .status-description {
+            font-size: 16px;
+            color: var(--text-secondary);
+        }
+
+        .services-list {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .service-item {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.3s ease;
+        }
+
+        .service-item:hover {
+            box-shadow: var(--shadow);
+            transform: translateY(-2px);
+        }
+
+        .service-info {
+            flex: 1;
+        }
+
+        .service-name {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 5px;
+        }
+
+        .service-description {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .service-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .service-status.operational {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+
+        .service-status.checking {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+
+        .service-status.down {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-indicator.operational {
+            background: #10B981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+        }
+
+        .status-indicator.checking {
+            background: #F59E0B;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.down {
+            background: #EF4444;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .refresh-button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 30px auto 0;
+            transition: all 0.3s ease;
+        }
+
+        .refresh-button:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+        }
+
+        .refresh-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .last-check {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .report-issue {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: var(--shadow-sm);
+            margin-top: 30px;
+            text-align: center;
+        }
+
+        .report-issue h3 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--text-primary);
+        }
+
+        .report-issue p {
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+        }
+
+        .report-button {
+            background: #EF4444;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .report-button:hover {
+            background: #DC2626;
+            transform: translateY(-2px);
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+        }
+
+        .back-link:hover {
+            gap: 12px;
+        }
+
+        @media (max-width: 768px) {
+            .status-header h1 {
+                font-size: 32px;
+            }
+
+            .service-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+
+            .service-status {
+                align-self: flex-start;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="status-page">
+        <div class="status-container">
+            <a href="profile.html" class="back-link">
+                <span>←</span> Torna al Profilo
+            </a>
+
+            <div class="status-header">
+                <h1>Stato dei Servizi Kimerika</h1>
+                <p>Monitoraggio in tempo reale dei nostri sistemi</p>
+            </div>
+
+            <!-- Overall Status -->
+            <div id="overall-status" class="overall-status checking">
+                <div class="status-icon">🔄</div>
+                <div class="status-text">Verifica in corso...</div>
+                <div class="status-description">Controllo lo stato di tutti i servizi</div>
+            </div>
+
+            <!-- Services List -->
+            <div class="services-list">
+                <div class="service-item">
+                    <div class="service-info">
+                        <div class="service-name">API Server</div>
+                        <div class="service-description">Backend API per l'analisi facciale</div>
+                    </div>
+                    <div class="service-status checking">
+                        <span class="status-indicator checking"></span>
+                        Verifica...
+                    </div>
+                </div>
+
+                <div class="service-item">
+                    <div class="service-info">
+                        <div class="service-name">Web Application</div>
+                        <div class="service-description">Interfaccia web principale dell'applicazione</div>
+                    </div>
+                    <div class="service-status checking">
+                        <span class="status-indicator checking"></span>
+                        Verifica...
+                    </div>
+                </div>
+
+                <div class="service-item">
+                    <div class="service-info">
+                        <div class="service-name">WebSocket Server</div>
+                        <div class="service-description">Comunicazione in tempo reale per l'analisi video</div>
+                    </div>
+                    <div class="service-status checking">
+                        <span class="status-indicator checking"></span>
+                        Verifica...
+                    </div>
+                </div>
+
+                <div class="service-item">
+                    <div class="service-info">
+                        <div class="service-name">Nginx Web Server</div>
+                        <div class="service-description">Server web e reverse proxy</div>
+                    </div>
+                    <div class="service-status checking">
+                        <span class="status-indicator checking"></span>
+                        Verifica...
+                    </div>
+                </div>
+            </div>
+
+            <button id="refresh-btn" class="refresh-button" onclick="checkServiceStatus()">
+                <span id="refresh-icon">🔄</span>
+                Aggiorna Stato
+            </button>
+
+            <div class="last-check" id="last-check">
+                Ultimo controllo: mai
+            </div>
+
+            <!-- Report Issue Section -->
+            <div class="report-issue" id="report-section" style="display: none;">
+                <h3>Hai riscontrato un problema?</h3>
+                <p>Alcuni servizi non sono operativi. Clicca per segnalare il malfunzionamento alla direzione.</p>
+                <button class="report-button" onclick="reportIssue()">
+                    📧 Segnala Problema
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isChecking = false;
+        let currentUser = null;
+
+        // Controlla autenticazione all'avvio
+        window.addEventListener('DOMContentLoaded', () => {
+            checkAuthentication();
+        });
+
+        async function checkAuthentication() {
+            const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+
+            if (!token) {
+                // Utente non loggato - reindirizza alla landing
+                alert('Accesso negato. Devi effettuare il login per visualizzare lo stato dei servizi.');
+                window.location.href = 'landing.html';
+                return false;
+            }
+
+            // Verifica il token chiamando l'API
+            try {
+                const response = await fetch('/api/user/profile', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Token non valido');
+                }
+
+                const data = await response.json();
+                currentUser = data.user;
+
+                // Utente autenticato, procedi con il check dei servizi
+                checkServiceStatus();
+                return true;
+
+            } catch (error) {
+                console.error('Errore autenticazione:', error);
+                alert('Sessione scaduta. Effettua nuovamente il login.');
+                localStorage.removeItem('auth_token');
+                sessionStorage.removeItem('auth_token');
+                window.location.href = 'landing.html';
+                return false;
+            }
+        }
+
+        async function checkServiceStatus() {
+            if (isChecking) return;
+
+            isChecking = true;
+            const refreshBtn = document.getElementById('refresh-btn');
+            const refreshIcon = document.getElementById('refresh-icon');
+
+            refreshBtn.disabled = true;
+            refreshIcon.innerHTML = '<span class="spinner"></span>';
+
+            try {
+                const response = await fetch('/api/health-check');
+                const data = await response.json();
+
+                updateServicesStatus(data);
+                updateOverallStatus(data);
+                updateLastCheck();
+
+            } catch (error) {
+                console.error('Errore nel controllo dello stato:', error);
+                showErrorState();
+            } finally {
+                isChecking = false;
+                refreshBtn.disabled = false;
+                refreshIcon.innerHTML = '🔄';
+            }
+        }
+
+        function updateServicesStatus(data) {
+            const services = document.querySelectorAll('.service-item');
+
+            services.forEach((service, index) => {
+                const statusElement = service.querySelector('.service-status');
+                const indicator = service.querySelector('.status-indicator');
+
+                let serviceName, isOperational;
+
+                switch (index) {
+                    case 0: // API Server
+                        serviceName = 'api_server';
+                        isOperational = data.services?.api_server?.status === 'operational';
+                        break;
+                    case 1: // Web Application
+                        serviceName = 'webapp';
+                        isOperational = data.services?.webapp?.status === 'operational';
+                        break;
+                    case 2: // WebSocket
+                        serviceName = 'websocket';
+                        isOperational = data.services?.websocket?.status === 'operational';
+                        break;
+                    case 3: // Nginx
+                        serviceName = 'nginx';
+                        isOperational = data.services?.nginx?.status === 'operational';
+                        break;
+                }
+
+                if (isOperational) {
+                    statusElement.className = 'service-status operational';
+                    statusElement.innerHTML = '<span class="status-indicator operational"></span> Operativo';
+                } else {
+                    statusElement.className = 'service-status down';
+                    statusElement.innerHTML = '<span class="status-indicator down"></span> Non disponibile';
+                }
+            });
+        }
+
+        function updateOverallStatus(data) {
+            const overallStatus = document.getElementById('overall-status');
+            const reportSection = document.getElementById('report-section');
+            const allOperational = data.overall_status === 'operational';
+            const someDown = data.overall_status === 'degraded' || data.overall_status === 'down';
+
+            if (allOperational) {
+                overallStatus.className = 'overall-status operational';
+                overallStatus.innerHTML = `
+                    <div class="status-icon">✅</div>
+                    <div class="status-text">Tutti i Sistemi Operativi</div>
+                    <div class="status-description">Tutti i servizi funzionano correttamente</div>
+                `;
+                // Nascondi pulsante segnalazione se tutto ok
+                reportSection.style.display = 'none';
+            } else if (someDown) {
+                overallStatus.className = 'overall-status down';
+                overallStatus.innerHTML = `
+                    <div class="status-icon">⚠️</div>
+                    <div class="status-text">Problemi Rilevati</div>
+                    <div class="status-description">Alcuni servizi non sono disponibili</div>
+                `;
+                // Mostra pulsante segnalazione se ci sono problemi
+                reportSection.style.display = 'block';
+            } else {
+                overallStatus.className = 'overall-status degraded';
+                overallStatus.innerHTML = `
+                    <div class="status-icon">⚠️</div>
+                    <div class="status-text">Prestazioni Degradate</div>
+                    <div class="status-description">Alcuni servizi potrebbero essere lenti</div>
+                `;
+                // Mostra pulsante anche per prestazioni degradate
+                reportSection.style.display = 'block';
+            }
+        }
+
+        function showErrorState() {
+            const services = document.querySelectorAll('.service-item .service-status');
+            services.forEach(statusElement => {
+                statusElement.className = 'service-status down';
+                statusElement.innerHTML = '<span class="status-indicator down"></span> Errore verifica';
+            });
+
+            const overallStatus = document.getElementById('overall-status');
+            overallStatus.className = 'overall-status down';
+            overallStatus.innerHTML = `
+                <div class="status-icon">❌</div>
+                <div class="status-text">Errore di Verifica</div>
+                <div class="status-description">Impossibile verificare lo stato dei servizi</div>
+            `;
+        }
+
+        function updateLastCheck() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('it-IT');
+            document.getElementById('last-check').textContent = `Ultimo controllo: ${timeString}`;
+        }
+
+        function reportIssue() {
+            // Verifica che ci siano effettivamente problemi
+            const services = document.querySelectorAll('.service-item');
+            const hasProblems = Array.from(services).some(service => {
+                const statusEl = service.querySelector('.service-status');
+                return statusEl.classList.contains('down');
+            });
+
+            if (!hasProblems) {
+                alert('Tutti i servizi sono operativi. Non è necessario inviare una segnalazione.');
+                return;
+            }
+
+            // Raccogli informazioni sull'utente loggato
+            if (!currentUser) {
+                alert('Errore: dati utente non disponibili. Ricarica la pagina.');
+                return;
+            }
+
+            const userName = `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim() || 'Nome non disponibile';
+            const userEmail = currentUser.email || 'Email non disponibile';
+            const userId = currentUser.id || 'N/A';
+
+            // Raccogli stato dei servizi
+            let servicesStatus = [];
+
+            services.forEach(service => {
+                const name = service.querySelector('.service-name').textContent;
+                const statusEl = service.querySelector('.service-status');
+                const status = statusEl.classList.contains('operational') ? '✅ Operativo' :
+                    statusEl.classList.contains('down') ? '❌ NON DISPONIBILE' :
+                        '⚠️ In verifica';
+                servicesStatus.push(`  - ${name}: ${status}`);
+            });
+
+            const now = new Date();
+            const dateTime = now.toLocaleString('it-IT', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+
+            const fullMessage = `SEGNALAZIONE AUTOMATICA MALFUNZIONAMENTO PIATTAFORMA KIMERIKA
+
+═══════════════════════════════════════
+INFORMAZIONI SEGNALAZIONE
+═══════════════════════════════════════
+
+Data e ora: ${dateTime}
+Utente loggato: ${userName}
+Email utente: ${userEmail}
+ID utente: ${userId}
+
+═══════════════════════════════════════
+STATO SERVIZI AL MOMENTO DELLA SEGNALAZIONE
+═══════════════════════════════════════
+
+${servicesStatus.join('\n')}
+
+═══════════════════════════════════════
+INFORMAZIONI TECNICHE
+═══════════════════════════════════════
+
+Browser: ${navigator.userAgent}
+Risoluzione schermo: ${window.screen.width}x${window.screen.height}
+URL pagina: ${window.location.href}
+Lingua browser: ${navigator.language}
+
+═══════════════════════════════════════
+NOTE
+═══════════════════════════════════════
+
+Questa è una segnalazione automatica generata dalla pagina Stato Servizi.
+L'utente ha rilevato malfunzionamenti sulla piattaforma.
+Si prega di intervenire tempestivamente.
+
+═══════════════════════════════════════
+
+Il team di Kimerika Evolution`;
+
+            // Invia email tramite API invece di aprire client locale
+            sendReportEmail(userName, userEmail, fullMessage);
+        }
+
+        async function sendReportEmail(userName, userEmail, message) {
+            try {
+                const formData = {
+                    firstname: userName.split(' ')[0] || userName,
+                    lastname: userName.split(' ').slice(1).join(' ') || '',
+                    email: userEmail,
+                    phone: '',
+                    subject: '🚨 SEGNALAZIONE MALFUNZIONAMENTO - Kimerika Evolution',
+                    message: message,
+                    newsletter: false,
+                    timestamp: new Date().toISOString()
+                };
+
+                const response = await fetch('/api/contact', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    alert('✅ Segnalazione inviata con successo! Verrai contattato al più presto.');
+                } else {
+                    throw new Error(result.message || 'Errore nell\'invio della segnalazione');
+                }
+
+            } catch (error) {
+                console.error('Errore invio segnalazione:', error);
+                alert('❌ Errore nell\'invio della segnalazione. Riprova o contattaci a info@ennioorsini.com');
+            }
+        }
+
+    </script>
+</body>
+
+</html>

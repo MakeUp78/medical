@@ -64,6 +64,10 @@
                             <i class="fas fa-history"></i>
                             Log Attivita
                         </button>
+                        <button class="nav-item" data-section="system">
+                            <i class="fas fa-cog"></i>
+                            Sistema
+                        </button>
                     </nav>
                 </aside>
 
@@ -319,6 +323,68 @@
                         </div>
 
                         <div class="pagination" id="audit-pagination"></div>
+                    </section>
+
+                    <!-- System Section -->
+                    <section id="system-section" class="content-section">
+                        <h1>
+                            <i class="fas fa-cog"></i>
+                            Impostazioni Sistema
+                        </h1>
+
+                        <!-- System Status Card -->
+                        <div class="form-card">
+                            <h3>
+                                <i class="fas fa-server"></i>
+                                Monitoraggio Servizi
+                            </h3>
+                            <div
+                                style="display: flex; align-items: center; justify-content: space-between; padding: 20px; background: #F9FAFB; border-radius: 8px; margin-top: 15px;">
+                                <div>
+                                    <strong style="display: block; margin-bottom: 8px; font-size: 16px;">Stato dei
+                                        Servizi</strong>
+                                    <p style="margin: 0; color: #6B7280; font-size: 14px; line-height: 1.5;">
+                                        Verifica in tempo reale lo stato di tutti i servizi della piattaforma.<br>
+                                        Controlla API, WebSocket, WebApp e Nginx.
+                                    </p>
+                                </div>
+                                <a href="stato-servizio.html" class="btn btn-primary" style="white-space: nowrap;">
+                                    <i class="fas fa-chart-line"></i>
+                                    Controlla Stato
+                                </a>
+                            </div>
+                        </div>
+
+                        <!-- System Info Card -->
+                        <div class="form-card" style="margin-top: 20px;">
+                            <h3>
+                                <i class="fas fa-info-circle"></i>
+                                Informazioni Sistema
+                            </h3>
+                            <div class="stats-grid" style="margin-top: 15px;">
+                                <div class="stat-card">
+                                    <div class="stat-icon"><i class="fas fa-code-branch"></i></div>
+                                    <div class="stat-info">
+                                        <h3>v1.0.0</h3>
+                                        <p>Versione Piattaforma</p>
+                                    </div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-icon"><i class="fas fa-clock"></i></div>
+                                    <div class="stat-info">
+                                        <h3 id="system-uptime">-</h3>
+                                        <p>Uptime Sistema</p>
+                                    </div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-icon"><i class="fas fa-database"></i></div>
+                                    <div class="stat-info">
+                                        <h3>PostgreSQL</h3>
+                                        <p>Database</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </section>
                 </div>
             </div>
