@@ -839,42 +839,48 @@
             lastTouchEnd = now;
         }, false);
 
-                closeAllMobilePanels();
+        // ========================================
+        // GESTIONE PANNELLI MOBILE
+        // ========================================
+        window.openMobilePanel = function(side) {
+            if (!isMobile()) return;
 
-                const panel = document.getElementById(`${side}-sidebar`);
-                const overlay = document.getElementById('mobile-overlay');
+            closeAllMobilePanels();
 
-                if (panel) {
-                    panel.classList.add('mobile-panel-open');
-                    overlay.classList.add('active');
-                    currentOpenPanel = side;
+            const panel = document.getElementById(`${side}-sidebar`);
+            const overlay = document.getElementById('mobile-overlay');
 
-                    // Aggiorna stato nav
-                    updateNavState(side);
+            if (panel) {
+                panel.classList.add('mobile-panel-open');
+                overlay.classList.add('active');
+                currentOpenPanel = side;
 
-                    // Previeni scroll del body
-                    document.body.style.overflow = 'hidden';
-                }
-            };
+                // Aggiorna stato nav
+                updateNavState(side);
 
-            window.closeMobilePanel = function (side) {
-                const panel = document.getElementById(`${side}-sidebar`);
-                const overlay = document.getElementById('mobile-overlay');
+                // Previeni scroll del body
+                document.body.style.overflow = 'hidden';
+            }
+        };
 
-                if (panel) {
-                    panel.classList.remove('mobile-panel-open');
-                }
+        window.closeMobilePanel = function (side) {
+            const panel = document.getElementById(`${side}-sidebar`);
+            const overlay = document.getElementById('mobile-overlay');
 
-                if (overlay && !currentOpenQuickPanel) {
-                    overlay.classList.remove('active');
-                }
+            if (panel) {
+                panel.classList.remove('mobile-panel-open');
+            }
 
-                currentOpenPanel = null;
-                updateNavState('canvas');
-                document.body.style.overflow = '';
-            };
+            if (overlay && !currentOpenQuickPanel) {
+                overlay.classList.remove('active');
+            }
 
-            window.closeAllMobilePanels = function () {
+            currentOpenPanel = null;
+            updateNavState('canvas');
+            document.body.style.overflow = '';
+        };
+
+        window.closeAllMobilePanels = function () {
                 const leftSidebar = document.getElementById('left-sidebar');
                 const rightSidebar = document.getElementById('right-sidebar');
                 const overlay = document.getElementById('mobile-overlay');
