@@ -1810,14 +1810,19 @@ function initializeCanvas() {
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
 
-  // Event listeners per interazioni
+  // Event listeners per interazioni desktop
   canvas.addEventListener('mousedown', onCanvasMouseDown);
   canvas.addEventListener('mousemove', onCanvasMouseMove);
   canvas.addEventListener('mouseup', onCanvasMouseUp);
   canvas.addEventListener('wheel', onCanvasWheel);
   canvas.addEventListener('contextmenu', onCanvasRightClick);
 
-  console.log('🎨 Canvas inizializzato');
+  // Event listeners per touch mobile
+  canvas.addEventListener('touchstart', onCanvasTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', onCanvasTouchMove, { passive: false });
+  canvas.addEventListener('touchend', onCanvasTouchEnd, { passive: false });
+
+  console.log('🎨 Canvas inizializzato (desktop + mobile)');
 }
 
 function resizeCanvas() {
@@ -3442,6 +3447,115 @@ function finalizeDrawing(startX, startY, endX, endY) {
 function zoomCanvas(factor, centerX, centerY) {
   // TODO: Implementare zoom
   console.log(`Zoom: ${factor} al punto (${centerX}, ${centerY})`);
+}
+
+// === GESTIONE EVENTI TOUCH PER MOBILE ===
+let lastTouchDistance = 0;
+let touchStartTime = 0;
+
+function onCanvasTouchStart(e) {
+  e.preventDefault();
+  
+  // Non attivare il disegno se siamo in modalità misurazione o selezione landmarks
+  if (window.measurementMode || window.landmarkSelectionMode) {
+    return;
+  }
+
+  touchStartTime = Date.now();
+  
+  // Pinch to zoom con 2 dita
+  if (e.touches.length === 2) {
+    const touch1 = e.touches[0];
+    const touch2 = e.touches[1];
+    lastTouchDistance = Math.hypot(
+      touch2.clientX - touch1.clientX,
+      touch2.clientY - touch1.clientY
+    );
+    return;
+  }
+
+  // Pan/draw con 1 dito
+  if (e.touches.length === 1) {
+    isDrawing = true;
+    const touch = e.touches[0];
+    const rect = e.target.getBoundingClientRect();
+    startX = touch.clientX - rect.left;
+    startY = touch.clientY - rect.top;
+    console.log(`Touch start: (${startX}, ${startY})`);
+  }
+}
+
+function onCanvasTouchMove(e) {
+  e.preventDefault();
+  
+  // Pinch to zoom con 2 dita
+  if (e.touches.length === 2) {
+    const touch1 = e.touches[0];
+    const touch2 = e.touches[1];
+    const currentDistance = Math.hypot(
+      touch2.clientX - touch1.clientX,
+      touch2.clientY - touch1.clientY
+    );
+    
+    if (lastTouchDistance > 0) {
+      const zoomFactor = currentDistance / lastTouchDistance;
+      const centerX = (touch1.clientX + touch2.clientX) / 2;
+      const centerY = (touch1.clientY + touch2.clientY) / 2;
+      const rect = e.target.getBoundingClientRect();
+      zoomCanvas(zoomFactor, centerX - rect.left, centerY - rect.top);
+    }
+    
+    lastTouchDistance = currentDistance;
+    return;
+  }
+
+  // Pan/draw con 1 dito
+  if (e.touches.length === 1 && isDrawing) {
+    const touch = e.touches[0];
+    const rect = e.target.getBoundingClientRect();
+    const x = Math.round(touch.clientX - rect.left);
+    const y = Math.round(touch.clientY - rect.top);
+    
+    updateCursorInfo(x, y);
+    
+    if (!window.measurementMode && !window.landmarkSelectionMode) {
+      drawWithCurrentTool(startX, startY, x, y);
+    }
+  }
+}
+
+function onCanvasTouchEnd(e) {
+  e.preventDefault();
+  
+  // Reset pinch zoom
+  if (e.touches.length < 2) {
+    lastTouchDistance = 0;
+  }
+  
+  // Non finalizzare se siamo in modalità misurazione
+  if (window.measurementMode || window.landmarkSelectionMode) {
+    isDrawing = false;
+    return;
+  }
+
+  // Finalizza disegno con 1 dito
+  if (e.changedTouches.length === 1 && isDrawing) {
+    const touch = e.changedTouches[0];
+    const rect = e.target.getBoundingClientRect();
+    const endX = touch.clientX - rect.left;
+    const endY = touch.clientY - rect.top;
+    
+    // Tap rapido = click
+    const touchDuration = Date.now() - touchStartTime;
+    if (touchDuration < 200 && Math.abs(endX - startX) < 10 && Math.abs(endY - startY) < 10) {
+      console.log(`Touch tap: (${endX}, ${endY})`);
+    } else {
+      console.log(`Touch end: (${endX}, ${endY})`);
+      finalizeDrawing(startX, startY, endX, endY);
+    }
+  }
+  
+  isDrawing = false;
 }
 
 // === GESTIONE RILEVAMENTI ===

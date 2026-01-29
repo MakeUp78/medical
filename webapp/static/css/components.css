@@ -142,20 +142,20 @@
   margin-bottom: 8px;
 }
 
-/* Responsive per schermi piccoli */
+/* Responsive per schermi piccoli - Mobile Only */
 @media (max-width: 768px) {
   .stats-grid {
-    grid-template-columns: 1fr;
-    gap: 4px;
+    grid-template-columns: 1fr !important;
+    gap: 4px !important;
   }
 
   .eyebrow-buttons {
-    gap: 6px;
+    gap: 6px !important;
   }
 
   .btn-eyebrow {
-    font-size: 12px;
-    padding: 6px 10px;
+    font-size: 12px !important;
+    padding: 6px 10px !important;
   }
 }
 

@@ -6,13 +6,14 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>🏥 Facial Analysis Application v2.0 - Web Edition</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <link rel="stylesheet" href="static/css/main.css?v=20260129">
-    <link rel="stylesheet" href="static/css/components.css?v=20260129">
-    <link rel="stylesheet" href="static/css/tables.css?v=20260129">
-    <link rel="stylesheet" href="static/css/mobile-responsive.css?v=20260129">
+    <link rel="stylesheet" href="static/css/main.css?v=20260129b">
+    <link rel="stylesheet" href="static/css/components.css?v=20260129b">
+    <link rel="stylesheet" href="static/css/tables.css?v=20260129b">
+    <link rel="stylesheet" href="static/css/mobile-responsive.css?v=20260129b">
 </head>
 
 <body>
@@ -414,7 +415,8 @@
                     title="Ruota immagine 1° in senso antiorario">↺ Ruota ⟳</button>
                 <button class="tool-btn" data-tool="line" onclick="setTool('line')" title="Disegna linea">📏
                     Linea</button>
-                <button class="tool-btn" data-tool="couple" onclick="setTool('couple')" title="Disegna coppia di linee verticali speculari">⚖️
+                <button class="tool-btn" data-tool="couple" onclick="setTool('couple')"
+                    title="Disegna coppia di linee verticali speculari">⚖️
                     Coppia</button>
                 <button class="tool-btn" onclick="clearAllMeasurementOverlays()" title="Pulisci tutte le misurazioni">📐
                     Pulisci Mis.</button>
@@ -744,16 +746,19 @@
                 <button class="mobile-panel-close" onclick="closeMobileQuickPanel('camera')">&times;</button>
             </div>
             <div class="mobile-quick-panel-buttons">
-                <button class="btn btn-primary btn-mobile-action" onclick="loadImage(); closeMobileQuickPanel('camera');">
+                <button class="btn btn-primary btn-mobile-action"
+                    onclick="loadImage(); closeMobileQuickPanel('camera');">
                     📁 Carica Immagine
                 </button>
                 <button class="btn btn-info btn-mobile-action" onclick="loadVideo(); closeMobileQuickPanel('camera');">
                     🎥 Carica Video
                 </button>
-                <button class="btn btn-success btn-mobile-action" onclick="startWebcam(); closeMobileQuickPanel('camera');">
+                <button class="btn btn-success btn-mobile-action"
+                    onclick="startWebcam(); closeMobileQuickPanel('camera');">
                     📹 Avvia Webcam
                 </button>
-                <button class="btn btn-warning btn-mobile-action" onclick="stopWebcam(); closeMobileQuickPanel('camera');">
+                <button class="btn btn-warning btn-mobile-action"
+                    onclick="stopWebcam(); closeMobileQuickPanel('camera');">
                     ⏹️ Stop Webcam
                 </button>
             </div>
@@ -768,16 +773,20 @@
                 <button class="mobile-panel-close" onclick="closeMobileQuickPanel('tools')">&times;</button>
             </div>
             <div class="mobile-quick-panel-buttons">
-                <button class="btn btn-analysis btn-mobile-action" id="mobile-axis-btn" onclick="toggleAxis(); updateMobileToolsState();">
+                <button class="btn btn-analysis btn-mobile-action" id="mobile-axis-btn"
+                    onclick="toggleAxis(); updateMobileToolsState();">
                     📏 Asse Simmetria
                 </button>
-                <button class="btn btn-analysis btn-mobile-action" id="mobile-landmarks-btn" onclick="toggleLandmarks(); updateMobileToolsState();">
+                <button class="btn btn-analysis btn-mobile-action" id="mobile-landmarks-btn"
+                    onclick="toggleLandmarks(); updateMobileToolsState();">
                     🎯 Landmarks
                 </button>
-                <button class="btn btn-analysis btn-mobile-action" id="mobile-measure-btn" onclick="toggleMeasureMode(); updateMobileToolsState();">
+                <button class="btn btn-analysis btn-mobile-action" id="mobile-measure-btn"
+                    onclick="toggleMeasureMode(); updateMobileToolsState();">
                     📐 Misura Manuale
                 </button>
-                <button class="btn btn-analysis btn-mobile-action btn-analysis-complete" onclick="performCompleteAnalysis(event); closeMobileQuickPanel('tools');">
+                <button class="btn btn-analysis btn-mobile-action btn-analysis-complete"
+                    onclick="performCompleteAnalysis(event); closeMobileQuickPanel('tools');">
                     🧬 Analisi Completa
                 </button>
             </div>
@@ -790,22 +799,23 @@
          MOBILE UI JAVASCRIPT
          ======================================== -->
     <script>
-    (function() {
-        'use strict';
+        (function () {
+            'use strict';
 
-        // ========================================
-        // VARIABILI E STATO MOBILE
-        // ========================================
-        let currentOpenPanel = null;
-        let currentOpenQuickPanel = null;
-        const isMobile = () => window.innerWidth <= 768;
+            // ========================================
+            // VARIABILI E STATO MOBILE
+            // ========================================
+            let currentOpenPanel = null;
+            let currentOpenQuickPanel = null;
+            const isMobile = () => window.innerWidth <= 768;
 
-        // ========================================
-        // FIX ALTEZZA VIEWPORT MOBILE (100vh bug)
-        // ========================================
-        function setVH() {
-            const vh = window.innerHeight * 0.01;
-            document.documentElement.style.setProperty('--vh', `${vh}px`);
+            // ========================================
+            // FIX ALTEZZA VIEWPORT MOBILE (100vh bug)
+            // ========================================
+            function setVH() {
+                const vh = window.innerHeight * 0.01;
+                document.documentElement.style.setProperty('--vh', `${vh}px`);
+            console.log(`📐 Viewport height aggiornato: ${window.innerHeight}px`);
         }
 
         setVH();
@@ -813,216 +823,225 @@
         window.addEventListener('orientationchange', () => {
             setTimeout(setVH, 100);
         });
-
-        // ========================================
-        // GESTIONE PANNELLI MOBILE
-        // ========================================
-        window.openMobilePanel = function(side) {
-            if (!isMobile()) return;
-
-            closeAllMobilePanels();
-
-            const panel = document.getElementById(`${side}-sidebar`);
-            const overlay = document.getElementById('mobile-overlay');
-
-            if (panel) {
-                panel.classList.add('mobile-panel-open');
-                overlay.classList.add('active');
-                currentOpenPanel = side;
-
-                // Aggiorna stato nav
-                updateNavState(side);
-
-                // Previeni scroll del body
-                document.body.style.overflow = 'hidden';
-            }
-        };
-
-        window.closeMobilePanel = function(side) {
-            const panel = document.getElementById(`${side}-sidebar`);
-            const overlay = document.getElementById('mobile-overlay');
-
-            if (panel) {
-                panel.classList.remove('mobile-panel-open');
-            }
-
-            if (overlay && !currentOpenQuickPanel) {
-                overlay.classList.remove('active');
-            }
-
-            currentOpenPanel = null;
-            updateNavState('canvas');
-            document.body.style.overflow = '';
-        };
-
-        window.closeAllMobilePanels = function() {
-            const leftSidebar = document.getElementById('left-sidebar');
-            const rightSidebar = document.getElementById('right-sidebar');
-            const overlay = document.getElementById('mobile-overlay');
-
-            if (leftSidebar) leftSidebar.classList.remove('mobile-panel-open');
-            if (rightSidebar) rightSidebar.classList.remove('mobile-panel-open');
-
-            closeMobileQuickPanel('camera');
-            closeMobileQuickPanel('tools');
-
-            if (overlay) overlay.classList.remove('active');
-
-            currentOpenPanel = null;
-            currentOpenQuickPanel = null;
-            updateNavState('canvas');
-            document.body.style.overflow = '';
-        };
-
-        // ========================================
-        // GESTIONE QUICK PANELS
-        // ========================================
-        window.openMobileCameraActions = function() {
-            if (!isMobile()) return;
-            openMobileQuickPanel('camera');
-        };
-
-        window.openMobileToolsPanel = function() {
-            if (!isMobile()) return;
-            openMobileQuickPanel('tools');
-            updateMobileToolsState();
-        };
-
-        function openMobileQuickPanel(panelId) {
-            // Chiudi eventuali pannelli aperti prima
-            if (currentOpenPanel) {
-                const sidePanel = document.getElementById(`${currentOpenPanel}-sidebar`);
-                if (sidePanel) sidePanel.classList.remove('mobile-panel-open');
-                currentOpenPanel = null;
-            }
-            if (currentOpenQuickPanel && currentOpenQuickPanel !== panelId) {
-                const oldPanel = document.getElementById(`mobile-${currentOpenQuickPanel}-panel`);
-                if (oldPanel) oldPanel.classList.remove('open');
-            }
-
-            const panel = document.getElementById(`mobile-${panelId}-panel`);
-            const overlay = document.getElementById('mobile-overlay');
-
-            if (panel) {
-                panel.classList.add('open');
-                if (overlay) overlay.classList.add('active');
-                currentOpenQuickPanel = panelId;
-                updateNavState(panelId);
-                document.body.style.overflow = 'hidden';
-            }
-        }
-
-        window.closeMobileQuickPanel = function(panelId) {
-            const panel = document.getElementById(`mobile-${panelId}-panel`);
-            const overlay = document.getElementById('mobile-overlay');
-
-            if (panel) {
-                panel.classList.remove('open');
-            }
-
-            if (overlay && !currentOpenPanel) {
-                overlay.classList.remove('active');
-            }
-
-            currentOpenQuickPanel = null;
-            updateNavState('canvas');
-            document.body.style.overflow = '';
-        };
-
-        // ========================================
-        // AGGIORNA STATO TOOLS MOBILE
-        // ========================================
-        window.updateMobileToolsState = function() {
-            const axisBtn = document.getElementById('axis-btn');
-            const landmarksBtn = document.getElementById('landmarks-btn');
-            const measureBtn = document.getElementById('measure-btn');
-
-            const mobileAxisBtn = document.getElementById('mobile-axis-btn');
-            const mobileLandmarksBtn = document.getElementById('mobile-landmarks-btn');
-            const mobileMeasureBtn = document.getElementById('mobile-measure-btn');
-
-            if (mobileAxisBtn && axisBtn) {
-                mobileAxisBtn.classList.toggle('active', axisBtn.classList.contains('active'));
-            }
-            if (mobileLandmarksBtn && landmarksBtn) {
-                mobileLandmarksBtn.classList.toggle('active', landmarksBtn.classList.contains('active'));
-            }
-            if (mobileMeasureBtn && measureBtn) {
-                mobileMeasureBtn.classList.toggle('active', measureBtn.classList.contains('active'));
-            }
-        };
-
-        // ========================================
-        // FOCUS CANVAS
-        // ========================================
-        window.focusCanvas = function() {
-            if (!isMobile()) return;
-            closeAllMobilePanels();
-            updateNavState('canvas');
-        };
-
-        // ========================================
-        // AGGIORNA STATO NAVIGAZIONE
-        // ========================================
-        function updateNavState(activePanel) {
-            const navItems = document.querySelectorAll('.mobile-nav-item');
-            navItems.forEach(item => {
-                const panel = item.dataset.panel;
-                item.classList.toggle('active', panel === activePanel);
-            });
-        }
-
-        // ========================================
-        // GESTIONE SWIPE (opzionale)
-        // ========================================
-        let touchStartY = 0;
-        let touchEndY = 0;
-
-        document.addEventListener('touchstart', function(e) {
-            touchStartY = e.changedTouches[0].screenY;
-        }, { passive: true });
-
+        
+        // Previeni zoom accidentale su iOS
+        document.addEventListener('gesturestart', function(e) {
+            e.preventDefault();
+        });
+        
+        // Previeni doppio tap zoom
+        let lastTouchEnd = 0;
         document.addEventListener('touchend', function(e) {
-            touchEndY = e.changedTouches[0].screenY;
-            handleSwipe();
-        }, { passive: true });
-
-        function handleSwipe() {
-            const swipeThreshold = 100;
-            const swipeDistance = touchStartY - touchEndY;
-
-            // Swipe down per chiudere pannelli
-            if (swipeDistance < -swipeThreshold && currentOpenPanel) {
-                closeAllMobilePanels();
+            const now = Date.now();
+            if (now - lastTouchEnd <= 300) {
+                e.preventDefault();
             }
-        }
+            lastTouchEnd = now;
+        }, false);
 
-        // ========================================
-        // GESTIONE TASTO BACK (Android)
-        // ========================================
-        window.addEventListener('popstate', function(e) {
-            if (currentOpenPanel || currentOpenQuickPanel) {
                 closeAllMobilePanels();
+
+                const panel = document.getElementById(`${side}-sidebar`);
+                const overlay = document.getElementById('mobile-overlay');
+
+                if (panel) {
+                    panel.classList.add('mobile-panel-open');
+                    overlay.classList.add('active');
+                    currentOpenPanel = side;
+
+                    // Aggiorna stato nav
+                    updateNavState(side);
+
+                    // Previeni scroll del body
+                    document.body.style.overflow = 'hidden';
+                }
+            };
+
+            window.closeMobilePanel = function (side) {
+                const panel = document.getElementById(`${side}-sidebar`);
+                const overlay = document.getElementById('mobile-overlay');
+
+                if (panel) {
+                    panel.classList.remove('mobile-panel-open');
+                }
+
+                if (overlay && !currentOpenQuickPanel) {
+                    overlay.classList.remove('active');
+                }
+
+                currentOpenPanel = null;
+                updateNavState('canvas');
+                document.body.style.overflow = '';
+            };
+
+            window.closeAllMobilePanels = function () {
+                const leftSidebar = document.getElementById('left-sidebar');
+                const rightSidebar = document.getElementById('right-sidebar');
+                const overlay = document.getElementById('mobile-overlay');
+
+                if (leftSidebar) leftSidebar.classList.remove('mobile-panel-open');
+                if (rightSidebar) rightSidebar.classList.remove('mobile-panel-open');
+
+                closeMobileQuickPanel('camera');
+                closeMobileQuickPanel('tools');
+
+                if (overlay) overlay.classList.remove('active');
+
+                currentOpenPanel = null;
+                currentOpenQuickPanel = null;
+                updateNavState('canvas');
+                document.body.style.overflow = '';
+            };
+
+            // ========================================
+            // GESTIONE QUICK PANELS
+            // ========================================
+            window.openMobileCameraActions = function () {
+                if (!isMobile()) return;
+                openMobileQuickPanel('camera');
+            };
+
+            window.openMobileToolsPanel = function () {
+                if (!isMobile()) return;
+                openMobileQuickPanel('tools');
+                updateMobileToolsState();
+            };
+
+            function openMobileQuickPanel(panelId) {
+                // Chiudi eventuali pannelli aperti prima
+                if (currentOpenPanel) {
+                    const sidePanel = document.getElementById(`${currentOpenPanel}-sidebar`);
+                    if (sidePanel) sidePanel.classList.remove('mobile-panel-open');
+                    currentOpenPanel = null;
+                }
+                if (currentOpenQuickPanel && currentOpenQuickPanel !== panelId) {
+                    const oldPanel = document.getElementById(`mobile-${currentOpenQuickPanel}-panel`);
+                    if (oldPanel) oldPanel.classList.remove('open');
+                }
+
+                const panel = document.getElementById(`mobile-${panelId}-panel`);
+                const overlay = document.getElementById('mobile-overlay');
+
+                if (panel) {
+                    panel.classList.add('open');
+                    if (overlay) overlay.classList.add('active');
+                    currentOpenQuickPanel = panelId;
+                    updateNavState(panelId);
+                    document.body.style.overflow = 'hidden';
+                }
+            }
+
+            window.closeMobileQuickPanel = function (panelId) {
+                const panel = document.getElementById(`mobile-${panelId}-panel`);
+                const overlay = document.getElementById('mobile-overlay');
+
+                if (panel) {
+                    panel.classList.remove('open');
+                }
+
+                if (overlay && !currentOpenPanel) {
+                    overlay.classList.remove('active');
+                }
+
+                currentOpenQuickPanel = null;
+                updateNavState('canvas');
+                document.body.style.overflow = '';
+            };
+
+            // ========================================
+            // AGGIORNA STATO TOOLS MOBILE
+            // ========================================
+            window.updateMobileToolsState = function () {
+                const axisBtn = document.getElementById('axis-btn');
+                const landmarksBtn = document.getElementById('landmarks-btn');
+                const measureBtn = document.getElementById('measure-btn');
+
+                const mobileAxisBtn = document.getElementById('mobile-axis-btn');
+                const mobileLandmarksBtn = document.getElementById('mobile-landmarks-btn');
+                const mobileMeasureBtn = document.getElementById('mobile-measure-btn');
+
+                if (mobileAxisBtn && axisBtn) {
+                    mobileAxisBtn.classList.toggle('active', axisBtn.classList.contains('active'));
+                }
+                if (mobileLandmarksBtn && landmarksBtn) {
+                    mobileLandmarksBtn.classList.toggle('active', landmarksBtn.classList.contains('active'));
+                }
+                if (mobileMeasureBtn && measureBtn) {
+                    mobileMeasureBtn.classList.toggle('active', measureBtn.classList.contains('active'));
+                }
+            };
+
+            // ========================================
+            // FOCUS CANVAS
+            // ========================================
+            window.focusCanvas = function () {
+                if (!isMobile()) return;
+                closeAllMobilePanels();
+                updateNavState('canvas');
+            };
+
+            // ========================================
+            // AGGIORNA STATO NAVIGAZIONE
+            // ========================================
+            function updateNavState(activePanel) {
+                const navItems = document.querySelectorAll('.mobile-nav-item');
+                navItems.forEach(item => {
+                    const panel = item.dataset.panel;
+                    item.classList.toggle('active', panel === activePanel);
+                });
+            }
+
+            // ========================================
+            // GESTIONE SWIPE (opzionale)
+            // ========================================
+            let touchStartY = 0;
+            let touchEndY = 0;
+
+            document.addEventListener('touchstart', function (e) {
+                touchStartY = e.changedTouches[0].screenY;
+            }, { passive: true });
+
+            document.addEventListener('touchend', function (e) {
+                touchEndY = e.changedTouches[0].screenY;
+                handleSwipe();
+            }, { passive: true });
+
+            function handleSwipe() {
+                const swipeThreshold = 100;
+                const swipeDistance = touchStartY - touchEndY;
+
+                // Swipe down per chiudere pannelli
+                if (swipeDistance < -swipeThreshold && currentOpenPanel) {
+                    closeAllMobilePanels();
+                }
+            }
+
+            // ========================================
+            // GESTIONE TASTO BACK (Android)
+            // ========================================
+            window.addEventListener('popstate', function (e) {
+                if (currentOpenPanel || currentOpenQuickPanel) {
+                    closeAllMobilePanels();
+                    history.pushState(null, '', window.location.href);
+                }
+            });
+
+            // Push stato iniziale per gestire il back
+            if (isMobile()) {
                 history.pushState(null, '', window.location.href);
             }
-        });
 
-        // Push stato iniziale per gestire il back
-        if (isMobile()) {
-            history.pushState(null, '', window.location.href);
-        }
+            // ========================================
+            // INIZIALIZZAZIONE
+            // ========================================
+            document.addEventListener('DOMContentLoaded', function () {
+                // Nascondi elementi desktop su mobile se necessario
+                if (isMobile()) {
+                    console.log('📱 Mobile UI initialized');
+                }
+            });
 
-        // ========================================
-        // INIZIALIZZAZIONE
-        // ========================================
-        document.addEventListener('DOMContentLoaded', function() {
-            // Nascondi elementi desktop su mobile se necessario
-            if (isMobile()) {
-                console.log('📱 Mobile UI initialized');
-            }
-        });
-
-    })();
+        })();
     </script>
 
     <!-- Patch per bug textBaseline PRIMA di Fabric.js -->
