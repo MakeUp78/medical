@@ -1691,3 +1691,22 @@ body {
   transform: scale(1.05);
   box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
 }
+
+/* ========================================
+   MOBILE RESET - Disabilita Grid Layout
+   Questo blocco si attiva SOLO su mobile (≤768px)
+   e NON influisce sul desktop
+   ======================================== */
+@media (max-width: 768px) {
+  .main-container {
+    display: flex !important;
+    grid-template-columns: none !important;
+  }
+  
+  .left-sidebar,
+  .right-sidebar {
+    width: 100% !important;
+    max-width: 100% !important;
+    position: fixed !important;
+  }
+}
