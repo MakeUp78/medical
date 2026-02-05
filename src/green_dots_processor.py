@@ -667,8 +667,8 @@ class GreenDotsProcessor:
         4. Coppia C (LC/RC): Per esclusione
         
         Ordine finale:
-        - Sinistro: [LC1, LA0, LA, LC, LB]
-        - Destro: [RC1, RB, RC, RA, RA0]
+        - Sinistro: [LA, LC, LB, LC1, LA0]  # Perimetro: esterno basso → centro → esterno basso → interno alto → interno alto
+        - Destro: [RA, RC, RB, RC1, RA0]  # Perimetro: esterno basso → centro → esterno basso → interno alto → interno alto
 
         Args:
             points: Lista di punti da ordinare
@@ -700,8 +700,8 @@ class GreenDotsProcessor:
             identified = [b_point, c1_point, a_point, a0_point]
             c_point = [p for p in points if p not in identified][0]
             
-            # Ordine finale: [LC1, LA0, LA, LC, LB]
-            return [c1_point, a0_point, a_point, c_point, b_point]
+            # Ordine finale per perimetro: [LA, LC, LB, LC1, LA0]
+            return [a_point, c_point, b_point, c1_point, a0_point]
             
         else:
             # Sopracciglio destro
@@ -723,8 +723,8 @@ class GreenDotsProcessor:
             identified = [b_point, c1_point, a_point, a0_point]
             c_point = [p for p in points if p not in identified][0]
             
-            # Ordine finale: [RC1, RB, RC, RA, RA0]
-            return [c1_point, b_point, c_point, a_point, a0_point]
+            # Ordine finale per perimetro: [RA, RC, RB, RC1, RA0]
+            return [a_point, c_point, b_point, c1_point, a0_point]
 
     def sort_points_optimal(self, points: List[Dict]) -> List[Dict]:
         """
@@ -780,60 +780,63 @@ class GreenDotsProcessor:
         self,
         points: List[Tuple[float, float]],
         is_left: bool,
-        arc_segments: int = 15,
-        curvature: float = 0.25
+        arc_segments: int = 20,
+        curvature: float = None
     ) -> List[Tuple[float, float]]:
         """
-        Crea un poligono con arco curvato verso l'esterno tra i punti specificati.
+        Crea un poligono con arco curvato convesso verso l'esterno tra LB-LC1 (sinistro) o RB-RC1 (destro).
+        
+        Ordine punti aggiornato:
+        - Sinistro: [LA, LC, LB, LC1, LA0] → arco tra LB (idx 2) e LC1 (idx 3)
+        - Destro: [RA, RC, RB, RC1, RA0] → arco tra RB (idx 2) e RC1 (idx 3)
         
         Args:
-            points: Lista di punti (x, y) del poligono
-            is_left: True per sopracciglio sinistro (arco tra LC1-LB), False per destro (arco tra RC1-RB)
+            points: Lista di punti (x, y) del poligono nell'ordine corretto
+            is_left: True per sopracciglio sinistro, False per destro
             arc_segments: Numero di segmenti per approssimare l'arco
-            curvature: Intensità della curvatura (0.0-1.0), dove valori più alti curvano di più
+            curvature: Raggio di curvatura. Se None, usa la distanza tra i punti da collegare
         
         Returns:
             Lista di punti con l'arco inserito
         """
-        if len(points) < 3:
+        if len(points) < 5:
             return points
         
-        if is_left:
-            # Sopracciglio sinistro: arco tra LC1 (indice 0) e LB (ultimo indice)
-            start_point = points[0]  # LC1
-            end_point = points[-1]   # LB
-            # Punti intermedi (esclusi start e end)
-            middle_points = points[1:-1]
-        else:
-            # Sopracciglio destro: arco tra RC1 (indice 0) e RB (indice 1)
-            start_point = points[0]  # RC1
-            end_point = points[1]    # RB
-            # Punti intermedi (da indice 2 in poi)
-            middle_points = points[2:]
+        # Nuovo ordine: LA, LC, LB, LC1, LA0 (sinistro) o RA, RC, RB, RC1, RA0 (destro)
+        # L'arco è sempre tra l'indice 2 (LB/RB) e l'indice 3 (LC1/RC1)
+        start_point = points[2]  # LB o RB
+        end_point = points[3]    # LC1 o RC1
         
-        # Calcola punto di controllo per la curva di Bezier quadratica
-        # Il punto medio tra start e end
+        # Altri punti del poligono (esclusi quelli dell'arco)
+        other_points = [points[0], points[1], points[4]]  # LA, LC, LA0 (o RA, RC, RA0)
+        
+        # Calcola distanza tra i punti da collegare
+        dx = end_point[0] - start_point[0]
+        dy = end_point[1] - start_point[1]
+        distance = (dx**2 + dy**2)**0.5
+        
+        if distance == 0:
+            return points
+        
+        # Se curvatura non specificata, usa la distanza tra i punti come raggio
+        if curvature is None:
+            curvature = 1.0  # Raggio = distanza tra i punti
+        
+        # Calcola punto medio
         mid_x = (start_point[0] + end_point[0]) / 2
         mid_y = (start_point[1] + end_point[1]) / 2
         
         # Calcola vettore perpendicolare per spostare il punto di controllo verso l'esterno
-        dx = end_point[0] - start_point[0]
-        dy = end_point[1] - start_point[1]
-        length = (dx**2 + dy**2)**0.5
+        perp_x = -dy / distance
+        perp_y = dx / distance
         
-        if length == 0:
-            return points
-        
-        # Vettore perpendicolare normalizzato
-        perp_x = -dy / length
-        perp_y = dx / length
-        
-        # Per il lato sinistro, curva verso destra (segno positivo)
-        # Per il lato destro, curva verso sinistra (segno negativo)
-        direction = 1 if is_left else -1
+        # CORREZIONE: Per curvatura convessa verso l'esterno del poligono
+        # Sinistro (LB→LC1): curva verso sinistra (-), Destro (RB→RC1): curva verso destra (+)
+        direction = -1 if is_left else 1
         
         # Sposta il punto medio lungo il vettore perpendicolare
-        offset_distance = length * curvature
+        # Raggio di curvatura ridotto al 60% della distanza tra i punti
+        offset_distance = distance * curvature * 0.6
         control_x = mid_x + direction * perp_x * offset_distance
         control_y = mid_y + direction * perp_y * offset_distance
         
@@ -851,15 +854,10 @@ class GreenDotsProcessor:
                  t**2 * end_point[1])
             arc_points.append((x, y))
         
-        # Costruisci il poligono finale
-        if is_left:
-            # Per il lato sinistro: start (LC1) + middle_points + end (LB) viene sostituito da:
-            # arc (da LC1 a LB) + middle_points (in ordine inverso per chiudere correttamente)
-            result = arc_points + list(reversed(middle_points))
-        else:
-            # Per il lato destro: start (RC1) + end (RB) + middle_points viene sostituito da:
-            # arc (da RC1 a RB) + middle_points
-            result = arc_points + middle_points
+        # Costruisci il poligono finale con l'arco tra LB-LC1 (o RB-RC1)
+        # Ordine: LA, LC, [arco da LB a LC1], LA0
+        # Gli arc_points vanno da start_point (LB/RB) a end_point (LC1/RC1)
+        result = [other_points[0], other_points[1]] + arc_points + [other_points[2]]
         
         return result
 
@@ -936,13 +934,12 @@ class GreenDotsProcessor:
         if right_points is None:
             right_points = self.right_dots
 
-        # Disegna forma sinistra
-        if left_points and len(left_points) >= 3:
+        # Disegna forma sinistra SOLO se ci sono esattamente 5 punti
+        if left_points and len(left_points) == 5:
             sorted_left = self.sort_points_anatomical(left_points, is_left=True)
             polygon_points = [(p["x"], p["y"]) for p in sorted_left]
 
-            # Crea poligono con arco tra LC1-LB (primo e ultimo punto)
-            # LC1 è l'indice 0, LB è l'indice 4 (ultimo)
+            # Crea poligono con arco tra i punti nell'ordine corretto
             curved_points = self._create_curved_polygon(polygon_points, is_left=True)
 
             # Riempimento semi-trasparente
@@ -953,8 +950,8 @@ class GreenDotsProcessor:
             draw.polygon(curved_points, outline=border_color, width=border_width)
 
             # Vertici
-            # Etichette personalizzate per il lato sinistro: LC1, LA0, LA, LC, LB
-            left_labels = ["LC1", "LA0", "LA", "LC", "LB"]
+            # Etichette nell'ordine corretto: LA, LC, LB, LC1, LA0
+            left_labels = ["LA", "LC", "LB", "LC1", "LA0"]
             for i, point in enumerate(sorted_left):
                 x, y = point["x"], point["y"]
                 draw.ellipse(
@@ -967,13 +964,12 @@ class GreenDotsProcessor:
                 label = left_labels[i] if i < len(left_labels) else f"L{i+1}"
                 draw.text((x + 6, y - 6), label, fill=(0, 0, 0, 255))
 
-        # Disegna forma destra
-        if right_points and len(right_points) >= 3:
+        # Disegna forma destra SOLO se ci sono esattamente 5 punti
+        if right_points and len(right_points) == 5:
             sorted_right = self.sort_points_anatomical(right_points, is_left=False)
             polygon_points = [(p["x"], p["y"]) for p in sorted_right]
 
-            # Crea poligono con arco tra RC1-RB (primo e secondo punto)
-            # RC1 è l'indice 0, RB è l'indice 1
+            # Crea poligono con arco tra i punti nell'ordine corretto
             curved_points = self._create_curved_polygon(polygon_points, is_left=False)
 
             # Riempimento semi-trasparente
@@ -984,8 +980,8 @@ class GreenDotsProcessor:
             draw.polygon(curved_points, outline=border_color, width=border_width)
 
             # Vertici
-            # Etichette personalizzate per il lato destro: RC1, RB, RC, RA, RA0
-            right_labels = ["RC1", "RB", "RC", "RA", "RA0"]
+            # Etichette nell'ordine corretto: RA, RC, RB, RC1, RA0
+            right_labels = ["RA", "RC", "RB", "RC1", "RA0"]
             for i, point in enumerate(sorted_right):
                 x, y = point["x"], point["y"]
                 draw.ellipse(

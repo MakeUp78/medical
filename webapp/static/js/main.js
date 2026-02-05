@@ -650,13 +650,18 @@ function resetForNewAnalysis() {
   // Reset status
   updateStatus('Pronto per nuova analisi');
 
-  console.log('🔄 Reset completo eseguito');
-  console.log('   ✓ Canvas pulito e zoom resettato');
-  console.log('   ✓ Landmarks e misurazioni pulite');
-  console.log('   ✓ Video/Webcam fermate');
-  console.log('   ✓ Pulsanti attivi resettati');
-  console.log('   ✓ Sezioni sidebar chiuse');
-  console.log('   ✓ Tabelle pulite');
+  // Log compatto per debug (dettagli solo se necessario)
+  if (window.DEBUG_MODE) {
+    console.log('🔄 Reset completo eseguito');
+    console.log('   ✓ Canvas pulito e zoom resettato');
+    console.log('   ✓ Landmarks e misurazioni pulite');
+    console.log('   ✓ Video/Webcam fermate');
+    console.log('   ✓ Pulsanti attivi resettati');
+    console.log('   ✓ Sezioni sidebar chiuse');
+    console.log('   ✓ Tabelle pulite');
+  } else {
+    console.log('✅ Reset stato completato');
+  }
 }
 
 // Inizializzazione al caricamento pagina
@@ -728,8 +733,7 @@ function initializeFileHandlers() {
 }
 
 function loadImage() {
-  // Reset stato e carica immagine direttamente
-  resetForNewAnalysis();
+  // Reset gestito da handleUnifiedFileLoad() - no duplicati
   loadImageDirect();
 }
 
@@ -766,8 +770,7 @@ function collapseDetectionSections() {
 }
 
 function loadVideo() {
-  // Reset stato e carica video direttamente
-  resetForNewAnalysis();
+  // Reset gestito da handleUnifiedFileLoad() - no duplicati
   loadVideoDirect();
 }
 
@@ -952,12 +955,11 @@ function normalizeTo72DPI(sourceCanvas) {
 // HANDLER UNIFICATO PER IMMAGINI E VIDEO
 // ============================================================================
 async function handleUnifiedFileLoad(file, type) {
-  // ✅ RESET COMPLETO + HARD REFRESH della sessione
+  // Reset completo stato per nuova analisi
   resetForNewAnalysis(`Caricamento nuovo ${type === 'image' ? 'immagine' : 'video'}`);
 
-  // ✅ FORCE CACHE BUST: Aggiungi timestamp per forzare hard refresh
+  // Cache bust per forzare refresh
   const cacheBust = Date.now();
-  console.log(`🔄 Hard refresh sessione utente: ${cacheBust}`);
 
   updateStatus(`Caricamento ${type === 'image' ? 'immagine' : 'video'}...`);
 
@@ -987,8 +989,10 @@ async function handleUnifiedFileLoad(file, type) {
           const ratio = targetWidth / finalWidth;
           finalWidth = targetWidth;
           finalHeight = Math.round(finalHeight * ratio);
-          console.log(`📐 Riduzione immagine a ${finalWidth}x${finalHeight} (larghezza fissa: ${targetWidth}px, aspect ratio preservato)`);
-        } else {
+          if (window.DEBUG_MODE) {
+            console.log(`📐 Riduzione immagine a ${finalWidth}x${finalHeight} (larghezza fissa: ${targetWidth}px, aspect ratio preservato)`);
+          }
+        } else if (window.DEBUG_MODE) {
           console.log(`✅ Immagine già ottima: ${finalWidth}x${finalHeight}px (no riduzione)`);
         }
 
@@ -1008,21 +1012,23 @@ async function handleUnifiedFileLoad(file, type) {
 
         updateStatus(`Immagine caricata: ${file.name}`);
         showToast('Immagine caricata con successo', 'success');
-        console.log(`✅ Immagine ridimensionata e caricata - Dimensioni: ${finalWidth}x${finalHeight} - Cache bust: ${cacheBust}`);
+
+        if (window.DEBUG_MODE) {
+          console.log(`✅ Immagine caricata - ${finalWidth}x${finalHeight}px`);
+        }
 
         // Force repaint canvas
         if (window.canvas && window.canvas.renderAll) {
           window.canvas.renderAll();
         }
 
-        // AUTO-RILEVAMENTO LANDMARKS (come sistema originale)
-        // L'analisi avviene QUI, con standardizzazione interna se necessario
-        console.log('📸 Nuova immagine caricata - Avvio auto-rilevamento landmarks');
+        // AUTO-RILEVAMENTO LANDMARKS silenzioso
         const landmarksDetected = await autoDetectLandmarksOnImageChange();
         if (landmarksDetected) {
           updateStatus(`✅ Landmarks rilevati automaticamente (${currentLandmarks.length})`);
-        } else {
-          console.warn('⚠️ Auto-rilevamento landmarks fallito');
+          if (window.DEBUG_MODE) {
+            console.log('✅ Auto-rilevamento landmarks completato');
+          }
         }
       };
       img.src = e.target.result;
@@ -3455,14 +3461,14 @@ let touchStartTime = 0;
 
 function onCanvasTouchStart(e) {
   e.preventDefault();
-  
+
   // Non attivare il disegno se siamo in modalità misurazione o selezione landmarks
   if (window.measurementMode || window.landmarkSelectionMode) {
     return;
   }
 
   touchStartTime = Date.now();
-  
+
   // Pinch to zoom con 2 dita
   if (e.touches.length === 2) {
     const touch1 = e.touches[0];
@@ -3487,7 +3493,7 @@ function onCanvasTouchStart(e) {
 
 function onCanvasTouchMove(e) {
   e.preventDefault();
-  
+
   // Pinch to zoom con 2 dita
   if (e.touches.length === 2) {
     const touch1 = e.touches[0];
@@ -3496,7 +3502,7 @@ function onCanvasTouchMove(e) {
       touch2.clientX - touch1.clientX,
       touch2.clientY - touch1.clientY
     );
-    
+
     if (lastTouchDistance > 0) {
       const zoomFactor = currentDistance / lastTouchDistance;
       const centerX = (touch1.clientX + touch2.clientX) / 2;
@@ -3504,7 +3510,7 @@ function onCanvasTouchMove(e) {
       const rect = e.target.getBoundingClientRect();
       zoomCanvas(zoomFactor, centerX - rect.left, centerY - rect.top);
     }
-    
+
     lastTouchDistance = currentDistance;
     return;
   }
@@ -3515,9 +3521,9 @@ function onCanvasTouchMove(e) {
     const rect = e.target.getBoundingClientRect();
     const x = Math.round(touch.clientX - rect.left);
     const y = Math.round(touch.clientY - rect.top);
-    
+
     updateCursorInfo(x, y);
-    
+
     if (!window.measurementMode && !window.landmarkSelectionMode) {
       drawWithCurrentTool(startX, startY, x, y);
     }
@@ -3526,12 +3532,12 @@ function onCanvasTouchMove(e) {
 
 function onCanvasTouchEnd(e) {
   e.preventDefault();
-  
+
   // Reset pinch zoom
   if (e.touches.length < 2) {
     lastTouchDistance = 0;
   }
-  
+
   // Non finalizzare se siamo in modalità misurazione
   if (window.measurementMode || window.landmarkSelectionMode) {
     isDrawing = false;
@@ -3544,7 +3550,7 @@ function onCanvasTouchEnd(e) {
     const rect = e.target.getBoundingClientRect();
     const endX = touch.clientX - rect.left;
     const endY = touch.clientY - rect.top;
-    
+
     // Tap rapido = click
     const touchDuration = Date.now() - touchStartTime;
     if (touchDuration < 200 && Math.abs(endX - startX) < 10 && Math.abs(endY - startY) < 10) {
@@ -3554,7 +3560,7 @@ function onCanvasTouchEnd(e) {
       finalizeDrawing(startX, startY, endX, endY);
     }
   }
-  
+
   isDrawing = false;
 }
 
@@ -3947,7 +3953,9 @@ function clearSymmetryAxis() {
     const axes = fabricCanvas.getObjects().filter(obj => obj.isSymmetryAxis || obj.isDebugPoint);
     axes.forEach(axis => fabricCanvas.remove(axis));
     fabricCanvas.renderAll();
-    console.log('🧹 Asse di simmetria rimosso');
+    if (window.DEBUG_MODE) {
+      console.log('🧹 Asse di simmetria rimosso');
+    }
   }
 }
 
@@ -5007,6 +5015,125 @@ function generateGreenDotsTableRows(result) {
     </tr>`;
   }
 
+  // === DETTAGLI PUNTINI BIANCHI ===
+  if (result.detection_results && result.detection_results.dots) {
+    const dots = result.detection_results.dots;
+
+    console.log('🔍 [DOTS DEBUG] Puntini disponibili:', {
+      total: dots.length,
+      sample: dots[0],
+      allDots: dots,
+      groups: result.groups
+    });
+
+    // Header sezione puntini
+    rows += `<tr data-type="green-dots" style="background: #f0f0f0; font-weight: bold;">
+      <td colspan="4">⚪ DETTAGLI PUNTINI BIANCHI</td>
+    </tr>`;
+
+    // USA I GRUPPI GIÀ FILTRATI DAL BACKEND invece di filtrare manualmente
+    const leftDots = result.groups?.Sx || [];
+    const rightDots = result.groups?.Dx || [];
+
+    console.log(`📊 Puntini raggruppati: Sinistro=${leftDots.length}, Destro=${rightDots.length}`);
+
+    // Puntini sinistro
+    if (leftDots.length > 0) {
+      rows += `<tr data-type="green-dots" style="background: #e8f4f8;">
+        <td colspan="4"><strong>◀️ SOPRACCIGLIO SINISTRO (${leftDots.length} puntini)</strong></td>
+      </tr>`;
+
+      leftDots.forEach((dot, idx) => {
+        const colorClass = dot.size > 35 ? 'color: #f44336' : dot.size > 25 ? 'color: #ff9800' : dot.size > 15 ? 'color: #ffc107' : 'color: #4caf50';
+        const compactStr = dot.compactness ? dot.compactness.toFixed(2) : 'N/A';
+        const scoreStr = dot.score ? dot.score.toFixed(1) : (dot.size * 1.5).toFixed(1);
+        const hsvStr = (dot.h !== undefined && dot.s !== undefined && dot.v !== undefined)
+          ? `H:${dot.h}° S:${dot.s}% V:${dot.v}%`
+          : 'N/A';
+
+        // USA NOME ANATOMICO se presente, altrimenti fallback L1, L2, L3...
+        const label = dot.anatomical_name || `L${idx + 1}`;
+
+        rows += `<tr data-type="green-dots" style="font-size: 0.9em;">
+          <td style="padding-left: 20px;"><strong>⚪ ${label}</strong> (${dot.x}, ${dot.y})</td>
+          <td style="${colorClass}">Size:${dot.size}px | C:${compactStr} | Score:${scoreStr}</td>
+          <td>${hsvStr}</td>
+          <td>✅</td>
+        </tr>`;
+      });
+    }
+
+    // Puntini destro
+    if (rightDots.length > 0) {
+      rows += `<tr data-type="green-dots" style="background: #e8f4f8;">
+        <td colspan="4"><strong>▶️ SOPRACCIGLIO DESTRO (${rightDots.length} puntini)</strong></td>
+      </tr>`;
+
+      rightDots.forEach((dot, idx) => {
+        const colorClass = dot.size > 35 ? 'color: #f44336' : dot.size > 25 ? 'color: #ff9800' : dot.size > 15 ? 'color: #ffc107' : 'color: #4caf50';
+        const compactStr = dot.compactness ? dot.compactness.toFixed(2) : 'N/A';
+        const scoreStr = dot.score ? dot.score.toFixed(1) : (dot.size * 1.5).toFixed(1);
+        const hsvStr = (dot.h !== undefined && dot.s !== undefined && dot.v !== undefined)
+          ? `H:${dot.h}° S:${dot.s}% V:${dot.v}%`
+          : 'N/A';
+
+        // USA NOME ANATOMICO se presente, altrimenti fallback R1, R2, R3...
+        const label = dot.anatomical_name || `R${idx + 1}`;
+
+        rows += `<tr data-type="green-dots" style="font-size: 0.9em;">
+          <td style="padding-left: 20px;"><strong>⚪ ${label}</strong> (${dot.x}, ${dot.y})</td>
+          <td style="${colorClass}">Size:${dot.size}px | C:${compactStr} | Score:${scoreStr}</td>
+          <td>${hsvStr}</td>
+          <td>✅</td>
+        </tr>`;
+      });
+    }
+  }
+
+  // === PARAMETRI CONFIGURAZIONE ===
+  if (result.config_parameters) {
+    const config = result.config_parameters;
+
+    rows += `<tr data-type="green-dots" style="background: #f0f0f0; font-weight: bold;">
+      <td colspan="4">⚙️ PARAMETRI RILEVAMENTO (da config)</td>
+    </tr>`;
+
+    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
+      <td>Saturazione Max</td>
+      <td>${config.saturation_max}%</td>
+      <td>HSV</td>
+      <td>✅</td>
+    </tr>`;
+
+    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
+      <td>Luminosità Min-Max</td>
+      <td>${config.value_min}% - ${config.value_max}%</td>
+      <td>HSV</td>
+      <td>✅</td>
+    </tr>`;
+
+    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
+      <td>Range Cluster Size</td>
+      <td>${config.cluster_size_min} - ${config.cluster_size_max} px</td>
+      <td>pixels</td>
+      <td>✅</td>
+    </tr>`;
+
+    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
+      <td>Clustering Radius</td>
+      <td>${config.clustering_radius} px</td>
+      <td>pixels</td>
+      <td>✅</td>
+    </tr>`;
+
+    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
+      <td>Min Distance</td>
+      <td>${config.min_distance} px</td>
+      <td>pixels</td>
+      <td>✅</td>
+    </tr>`;
+  }
+
   return rows;
 }
 
@@ -5143,15 +5270,38 @@ function generateSymmetryAnalysisRows(result) {
     return '';
   }
 
-  // Ottieni l'asse di simmetria
+  // Ottieni l'asse di simmetria (dovrebbe essere già stato attivato all'inizio di detectGreenDots)
   const symmetryAxisData = getSymmetryAxisPosition();
+
+  // DEBUG: Verifica stato landmarks
+  if (window.DEBUG_MODE) {
+    console.log('🔍 [SIMMETRIA DEBUG] Stato currentLandmarks:', {
+      exists: !!currentLandmarks,
+      length: currentLandmarks ? currentLandmarks.length : 0,
+      hasLandmark9: currentLandmarks && currentLandmarks[9] ? 'SI' : 'NO',
+      hasLandmark164: currentLandmarks && currentLandmarks[164] ? 'SI' : 'NO'
+    });
+  }
+
+  // Se l'asse non è disponibile, significa che non è stato possibile generarlo
   if (!symmetryAxisData) {
-    console.warn('⚠️ Asse di simmetria non disponibile');
-    rows += `<tr data-type="green-dots">
+    // Verifica se l'asse è attivo visivamente ma i landmarks non sono disponibili
+    const axisBtn = document.getElementById('axis-btn');
+    const isAxisActive = axisBtn && axisBtn.classList.contains('active');
+
+    console.warn('⚠️ [SIMMETRIA] Asse non disponibile - impossibile calcolare distanze');
+    console.warn(`   Asse BTN attivo: ${isAxisActive}, Landmarks disponibili: ${currentLandmarks && currentLandmarks.length > 0}`);
+
+    // Messaggio più chiaro basato sullo stato
+    const message = isAxisActive
+      ? 'Asse simmetria attivo ma landmarks non disponibili (prova a riattivare l\'asse)'
+      : 'Asse simmetria non rilevato (richiede volto frontale)';
+
+    rows += `<tr data-type="green-dots" style="background: #fff3cd;">
       <td>⚖️ Simmetria</td>
-      <td>Asse non disponibile</td>
+      <td>${message}</td>
       <td>-</td>
-      <td>❌ Errore</td>
+      <td>ℹ️ Info</td>
     </tr>`;
     return rows;
   }
@@ -5199,24 +5349,43 @@ function generateSymmetryAnalysisRows(result) {
       const rightHeight = getProjectionAlongLine(rightPoint[0], rightPoint[1], symmetryAxisData.lineOriginal);
 
       const higherPoint = leftHeight < rightHeight ? leftLabels[leftIdx] : rightLabels[rightIdx];
+      const lowerPoint = leftHeight < rightHeight ? rightLabels[rightIdx] : leftLabels[leftIdx];
       const heightDifference = Math.abs(leftHeight - rightHeight);
+
+      // Determina direzione frecce: ↔ per distanza orizzontale, ↕ per altezza
+      const horizontalArrow = leftDistance > rightDistance ? '←' : '→'; // Freccia verso il più esterno
+      const verticalArrow = leftHeight < rightHeight ? '↑' : '↓'; // Freccia verso il più alto
 
       console.log(`  📊 ${comparisonName}: L=${leftLabels[leftIdx]}(${leftPoint[0].toFixed(1)},${leftPoint[1].toFixed(1)}, dist⊥=${leftDistance.toFixed(1)}, h=${leftHeight.toFixed(1)}) vs R=${rightLabels[rightIdx]}(${rightPoint[0].toFixed(1)},${rightPoint[1].toFixed(1)}, dist⊥=${rightDistance.toFixed(1)}, h=${rightHeight.toFixed(1)}) → 🔴 ${fartherPoint} più lontano, ⬆️ ${higherPoint} più alto (diff=${heightDifference.toFixed(1)}px)`);
 
-      // Riga distanza dall'asse - formato più chiaro con entrambe le distanze
-      rows += `<tr data-type="green-dots">
-        <td>⚖️ ${comparisonName} Distanza Asse</td>
-        <td>${leftLabels[leftIdx]}: ${leftDistance.toFixed(1)}px | ${rightLabels[rightIdx]}: ${rightDistance.toFixed(1)}px<br/>
-            <strong>🔴 ${fartherPoint} più esterno</strong> (+${distanceDifference.toFixed(1)}px)</td>
-        <td>px</td>
-        <td>✅ OK</td>
-      </tr>`;
+      // Prepara dati per highlight interattivo
+      const pairData = JSON.stringify({
+        leftLabel: leftLabels[leftIdx],
+        rightLabel: rightLabels[rightIdx],
+        leftPoint: leftPoint,
+        rightPoint: rightPoint,
+        leftIdx: leftIdx,
+        rightIdx: rightIdx,
+        fartherPoint: fartherPoint,
+        closerPoint: closerPoint,
+        higherPoint: higherPoint,
+        lowerPoint: lowerPoint,
+        distanceDiff: distanceDifference,
+        heightDiff: heightDifference
+      }).replace(/"/g, '&quot;');
 
-      rows += `<tr data-type="green-dots">
-        <td>⬆️ ${comparisonName} Altezza</td>
-        <td>⬆️ ${higherPoint} più alto (${heightDifference.toFixed(1)}px)</td>
+      // Riga distanza dall'asse - CLICCABILE per evidenziare la coppia
+      rows += `<tr data-type="green-dots" class="point-pair-row" data-pair='${pairData}'
+               onclick="highlightPointPair(this)" style="cursor: pointer;">
+        <td>⚖️ ${comparisonName}</td>
+        <td>
+          <span style="color: #00bcd4;">${leftLabels[leftIdx]}</span>: ${leftDistance.toFixed(1)}px ${horizontalArrow}
+          <span style="color: #ff9800;">${rightLabels[rightIdx]}</span>: ${rightDistance.toFixed(1)}px<br/>
+          <small><strong>🔴 ${fartherPoint}</strong> più esterno (+${distanceDifference.toFixed(1)}px) |
+          <strong>⬆️ ${higherPoint}</strong> più alto (+${heightDifference.toFixed(1)}px)</small>
+        </td>
         <td>px</td>
-        <td>✅ OK</td>
+        <td><span class="highlight-indicator">👆</span></td>
       </tr>`;
     } else {
       rows += `<tr data-type="green-dots">
@@ -6069,6 +6238,12 @@ function toggleGreenDots() {
 
   const isActive = btn.classList.contains('active');
 
+  // Mostra/nascondi il pannello parametri
+  const paramsPanel = document.getElementById('white-dots-params-panel');
+  if (paramsPanel) {
+    paramsPanel.style.display = isActive ? 'block' : 'none';
+  }
+
   if (isActive) {
     // Se non ci sono green dots rilevati, rilevali automaticamente
     if (!window.greenDotsDetected) {
@@ -6107,13 +6282,40 @@ async function detectGreenDots() {
   }
 
   try {
-    // ATTIVA automaticamente l'asse di simmetria se non è già attivo (senza feedback vocale)
-    const axisBtn = document.getElementById('axis-btn');
-    if (axisBtn && !axisBtn.classList.contains('active')) {
-      console.log('🔄 Attivazione automatica asse di simmetria (silente)...');
-      window.suppressVoiceFeedback = true;
-      axisBtn.click();
-      setTimeout(() => { window.suppressVoiceFeedback = false; }, 100);
+    // VERIFICA se l'asse di simmetria è già disponibile
+    let symmetryAxisData = getSymmetryAxisPosition();
+
+    // ATTIVA automaticamente l'asse SOLO se non disponibile (senza feedback vocale)
+    if (!symmetryAxisData) {
+      const axisBtn = document.getElementById('axis-btn');
+      if (axisBtn && !axisBtn.classList.contains('active')) {
+        console.log('🔄 Attivazione automatica asse di simmetria (silente)...');
+        window.suppressVoiceFeedback = true;
+        axisBtn.click();
+
+        // ATTENDI il completamento del rilevamento landmarks
+        // Il click attiva drawSymmetryAxis che chiama autoDetectLandmarksOnImageChange
+        // Aspetta max 3 secondi per il rilevamento
+        let attempts = 0;
+        while (attempts < 30 && (!currentLandmarks || currentLandmarks.length === 0)) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          attempts++;
+        }
+
+        setTimeout(() => { window.suppressVoiceFeedback = false; }, 100);
+
+        // Verifica che sia stato attivato
+        symmetryAxisData = getSymmetryAxisPosition();
+        if (symmetryAxisData) {
+          console.log('✅ Asse di simmetria attivato e disponibile');
+        } else {
+          console.warn('⚠️ Asse di simmetria non disponibile dopo attivazione (timeout o errore)');
+        }
+      } else {
+        console.log('ℹ️ Asse di simmetria già attivo ma dati non disponibili');
+      }
+    } else {
+      console.log('✅ Asse di simmetria già disponibile, skip attivazione');
     }
 
     updateStatus('🔄 Rilevamento green dots in corso...');
@@ -6136,20 +6338,20 @@ async function detectGreenDots() {
     if (typeof analyzeGreenDotsViaAPI === 'function') {
       console.log('✅ Usando funzione API centralizzata');
       result = await analyzeGreenDotsViaAPI(canvasImageData, {
-        hue_range: [60, 150],
-        saturation_min: 15,
-        value_range: [15, 95],
-        cluster_size_range: [2, 150],
+        hue_range: [60, 150],           // Mantenuto per retrocompatibilità (ignorato)
+        saturation_min: 15,             // Mantenuto per retrocompatibilità (ignorato)
+        value_range: [70, 95],          // Range luminosità puntini BIANCHI
+        cluster_size_range: [9, 40],    // Range ottimale puntini bianchi
         clustering_radius: 2
       });
     } else {
       console.log('⚠️ Fallback: chiamata API diretta');
-      // Fallback: chiamata diretta all'API tramite percorso relativo
+      // USA ENDPOINT ESISTENTE green-dots con logica WHITE DOTS
       const baseUrl = (typeof API_CONFIG !== 'undefined' && API_CONFIG?.baseURL)
         ? API_CONFIG.baseURL
         : window.location.origin;
       const apiUrl = `${baseUrl}/api/green-dots/analyze`;
-      console.log('🌍 URL API Green Dots (fallback):', apiUrl);
+      console.log('🌍 URL API (green-dots endpoint con white dots logic):', apiUrl);
       console.log('🔧 API_CONFIG disponibile:', typeof API_CONFIG !== 'undefined');
 
       const response = await fetch(apiUrl, {
@@ -6159,10 +6361,10 @@ async function detectGreenDots() {
         },
         body: JSON.stringify({
           image: canvasImageData,
-          hue_range: [60, 150],
-          saturation_min: 15,
-          value_range: [15, 95],
-          cluster_size_range: [2, 150],
+          hue_range: [60, 150],           // Mantenuto per retrocompatibilità (ignorato)
+          saturation_min: 15,             // Mantenuto per retrocompatibilità (ignorato) 
+          value_range: [70, 95],          // Range luminosità puntini BIANCHI
+          cluster_size_range: [9, 40],    // Range ottimale 9-40px
           clustering_radius: 2
         })
       });
@@ -6196,16 +6398,7 @@ async function detectGreenDots() {
         }
       }, 500);
 
-      // AUTOMAZIONE: Attiva automaticamente l'asse di simmetria se non è già attivo
-      const axisBtn = document.getElementById('axis-btn');
-      if (axisBtn && !axisBtn.classList.contains('active')) {
-        console.log('🔄 Attivazione automatica asse di simmetria...');
-        // Sopprimi feedback vocale per questa attivazione automatica
-        window.suppressVoiceFeedback = true;
-        axisBtn.click(); // Simula click per attivare l'asse
-        // Ripristina feedback vocale dopo un breve delay
-        setTimeout(() => { window.suppressVoiceFeedback = false; }, 100);
-      }
+      // NOTA: Asse di simmetria già attivato all'inizio di detectGreenDots() - no duplicati
 
       // AUTOMAZIONE: Espandi la sezione correzione sopracciglia se è chiusa (nella LEFT sidebar!)
       console.log('🔍 Cercando sezione CORREZIONE SOPRACCIGLIA nella left sidebar...');
@@ -6262,6 +6455,1082 @@ async function detectGreenDots() {
     }
   }
 }
+
+// ==================== WHITE DOTS PARAMETER SLIDERS ====================
+
+/**
+ * Parametri correnti per il rilevamento white dots.
+ * Questi valori vengono modificati dagli sliders e usati per le chiamate API.
+ * Valori ottimizzati: Sat≤20%, Val 54-100%, Cluster 9-66px, Dist≥9px
+ */
+window.whiteDotsParams = {
+  saturation_max: 20,
+  value_min: 54,
+  value_max: 100,
+  cluster_size_min: 9,
+  cluster_size_max: 66,
+  min_distance: 9
+};
+
+/**
+ * Valori base degli slider (a zoom 1.0) per dimensioni e distanze.
+ * Questi vengono scalati proporzionalmente allo zoom.
+ */
+window.whiteDotsBaseParams = {
+  cluster_size_min: { base: 9, min: 1, max: 50 },
+  cluster_size_max: { base: 66, min: 20, max: 200 },
+  min_distance: { base: 9, min: 5, max: 30 }
+};
+
+/**
+ * Ultimo zoom registrato per ottimizzare gli aggiornamenti.
+ */
+window.lastZoomLevel = 1.0;
+
+/**
+ * Parametri dell'ultimo rilevamento con successo.
+ * Vengono salvati automaticamente e ripristinati all'apertura del pannello.
+ */
+window.lastSuccessfulParams = null;
+
+/**
+ * Aggiorna un parametro white dots quando viene mosso uno slider.
+ * @param {string} paramName - Nome del parametro
+ * @param {number|string} value - Nuovo valore
+ */
+function updateWhiteDotsParam(paramName, value) {
+  const numValue = parseInt(value, 10);
+  window.whiteDotsParams[paramName] = numValue;
+
+  // Aggiorna il display del valore
+  const valueSpan = document.getElementById(`${paramName.replace('_', '-').replace('_', '-')}-value`);
+  if (valueSpan) {
+    valueSpan.textContent = numValue;
+  }
+
+  // Mappa i nomi dei parametri agli ID degli span
+  const paramToSpanId = {
+    'saturation_max': 'saturation-max-value',
+    'value_min': 'value-min-value',
+    'value_max': 'value-max-value',
+    'cluster_size_min': 'cluster-min-value',
+    'cluster_size_max': 'cluster-max-value',
+    'min_distance': 'min-distance-value'
+  };
+
+  const spanId = paramToSpanId[paramName];
+  if (spanId) {
+    const span = document.getElementById(spanId);
+    if (span) {
+      span.textContent = numValue;
+    }
+  }
+
+  console.log(`⚙️ Parametro ${paramName} aggiornato: ${numValue}`);
+}
+
+/**
+ * Aggiorna dinamicamente i limiti degli slider per dimensioni e distanze
+ * in base al livello di zoom corrente del canvas.
+ * @param {number} zoomLevel - Livello di zoom corrente (1.0 = 100%)
+ */
+function updateSliderRangesForZoom(zoomLevel) {
+  // Evita aggiornamenti troppo frequenti
+  if (Math.abs(zoomLevel - window.lastZoomLevel) < 0.1) {
+    return;
+  }
+
+  window.lastZoomLevel = zoomLevel;
+
+  const baseParams = window.whiteDotsBaseParams;
+
+  // Aggiorna cluster_size_min
+  const clusterMinSlider = document.getElementById('cluster-min-slider');
+  if (clusterMinSlider) {
+    const newMin = Math.max(1, Math.round(baseParams.cluster_size_min.min * zoomLevel));
+    const newMax = Math.round(baseParams.cluster_size_min.max * zoomLevel);
+    clusterMinSlider.min = newMin;
+    clusterMinSlider.max = newMax;
+
+    // Adatta anche il valore corrente se fuori range
+    const currentValue = parseInt(clusterMinSlider.value);
+    if (currentValue < newMin) {
+      clusterMinSlider.value = newMin;
+      updateWhiteDotsParam('cluster_size_min', newMin);
+    } else if (currentValue > newMax) {
+      clusterMinSlider.value = newMax;
+      updateWhiteDotsParam('cluster_size_min', newMax);
+    }
+  }
+
+  // Aggiorna cluster_size_max
+  const clusterMaxSlider = document.getElementById('cluster-max-slider');
+  if (clusterMaxSlider) {
+    const newMin = Math.round(baseParams.cluster_size_max.min * zoomLevel);
+    const newMax = Math.round(baseParams.cluster_size_max.max * zoomLevel);
+    clusterMaxSlider.min = newMin;
+    clusterMaxSlider.max = newMax;
+
+    // Adatta anche il valore corrente se fuori range
+    const currentValue = parseInt(clusterMaxSlider.value);
+    if (currentValue < newMin) {
+      clusterMaxSlider.value = newMin;
+      updateWhiteDotsParam('cluster_size_max', newMin);
+    } else if (currentValue > newMax) {
+      clusterMaxSlider.value = newMax;
+      updateWhiteDotsParam('cluster_size_max', newMax);
+    }
+  }
+
+  // Aggiorna min_distance
+  const minDistanceSlider = document.getElementById('min-distance-slider');
+  if (minDistanceSlider) {
+    const newMin = Math.max(1, Math.round(baseParams.min_distance.min * zoomLevel));
+    const newMax = Math.round(baseParams.min_distance.max * zoomLevel);
+    minDistanceSlider.min = newMin;
+    minDistanceSlider.max = newMax;
+
+    // Adatta anche il valore corrente se fuori range
+    const currentValue = parseInt(minDistanceSlider.value);
+    if (currentValue < newMin) {
+      minDistanceSlider.value = newMin;
+      updateWhiteDotsParam('min_distance', newMin);
+    } else if (currentValue > newMax) {
+      minDistanceSlider.value = newMax;
+      updateWhiteDotsParam('min_distance', newMax);
+    }
+  }
+
+  console.log(`🔍 Slider ranges aggiornati per zoom ${(zoomLevel * 100).toFixed(0)}%`);
+}
+
+/**
+ * Resetta tutti i parametri ai valori di default ottimizzati.
+ */
+function resetWhiteDotsParams() {
+  const defaults = {
+    saturation_max: 20,
+    value_min: 54,
+    value_max: 100,
+    cluster_size_min: 9,
+    cluster_size_max: 66,
+    min_distance: 9
+  };
+
+  // Aggiorna i valori
+  window.whiteDotsParams = { ...defaults };
+
+  // Aggiorna gli sliders e i display
+  document.getElementById('saturation-max-slider').value = defaults.saturation_max;
+  document.getElementById('saturation-max-value').textContent = defaults.saturation_max;
+
+  document.getElementById('value-min-slider').value = defaults.value_min;
+  document.getElementById('value-min-value').textContent = defaults.value_min;
+
+  document.getElementById('value-max-slider').value = defaults.value_max;
+  document.getElementById('value-max-value').textContent = defaults.value_max;
+
+  document.getElementById('cluster-min-slider').value = defaults.cluster_size_min;
+  document.getElementById('cluster-min-value').textContent = defaults.cluster_size_min;
+
+  document.getElementById('cluster-max-slider').value = defaults.cluster_size_max;
+  document.getElementById('cluster-max-value').textContent = defaults.cluster_size_max;
+
+  document.getElementById('min-distance-slider').value = defaults.min_distance;
+  document.getElementById('min-distance-value').textContent = defaults.min_distance;
+
+  showToast('Parametri resettati ai valori di default', 'info');
+  console.log('🔄 Parametri white dots resettati:', defaults);
+}
+
+/**
+ * Rileva i white dots con i parametri correnti impostati dagli sliders.
+ */
+async function detectWithCurrentParams() {
+  if (!currentImage) {
+    showToast('Nessuna immagine caricata', 'warning');
+    return;
+  }
+
+  const params = window.whiteDotsParams;
+  console.log('🔍 Rilevamento con parametri custom:', params);
+
+  // Aggiorna info panel
+  const infoPanel = document.getElementById('current-params-info');
+  if (infoPanel) {
+    infoPanel.innerHTML = `<strong>Rilevamento in corso...</strong><br>` +
+      `Sat≤${params.saturation_max}% | Val ${params.value_min}-${params.value_max}% | ` +
+      `Cluster ${params.cluster_size_min}-${params.cluster_size_max}px | Dist≥${params.min_distance}px`;
+  }
+
+  try {
+    updateStatus('🔄 Rilevamento white dots con parametri custom...');
+    showToast('⏳ Elaborazione in corso...', 'info');
+
+    // Ottieni l'immagine come base64
+    const imageBase64 = getCanvasImageAsBase64(2400);
+    if (!imageBase64) {
+      throw new Error('Impossibile ottenere immagine dal canvas');
+    }
+
+    // Chiama l'API con i parametri custom
+    const result = await analyzeGreenDotsViaAPI(imageBase64, params);
+
+    if (result && result.success) {
+      // Salva i risultati
+      window.greenDotsData = result;
+      window.greenDotsDetected = true;
+
+      // Salva i parametri dell'ultimo rilevamento con successo
+      window.lastSuccessfulParams = { ...params };
+      localStorage.setItem('whiteDotsLastSuccessParams', JSON.stringify(params));
+      console.log('💾 Parametri salvati per rilevamento futuro:', params);
+
+      // Aggiorna il pannello info con i risultati
+      if (infoPanel) {
+        const dotsCount = result.detection_results?.total_dots || 0;
+        const leftCount = result.groups?.Sx?.length || 0;
+        const rightCount = result.groups?.Dx?.length || 0;
+
+        infoPanel.innerHTML = `<strong style="color: #00ff88;">✅ Rilevati ${dotsCount} punti</strong><br>` +
+          `Sx: ${leftCount} | Dx: ${rightCount}<br>` +
+          `<span style="color: #888;">Sat≤${params.saturation_max}% | Val ${params.value_min}-${params.value_max}%</span>`;
+      }
+
+      // Aggiorna tabella e canvas
+      if (typeof updateMeasurementsFromGreenDots === 'function') {
+        updateMeasurementsFromGreenDots(result);
+      }
+
+      updateCanvasDisplay();
+      updateStatus(`✅ Rilevati ${result.detection_results.total_dots} white dots`);
+      showToast(`Rilevamento completato: ${result.detection_results.total_dots} punti`, 'success');
+
+    } else {
+      throw new Error(result?.error || 'Errore sconosciuto');
+    }
+
+  } catch (error) {
+    console.error('❌ Errore rilevamento:', error);
+    updateStatus('❌ Errore rilevamento');
+    showToast(`Errore: ${error.message}`, 'error');
+
+    if (infoPanel) {
+      infoPanel.innerHTML = `<span style="color: #ff6b6b;">❌ Errore: ${error.message}</span>`;
+    }
+  }
+}
+
+/**
+ * Mostra/nasconde il pannello parametri quando si clicca su Trova Differenze.
+ * Carica automaticamente i parametri dell'ultimo rilevamento con successo.
+ */
+function showWhiteDotsParamsPanel() {
+  const panel = document.getElementById('white-dots-params-panel');
+  if (panel) {
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'block';
+
+    // Carica parametri salvati dall'ultimo rilevamento con successo
+    if (panel.style.display === 'block') {
+      loadLastSuccessfulParams();
+    }
+  }
+}
+
+/**
+ * Carica i parametri dell'ultimo rilevamento con successo.
+ */
+function loadLastSuccessfulParams() {
+  try {
+    const savedParams = localStorage.getItem('whiteDotsLastSuccessParams');
+    if (savedParams) {
+      const params = JSON.parse(savedParams);
+
+      // Aggiorna i parametri globali
+      window.whiteDotsParams = { ...params };
+
+      // Aggiorna gli slider e i display
+      Object.keys(params).forEach(paramName => {
+        const value = params[paramName];
+        const sliderMap = {
+          'saturation_max': 'saturation-max-slider',
+          'value_min': 'value-min-slider',
+          'value_max': 'value-max-slider',
+          'cluster_size_min': 'cluster-min-slider',
+          'cluster_size_max': 'cluster-max-slider',
+          'min_distance': 'min-distance-slider'
+        };
+
+        const sliderId = sliderMap[paramName];
+        if (sliderId) {
+          const slider = document.getElementById(sliderId);
+          if (slider) {
+            slider.value = value;
+            updateWhiteDotsParam(paramName, value);
+          }
+        }
+      });
+
+      console.log('✅ Parametri ripristinati dall\'ultimo rilevamento con successo:', params);
+      showToast('Parametri ripristinati dall\'ultima analisi', 'info');
+    }
+  } catch (error) {
+    console.error('Errore caricamento parametri salvati:', error);
+  }
+}
+
+// ==================== EYEDROPPER TOOL ====================
+
+/**
+ * Stato del contagocce
+ */
+window.eyedropperActive = false;
+window.eyedropperSuggestion = null;
+
+/**
+ * Attiva/disattiva lo strumento contagocce
+ * Usa il sistema canvas-modes per gestire i click
+ */
+function toggleEyedropper() {
+  window.eyedropperActive = !window.eyedropperActive;
+
+  const btn = document.getElementById('eyedropper-btn');
+  const resultsPanel = document.getElementById('eyedropper-results');
+  const canvasContainer = document.querySelector('.canvas-container') || document.getElementById('main-canvas');
+
+  if (window.eyedropperActive) {
+    // Attiva contagocce tramite sistema canvas-modes
+    btn.classList.add('active');
+    btn.innerHTML = '💧 Clicca sul punto';
+    resultsPanel.style.display = 'block';
+
+    // Cambia cursore
+    if (canvasContainer) {
+      canvasContainer.classList.add('eyedropper-active');
+    }
+
+    // Imposta la modalità eyedropper nel sistema canvas-modes
+    if (typeof window.setCanvasMode === 'function') {
+      window.setCanvasMode('eyedropper');
+    }
+
+    showToast('💧 Contagocce attivo: clicca su un puntino bianco', 'info');
+    console.log('💧 Contagocce ATTIVATO (via canvas-modes)');
+
+  } else {
+    // Disattiva contagocce
+    btn.classList.remove('active');
+    btn.innerHTML = '💧 Contagocce';
+
+    // Ripristina cursore
+    if (canvasContainer) {
+      canvasContainer.classList.remove('eyedropper-active');
+    }
+
+    // Disattiva la modalità nel sistema canvas-modes
+    if (typeof window.setCanvasMode === 'function') {
+      window.setCanvasMode(null);
+    }
+
+    console.log('💧 Contagocce DISATTIVATO');
+  }
+}
+
+/**
+ * Gestisce il click sul canvas quando il contagocce è attivo
+ */
+function handleEyedropperClick(event) {
+  if (!window.eyedropperActive) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const canvas = document.getElementById('main-canvas');
+  if (!canvas || !currentImage) {
+    showToast('Nessuna immagine caricata', 'warning');
+    return;
+  }
+
+  // Calcola le coordinate del click relative all'immagine originale
+  const rect = canvas.getBoundingClientRect();
+  const clickX = event.clientX - rect.left;
+  const clickY = event.clientY - rect.top;
+
+  // Converti in coordinate dell'immagine originale usando imageScale e imageOffset
+  const scale = window.imageScale || 1;
+  const offset = window.imageOffset || { x: 0, y: 0 };
+
+  // Le coordinate sull'immagine originale
+  const imgX = Math.round((clickX - offset.x) / scale);
+  const imgY = Math.round((clickY - offset.y) / scale);
+
+  console.log(`💧 Click: canvas(${clickX.toFixed(0)}, ${clickY.toFixed(0)}) → img(${imgX}, ${imgY})`);
+  console.log(`   Scale: ${scale}, Offset: (${offset.x}, ${offset.y})`);
+
+  // Analizza il pixel e l'area circostante
+  analyzePixelArea(imgX, imgY);
+}
+
+/**
+ * Analizza il pixel e l'area circostante per determinare le caratteristiche del cluster
+ */
+function analyzePixelArea(x, y) {
+  if (!currentImage) return;
+
+  try {
+    // Crea un canvas temporaneo per leggere i pixel dell'immagine originale
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+
+    // Ottiene l'elemento immagine
+    let imageElement;
+    if (currentImage.getElement) {
+      imageElement = currentImage.getElement();
+    } else if (currentImage.src) {
+      imageElement = currentImage;
+    } else {
+      console.error('❌ currentImage non valido');
+      return;
+    }
+
+    const imgWidth = imageElement.naturalWidth || imageElement.width;
+    const imgHeight = imageElement.naturalHeight || imageElement.height;
+
+    // Verifica che le coordinate siano valide
+    if (x < 0 || x >= imgWidth || y < 0 || y >= imgHeight) {
+      showToast('Punto fuori dall\'immagine', 'warning');
+      return;
+    }
+
+    tempCanvas.width = imgWidth;
+    tempCanvas.height = imgHeight;
+    tempCtx.drawImage(imageElement, 0, 0);
+
+    // Leggi il pixel cliccato
+    const pixelData = tempCtx.getImageData(x, y, 1, 1).data;
+    const r = pixelData[0];
+    const g = pixelData[1];
+    const b = pixelData[2];
+
+    // Converti in HSV
+    const hsv = rgbToHsv(r, g, b);
+
+    // Analizza l'area circostante per stimare la dimensione del cluster
+    const clusterInfo = analyzeClusterAtPoint(tempCtx, x, y, imgWidth, imgHeight, hsv);
+
+    // Aggiorna UI
+    updateEyedropperUI(x, y, r, g, b, hsv, clusterInfo);
+
+    console.log(`💧 Pixel (${x}, ${y}): RGB(${r},${g},${b}) HSV(${hsv.h}°, ${hsv.s}%, ${hsv.v}%)`);
+    console.log(`   Cluster stimato: ${clusterInfo.size}px, simili trovati: ${clusterInfo.similarCount}`);
+
+  } catch (error) {
+    console.error('❌ Errore analisi pixel:', error);
+    showToast('Errore durante l\'analisi', 'error');
+  }
+}
+
+/**
+ * Converte RGB in HSV
+ */
+function rgbToHsv(r, g, b) {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const diff = max - min;
+
+  let h = 0;
+  if (diff !== 0) {
+    if (max === r) {
+      h = ((g - b) / diff) % 6;
+    } else if (max === g) {
+      h = (b - r) / diff + 2;
+    } else {
+      h = (r - g) / diff + 4;
+    }
+    h = Math.round(h * 60);
+    if (h < 0) h += 360;
+  }
+
+  const s = max === 0 ? 0 : Math.round((diff / max) * 100);
+  const v = Math.round(max * 100);
+
+  return { h, s, v };
+}
+
+/**
+ * Analizza l'area attorno a un punto per stimare la dimensione del cluster
+ */
+function analyzeClusterAtPoint(ctx, centerX, centerY, imgWidth, imgHeight, targetHsv) {
+  const searchRadius = 20; // Raggio di ricerca in pixel
+  const satTolerance = 15;  // Tolleranza saturazione
+  const valTolerance = 15;  // Tolleranza luminosità
+
+  let similarCount = 0;
+  let minX = centerX, maxX = centerX;
+  let minY = centerY, maxY = centerY;
+
+  // Scansiona l'area circostante
+  for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+    for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+      const px = centerX + dx;
+      const py = centerY + dy;
+
+      if (px < 0 || px >= imgWidth || py < 0 || py >= imgHeight) continue;
+
+      const pixelData = ctx.getImageData(px, py, 1, 1).data;
+      const hsv = rgbToHsv(pixelData[0], pixelData[1], pixelData[2]);
+
+      // Verifica se il pixel è simile al target (stesso range di bianco)
+      const satMatch = Math.abs(hsv.s - targetHsv.s) <= satTolerance;
+      const valMatch = Math.abs(hsv.v - targetHsv.v) <= valTolerance;
+
+      if (satMatch && valMatch && hsv.s <= 40 && hsv.v >= 40) {
+        similarCount++;
+        minX = Math.min(minX, px);
+        maxX = Math.max(maxX, px);
+        minY = Math.min(minY, py);
+        maxY = Math.max(maxY, py);
+      }
+    }
+  }
+
+  // Stima dimensione cluster
+  const width = maxX - minX + 1;
+  const height = maxY - minY + 1;
+  const estimatedSize = Math.round(width * height * 0.6); // Approssimazione area ellittica
+
+  return {
+    size: Math.max(similarCount, estimatedSize),
+    similarCount,
+    width,
+    height
+  };
+}
+
+/**
+ * Aggiorna l'interfaccia con i risultati del contagocce
+ */
+function updateEyedropperUI(x, y, r, g, b, hsv, clusterInfo) {
+  // Aggiorna preview colore
+  const colorPreview = document.getElementById('eyedropper-color-preview');
+  if (colorPreview) {
+    colorPreview.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+  }
+
+  // Aggiorna valori
+  document.getElementById('eyedropper-rgb').textContent = `${r}, ${g}, ${b}`;
+  document.getElementById('eyedropper-pos').textContent = `${x}, ${y}`;
+  document.getElementById('eyedropper-hue').textContent = hsv.h;
+  document.getElementById('eyedropper-sat').textContent = hsv.s;
+  document.getElementById('eyedropper-val').textContent = hsv.v;
+  document.getElementById('eyedropper-cluster').textContent = clusterInfo.size;
+
+  // Genera suggerimento per i parametri
+  // NOTA: generateParameterSuggestion() salva già i parametri in window.eyedropperSuggestion
+  const suggestion = generateParameterSuggestion(hsv, clusterInfo);
+
+  const suggestionEl = document.getElementById('eyedropper-suggestion');
+  const applyBtn = document.getElementById('apply-suggestion-btn');
+
+  if (suggestionEl) {
+    suggestionEl.innerHTML = suggestion.text;
+  }
+
+  if (applyBtn) {
+    applyBtn.style.display = suggestion.canApply ? 'block' : 'none';
+  }
+}
+
+/**
+ * Genera un suggerimento per i parametri basato sul pixel analizzato
+ */
+function generateParameterSuggestion(hsv, clusterInfo) {
+  const isWhite = hsv.s <= 30 && hsv.v >= 50;
+
+  if (!isWhite) {
+    return {
+      text: `<span style="color: #ff6b6b;">⚠️ Questo pixel non sembra bianco (Sat ${hsv.s}% > 30% o Val ${hsv.v}% < 50%)</span>`,
+      canApply: false
+    };
+  }
+
+  // Calcola parametri suggeriti con margine
+  const suggestedSatMax = Math.min(60, hsv.s + 10);
+  const suggestedValMin = Math.max(40, hsv.v - 15);
+  const suggestedValMax = 100;
+
+  // IMPORTANTE: Il cluster size dal contagocce è già in pixel dell'immagine originale
+  // Non serve scalare per lo zoom qui, verrà fatto in applyEyedropperSuggestion()
+  const suggestedClusterMin = Math.max(10, Math.floor(clusterInfo.size * 0.5));
+  const suggestedClusterMax = Math.min(200, Math.ceil(clusterInfo.size * 2));
+  const suggestedMinDistance = 30;  // Distanza minima tra punti
+
+  window.eyedropperSuggestion = {
+    saturation_max: suggestedSatMax,
+    value_min: suggestedValMin,
+    value_max: suggestedValMax,
+    cluster_size_min: suggestedClusterMin,
+    cluster_size_max: suggestedClusterMax,
+    min_distance: suggestedMinDistance
+  };
+
+  return {
+    text: `<span style="color: #00ff88;">✓ Puntino bianco rilevato!</span><br>` +
+      `Sat Max: <b>${suggestedSatMax}%</b> (attuale: ${hsv.s}%)<br>` +
+      `Val Min: <b>${suggestedValMin}%</b> (attuale: ${hsv.v}%)<br>` +
+      `Cluster: <b>${suggestedClusterMin}-${suggestedClusterMax}px</b> (stimato: ~${clusterInfo.size}px)<br>` +
+      `Distanza Min: <b>${suggestedMinDistance}px</b>`,
+    canApply: true
+  };
+}
+
+/**
+ * Applica i parametri suggeriti dal contagocce agli sliders
+ */
+function applyEyedropperSuggestion() {
+  const suggestion = window.eyedropperSuggestion;
+  if (!suggestion || !suggestion.saturation_max) {
+    showToast('Nessun suggerimento disponibile', 'warning');
+    console.log('⚠️ applyEyedropperSuggestion: nessun suggerimento disponibile');
+    return;
+  }
+
+  console.log('💧 Applicazione suggerimenti contagocce:', suggestion);
+
+  // Aggiorna parametri HSV (non dipendono dallo zoom)
+  if (suggestion.saturation_max !== undefined) {
+    const slider = document.getElementById('saturation-max-slider');
+    if (slider) {
+      slider.value = suggestion.saturation_max;
+      updateWhiteDotsParam('saturation_max', suggestion.saturation_max);
+      console.log(`  ✓ Saturation Max: ${suggestion.saturation_max}%`);
+    }
+  }
+
+  if (suggestion.value_min !== undefined) {
+    const slider = document.getElementById('value-min-slider');
+    if (slider) {
+      slider.value = suggestion.value_min;
+      updateWhiteDotsParam('value_min', suggestion.value_min);
+      console.log(`  ✓ Value Min: ${suggestion.value_min}%`);
+    }
+  }
+
+  if (suggestion.value_max !== undefined) {
+    const slider = document.getElementById('value-max-slider');
+    if (slider) {
+      slider.value = suggestion.value_max;
+      updateWhiteDotsParam('value_max', suggestion.value_max);
+      console.log(`  ✓ Value Max: ${suggestion.value_max}%`);
+    }
+  }
+
+  // Parametri dimensionali: verifica i limiti degli slider (che sono adattati allo zoom)
+  if (suggestion.cluster_size_min !== undefined) {
+    const slider = document.getElementById('cluster-min-slider');
+    if (slider) {
+      const sliderMin = parseInt(slider.min);
+      const sliderMax = parseInt(slider.max);
+      const suggestedValue = suggestion.cluster_size_min;
+      const clampedValue = Math.max(sliderMin, Math.min(sliderMax, suggestedValue));
+
+      slider.value = clampedValue;
+      updateWhiteDotsParam('cluster_size_min', clampedValue);
+
+      if (clampedValue !== suggestedValue) {
+        console.log(`  ⚠️ Cluster Min: ${suggestedValue}px limitato a ${clampedValue}px (range: ${sliderMin}-${sliderMax}px)`);
+      } else {
+        console.log(`  ✓ Cluster Min: ${clampedValue}px`);
+      }
+    }
+  }
+
+  if (suggestion.cluster_size_max !== undefined) {
+    const slider = document.getElementById('cluster-max-slider');
+    if (slider) {
+      const sliderMin = parseInt(slider.min);
+      const sliderMax = parseInt(slider.max);
+      const suggestedValue = suggestion.cluster_size_max;
+      const clampedValue = Math.max(sliderMin, Math.min(sliderMax, suggestedValue));
+
+      slider.value = clampedValue;
+      updateWhiteDotsParam('cluster_size_max', clampedValue);
+
+      if (clampedValue !== suggestedValue) {
+        console.log(`  ⚠️ Cluster Max: ${suggestedValue}px limitato a ${clampedValue}px (range: ${sliderMin}-${sliderMax}px)`);
+      } else {
+        console.log(`  ✓ Cluster Max: ${clampedValue}px`);
+      }
+    }
+  }
+
+  if (suggestion.min_distance !== undefined) {
+    const slider = document.getElementById('min-distance-slider');
+    if (slider) {
+      const sliderMin = parseInt(slider.min);
+      const sliderMax = parseInt(slider.max);
+      const suggestedValue = suggestion.min_distance;
+      const clampedValue = Math.max(sliderMin, Math.min(sliderMax, suggestedValue));
+
+      slider.value = clampedValue;
+      updateWhiteDotsParam('min_distance', clampedValue);
+
+      if (clampedValue !== suggestedValue) {
+        console.log(`  ⚠️ Min Distance: ${suggestedValue}px limitato a ${clampedValue}px (range: ${sliderMin}-${sliderMax}px)`);
+      } else {
+        console.log(`  ✓ Min Distance: ${clampedValue}px`);
+      }
+    }
+  }
+
+  showToast('✓ Parametri suggeriti applicati - avvio rilevamento...', 'success');
+  console.log('✅ Parametri applicati con successo');
+
+  // Disattiva contagocce
+  toggleEyedropper();
+
+  // Avvia automaticamente il rilevamento con i nuovi parametri
+  setTimeout(() => {
+    detectWithCurrentParams();
+  }, 300);
+}
+
+// ==================== END EYEDROPPER TOOL ====================
+
+// ==================== POINT PAIR HIGHLIGHT TOOL ====================
+
+/**
+ * Stato corrente dell'evidenziazione coppia punti
+ */
+window.highlightedPair = null;
+window.highlightOverlayObjects = [];
+
+/**
+ * Evidenzia una coppia di punti corrispondenti sul canvas
+ * Mostra frecce che indicano quale punto è più alto/basso e più interno/esterno
+ */
+function highlightPointPair(rowElement) {
+  // Rimuovi evidenziazione precedente
+  clearPointPairHighlight();
+
+  // Ottieni i dati della coppia dalla riga
+  const pairDataStr = rowElement.getAttribute('data-pair');
+  if (!pairDataStr) {
+    console.error('❌ Nessun dato coppia trovato');
+    return;
+  }
+
+  const pairData = JSON.parse(pairDataStr.replace(/&quot;/g, '"'));
+  console.log('🎯 Evidenziazione coppia:', pairData);
+
+  // Toggle: se clicco sulla stessa riga, rimuovi evidenziazione
+  if (window.highlightedPair &&
+    window.highlightedPair.leftLabel === pairData.leftLabel &&
+    window.highlightedPair.rightLabel === pairData.rightLabel) {
+    window.highlightedPair = null;
+    // Rimuovi classe active da tutte le righe
+    document.querySelectorAll('.point-pair-row').forEach(r => r.classList.remove('active'));
+    updateCanvasDisplay();
+    return;
+  }
+
+  window.highlightedPair = pairData;
+
+  // Evidenzia la riga nella tabella
+  document.querySelectorAll('.point-pair-row').forEach(r => r.classList.remove('active'));
+  rowElement.classList.add('active');
+
+  // Disegna l'evidenziazione sul canvas
+  drawPointPairHighlight(pairData);
+
+  // Mostra toast informativo
+  showToast(`📍 ${pairData.leftLabel} ↔ ${pairData.rightLabel}: ${pairData.fartherPoint} più esterno, ${pairData.higherPoint} più alto`, 'info');
+}
+
+/**
+ * Rimuove l'evidenziazione della coppia punti dal canvas
+ */
+function clearPointPairHighlight() {
+  if (!fabricCanvas) return;
+
+  // Rimuovi oggetti overlay precedenti
+  window.highlightOverlayObjects.forEach(obj => {
+    fabricCanvas.remove(obj);
+  });
+  window.highlightOverlayObjects = [];
+}
+
+/**
+ * Disegna l'evidenziazione della coppia di punti con frecce direzionali
+ */
+function drawPointPairHighlight(pairData) {
+  if (!fabricCanvas || !currentImage) return;
+
+  // Usa transformLandmarkCoordinate per trasformare correttamente le coordinate
+  // come fanno i landmarks, tenendo conto di scala, rotazione e posizione dell'immagine
+  const leftTransformed = transformLandmarkCoordinate({
+    x: pairData.leftPoint[0],
+    y: pairData.leftPoint[1]
+  });
+  const rightTransformed = transformLandmarkCoordinate({
+    x: pairData.rightPoint[0],
+    y: pairData.rightPoint[1]
+  });
+
+  const leftX = leftTransformed.x;
+  const leftY = leftTransformed.y;
+  const rightX = rightTransformed.x;
+  const rightY = rightTransformed.y;
+
+  console.log(`🎯 Point pair highlight: L(${pairData.leftPoint[0]}, ${pairData.leftPoint[1]}) → (${leftX.toFixed(1)}, ${leftY.toFixed(1)}), R(${pairData.rightPoint[0]}, ${pairData.rightPoint[1]}) → (${rightX.toFixed(1)}, ${rightY.toFixed(1)})`);
+
+  // Colori
+  const LEFT_COLOR = '#00bcd4';  // Ciano per sinistra
+  const RIGHT_COLOR = '#ff9800'; // Arancione per destra
+  const ARROW_COLOR = '#ff4444'; // Rosso per frecce
+
+  // ===== CERCHI DI EVIDENZIAZIONE =====
+  // Cerchio grande pulsante attorno al punto sinistro
+  const leftCircle = new fabric.Circle({
+    left: leftX,
+    top: leftY,
+    radius: 25,
+    fill: 'transparent',
+    stroke: LEFT_COLOR,
+    strokeWidth: 4,
+    originX: 'center',
+    originY: 'center',
+    selectable: false,
+    evented: false,
+    opacity: 0.9
+  });
+
+  // Cerchio grande pulsante attorno al punto destro
+  const rightCircle = new fabric.Circle({
+    left: rightX,
+    top: rightY,
+    radius: 25,
+    fill: 'transparent',
+    stroke: RIGHT_COLOR,
+    strokeWidth: 4,
+    originX: 'center',
+    originY: 'center',
+    selectable: false,
+    evented: false,
+    opacity: 0.9
+  });
+
+  // ===== LINEA DI CONNESSIONE =====
+  const connectionLine = new fabric.Line([leftX, leftY, rightX, rightY], {
+    stroke: '#ffffff',
+    strokeWidth: 2,
+    strokeDashArray: [8, 4],
+    selectable: false,
+    evented: false,
+    opacity: 0.7
+  });
+
+  // ===== FRECCE DIREZIONALI =====
+
+  // Freccia verticale (alto/basso) - posizionata sopra il punto più BASSO
+  const higherY = Math.min(leftY, rightY);
+  const lowerY = Math.max(leftY, rightY);
+  const verticalArrowX = (leftX + rightX) / 2;
+
+  // Determina quale punto è più alto (Y minore = più alto)
+  const leftIsHigher = leftY < rightY;
+  const arrowPointsUp = true; // La freccia punta sempre verso l'alto per indicare il più alto
+
+  // Freccia verticale vicino al punto PIÙ ALTO
+  const vertArrowY = leftIsHigher ? leftY : rightY;
+  const vertArrowX2 = leftIsHigher ? leftX : rightX;
+
+  const verticalArrow = createArrow(
+    vertArrowX2 + 35, vertArrowY + 15,
+    vertArrowX2 + 35, vertArrowY - 15,
+    '#00ff00', // Verde per "più alto"
+    3
+  );
+
+  // Label "↑ PIÙ ALTO"
+  const higherLabel = new fabric.Text('↑', {
+    left: vertArrowX2 + 35,
+    top: vertArrowY - 25,
+    fontSize: 20,
+    fill: '#00ff00',
+    fontWeight: 'bold',
+    originX: 'center',
+    originY: 'center',
+    selectable: false,
+    evented: false
+  });
+
+  // Freccia orizzontale (interno/esterno) - vicino al punto PIÙ ESTERNO
+  const leftIsOuter = pairData.fartherPoint === pairData.leftLabel;
+  const outerX = leftIsOuter ? leftX : rightX;
+  const outerY = leftIsOuter ? leftY : rightY;
+
+  // Freccia che punta verso l'esterno
+  const arrowDirection = leftIsOuter ? -1 : 1; // -1 = verso sinistra, 1 = verso destra
+  const horizontalArrow = createArrow(
+    outerX + (arrowDirection * 15), outerY + 35,
+    outerX + (arrowDirection * 40), outerY + 35,
+    '#ff4444', // Rosso per "più esterno"
+    3
+  );
+
+  // Label "← PIÙ ESTERNO" o "PIÙ ESTERNO →"
+  const outerLabel = new fabric.Text(leftIsOuter ? '←' : '→', {
+    left: outerX + (arrowDirection * 50),
+    top: outerY + 35,
+    fontSize: 20,
+    fill: '#ff4444',
+    fontWeight: 'bold',
+    originX: 'center',
+    originY: 'center',
+    selectable: false,
+    evented: false
+  });
+
+  // ===== ETICHETTE PUNTI =====
+  const leftLabel = new fabric.Text(pairData.leftLabel, {
+    left: leftX,
+    top: leftY - 40,
+    fontSize: 16,
+    fill: LEFT_COLOR,
+    fontWeight: 'bold',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    originX: 'center',
+    originY: 'center',
+    selectable: false,
+    evented: false,
+    padding: 4
+  });
+
+  const rightLabel = new fabric.Text(pairData.rightLabel, {
+    left: rightX,
+    top: rightY - 40,
+    fontSize: 16,
+    fill: RIGHT_COLOR,
+    fontWeight: 'bold',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    originX: 'center',
+    originY: 'center',
+    selectable: false,
+    evented: false,
+    padding: 4
+  });
+
+  // ===== INFO BOX =====
+  const infoText = `${pairData.fartherPoint} +${pairData.distanceDiff.toFixed(0)}px esterno\n${pairData.higherPoint} +${pairData.heightDiff.toFixed(0)}px alto`;
+  const infoBox = new fabric.Text(infoText, {
+    left: (leftX + rightX) / 2,
+    top: Math.min(leftY, rightY) - 60,
+    fontSize: 12,
+    fill: '#ffffff',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    originX: 'center',
+    originY: 'center',
+    selectable: false,
+    evented: false,
+    padding: 6,
+    textAlign: 'center'
+  });
+
+  // Aggiungi tutti gli oggetti al canvas
+  const objects = [
+    connectionLine,
+    leftCircle, rightCircle,
+    verticalArrow, higherLabel,
+    horizontalArrow, outerLabel,
+    leftLabel, rightLabel,
+    infoBox
+  ];
+
+  objects.forEach(obj => {
+    if (obj) {
+      fabricCanvas.add(obj);
+      window.highlightOverlayObjects.push(obj);
+    }
+  });
+
+  fabricCanvas.renderAll();
+}
+
+/**
+ * Crea una freccia come gruppo di oggetti Fabric.js
+ */
+function createArrow(x1, y1, x2, y2, color, strokeWidth) {
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const headLength = 12;
+
+  // Linea principale
+  const line = new fabric.Line([x1, y1, x2, y2], {
+    stroke: color,
+    strokeWidth: strokeWidth,
+    selectable: false,
+    evented: false
+  });
+
+  // Punta della freccia (triangolo)
+  const headX1 = x2 - headLength * Math.cos(angle - Math.PI / 6);
+  const headY1 = y2 - headLength * Math.sin(angle - Math.PI / 6);
+  const headX2 = x2 - headLength * Math.cos(angle + Math.PI / 6);
+  const headY2 = y2 - headLength * Math.sin(angle + Math.PI / 6);
+
+  const arrowHead = new fabric.Triangle({
+    left: x2,
+    top: y2,
+    width: 10,
+    height: 15,
+    fill: color,
+    angle: (angle * 180 / Math.PI) + 90,
+    originX: 'center',
+    originY: 'center',
+    selectable: false,
+    evented: false
+  });
+
+  // Raggruppa linea e punta
+  const group = new fabric.Group([line, arrowHead], {
+    selectable: false,
+    evented: false
+  });
+
+  return group;
+}
+
+/**
+ * Resetta l'evidenziazione quando si aggiorna il canvas
+ */
+function resetPointPairHighlightOnUpdate() {
+  // Mantieni l'evidenziazione se presente
+  if (window.highlightedPair) {
+    // Ridisegna dopo un breve delay per permettere all'overlay base di essere disegnato
+    setTimeout(() => {
+      drawPointPairHighlight(window.highlightedPair);
+    }, 100);
+  }
+}
+
+// ==================== END POINT PAIR HIGHLIGHT TOOL ====================
+
+// Esponi le funzioni globalmente
+window.updateWhiteDotsParam = updateWhiteDotsParam;
+window.resetWhiteDotsParams = resetWhiteDotsParams;
+window.detectWithCurrentParams = detectWithCurrentParams;
+window.showWhiteDotsParamsPanel = showWhiteDotsParamsPanel;
+window.highlightPointPair = highlightPointPair;
+window.clearPointPairHighlight = clearPointPairHighlight;
+window.toggleEyedropper = toggleEyedropper;
+window.applyEyedropperSuggestion = applyEyedropperSuggestion;
+window.analyzePixelArea = analyzePixelArea;
+
+// ==================== END WHITE DOTS PARAMETER SLIDERS ====================
 
 function getCanvasImageAsBase64(maxDimension = null) {
   /**

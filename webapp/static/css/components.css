@@ -142,6 +142,90 @@
   margin-bottom: 8px;
 }
 
+/* Pannello parametri white dots */
+.param-slider-group {
+  margin-bottom: 12px;
+}
+
+.param-slider-group label {
+  display: block;
+  font-size: 12px;
+  color: #e0e0e0;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.param-slider-group label span {
+  color: #00d4ff;
+  font-weight: bold;
+}
+
+.param-slider-group input[type="range"] {
+  width: 100%;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #2a2a4a;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.param-slider-group input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #00d4ff;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 4px rgba(0, 212, 255, 0.5);
+  transition: transform 0.15s ease;
+}
+
+.param-slider-group input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.param-slider-group input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #00d4ff;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 4px rgba(0, 212, 255, 0.5);
+}
+
+.param-slider-group small {
+  display: block;
+  font-size: 10px;
+  color: #666;
+  margin-top: 2px;
+  font-style: italic;
+}
+
+/* Contagocce / Eyedropper tool */
+#eyedropper-btn.active {
+  background: linear-gradient(135deg, #e74c3c, #c0392b) !important;
+  box-shadow: 0 0 10px rgba(231, 76, 60, 0.5);
+  animation: eyedropper-pulse 1.5s infinite;
+}
+
+@keyframes eyedropper-pulse {
+  0%, 100% { box-shadow: 0 0 5px rgba(231, 76, 60, 0.5); }
+  50% { box-shadow: 0 0 15px rgba(231, 76, 60, 0.8); }
+}
+
+/* Cursore contagocce per il canvas */
+.eyedropper-active {
+  cursor: crosshair !important;
+}
+
+.eyedropper-active * {
+  cursor: crosshair !important;
+}
+
 /* Responsive per schermi piccoli - Mobile Only */
 @media (max-width: 768px) {
   .stats-grid {
@@ -775,4 +859,46 @@
 
 .commands-list-sidebar::-webkit-scrollbar-thumb:hover {
   background: rgba(102, 126, 234, 0.7);
+}
+
+/* ========================================
+   POINT PAIR ROW HIGHLIGHTING
+   Per righe cliccabili nella tabella misurazioni
+   ======================================== */
+
+.point-pair-row {
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-left 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.point-pair-row:hover {
+  background-color: rgba(0, 188, 212, 0.15) !important;
+}
+
+.point-pair-row.active {
+  background-color: rgba(0, 188, 212, 0.3) !important;
+  border-left: 3px solid #00bcd4;
+}
+
+.point-pair-row.active td {
+  color: #00e5ff !important;
+  font-weight: 600;
+}
+
+/* Icona indicatore per righe selezionabili */
+.point-pair-row td:first-child::before {
+  content: "▸ ";
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  color: #00bcd4;
+}
+
+.point-pair-row:hover td:first-child::before,
+.point-pair-row.active td:first-child::before {
+  opacity: 1;
+}
+
+.point-pair-row.active td:first-child::before {
+  content: "▶ ";
 }

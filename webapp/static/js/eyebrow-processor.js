@@ -198,22 +198,25 @@ function checkPrerequisites() {
  * Usa landmarks MediaPipe: 9 (glabella) e 151 (chin)
  */
 function calculateSymmetryAxis() {
-  if (!window.currentLandmarks || window.currentLandmarks.length < 152) {
-    console.error('❌ Landmarks insufficienti');
+  if (!window.currentLandmarks || window.currentLandmarks.length < 165) {
+    console.error('❌ Landmarks insufficienti (richiesti almeno 165)');
     return null;
   }
 
-  const glabella = window.currentLandmarks[9];  // Centro fronte
-  const chin = window.currentLandmarks[151];    // Mento
+  // MediaPipe landmarks: 9 = glabella (centro fronte), 164 = philtrum (area naso-labbro)
+  // IMPORTANTE: Stessi landmarks usati in main.js drawSymmetryAxis() per coerenza
+  const glabella = window.currentLandmarks[9];   // Centro fronte
+  const philtrum = window.currentLandmarks[164]; // Philtrum (naso-labbro)
 
-  if (!glabella || !chin) {
-    console.error('❌ Landmarks asse non disponibili');
+  if (!glabella || !philtrum) {
+    console.error('❌ Landmarks asse non disponibili (9 o 164)');
     return null;
   }
 
+  console.log('✅ Asse simmetria calcolato con landmarks 9 (glabella) e 164 (philtrum)');
   return {
     p1: { x: glabella.x, y: glabella.y },
-    p2: { x: chin.x, y: chin.y }
+    p2: { x: philtrum.x, y: philtrum.y }
   };
 }
 

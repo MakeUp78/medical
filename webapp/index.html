@@ -207,6 +207,105 @@
                             <button class="btn btn-eyebrow" onclick="show_right_eyebrow_with_voice()">✂️ Preferenza
                                 Sinistra</button>
                         </div>
+
+                        <!-- Pannello Parametri Rilevamento White Dots -->
+                        <div id="white-dots-params-panel" style="display: none; margin-top: 15px; padding: 12px; background: #1a1a2e; border-radius: 8px; border: 1px solid #4a4a6a;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <span style="font-weight: bold; color: #00d4ff;">⚙️ Parametri Rilevamento</span>
+                                <button onclick="resetWhiteDotsParams()" style="padding: 4px 8px; font-size: 11px; background: #ff6b6b; border: none; border-radius: 4px; color: white; cursor: pointer;">Reset</button>
+                            </div>
+
+                            <!-- Saturazione Max -->
+                            <div class="param-slider-group">
+                                <label>Saturazione Max: <span id="saturation-max-value">20</span>%</label>
+                                <input type="range" id="saturation-max-slider" min="5" max="100" value="20"
+                                    oninput="updateWhiteDotsParam('saturation_max', this.value)">
+                                <small>Più alto = include pixel più colorati (non solo bianchi)</small>
+                            </div>
+
+                            <!-- Value Min (Luminosità minima) -->
+                            <div class="param-slider-group">
+                                <label>Luminosità Min: <span id="value-min-value">54</span>%</label>
+                                <input type="range" id="value-min-slider" min="10" max="90" value="54"
+                                    oninput="updateWhiteDotsParam('value_min', this.value)">
+                                <small>Più basso = include pixel più scuri</small>
+                            </div>
+
+                            <!-- Value Max (Luminosità massima) -->
+                            <div class="param-slider-group">
+                                <label>Luminosità Max: <span id="value-max-value">100</span>%</label>
+                                <input type="range" id="value-max-slider" min="50" max="100" value="100"
+                                    oninput="updateWhiteDotsParam('value_max', this.value)">
+                                <small>Più basso = esclude pixel troppo brillanti (riflessi)</small>
+                            </div>
+
+                            <!-- Cluster Size Min -->
+                            <div class="param-slider-group">
+                                <label>Dimensione Min Cluster: <span id="cluster-min-value">9</span>px</label>
+                                <input type="range" id="cluster-min-slider" min="1" max="50" value="9"
+                                    oninput="updateWhiteDotsParam('cluster_size_min', this.value)">
+                                <small>Più alto = ignora puntini piccoli (rumore)</small>
+                            </div>
+
+                            <!-- Cluster Size Max -->
+                            <div class="param-slider-group">
+                                <label>Dimensione Max Cluster: <span id="cluster-max-value">66</span>px</label>
+                                <input type="range" id="cluster-max-slider" min="20" max="200" value="66"
+                                    oninput="updateWhiteDotsParam('cluster_size_max', this.value)">
+                                <small>Più alto = include cluster più grandi (fino a 200px)</small>
+                            </div>
+
+                            <!-- Min Distance -->
+                            <div class="param-slider-group">
+                                <label>Distanza Min tra Punti: <span id="min-distance-value">9</span>px</label>
+                                <input type="range" id="min-distance-slider" min="5" max="30" value="9"
+                                    oninput="updateWhiteDotsParam('min_distance', this.value)">
+                                <small>Più alto = punti più distanziati</small>
+                            </div>
+
+                            <!-- Pulsanti azione -->
+                            <div style="display: flex; gap: 8px; margin-top: 12px;">
+                                <!-- Pulsante Contagocce -->
+                                <button id="eyedropper-btn" onclick="toggleEyedropper()"
+                                    style="flex: 1; padding: 10px; background: linear-gradient(135deg, #9b59b6, #8e44ad); border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer;">
+                                    💧 Contagocce
+                                </button>
+                                <!-- Pulsante Rileva -->
+                                <button id="detect-with-params-btn" onclick="detectWithCurrentParams()"
+                                    style="flex: 2; padding: 10px; background: linear-gradient(135deg, #00d4ff, #0099cc); border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer;">
+                                    🔍 Rileva
+                                </button>
+                            </div>
+
+                            <!-- Pannello risultati contagocce -->
+                            <div id="eyedropper-results" style="display: none; margin-top: 10px; padding: 10px; background: #0d0d1a; border-radius: 6px; border: 1px solid #9b59b6;">
+                                <div style="font-weight: bold; color: #9b59b6; margin-bottom: 8px;">💧 Analisi Punto Selezionato</div>
+                                <div id="eyedropper-color-preview" style="width: 100%; height: 30px; border-radius: 4px; margin-bottom: 8px; border: 1px solid #444;"></div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px;">
+                                    <div>RGB: <span id="eyedropper-rgb" style="color: #00d4ff;">-</span></div>
+                                    <div>Pos: <span id="eyedropper-pos" style="color: #00d4ff;">-</span></div>
+                                    <div>Hue: <span id="eyedropper-hue" style="color: #00d4ff;">-</span>°</div>
+                                    <div>Sat: <span id="eyedropper-sat" style="color: #00d4ff;">-</span>%</div>
+                                    <div>Val: <span id="eyedropper-val" style="color: #00d4ff;">-</span>%</div>
+                                    <div>Cluster: <span id="eyedropper-cluster" style="color: #00d4ff;">-</span>px</div>
+                                </div>
+                                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;">
+                                    <div style="font-size: 10px; color: #888;">Suggerimento parametri:</div>
+                                    <div id="eyedropper-suggestion" style="font-size: 11px; color: #00ff88; margin-top: 4px;">
+                                        Clicca su un puntino bianco nell'immagine
+                                    </div>
+                                </div>
+                                <button onclick="applyEyedropperSuggestion()" id="apply-suggestion-btn"
+                                    style="display: none; width: 100%; margin-top: 8px; padding: 6px; background: #27ae60; border: none; border-radius: 4px; color: white; font-size: 11px; cursor: pointer;">
+                                    ✓ Applica suggerimento agli sliders
+                                </button>
+                            </div>
+
+                            <!-- Info parametri correnti -->
+                            <div id="current-params-info" style="margin-top: 10px; padding: 8px; background: #0d0d1a; border-radius: 4px; font-size: 11px; color: #888;">
+                                Modifica i parametri e clicca "Rileva" per testare
+                            </div>
+                        </div>
                     </div>
                 </div>
 

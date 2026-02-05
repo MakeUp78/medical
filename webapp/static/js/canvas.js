@@ -105,6 +105,11 @@ function setupCanvasEventListeners() {
     opt.e.stopPropagation();
 
     updateZoomDisplay(zoom);
+
+    // Aggiorna dinamicamente i range degli slider per white dots
+    if (typeof updateSliderRangesForZoom === 'function') {
+      updateSliderRangesForZoom(zoom);
+    }
   });
 
   // Event listeners per trasformazioni rimossi - gestiti dinamicamente in main.js
@@ -737,6 +742,11 @@ function zoomIn() {
   canvasScale = newZoom;
 
   updateZoomDisplay(newZoom);
+
+  // Aggiorna dinamicamente i range degli slider per white dots
+  if (typeof updateSliderRangesForZoom === 'function') {
+    updateSliderRangesForZoom(newZoom);
+  }
 }
 
 function zoomOut() {
@@ -748,6 +758,11 @@ function zoomOut() {
   canvasScale = newZoom;
 
   updateZoomDisplay(newZoom);
+
+  // Aggiorna dinamicamente i range degli slider per white dots
+  if (typeof updateSliderRangesForZoom === 'function') {
+    updateSliderRangesForZoom(newZoom);
+  }
 }
 
 function zoomFit() {
@@ -771,6 +786,11 @@ function zoomFit() {
   ));
 
   updateZoomDisplay(scale);
+
+  // Aggiorna dinamicamente i range degli slider per white dots
+  if (typeof updateSliderRangesForZoom === 'function') {
+    updateSliderRangesForZoom(scale);
+  }
 }
 
 function zoomReset() {
@@ -781,6 +801,11 @@ function zoomReset() {
   canvasScale = 1;
 
   updateZoomDisplay(1);
+
+  // Aggiorna dinamicamente i range degli slider per white dots
+  if (typeof updateSliderRangesForZoom === 'function') {
+    updateSliderRangesForZoom(1);
+  }
 }
 
 function updateZoomDisplay(zoom) {

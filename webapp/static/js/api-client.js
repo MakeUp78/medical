@@ -376,22 +376,42 @@ document.addEventListener('DOMContentLoaded', function () {
  */
 async function analyzeGreenDotsViaAPI(imageBase64, parameters = {}) {
   try {
+    // USA ENDPOINT ESISTENTE green-dots ma con logica WHITE DOTS
     const url = `${API_CONFIG.baseURL}${API_CONFIG.endpoints.greenDotsAnalyze}`;
-    console.log('🟢 API Green Dots URL:', url);
+    console.log('⚪ API White Dots URL (via green-dots endpoint):', url);
 
     const defaultParams = {
-      hue_range: [60, 150],
-      saturation_min: 15,
-      value_range: [15, 95],
-      cluster_size_range: [2, 150],
-      clustering_radius: 2
+      // Parametri ottimizzati per puntini BIANCHI
+      // Valori: Sat≤20%, Val 54-100%, Cluster 9-66px, Dist≥9px
+      saturation_max: 20,
+      value_min: 54,
+      value_max: 100,
+      cluster_size_min: 9,
+      cluster_size_max: 66,
+      clustering_radius: 2,
+      min_distance: 9
     };
+
+    // Merge parametri con precedenza a quelli passati
+    const mergedParams = { ...defaultParams, ...parameters };
+
+    // Costruisci cluster_size_range da min/max se passati separatamente
+    if (mergedParams.cluster_size_min !== undefined && mergedParams.cluster_size_max !== undefined) {
+      mergedParams.cluster_size_range = [mergedParams.cluster_size_min, mergedParams.cluster_size_max];
+    }
 
     const payload = {
       image: imageBase64,
-      ...defaultParams,
-      ...parameters
+      ...mergedParams
     };
+
+    console.log('⚙️ Parametri rilevamento:', {
+      saturation_max: mergedParams.saturation_max,
+      value_min: mergedParams.value_min,
+      value_max: mergedParams.value_max,
+      cluster_size_range: mergedParams.cluster_size_range,
+      min_distance: mergedParams.min_distance
+    });
 
     const response = await fetch(url, {
       method: 'POST',
@@ -407,12 +427,12 @@ async function analyzeGreenDotsViaAPI(imageBase64, parameters = {}) {
     }
 
     const result = await response.json();
-    console.log('🟢 Risposta API Green Dots:', result);
+    console.log('⚪ Risposta API White Dots:', result);
 
     return result;
 
   } catch (error) {
-    console.error('❌ Errore API Green Dots:', error);
+    console.error('❌ Errore API White Dots:', error);
     throw error;
   }
 }

@@ -4,7 +4,7 @@
  */
 
 // === VARIABILI GLOBALI MODALITÀ ===
-let currentCanvasMode = null; // null | 'pan' | 'zoom-in' | 'zoom-out' | 'selection' | 'line' | 'couple' | 'rectangle' | 'circle'
+let currentCanvasMode = null; // null | 'pan' | 'zoom-in' | 'zoom-out' | 'selection' | 'line' | 'couple' | 'rectangle' | 'circle' | 'eyedropper'
 let isPanning = false;
 let panStart = { x: 0, y: 0 };
 let measureModeActive = false;
@@ -22,18 +22,23 @@ const CURSORS = {
     'line': 'cell', // Cursore a croce per linee perpendicolari
     'couple': 'cell', // Cursore a croce per coppie di linee verticali speculari
     'rectangle': 'crosshair',
-    'circle': 'crosshair'
+    'circle': 'crosshair',
+    'eyedropper': 'crosshair' // Cursore per contagocce
 };
 
 /**
  * Imposta la modalità corrente del canvas con supporto TOGGLE
  */
 function setCanvasMode(mode) {
-    console.log(`🔧 Cambio modalità canvas: ${currentCanvasMode} → ${mode}`);
+    if (window.DEBUG_MODE) {
+        console.log(`🔧 Cambio modalità canvas: ${currentCanvasMode} → ${mode}`);
+    }
 
     // TOGGLE: se clicco sullo stesso pulsante, disattiva
     if (currentCanvasMode === mode) {
-        console.log(`🔄 Toggle OFF modalità: ${mode}`);
+        if (window.DEBUG_MODE) {
+            console.log(`🔄 Toggle OFF modalità: ${mode}`);
+        }
         currentCanvasMode = null;
 
         // Quando disattivi una modalità, torna al cursore predefinito (non pan)
@@ -230,6 +235,10 @@ function setupCanvasModesHandlers() {
             case 'circle':
                 handleDrawStart(opt, pointer);
                 break;
+
+            case 'eyedropper':
+                handleEyedropperCanvasClick(evt, pointer);
+                break;
         }
     });
 
@@ -323,6 +332,11 @@ function handleZoomInClick(pointer) {
         updateZoomDisplay(newZoom);
     }
 
+    // Aggiorna dinamicamente i range degli slider per white dots
+    if (typeof updateSliderRangesForZoom === 'function') {
+        updateSliderRangesForZoom(newZoom);
+    }
+
     console.log(`✅ Zoom: ${zoom.toFixed(2)} → ${newZoom.toFixed(2)}`);
 }
 
@@ -346,6 +360,11 @@ function handleZoomOutClick(pointer) {
     // Aggiorna display zoom
     if (typeof updateZoomDisplay === 'function') {
         updateZoomDisplay(newZoom);
+    }
+
+    // Aggiorna dinamicamente i range degli slider per white dots
+    if (typeof updateSliderRangesForZoom === 'function') {
+        updateSliderRangesForZoom(newZoom);
     }
 
     console.log(`✅ Zoom: ${zoom.toFixed(2)} → ${newZoom.toFixed(2)}`);
@@ -727,6 +746,41 @@ function handleCoupleDrawStart(opt, pointer) {
     }
 }
 
+// === GESTIONE EYEDROPPER (CONTAGOCCE) ===
+
+/**
+ * Gestisce il click sul canvas quando l'eyedropper è attivo
+ * Converte le coordinate Fabric.js in coordinate immagine e chiama l'analisi
+ */
+function handleEyedropperCanvasClick(evt, pointer) {
+    console.log('💧 Eyedropper click via canvas-modes', pointer);
+
+    if (!window.currentImage) {
+        if (typeof showToast === 'function') {
+            showToast('Nessuna immagine caricata', 'warning');
+        }
+        return;
+    }
+
+    // Converti coordinate pointer (canvas Fabric.js) in coordinate immagine originale
+    const scale = window.imageScale || 1;
+    const offset = window.imageOffset || { x: 0, y: 0 };
+
+    // Le coordinate sull'immagine originale
+    const imgX = Math.round((pointer.x - offset.x) / scale);
+    const imgY = Math.round((pointer.y - offset.y) / scale);
+
+    console.log(`💧 Click: canvas(${pointer.x.toFixed(0)}, ${pointer.y.toFixed(0)}) → img(${imgX}, ${imgY})`);
+    console.log(`   Scale: ${scale}, Offset: (${offset.x.toFixed(1)}, ${offset.y.toFixed(1)})`);
+
+    // Chiama la funzione di analisi in main.js
+    if (typeof window.analyzePixelArea === 'function') {
+        window.analyzePixelArea(imgX, imgY);
+    } else {
+        console.error('❌ Funzione analyzePixelArea non trovata in window');
+    }
+}
+
 // === ESPORTA FUNZIONI GLOBALI ===
 
 window.setCanvasMode = setCanvasMode;
@@ -734,5 +788,6 @@ window.toggleMeasureMode = toggleMeasureMode;
 window.initializeCanvasModes = initializeCanvasModes;
 window.currentCanvasMode = currentCanvasMode;
 window.handleCoupleDrawStart = handleCoupleDrawStart;
+window.handleEyedropperCanvasClick = handleEyedropperCanvasClick;
 
 console.log('✅ canvas-modes.js caricato');

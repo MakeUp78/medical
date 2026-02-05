@@ -115,18 +115,24 @@ function showEyebrowCorrectionWindow(side) {
 // ============================================================================
 
 function calculateSymmetryAxis() {
-  // MediaPipe landmarks: 9 = glabella (centro fronte), 151 = chin (mento)
+  // MediaPipe landmarks: 9 = glabella (centro fronte), 164 = philtrum (area naso-labbro)
+  // IMPORTANTE: Stessi landmarks usati in main.js drawSymmetryAxis() per coerenza
   const glabella = window.currentLandmarks[9];
-  const chin = window.currentLandmarks[151];
+  const philtrum = window.currentLandmarks[164];
 
-  if (!glabella || !chin) {
-    console.error('❌ Landmarks 9 o 151 non disponibili');
+  if (!glabella || !philtrum) {
+    console.error('❌ Landmarks 9 o 164 non disponibili');
     return null;
   }
 
   // Trasforma coordinate landmark → canvas (passa l'intero oggetto!)
   const p1 = window.transformLandmarkCoordinate(glabella);
-  const p2 = window.transformLandmarkCoordinate(chin);
+  const p2 = window.transformLandmarkCoordinate(philtrum);
+
+  console.log(`✅ Asse simmetria calcolato con landmarks 9 (glabella) e 164 (philtrum)`);
+  console.log(`   📍 p1 (glabella): (${p1.x.toFixed(1)}, ${p1.y.toFixed(1)})`);
+  console.log(`   📍 p2 (philtrum): (${p2.x.toFixed(1)}, ${p2.y.toFixed(1)})`);
+  console.log(`   📐 Direzione asse: dx=${(p2.x - p1.x).toFixed(1)}, dy=${(p2.y - p1.y).toFixed(1)}`);
 
   return { p1, p2 };
 }
@@ -315,12 +321,18 @@ function reflectPointAcrossAxis(point, axis) {
 
   // Normalizza l'asse
   const axisLength = Math.sqrt(axisVector.x ** 2 + axisVector.y ** 2);
+
+  if (axisLength === 0) {
+    console.error('❌ reflectPointAcrossAxis: Asse con lunghezza zero!', axis);
+    return point;
+  }
+
   const axisNorm = {
     x: axisVector.x / axisLength,
     y: axisVector.y / axisLength
   };
 
-  // Normale perpendicolare all'asse
+  // Normale perpendicolare all'asse (rotazione di 90° in senso orario)
   const normal = { x: -axisNorm.y, y: axisNorm.x };
 
   // Vettore dal punto dell'asse al punto da riflettere
@@ -329,14 +341,21 @@ function reflectPointAcrossAxis(point, axis) {
     y: point.y - axis.p1.y
   };
 
-  // Prodotto scalare: distanza dal punto all'asse
+  // Prodotto scalare: distanza con segno dal punto all'asse lungo la normale
   const distance = toPoint.x * normal.x + toPoint.y * normal.y;
 
   // Rifletti: punto - 2 * distanza * normale
-  return {
+  const reflected = {
     x: point.x - 2 * distance * normal.x,
     y: point.y - 2 * distance * normal.y
   };
+
+  // Log solo per il primo punto (evita spam)
+  if (point.x < 100 || Math.random() < 0.2) {
+    console.log(`  🔄 Riflessione: (${point.x.toFixed(1)},${point.y.toFixed(1)}) → (${reflected.x.toFixed(1)},${reflected.y.toFixed(1)}) | dist=${distance.toFixed(1)}px`);
+  }
+
+  return reflected;
 }
 
 function calculateInclusiveBbox(side, axis) {
