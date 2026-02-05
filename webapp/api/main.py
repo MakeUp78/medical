@@ -50,14 +50,17 @@ except ImportError as e:
     print(f"Warning: MediaPipe not available: {e}")
     MEDIAPIPE_AVAILABLE = False
 
-# Import del modulo green_dots_processor
+# Import del modulo WhiteDotsProcessorV2 (sostituisce GreenDotsProcessor)
 try:
-    from green_dots_processor import GreenDotsProcessor
-    GREEN_DOTS_AVAILABLE = True
-    print("✅ GreenDotsProcessor importato con successo")
+    from white_dots_processor_v2 import WhiteDotsProcessorV2
+    WHITE_DOTS_AVAILABLE = True
+    print("✅ WhiteDotsProcessorV2 importato con successo")
 except ImportError as e:
-    print(f"❌ Warning: GreenDotsProcessor not available: {e}")
-    GREEN_DOTS_AVAILABLE = False
+    print(f"⚠️ WhiteDotsProcessorV2 non disponibile: {e}")
+    WHITE_DOTS_AVAILABLE = False
+
+# Retrocompatibilità: mantieni alias per codice esistente
+GREEN_DOTS_AVAILABLE = WHITE_DOTS_AVAILABLE
 
 # Import Voice Assistant
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -243,6 +246,13 @@ class GreenDotPoint(BaseModel):
     y: int
     size: int
     pixels: Optional[List[Dict]] = None
+    score: Optional[float] = None
+    eyebrow: Optional[str] = None
+    compactness: Optional[float] = None
+    h: Optional[int] = None
+    s: Optional[int] = None
+    v: Optional[int] = None
+    anatomical_name: Optional[str] = None
 
 class GreenDotsGroup(BaseModel):
     label: str
@@ -261,11 +271,19 @@ class GreenDotsDetectionResults(BaseModel):
 
 class GreenDotsAnalysisRequest(BaseModel):
     image: str  # Base64 encoded image
+    # Parametri legacy (mantenuti per retrocompatibilità, ignorati)
     hue_range: Optional[Tuple[int, int]] = (60, 150)
     saturation_min: Optional[int] = 15
     value_range: Optional[Tuple[int, int]] = (15, 95)
-    cluster_size_range: Optional[Tuple[int, int]] = (2, 150)
+    cluster_size_range: Optional[Tuple[int, int]] = (9, 40)
     clustering_radius: Optional[int] = 2
+    # Nuovi parametri per white dots (usati dal frontend sliders)
+    saturation_max: Optional[int] = None  # Se None, usa config
+    value_min: Optional[int] = None
+    value_max: Optional[int] = None
+    cluster_size_min: Optional[int] = None
+    cluster_size_max: Optional[int] = None
+    min_distance: Optional[int] = None
 
 class GreenDotsAnalysisResult(BaseModel):
     success: bool
@@ -844,6 +862,54 @@ def convert_pil_image_to_base64(pil_image: Image.Image) -> str:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore conversione immagine: {str(e)}")
 
+def load_white_dots_config() -> Dict:
+    """Carica parametri di rilevamento dal file di configurazione.
+    
+    Returns:
+        Dict con parametri di detection, clustering e filtering
+    """
+    config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config_white_dots_detection.json')
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        # Estrai valori dai parametri strutturati
+        detection = config.get('detection_parameters', {})
+        clustering = config.get('clustering_parameters', {})
+        filtering = config.get('filtering_parameters', {})
+        
+        params = {
+            'saturation_max': detection.get('saturation_max', {}).get('value', 30),
+            'value_min': detection.get('value_min', {}).get('value', 70),
+            'value_max': detection.get('value_max', {}).get('value', 95),
+            'clustering_radius': clustering.get('clustering_radius', {}).get('value', 2),
+            'cluster_size_min': clustering.get('cluster_size_range', {}).get('value', [9, 40])[0],
+            'cluster_size_max': clustering.get('cluster_size_range', {}).get('value', [9, 40])[1],
+            'min_distance': filtering.get('min_distance', {}).get('value', 10),
+            'large_cluster_threshold': filtering.get('large_cluster_threshold', {}).get('value', 35)
+        }
+        
+        print(f"✅ Config caricato da {config_path}:")
+        print(f"   saturation_max={params['saturation_max']}%, value_min={params['value_min']}%, value_max={params['value_max']}%")
+        print(f"   cluster_size=[{params['cluster_size_min']}, {params['cluster_size_max']}]px, radius={params['clustering_radius']}px")
+        
+        return params
+        
+    except Exception as e:
+        print(f"⚠️ Errore caricamento config: {e}, uso valori ottimali di default")
+        # Fallback su valori ottimali raccomandati nella documentazione
+        return {
+            'saturation_max': 30,
+            'value_min': 70,
+            'value_max': 95,
+            'clustering_radius': 2,
+            'cluster_size_min': 9,
+            'cluster_size_max': 40,
+            'min_distance': 10,
+            'large_cluster_threshold': 35
+        }
+
 def decode_base64_to_pil_image(base64_string: str) -> Image.Image:
     """Decodifica stringa base64 in immagine PIL."""
     try:
@@ -866,52 +932,566 @@ def decode_base64_to_pil_image(base64_string: str) -> Image.Image:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Errore decodifica immagine: {str(e)}")
 
+def sort_points_anatomical(points: List[Dict], is_left: bool) -> List[Dict]:
+    """
+    Ordina i punti in base a criteri anatomici fissi per garantire mappatura consistente.
+    Adattato da green_dots_processor.py per white dots.
+    
+    Criteri di identificazione:
+    1. Coppia B (LB/RB): Punti più esterni
+       - LB: x minima (più a sinistra)
+       - RB: x massima (più a destra)
+    
+    2. Coppia C1 (LC1/RC1): Punto più alto E tra i 3 più esterni
+       - y minima (più in alto)
+       - Deve essere tra i 3 punti con x più estrema
+    
+    3. Coppia A/A0: Dai 2 punti più interni, quello più basso è A, quello più alto è A0
+       - Trovare i 2 punti più interni (verso il centro)
+       - Il più basso (y massima) è A
+       - Il più alto (y minima) è A0
+    
+    4. Coppia C (LC/RC): Per esclusione
+    
+    Ordine finale:
+    - Sinistro: [LC1, LA0, LA, LC, LB]
+    - Destro: [RC1, RB, RC, RA, RA0]
+    
+    Se ci sono meno di 5 punti, ordina dall'alto al basso (y crescente).
+    """
+    if len(points) < 5:
+        # Ordinamento semplice per meno di 5 punti
+        sorted_pts = sorted(points, key=lambda p: p['y'])
+        # Aggiungi nomi semplici
+        for i, pt in enumerate(sorted_pts):
+            prefix = 'L' if is_left else 'R'
+            pt['anatomical_name'] = f"{prefix}{i + 1}"
+        return sorted_pts
+    
+    if is_left:
+        # Sopracciglio sinistro
+        # 1. B: punto più esterno (x minima)
+        b_point = min(points, key=lambda p: p['x'])
+        b_point['anatomical_name'] = 'LB'
+        
+        # 2. C1: tra i 3 punti più esterni, quello più alto
+        sorted_by_x = sorted(points, key=lambda p: p['x'])
+        three_most_external = sorted_by_x[:3]
+        c1_point = min(three_most_external, key=lambda p: p['y'])
+        c1_point['anatomical_name'] = 'LC1'
+        
+        # 3. A e A0: dai 2 punti più interni, quello più basso è A, più alto è A0
+        sorted_by_x_desc = sorted(points, key=lambda p: p['x'], reverse=True)
+        two_most_internal = sorted_by_x_desc[:2]
+        a_point = max(two_most_internal, key=lambda p: p['y'])  # più basso
+        a_point['anatomical_name'] = 'LA'
+        a0_point = min(two_most_internal, key=lambda p: p['y'])  # più alto
+        a0_point['anatomical_name'] = 'LA0'
+        print(f"📍 Punti interni Sx: LA=({a_point['x']:.0f},{a_point['y']:.0f}), LA0=({a0_point['x']:.0f},{a0_point['y']:.0f})")
+        
+        # 4. C: per esclusione
+        identified = [b_point, c1_point, a_point, a0_point]
+        c_point = [p for p in points if p not in identified][0]
+        c_point['anatomical_name'] = 'LC'
+        
+        # Ordine finale: [LC1, LA0, LA, LC, LB]
+        return [c1_point, a0_point, a_point, c_point, b_point]
+        
+    else:
+        # Sopracciglio destro
+        # 1. B: punto più esterno (x massima)
+        b_point = max(points, key=lambda p: p['x'])
+        b_point['anatomical_name'] = 'RB'
+        
+        # 2. C1: tra i 3 punti più esterni, quello più alto
+        sorted_by_x = sorted(points, key=lambda p: p['x'], reverse=True)
+        three_most_external = sorted_by_x[:3]
+        c1_point = min(three_most_external, key=lambda p: p['y'])
+        c1_point['anatomical_name'] = 'RC1'
+        
+        # 3. A e A0: dai 2 punti più interni, quello più basso è A, più alto è A0
+        sorted_by_x_asc = sorted(points, key=lambda p: p['x'])
+        two_most_internal = sorted_by_x_asc[:2]
+        a_point = max(two_most_internal, key=lambda p: p['y'])  # più basso
+        a_point['anatomical_name'] = 'RA'
+        a0_point = min(two_most_internal, key=lambda p: p['y'])  # più alto
+        a0_point['anatomical_name'] = 'RA0'
+        
+        # 4. C: per esclusione
+        identified = [b_point, c1_point, a_point, a0_point]
+        c_point = [p for p in points if p not in identified][0]
+        c_point['anatomical_name'] = 'RC'
+        
+        # Ordine finale: [RC1, RB, RC, RA, RA0]
+        return [c1_point, b_point, c_point, a_point, a0_point]
+
 def process_green_dots_analysis(
     image_base64: str,
-    hue_range: Tuple[int, int] = (60, 150),
-    saturation_min: int = 15,
-    value_range: Tuple[int, int] = (15, 95),
-    cluster_size_range: Tuple[int, int] = (2, 150),
-    clustering_radius: int = 2
+    hue_range: Tuple[int, int] = (60, 150),  # Mantenuto per retrocompatibilità, ignorato
+    saturation_min: int = 15,                 # Mantenuto per retrocompatibilità, ignorato
+    value_range: Tuple[int, int] = (70, 95),  # Aggiornato per puntini bianchi
+    cluster_size_range: Tuple[int, int] = (9, 40),  # Range ottimale puntini bianchi
+    clustering_radius: int = 2,
+    # Nuovi parametri dinamici (override del config se specificati)
+    saturation_max: int = None,
+    value_min: int = None,
+    value_max: int = None,
+    cluster_size_min: int = None,
+    cluster_size_max: int = None,
+    min_distance: int = None
 ) -> Dict:
-    """Processa un'immagine per il rilevamento dei green dots."""
-    
-    if not GREEN_DOTS_AVAILABLE:
+    """Processa un'immagine per il rilevamento dei puntini bianchi sulle sopracciglia.
+
+    NOTA: Usa WhiteDotsProcessorV2 ottimizzato per rilevamento puntini bianchi.
+    Parametri hue_range e saturation_min mantenuti per retrocompatibilità ma ignorati.
+
+    I parametri dinamici (saturation_max, value_min, etc.) se specificati sovrascrivono
+    quelli del config file. Questo permette al frontend di regolare i parametri in tempo reale.
+    """
+
+    if not WHITE_DOTS_AVAILABLE:
         raise HTTPException(
-            status_code=500, 
-            detail="Modulo GreenDotsProcessor non disponibile. Verificare l'installazione delle dipendenze."
+            status_code=500,
+            detail="Modulo WhiteDotsProcessorV2 non disponibile. Verificare l'installazione delle dipendenze."
         )
-    
+
     try:
+        # Carica parametri base dal config
+        config_params = load_white_dots_config()
+
+        # Override con parametri dinamici se specificati
+        final_params = {
+            'saturation_max': saturation_max if saturation_max is not None else config_params['saturation_max'],
+            'value_min': value_min if value_min is not None else config_params['value_min'],
+            'value_max': value_max if value_max is not None else config_params['value_max'],
+            'cluster_size_min': cluster_size_min if cluster_size_min is not None else config_params['cluster_size_min'],
+            'cluster_size_max': cluster_size_max if cluster_size_max is not None else config_params['cluster_size_max'],
+            'clustering_radius': config_params['clustering_radius'],
+            'min_distance': min_distance if min_distance is not None else config_params['min_distance'],
+            'large_cluster_threshold': config_params['large_cluster_threshold']
+        }
+
+        print(f"⚙️ Parametri rilevamento attivi: {final_params}")
+
         # Decodifica l'immagine
         pil_image = decode_base64_to_pil_image(image_base64)
-        
-        # Inizializza il processore con parametri personalizzati
-        processor = GreenDotsProcessor(
-            hue_range=hue_range,
-            saturation_min=saturation_min,
-            value_range=value_range,
-            cluster_size_range=cluster_size_range,
-            clustering_radius=clustering_radius
+
+        # Inizializza il nuovo processore ottimizzato per puntini BIANCHI
+        # Usa MASCHERE SOPRACCIGLIA per limitare ricerca (no scan intera immagine)
+        processor = WhiteDotsProcessorV2(
+            saturation_max=final_params['saturation_max'],
+            value_min=final_params['value_min'],
+            value_max=final_params['value_max'],
+            cluster_size_range=(final_params['cluster_size_min'], final_params['cluster_size_max']),
+            clustering_radius=final_params['clustering_radius'],
+            min_distance=final_params['min_distance'],
+            large_cluster_threshold=final_params['large_cluster_threshold']
         )
         
-        # Processa CON preprocessing (maschere sopracciglia MediaPipe)
-        # Output completo: statistiche, tabella dati, overlay perimetrali
-        results = processor.process_pil_image(pil_image, use_preprocessing=True)
+        # Rileva puntini SOLO nelle maschere sopracciglia MediaPipe
+        results = processor.detect_white_dots(pil_image)
         
-        # Converte l'overlay in base64 se disponibile
-        if results.get('success') and 'overlay' in results:
-            overlay_base64 = convert_pil_image_to_base64(results['overlay'])
-            results['overlay_base64'] = overlay_base64
-            # Rimuove l'oggetto PIL dall'output JSON
-            del results['overlay']
+        # Adatta risultati WhiteDotsProcessorV2 al formato atteso dal frontend
+        # (mantiene retrocompatibilità con struttura JSON esistente)
         
-        return results
+        if 'error' in results:
+            return {
+                'success': False,
+                'error': results['error'],
+                'detection_results': {'dots': [], 'total_dots': 0, 'total_green_pixels': 0,
+                                     'image_size': [0, 0], 'parameters': {}}
+            }
+        
+        # Converti formato dots per compatibilità (mantieni tutti i campi dal processore)
+        dots = results.get('dots', [])
+        print(f"🔍 DEBUG: Dots ricevuti dal processor: {len(dots)}")
+        if len(dots) > 0:
+            print(f"   Sample dot: {dots[0]}")
+        
+        # DIVISIONE SEMPLICE: usa centro verticale dell'immagine
+        image_width = pil_image.width
+        middle_x = image_width // 2
+        
+        formatted_dots = []
+        for dot in dots:
+            # Determina eyebrow in base alla posizione X rispetto al centro
+            if dot['x'] < middle_x:
+                eyebrow_side = 'left'
+            else:
+                eyebrow_side = 'right'
+            
+            formatted_dots.append({
+                'x': dot['x'],
+                'y': dot['y'],
+                'size': dot['size'],
+                'score': dot.get('score', dot['size'] * 1.5),
+                'eyebrow': eyebrow_side,
+                'compactness': dot.get('compactness', 0),
+                'h': dot.get('h', 0),
+                's': dot.get('s', 0),
+                'v': dot.get('v', 0)
+            })
+        
+        print(f"✅ Formatted dots: {len(formatted_dots)}")
+        print(f"   📍 Centro verticale immagine: x={middle_x} (width={image_width})")
+        if len(formatted_dots) > 0:
+            print(f"   📌 Sample formatted dot with eyebrow: {formatted_dots[0]}")
+        
+        # Dividi in Sx/Dx per compatibilità con frontend
+        left_dots = [d for d in formatted_dots if d.get('eyebrow') == 'left']
+        right_dots = [d for d in formatted_dots if d.get('eyebrow') == 'right']
+        unknown_dots = [d for d in formatted_dots if d.get('eyebrow') not in ['left', 'right']]
+        
+        # ORDINAMENTO ANATOMICO: usa criteri fissi LC1, LA0, LA, LC, LB (sinistra) e RC1, RB, RC, RA, RA0 (destra)
+        left_dots = sort_points_anatomical(left_dots, is_left=True)
+        right_dots = sort_points_anatomical(right_dots, is_left=False)
+        
+        print(f"📊 Left dots: {len(left_dots)}, Right dots: {len(right_dots)}, Unknown: {len(unknown_dots)}")
+        if len(left_dots) > 0:
+            print(f"   📍 Left ordinato: {[(d.get('anatomical_name', '?'), d['y']) for d in left_dots]}")
+        if len(right_dots) > 0:
+            print(f"   📍 Right ordinato: {[(d.get('anatomical_name', '?'), d['y']) for d in right_dots]}")
+        if len(unknown_dots) > 0:
+            print(f"   ⚠️ Unknown dots eyebrow values: {[d.get('eyebrow') for d in unknown_dots]}")
+        
+        # Calcola statistiche area (approssimativa da somma cluster sizes)
+        left_area = sum(d['size'] for d in left_dots) if left_dots else 0
+        right_area = sum(d['size'] for d in right_dots) if right_dots else 0
+        total_area = left_area + right_area
+        
+        # Calcola perimetri approssimativi (convex hull semplificato)
+        left_perimeter = calculate_approximate_perimeter(left_dots) if len(left_dots) >= 3 else 0
+        right_perimeter = calculate_approximate_perimeter(right_dots) if len(right_dots) >= 3 else 0
+        
+        # Estrai poligoni maschere per disegnare contorni
+        left_polygon = results.get('left_polygon', None)
+        right_polygon = results.get('right_polygon', None)
+        
+        # Genera overlay con cerchi, labels E contorni maschere
+        overlay_img = generate_white_dots_overlay(
+            pil_image.size, 
+            formatted_dots, 
+            left_polygon=left_polygon, 
+            right_polygon=right_polygon
+        )
+        overlay_base64 = convert_pil_image_to_base64(overlay_img)
+        
+        # Struttura risposta compatibile con frontend esistente
+        adapted_results = {
+            'success': True,
+            'detection_results': {
+                'dots': formatted_dots,
+                'total_dots': len(formatted_dots),
+                'total_green_pixels': results.get('total_white_pixels', 0),  # Alias
+                'image_size': list(pil_image.size),
+                'parameters': results.get('parameters', {})
+            },
+            'config_parameters': config_params,  # Parametri attivi dal config
+            'groups': {
+                'Sx': left_dots,
+                'Dx': right_dots
+            },
+            'coordinates': {
+                'Sx': [(d['x'], d['y']) for d in left_dots],
+                'Dx': [(d['x'], d['y']) for d in right_dots]
+            },
+            'statistics': {
+                'left': {
+                    'count': len(left_dots),
+                    'area': float(left_area),
+                    'perimeter': float(left_perimeter)
+                },
+                'right': {
+                    'count': len(right_dots),
+                    'area': float(right_area),
+                    'perimeter': float(right_perimeter)
+                },
+                'combined': {
+                    'total_vertices': len(formatted_dots),
+                    'total_area': float(total_area)
+                }
+            },
+            'overlay_base64': overlay_base64,
+            'image_size': list(pil_image.size)
+        }
+        
+        print(f"📤 Risposta al frontend:")
+        print(f"   detection_results.dots: {len(adapted_results['detection_results']['dots'])}")
+        print(f"   groups.Sx: {len(adapted_results['groups']['Sx'])}")
+        print(f"   groups.Dx: {len(adapted_results['groups']['Dx'])}")
+        print(f"   coordinates.Sx: {len(adapted_results['coordinates']['Sx'])}")
+        print(f"   coordinates.Dx: {len(adapted_results['coordinates']['Dx'])}")
+        
+        return adapted_results
         
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Errore durante l'analisi green dots: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Errore durante l'analisi white dots: {str(e)}")
+
+
+def create_curved_eyebrow_polygon(points: List[Tuple[float, float]], is_left: bool, arc_segments: int = 20) -> List[Tuple[float, float]]:
+    """
+    Crea un poligono con arco curvato convesso tra LB-LC1 (sinistro) o RB-RC1 (destro).
+    Il raggio di curvatura è pari alla distanza tra i punti da collegare.
+    
+    Args:
+        points: Lista di 5 punti nell'ordine [LA, LC, LB, LC1, LA0] o [RA, RC, RB, RC1, RA0]
+        is_left: True per sopracciglio sinistro, False per destro
+        arc_segments: Numero di segmenti per l'arco
+    
+    Returns:
+        Lista di punti con arco Bezier tra LB-LC1 (o RB-RC1)
+    """
+    if len(points) != 5:
+        return points
+    
+    # L'arco è sempre tra l'indice 2 (LB/RB) e 3 (LC1/RC1)
+    start_point = points[2]  # LB o RB
+    end_point = points[3]    # LC1 o RC1
+    
+    # Calcola distanza tra i punti
+    dx = end_point[0] - start_point[0]
+    dy = end_point[1] - start_point[1]
+    distance = (dx**2 + dy**2)**0.5
+    
+    if distance == 0:
+        return points
+    
+    # Punto medio
+    mid_x = (start_point[0] + end_point[0]) / 2
+    mid_y = (start_point[1] + end_point[1]) / 2
+    
+    # Vettore perpendicolare verso l'esterno
+    perp_x = -dy / distance
+    perp_y = dx / distance
+    
+    # CORREZIONE: Per curvatura convessa verso l'esterno del poligono
+    # Sinistro (LB→LC1): curva verso sinistra (-), Destro (RB→RC1): curva verso destra (+)
+    direction = -1 if is_left else 1
+    
+    # Punto di controllo Bezier con raggio ridotto al 45% della distanza
+    curve_radius = distance * 0.45
+    control_x = mid_x + direction * perp_x * curve_radius
+    control_y = mid_y + direction * perp_y * curve_radius
+    
+    # Genera punti lungo la curva di Bezier quadratica
+    arc_points = []
+    for i in range(arc_segments + 1):
+        t = i / arc_segments
+        one_minus_t = 1 - t
+        x = (one_minus_t**2 * start_point[0] + 
+             2 * one_minus_t * t * control_x + 
+             t**2 * end_point[0])
+        y = (one_minus_t**2 * start_point[1] + 
+             2 * one_minus_t * t * control_y + 
+             t**2 * end_point[1])
+        arc_points.append((x, y))
+    
+    # Costruisci poligono: LA, LC, [arco da LB a LC1], LA0
+    result = [points[0], points[1]] + arc_points + [points[4]]
+    return result
+
+
+def generate_white_dots_overlay(
+    image_size: Tuple[int, int],
+    dots: List[Dict],
+    left_polygon: np.ndarray = None,
+    right_polygon: np.ndarray = None
+) -> Image.Image:
+    """
+    Genera overlay con:
+    - Poligoni colorati semi-trasparenti quando ci sono esattamente 5 punti per lato
+    - Cerchi colorati sui puntini con etichette ID
+    - Colori dei cerchi basati sulla dimensione del cluster
+
+    Significato colori cerchi:
+    - VERDE: Cluster piccolo (≤15px) - dimensione ideale, puntino ben definito
+    - GIALLO: Cluster medio (16-25px) - accettabile ma più grande del normale
+    - ARANCIONE: Cluster grande (26-35px) - potrebbe essere un'area riflettente
+    - ROSSO: Cluster molto grande (>35px) - sospetto, probabilmente non è un puntino
+    """
+    from PIL import ImageDraw, ImageFont
+
+    # Crea immagine trasparente
+    overlay = Image.new('RGBA', image_size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    # Prova a caricare un font, fallback su default
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+    except:
+        font = ImageFont.load_default()
+
+    # Separa puntini per sopracciglio
+    left_dots_list = [d for d in dots if d.get('eyebrow') == 'left']
+    right_dots_list = [d for d in dots if d.get('eyebrow') == 'right']
+
+    # ========== DISEGNA POLIGONI AREA SOPRACCIGLIARE (se 5 punti per lato) ==========
+
+    # Colori per i poligoni delle aree sopracciliari
+    LEFT_AREA_COLOR = (0, 200, 255, 60)    # Ciano trasparente per sinistra
+    LEFT_BORDER_COLOR = (0, 200, 255, 180)  # Ciano più opaco per bordo
+    RIGHT_AREA_COLOR = (255, 100, 50, 60)   # Arancione trasparente per destra
+    RIGHT_BORDER_COLOR = (255, 100, 50, 180) # Arancione più opaco per bordo
+
+    # Disegna poligono SINISTRO SOLO se ci sono esattamente 5 punti con tutti i nomi anatomici
+    if len(left_dots_list) == 5:
+        try:
+            # Ordine anatomico corretto per perimetro sopracciglio SINISTRO:
+            # Partendo da LA (esterno), verso LC (centro alto), LB (basso), LC1 (interno alto), LA0 (interno)
+            # Questo forma un pentagono che segue il contorno del sopracciglio
+            LEFT_PERIMETER_ORDER = ['LA', 'LC', 'LB', 'LC1', 'LA0']
+
+            # Crea dizionario nome → coordinate
+            left_dots_by_name = {d.get('anatomical_name'): (d['x'], d['y']) for d in left_dots_list if d.get('anatomical_name')}
+
+            # Verifica che tutti i punti anatomici siano presenti
+            if all(name in left_dots_by_name for name in LEFT_PERIMETER_ORDER):
+                # Ordina secondo il perimetro anatomico
+                left_points_sorted = [left_dots_by_name[name] for name in LEFT_PERIMETER_ORDER]
+                # Crea poligono con curva convessa tra LB-LC1
+                left_points_curved = create_curved_eyebrow_polygon(left_points_sorted, is_left=True)
+                draw.polygon(left_points_curved, fill=LEFT_AREA_COLOR, outline=LEFT_BORDER_COLOR, width=3)
+                print(f"✅ Poligono SINISTRO disegnato con ordine: {LEFT_PERIMETER_ORDER} (con curva LB-LC1)")
+            else:
+                # Non disegnare il poligono se mancano i nomi anatomici
+                missing = [n for n in LEFT_PERIMETER_ORDER if n not in left_dots_by_name]
+                print(f"⚠️ Poligono SINISTRO NON disegnato - mancano i nomi anatomici: {missing}")
+        except Exception as e:
+            print(f"⚠️ Errore disegno poligono sinistro: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # Disegna poligono DESTRO SOLO se ci sono esattamente 5 punti con tutti i nomi anatomici
+    if len(right_dots_list) == 5:
+        try:
+            # Ordine anatomico corretto per perimetro: RA → RC → RB → RC1 → RA0 → (chiude su RA)
+            RIGHT_PERIMETER_ORDER = ['RA', 'RC', 'RB', 'RC1', 'RA0']
+
+            # Crea dizionario nome → coordinate
+            right_dots_by_name = {d.get('anatomical_name'): (d['x'], d['y']) for d in right_dots_list if d.get('anatomical_name')}
+
+            # Verifica che tutti i punti anatomici siano presenti
+            if all(name in right_dots_by_name for name in RIGHT_PERIMETER_ORDER):
+                # Ordina secondo il perimetro anatomico
+                right_points_sorted = [right_dots_by_name[name] for name in RIGHT_PERIMETER_ORDER]
+                # Crea poligono con curva convessa tra RB-RC1
+                right_points_curved = create_curved_eyebrow_polygon(right_points_sorted, is_left=False)
+                draw.polygon(right_points_curved, fill=RIGHT_AREA_COLOR, outline=RIGHT_BORDER_COLOR, width=3)
+                print(f"✅ Poligono DESTRO disegnato con ordine: {RIGHT_PERIMETER_ORDER} (con curva RB-RC1)")
+            else:
+                # Non disegnare il poligono se mancano i nomi anatomici
+                missing = [n for n in RIGHT_PERIMETER_ORDER if n not in right_dots_by_name]
+                print(f"⚠️ Poligono DESTRO NON disegnato - mancano i nomi anatomici: {missing}")
+        except Exception as e:
+            print(f"⚠️ Errore disegno poligono destro: {e}")
+
+    # ========== DISEGNA CERCHI E ETICHETTE SUI PUNTINI ==========
+
+    # Prepara lista con indici per etichette
+    left_dots = [(i, d) for i, d in enumerate(dots) if d.get('eyebrow') == 'left']
+    right_dots = [(i, d) for i, d in enumerate(dots) if d.get('eyebrow') == 'right']
+
+    # Disegna cerchi e ID per ogni puntino (sopra i poligoni)
+    for idx, (original_idx, dot) in enumerate(left_dots + right_dots):
+        x, y = dot['x'], dot['y']
+        size = dot.get('size', 10)
+        eyebrow = dot.get('eyebrow', 'unknown')
+
+        # USA NOME ANATOMICO se presente, altrimenti fallback su numerazione semplice
+        if 'anatomical_name' in dot and dot['anatomical_name']:
+            label = dot['anatomical_name']
+        else:
+            # Fallback per retrocompatibilità
+            if eyebrow == 'left':
+                local_idx = [i for i, (_, d) in enumerate(left_dots) if d == dot][0]
+                label = f"L{local_idx + 1}"
+            else:
+                local_idx = [i for i, (_, d) in enumerate(right_dots) if d == dot][0]
+                label = f"R{local_idx + 1}"
+
+        # Colore basato su dimensione del cluster
+        # VERDE: ≤15px (ideale), GIALLO: 16-25px, ARANCIONE: 26-35px, ROSSO: >35px
+        if size > 35:
+            color = (255, 0, 0, 200)      # Rosso - cluster troppo grande, sospetto
+        elif size > 25:
+            color = (255, 165, 0, 200)    # Arancione - cluster grande
+        elif size > 15:
+            color = (255, 255, 0, 200)    # Giallo - cluster medio
+        else:
+            color = (0, 255, 0, 200)      # Verde - cluster piccolo, ideale
+
+        # Raggio cerchio proporzionale a size
+        radius = int(np.sqrt(size / np.pi)) + 8
+
+        # Cerchio
+        draw.ellipse([x - radius, y - radius, x + radius, y + radius],
+                    outline=color, width=4)
+
+        # Centro
+        draw.ellipse([x - 3, y - 3, x + 3, y + 3], fill=color)
+
+        # Etichetta ID (sopra il puntino)
+        # Sfondo semi-trasparente per leggibilità
+        bbox = draw.textbbox((0, 0), label, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+
+        label_x = x - text_width // 2
+        label_y = y - radius - text_height - 5
+
+        # Rettangolo sfondo
+        padding = 3
+        draw.rectangle(
+            [label_x - padding, label_y - padding,
+             label_x + text_width + padding, label_y + text_height + padding],
+            fill=(0, 0, 0, 180)
+        )
+
+        # Testo ID
+        draw.text((label_x, label_y), label, fill=(255, 255, 255, 255), font=font)
+
+    return overlay
+
+
+def calculate_approximate_perimeter(dots: List[Dict]) -> float:
+    """Calcola perimetro approssimativo usando convex hull dei punti."""
+    if len(dots) < 3:
+        return 0.0
+    
+    try:
+        from scipy.spatial import ConvexHull
+        
+        # Estrai coordinate (x, y)
+        points = np.array([[d['x'], d['y']] for d in dots])
+        
+        # Calcola convex hull
+        hull = ConvexHull(points)
+        
+        # Perimetro = somma distanze tra vertici consecutivi
+        perimeter = 0.0
+        vertices = hull.vertices
+        for i in range(len(vertices)):
+            p1 = points[vertices[i]]
+            p2 = points[vertices[(i + 1) % len(vertices)]]
+            distance = np.sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)
+            perimeter += distance
+        
+        return perimeter
+        
+    except ImportError:
+        # Fallback: usa bounding box se scipy non disponibile
+        xs = [d['x'] for d in dots]
+        ys = [d['y'] for d in dots]
+        width = max(xs) - min(xs)
+        height = max(ys) - min(ys)
+        return 2 * (width + height)
+    except Exception as e:
+        print(f"⚠️ Errore calcolo perimetro: {e}")
+        return 0.0
 
 # === API ENDPOINTS ===
 
@@ -954,8 +1534,9 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "mediapipe": "available" if MEDIAPIPE_AVAILABLE else "mock_mode",
-        "green_dots": "available" if GREEN_DOTS_AVAILABLE else "not_available",
-        "version": "1.0.0",
+        "white_dots": "available" if WHITE_DOTS_AVAILABLE else "not_available",
+        "green_dots": "available (legacy)" if WHITE_DOTS_AVAILABLE else "not_available",
+        "version": "2.0.0",  # v2 con WhiteDotsProcessorV2
         "endpoints": {
             "analyze": "/api/analyze",
             "batch": "/api/batch-analyze", 
@@ -1598,7 +2179,11 @@ async def analyze_green_dots(request: GreenDotsAnalysisRequest):
         timestamp = datetime.now().isoformat()
         
         print(f"🟢 Inizio analisi green dots - Sessione: {session_id}")
-        
+
+        # Log parametri ricevuti dal frontend
+        if request.saturation_max is not None or request.value_min is not None:
+            print(f"⚙️ Parametri custom dal frontend: sat_max={request.saturation_max}, val_min={request.value_min}, val_max={request.value_max}, cluster_min={request.cluster_size_min}, cluster_max={request.cluster_size_max}, min_dist={request.min_distance}")
+
         # Verifica disponibilità del modulo
         if not GREEN_DOTS_AVAILABLE:
             return GreenDotsAnalysisResult(
@@ -1607,17 +2192,25 @@ async def analyze_green_dots(request: GreenDotsAnalysisRequest):
                 error="Modulo GreenDotsProcessor non disponibile. Verificare l'installazione delle dipendenze.",
                 timestamp=timestamp
             )
-        
+
         # Processa l'immagine con i parametri forniti
+        # I nuovi parametri dinamici sovrascrivono il config se specificati
         results = process_green_dots_analysis(
             image_base64=request.image,
             hue_range=request.hue_range,
             saturation_min=request.saturation_min,
             value_range=request.value_range,
             cluster_size_range=request.cluster_size_range,
-            clustering_radius=request.clustering_radius
+            clustering_radius=request.clustering_radius,
+            # Nuovi parametri dinamici dal frontend sliders
+            saturation_max=request.saturation_max,
+            value_min=request.value_min,
+            value_max=request.value_max,
+            cluster_size_min=request.cluster_size_min,
+            cluster_size_max=request.cluster_size_max,
+            min_distance=request.min_distance
         )
-        
+
         print(f"🟢 Analisi completata - Successo: {results.get('success', False)}")
         
         # Costruisce la risposta
@@ -1677,26 +2270,34 @@ async def analyze_green_dots(request: GreenDotsAnalysisRequest):
 @app.get("/api/green-dots/info")
 async def get_green_dots_info():
     """
-    Restituisce informazioni sui parametri e funzionalità del modulo GreenDotsProcessor.
+    Restituisce informazioni sui parametri e funzionalità del modulo WhiteDotsProcessorV2.
+    Endpoint mantenuto per retrocompatibilità (era /api/green-dots/info).
     """
     try:
+        # Carica parametri attivi dal config
+        config_params = load_white_dots_config()
+        
         return {
-            "available": GREEN_DOTS_AVAILABLE,
+            "available": WHITE_DOTS_AVAILABLE,
             "module_info": {
-                "description": "Modulo per il rilevamento di puntini verdi e generazione di overlay trasparenti",
+                "description": "Modulo WhiteDotsProcessorV2 per rilevamento puntini BIANCHI sulle sopracciglia",
                 "functions": [
-                    "Rilevamento puntini verdi usando analisi HSV",
-                    "Divisione dei puntini in gruppi sinistro (Sx) e destro (Dx)",
-                    "Generazione di overlay trasparenti con i perimetri",
-                    "Calcolo delle coordinate e statistiche delle forme"
-                ]
+                    "Rilevamento puntini bianchi usando maschere sopracciglia MediaPipe",
+                    "Ricerca limitata alle regioni sopracciglia (no scan intera immagine)",
+                    "Divisione automatica in gruppo sinistro/destro",
+                    "Generazione overlay con cerchi colorati + contorni maschere",
+                    "Filtro anti-bloom per cluster > large_cluster_threshold"
+                ],
+                "config_source": "config_white_dots_detection.json"
             },
-            "default_parameters": {
-                "hue_range": [60, 150],
-                "saturation_min": 15,
-                "value_range": [15, 95],
-                "cluster_size_range": [2, 150],
-                "clustering_radius": 2
+            "active_parameters": {
+                "saturation_max": f"{config_params['saturation_max']}%",
+                "value_min": f"{config_params['value_min']}%",
+                "value_max": f"{config_params['value_max']}%",
+                "cluster_size_range": [config_params['cluster_size_min'], config_params['cluster_size_max']],
+                "clustering_radius": f"{config_params['clustering_radius']}px",
+                "min_distance": f"{config_params['min_distance']}px",
+                "large_cluster_threshold": f"{config_params['large_cluster_threshold']}px"
             },
             "output_format": {
                 "success": "bool - Indica se l'analisi è riuscita",
@@ -1709,7 +2310,7 @@ async def get_green_dots_info():
             "requirements": {
                 "min_dots_total": 6,
                 "min_dots_per_side": 3,
-                "dependencies": ["opencv-python", "numpy", "pillow"]
+                "dependencies": ["opencv-python", "numpy", "pillow", "mediapipe"]
             }
         }
     except Exception as e:
