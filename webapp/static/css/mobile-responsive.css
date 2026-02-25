@@ -173,20 +173,24 @@
     touch-action: none;
   }
 
-  /* === TOOLBAR CANVAS MOBILE - COMPATTA E SCROLLABILE === */
+  /* === TOOLBAR CANVAS MOBILE - stile strip Strumenti === */
   .canvas-toolbar {
     display: flex;
-    gap: 6px;
-    padding: 8px 12px;
-    background: linear-gradient(180deg, #404040, #353535);
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 10px 14px;
+    background: rgba(22, 22, 34, 0.92);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     overflow-x: auto;
     overflow-y: hidden;
-    flex-wrap: nowrap;
     min-height: var(--mobile-toolbar-height);
     align-items: center;
-    border-bottom: 1px solid #555;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
+    box-shadow: 0 3px 16px rgba(0, 0, 0, 0.32);
   }
 
   .canvas-toolbar::-webkit-scrollbar {
@@ -195,20 +199,34 @@
 
   .tool-btn {
     flex-shrink: 0;
-    padding: 10px 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 14px;
     font-size: 13px;
-    min-height: 38px;
+    font-weight: 500;
+    min-height: 36px;
     min-width: auto;
     white-space: nowrap;
-    border-radius: 8px;
-    background: #505050;
-    border: 1px solid #666;
-    color: white;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #e8e8f0;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s, transform 0.1s;
+  }
+
+  .tool-btn:active {
+    background: rgba(255, 255, 255, 0.26);
+    transform: scale(0.93);
   }
 
   .tool-btn.active {
-    background: var(--mobile-accent);
-    border-color: var(--mobile-accent);
+    background: #667eea;
+    border-color: #667eea;
+    color: #fff;
+    box-shadow: 0 0 10px rgba(102, 126, 234, 0.55);
   }
 
   /* === SEZIONI COLLASSABILI OTTIMIZZATE === */
@@ -1213,8 +1231,8 @@
     right: 0;
     top: 0;
     bottom: 0;
-    width: 28px;
-    background: linear-gradient(to right, transparent, rgba(53,53,53,0.95));
+    width: 32px;
+    background: linear-gradient(to right, transparent, rgba(22, 22, 34, 0.95));
     pointer-events: none;
   }
 
