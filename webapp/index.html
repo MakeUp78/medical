@@ -209,56 +209,92 @@
                         </div>
 
                         <!-- Pannello Parametri Rilevamento White Dots -->
-                        <div id="white-dots-params-panel" style="display: none; margin-top: 15px; padding: 12px; background: #1a1a2e; border-radius: 8px; border: 1px solid #4a4a6a;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div id="white-dots-params-panel"
+                            style="display: none; margin-top: 15px; padding: 12px; background: #1a1a2e; border-radius: 8px; border: 1px solid #4a4a6a;">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                                 <span style="font-weight: bold; color: #00d4ff;">⚙️ Parametri Rilevamento</span>
-                                <button onclick="resetWhiteDotsParams()" style="padding: 4px 8px; font-size: 11px; background: #ff6b6b; border: none; border-radius: 4px; color: white; cursor: pointer;">Reset</button>
+                                <button onclick="resetWhiteDotsParams()"
+                                    style="padding: 4px 8px; font-size: 11px; background: #ff6b6b; border: none; border-radius: 4px; color: white; cursor: pointer;">Reset</button>
                             </div>
 
-                            <!-- Saturazione Max -->
-                            <div class="param-slider-group">
-                                <label>Saturazione Max: <span id="saturation-max-value">20</span>%</label>
-                                <input type="range" id="saturation-max-slider" min="5" max="100" value="20"
-                                    oninput="updateWhiteDotsParam('saturation_max', this.value)">
-                                <small>Più alto = include pixel più colorati (non solo bianchi)</small>
+                            <!-- Badge info 2-pass automatico -->
+                            <div
+                                style="padding:10px 12px; background:#0d2818; border:1px solid #2ea043; border-radius:6px; margin-bottom:14px;">
+                                <div style="color:#3fb950; font-weight:bold; font-size:12px; margin-bottom:6px;">🎯
+                                    Rilevamento automatico 2-pass</div>
+                                <div style="color:#8b949e; font-size:11px; line-height:1.6;">
+                                    <span style="color:#58a6ff;">Pass 1</span> (selettività <span
+                                        id="badge-p1-perc">50</span>%, sat-cap <span id="badge-p1-sat">30</span>%) → <b
+                                        style="color:#fff;">LB</b> + <b style="color:#fff;">RB</b> — punti più esterni
+                                    (code)<br>
+                                    <span style="color:#f78166;">Pass 2</span> (selettività <span
+                                        id="badge-p2-perc">80</span>%, sat-cap <span id="badge-p2-sat">25</span>%) → <b
+                                        style="color:#fff;">4 punti sx</b> + <b style="color:#fff;">4 punti dx</b> —
+                                    punti centrali<br>
+                                    <span style="color:#3fb950;">Totale atteso: 10 punti</span>
+                                </div>
                             </div>
 
-                            <!-- Value Min (Luminosità minima) -->
-                            <div class="param-slider-group">
-                                <label>Luminosità Min: <span id="value-min-value">54</span>%</label>
-                                <input type="range" id="value-min-slider" min="10" max="90" value="54"
-                                    oninput="updateWhiteDotsParam('value_min', this.value)">
-                                <small>Più basso = include pixel più scuri</small>
-                            </div>
+                            <!-- Slider avanzati pass1/pass2 — visibili SOLO per immagini statiche -->
+                            <div id="adaptive-advanced-params"
+                                style="display:none; margin-bottom:14px; padding:10px; background:#0d1117; border:1px solid #30363d; border-radius:6px;">
+                                <div style="color:#58a6ff; font-size:11px; font-weight:bold; margin-bottom:10px;">🔧
+                                    Regolazione fine (solo immagini statiche)</div>
 
-                            <!-- Value Max (Luminosità massima) -->
-                            <div class="param-slider-group">
-                                <label>Luminosità Max: <span id="value-max-value">100</span>%</label>
-                                <input type="range" id="value-max-slider" min="50" max="100" value="100"
-                                    oninput="updateWhiteDotsParam('value_max', this.value)">
-                                <small>Più basso = esclude pixel troppo brillanti (riflessi)</small>
+                                <div
+                                    style="color:#8b949e; font-size:10px; margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px;">
+                                    Pass 1 — code (LB / RB)</div>
+                                <div class="param-slider-group">
+                                    <label>Selettività: <span id="p1-percentile-value">60</span>%</label>
+                                    <input type="range" id="p1-percentile-slider" min="20" max="85" value="60"
+                                        oninput="updateAdaptiveParam('pass1_percentile', this.value, 'p1-percentile-value', 'badge-p1-perc')">
+                                    <small>⬅ include più candidati — più restrittivo ➡</small>
+                                </div>
+                                <div class="param-slider-group">
+                                    <label>Filtro colore: <span id="p1-sat-cap-value">25</span>%</label>
+                                    <input type="range" id="p1-sat-cap-slider" min="10" max="70" value="25"
+                                        oninput="updateAdaptiveParam('pass1_sat_cap', this.value, 'p1-sat-cap-value', 'badge-p1-sat')">
+                                    <small>Abbassa se la pelle genera falsi positivi nelle code</small>
+                                </div>
+
+                                <div
+                                    style="color:#f78166; font-size:10px; margin:10px 0 6px; text-transform:uppercase; letter-spacing:.5px;">
+                                    Pass 2 — punti centrali (4+4)</div>
+                                <div class="param-slider-group">
+                                    <label>Selettività: <span id="p2-percentile-value">80</span>%</label>
+                                    <input type="range" id="p2-percentile-slider" min="50" max="97" value="80"
+                                        oninput="updateAdaptiveParam('pass2_percentile', this.value, 'p2-percentile-value', 'badge-p2-perc')">
+                                    <small>⬅ più punti trovati — solo i più brillanti ➡</small>
+                                </div>
+                                <div class="param-slider-group">
+                                    <label>Filtro colore: <span id="p2-sat-cap-value">20</span>%</label>
+                                    <input type="range" id="p2-sat-cap-slider" min="10" max="70" value="20"
+                                        oninput="updateAdaptiveParam('pass2_sat_cap', this.value, 'p2-sat-cap-value', 'badge-p2-sat')">
+                                    <small>Abbassa se compaiono macchie colorate sui punti centrali</small>
+                                </div>
                             </div>
 
                             <!-- Cluster Size Min -->
                             <div class="param-slider-group">
-                                <label>Dimensione Min Cluster: <span id="cluster-min-value">9</span>px</label>
-                                <input type="range" id="cluster-min-slider" min="1" max="50" value="9"
+                                <label>Dimensione Min Cluster: <span id="cluster-min-value">6</span>px</label>
+                                <input type="range" id="cluster-min-slider" min="1" max="50" value="6"
                                     oninput="updateWhiteDotsParam('cluster_size_min', this.value)">
                                 <small>Più alto = ignora puntini piccoli (rumore)</small>
                             </div>
 
                             <!-- Cluster Size Max -->
                             <div class="param-slider-group">
-                                <label>Dimensione Max Cluster: <span id="cluster-max-value">66</span>px</label>
-                                <input type="range" id="cluster-max-slider" min="20" max="200" value="66"
+                                <label>Dimensione Max Cluster: <span id="cluster-max-value">300</span>px</label>
+                                <input type="range" id="cluster-max-slider" min="20" max="400" value="300"
                                     oninput="updateWhiteDotsParam('cluster_size_max', this.value)">
-                                <small>Più alto = include cluster più grandi (fino a 200px)</small>
+                                <small>Più alto = include cluster più grandi (fino a 400px)</small>
                             </div>
 
                             <!-- Min Distance -->
                             <div class="param-slider-group">
-                                <label>Distanza Min tra Punti: <span id="min-distance-value">9</span>px</label>
-                                <input type="range" id="min-distance-slider" min="5" max="30" value="9"
+                                <label>Distanza Min tra Punti: <span id="min-distance-value">10</span>px</label>
+                                <input type="range" id="min-distance-slider" min="5" max="50" value="10"
                                     oninput="updateWhiteDotsParam('min_distance', this.value)">
                                 <small>Più alto = punti più distanziati</small>
                             </div>
@@ -278,9 +314,13 @@
                             </div>
 
                             <!-- Pannello risultati contagocce -->
-                            <div id="eyedropper-results" style="display: none; margin-top: 10px; padding: 10px; background: #0d0d1a; border-radius: 6px; border: 1px solid #9b59b6;">
-                                <div style="font-weight: bold; color: #9b59b6; margin-bottom: 8px;">💧 Analisi Punto Selezionato</div>
-                                <div id="eyedropper-color-preview" style="width: 100%; height: 30px; border-radius: 4px; margin-bottom: 8px; border: 1px solid #444;"></div>
+                            <div id="eyedropper-results"
+                                style="display: none; margin-top: 10px; padding: 10px; background: #0d0d1a; border-radius: 6px; border: 1px solid #9b59b6;">
+                                <div style="font-weight: bold; color: #9b59b6; margin-bottom: 8px;">💧 Analisi Punto
+                                    Selezionato</div>
+                                <div id="eyedropper-color-preview"
+                                    style="width: 100%; height: 30px; border-radius: 4px; margin-bottom: 8px; border: 1px solid #444;">
+                                </div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px;">
                                     <div>RGB: <span id="eyedropper-rgb" style="color: #00d4ff;">-</span></div>
                                     <div>Pos: <span id="eyedropper-pos" style="color: #00d4ff;">-</span></div>
@@ -291,7 +331,8 @@
                                 </div>
                                 <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;">
                                     <div style="font-size: 10px; color: #888;">Suggerimento parametri:</div>
-                                    <div id="eyedropper-suggestion" style="font-size: 11px; color: #00ff88; margin-top: 4px;">
+                                    <div id="eyedropper-suggestion"
+                                        style="font-size: 11px; color: #00ff88; margin-top: 4px;">
                                         Clicca su un puntino bianco nell'immagine
                                     </div>
                                 </div>
@@ -302,7 +343,8 @@
                             </div>
 
                             <!-- Info parametri correnti -->
-                            <div id="current-params-info" style="margin-top: 10px; padding: 8px; background: #0d0d1a; border-radius: 4px; font-size: 11px; color: #888;">
+                            <div id="current-params-info"
+                                style="margin-top: 10px; padding: 8px; background: #0d0d1a; border-radius: 4px; font-size: 11px; color: #888;">
                                 Modifica i parametri e clicca "Rileva" per testare
                             </div>
                         </div>
@@ -560,6 +602,9 @@
                     <div class="status-info-frame">
                         <div class="best-frame-info" id="best-frame-info">
                             Nessun frame analizzato
+                        </div>
+                        <div class="best-frame-info" id="live-processing-stats"
+                            style="font-size:0.8em;opacity:0.7;margin-top:4px;">
                         </div>
                     </div>
                 </div>
@@ -914,72 +959,72 @@
             function setVH() {
                 const vh = window.innerHeight * 0.01;
                 document.documentElement.style.setProperty('--vh', `${vh}px`);
-            console.log(`📐 Viewport height aggiornato: ${window.innerHeight}px`);
-        }
+                console.log(`📐 Viewport height aggiornato: ${window.innerHeight}px`);
+            }
 
-        setVH();
-        window.addEventListener('resize', setVH);
-        window.addEventListener('orientationchange', () => {
-            setTimeout(setVH, 100);
-        });
-        
-        // Previeni zoom accidentale su iOS
-        document.addEventListener('gesturestart', function(e) {
-            e.preventDefault();
-        });
-        
-        // Previeni doppio tap zoom
-        let lastTouchEnd = 0;
-        document.addEventListener('touchend', function(e) {
-            const now = Date.now();
-            if (now - lastTouchEnd <= 300) {
+            setVH();
+            window.addEventListener('resize', setVH);
+            window.addEventListener('orientationchange', () => {
+                setTimeout(setVH, 100);
+            });
+
+            // Previeni zoom accidentale su iOS
+            document.addEventListener('gesturestart', function (e) {
                 e.preventDefault();
-            }
-            lastTouchEnd = now;
-        }, false);
+            });
 
-        // ========================================
-        // GESTIONE PANNELLI MOBILE
-        // ========================================
-        window.openMobilePanel = function(side) {
-            if (!isMobile()) return;
+            // Previeni doppio tap zoom
+            let lastTouchEnd = 0;
+            document.addEventListener('touchend', function (e) {
+                const now = Date.now();
+                if (now - lastTouchEnd <= 300) {
+                    e.preventDefault();
+                }
+                lastTouchEnd = now;
+            }, false);
 
-            closeAllMobilePanels();
+            // ========================================
+            // GESTIONE PANNELLI MOBILE
+            // ========================================
+            window.openMobilePanel = function (side) {
+                if (!isMobile()) return;
 
-            const panel = document.getElementById(`${side}-sidebar`);
-            const overlay = document.getElementById('mobile-overlay');
+                closeAllMobilePanels();
 
-            if (panel) {
-                panel.classList.add('mobile-panel-open');
-                overlay.classList.add('active');
-                currentOpenPanel = side;
+                const panel = document.getElementById(`${side}-sidebar`);
+                const overlay = document.getElementById('mobile-overlay');
 
-                // Aggiorna stato nav
-                updateNavState(side);
+                if (panel) {
+                    panel.classList.add('mobile-panel-open');
+                    overlay.classList.add('active');
+                    currentOpenPanel = side;
 
-                // Previeni scroll del body
-                document.body.style.overflow = 'hidden';
-            }
-        };
+                    // Aggiorna stato nav
+                    updateNavState(side);
 
-        window.closeMobilePanel = function (side) {
-            const panel = document.getElementById(`${side}-sidebar`);
-            const overlay = document.getElementById('mobile-overlay');
+                    // Previeni scroll del body
+                    document.body.style.overflow = 'hidden';
+                }
+            };
 
-            if (panel) {
-                panel.classList.remove('mobile-panel-open');
-            }
+            window.closeMobilePanel = function (side) {
+                const panel = document.getElementById(`${side}-sidebar`);
+                const overlay = document.getElementById('mobile-overlay');
 
-            if (overlay && !currentOpenQuickPanel) {
-                overlay.classList.remove('active');
-            }
+                if (panel) {
+                    panel.classList.remove('mobile-panel-open');
+                }
 
-            currentOpenPanel = null;
-            updateNavState('canvas');
-            document.body.style.overflow = '';
-        };
+                if (overlay && !currentOpenQuickPanel) {
+                    overlay.classList.remove('active');
+                }
 
-        window.closeAllMobilePanels = function () {
+                currentOpenPanel = null;
+                updateNavState('canvas');
+                document.body.style.overflow = '';
+            };
+
+            window.closeAllMobilePanels = function () {
                 const leftSidebar = document.getElementById('left-sidebar');
                 const rightSidebar = document.getElementById('right-sidebar');
                 const overlay = document.getElementById('mobile-overlay');
@@ -1190,7 +1235,7 @@
     <script src="static/js/face-analysis-complete.js"></script>
     <!-- Frame Processor Unificato -->
     <script src="static/js/frame-processor.js"></script>
-    <script src="static/js/main.js?v=20260120-0618"></script>
+    <script src="static/js/main.js?v=20260226-dedup"></script>
 
     <!-- MediaPipe per face detection -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -1203,7 +1248,7 @@
          ======================================== -->
 
     <!-- Voice Assistant Script -->
-    <script src="static/js/voice_assistant.js"></script>
+    <script src="static/js/voice_assistant.js?v=20260226-dedup"></script>
 
     <!-- Voice Widget Container (NASCOSTO - ora è nella sidebar) -->
     <div id="voice-widget-container" style="display: none;"></div>
@@ -1244,7 +1289,10 @@
             const originalStartWebcam = window.startWebcam;
             window.startWebcam = async function () {
                 if (originalStartWebcam) await originalStartWebcam();
-                voiceAssistant.speakMessage('webcam_started');
+                // Per iPhone il feedback è già gestito altrove; per la webcam locale annuncia
+                if (!window.isIPhoneStreamActive) {
+                    voiceAssistant.speakMessage('webcam_started');
+                }
             };
 
             // SORGENTE - Stop Webcam
@@ -1259,9 +1307,10 @@
                     updateStatus('📱 Recupero migliore frame iPhone...');
 
                     try {
-                        // Richiedi i best frames
+                        // Richiedi i best frames con flag final per forzare aggiornamento tabella
                         webcamWebSocket.send(JSON.stringify({
-                            action: 'get_results'
+                            action: 'get_results',
+                            final: true
                         }));
 
                         // Attendi risposta (più lungo per dare tempo al server)
@@ -1869,6 +1918,9 @@
             let _previewCtx = null;
             let _previewImg = new Image();
             let _previewInitialized = false;
+            // Canvas ad alta risoluzione nascosto, usato dal fullscreen loop
+            let _fullresCanvas = null;
+            let _fullresCtx = null;
 
             // Funzione per rendere frame iPhone nel canvas preview - OTTIMIZZATA
             window.renderIPhoneFramePreview = function (frameData) {
@@ -1881,11 +1933,31 @@
                     _previewCtx = _previewCanvas.getContext('2d', { alpha: false });
                 }
 
+                // Canvas fullres nascosto per il fullscreen loop (à risoluzione originale)
+                if (!_fullresCanvas) {
+                    _fullresCanvas = document.createElement('canvas');
+                    _fullresCanvas.id = 'iphone-fullres-canvas';
+                    _fullresCanvas.style.display = 'none';
+                    document.body.appendChild(_fullresCanvas);
+                    _fullresCtx = _fullresCanvas.getContext('2d', { alpha: false });
+                }
+
                 // Usa sempre lo stesso oggetto Image per evitare allocazioni
                 _previewImg.onload = function () {
-                    // Inizializza dimensioni canvas solo una volta
+                    // Aggiorna canvas fullres alla risoluzione originale del frame
+                    const nw = _previewImg.naturalWidth || _previewImg.width;
+                    const nh = _previewImg.naturalHeight || _previewImg.height;
+                    if (nw > 0 && nh > 0) {
+                        if (_fullresCanvas.width !== nw || _fullresCanvas.height !== nh) {
+                            _fullresCanvas.width = nw;
+                            _fullresCanvas.height = nh;
+                        }
+                        _fullresCtx.drawImage(_previewImg, 0, 0, nw, nh);
+                    }
+
+                    // Inizializza dimensioni canvas sidebar solo una volta
                     if (!_previewInitialized) {
-                        // Dimensioni fisse piccole per anteprima fluida (240px larghezza)
+                        // Dimensioni fisse piccole per anteprima sidebar (240px larghezza)
                         const maxWidth = 240;
                         const aspectRatio = _previewImg.width / _previewImg.height;
                         _previewCanvas.width = maxWidth;
@@ -1897,7 +1969,7 @@
                         _previewInitialized = true;
                     }
 
-                    // Disegna frame scalato
+                    // Disegna frame scalato sul canvas sidebar
                     _previewCtx.drawImage(_previewImg, 0, 0, _previewCanvas.width, _previewCanvas.height);
                 };
                 _previewImg.src = 'data:image/jpeg;base64,' + frameData;
@@ -1912,7 +1984,7 @@
             window.audioContextInstance = null;
 
             // ✅ Funzione per riprodurre beep quando score è alto
-            window.playBeep = function () {
+            window.playBeep = function (score) {
                 try {
                     // Usa singleton AudioContext
                     if (!window.audioContextInstance) {
@@ -1926,7 +1998,8 @@
                     oscillator.connect(gainNode);
                     gainNode.connect(audioContext.destination);
 
-                    oscillator.frequency.value = 800; // Frequenza acuta
+                    // 1000 Hz se score ≥ 97, altrimenti 800 Hz
+                    oscillator.frequency.value = (score >= 97) ? 1000 : 800;
                     oscillator.type = 'sine';
 
                     gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
@@ -1940,17 +2013,20 @@
             };
 
             // ✅ Popola tabella DATI ANALISI con misurazioni dal frame
+            // Throttle: viene chiamata al massimo una volta per sessione
+            window._populateTableCalled = false;
             async function populateTableFromLandmarks(landmarks, frameBase64) {
+                if (window._populateTableCalled) return;  // una sola volta per sessione
+                window._populateTableCalled = true;
                 try {
                     console.log('📊 Popolamento tabella da landmarks iPhone...');
 
                     // Chiama API per ottenere misurazioni
-                    const response = await fetch('/api/canvas/analyze', {
+                    const response = await fetch('/api/canvas-analysis', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            image_data: frameBase64,
-                            landmarks: landmarks
+                            image: frameBase64
                         })
                     });
 
@@ -1992,14 +2068,85 @@
             // ✅ Tracciamento miglior score iPhone
             window.bestIPhoneScore = 0;
 
+            // Coaching posa vocale per PC (throttle 2s, silenzio 4s all'avvio stream)
+            let _poseCoachLastTime = 0;
+            const _POSE_COACH_INTERVAL = 2000;
+            let _poseCoachHighScoreSaid = false;
+            let _poseCoachStreamStartTime = 0; // reset ad ogni connessione iPhone
+            let _poseCoachLastMsg = '';         // deduplicazione: non ripetere stessa frase
+            const _POSE_COACH_STARTUP_SILENCE = 4000; // ms di silenzio dopo avvio stream
+
+            function updatePoseCoachingPC(data) {
+                if (!data || typeof voiceAssistant === 'undefined' || voiceAssistant.isMuted) return;
+                const now = Date.now();
+                // Silenzio iniziale: non disturbare nei primi secondi dopo il collegamento
+                if (_poseCoachStreamStartTime > 0 && now - _poseCoachStreamStartTime < _POSE_COACH_STARTUP_SILENCE) return;
+                // Throttle globale
+                if (now - _poseCoachLastTime < _POSE_COACH_INTERVAL) return;
+
+                const faces = data.faces_detected || 0;
+                const pose = data.pose || data.pose_angles;
+                const sb = data.score_breakdown || {};
+                const score = data.score || data.current_score || 0;
+
+                let msg = null;
+
+                if (faces === 0) {
+                    msg = 'Nessun viso rilevato. Posizionati davanti alla fotocamera.';
+                } else if (pose) {
+                    const faceRatio = sb.face_ratio || 0;
+                    const yaw = pose.yaw || 0;
+                    const pitch = pose.pitch || 0;
+                    const roll = pose.roll || 0;
+                    const absYaw = Math.abs(yaw);
+                    const absPitch = Math.abs(pitch);
+                    const absRoll = Math.abs(roll);
+
+                    if (faceRatio > 0 && faceRatio < 0.18) {
+                        msg = 'Avvicinati alla fotocamera.';
+                    } else if (faceRatio > 0.58) {
+                        msg = 'Allontanati un po\' dalla fotocamera.';
+                    } else if (absYaw >= 14 && absYaw >= absPitch && absYaw >= absRoll) {
+                        msg = yaw > 0 ? 'Gìrati leggermente a sinistra.' : 'Gìrati leggermente a destra.';
+                    } else if (absPitch >= 12 && absPitch >= absRoll) {
+                        msg = pitch > 0 ? 'Abbassa leggermente il mento.' : 'Alza leggermente il mento.';
+                    } else if (absRoll >= 14) {
+                        msg = 'Raddrizza la testa.';
+                    } else if (score >= 92 && !_poseCoachHighScoreSaid) {
+                        _poseCoachHighScoreSaid = true;
+                        msg = 'Ottimo! Mantieni questa posizione.';
+                    } else if (score < 85) {
+                        _poseCoachHighScoreSaid = false;
+                    }
+                }
+
+                // Pronuncia solo se messaggio nuovo rispetto all'ultimo
+                if (msg && msg !== _poseCoachLastMsg) {
+                    _poseCoachLastTime = now;
+                    _poseCoachLastMsg = msg;
+                    voiceAssistant.speakCoach(msg);
+                } else if (!msg) {
+                    // Posa OK: resetta l'ultimo messaggio per permettere future ripetizioni
+                    _poseCoachLastMsg = '';
+                }
+            }
+
             // Handler per messaggi iPhone dal WebSocket
             function handleIPhoneWebSocketMessage(data) {
                 if (data.action === 'iphone_connected') {
                     window.isIPhoneStreamActive = true;
                     window.bestIPhoneScore = 0;
+                    window._populateTableCalled = false;
+                    _poseCoachStreamStartTime = Date.now(); // Avvia finestra di silenzio iniziale
+                    _poseCoachLastMsg = '';                 // Reset dedup per nuova sessione
+                    _poseCoachHighScoreSaid = false;
                     updateIPhoneStatus(true, data.deviceIdShort);
                     if (typeof showToast === 'function') {
-                        showToast('iPhone connesso - Premi Avvia Webcam per iniziare', 'success');
+                        showToast('iPhone connesso - Avvio streaming automatico...', 'success');
+                    }
+                    // Avvia webcam automaticamente senza attendere il pulsante
+                    if (!window.isWebcamActive && typeof startWebcam === 'function') {
+                        setTimeout(() => startWebcam(), 300);
                     }
                 } else if (data.action === 'iphone_disconnected') {
                     window.isIPhoneStreamActive = false;
@@ -2016,15 +2163,18 @@
                         updateFrameProcessingStats(data);
                     }
 
-                    const score = data.score || 0;
-                    const HIGH_SCORE_THRESHOLD = 75;
+                    // Coaching posa vocale sul PC
+                    updatePoseCoachingPC(data);
 
-                    // Aggiorna canvas solo se score migliora
+                    const score = data.score || 0;
+                    const HIGH_SCORE_THRESHOLD = 92;
+
+                    // Aggiorna canvas solo se score migliora rispetto al miglior score finora
                     if (score >= HIGH_SCORE_THRESHOLD && score > window.bestIPhoneScore) {
                         window.bestIPhoneScore = score;
 
                         if (typeof playBeep === 'function') {
-                            playBeep();
+                            playBeep(score);
                         }
 
                         if (data.frame_data) {
@@ -2049,7 +2199,7 @@
                     if (data.total_frames_collected && data.total_frames_collected > 0) {
                         const shouldRequest = window.bestIPhoneScore === 0 ||
                             (score > window.bestIPhoneScore + 0.5) ||
-                            (data.total_frames_collected % 10 === 0);
+                            (data.total_frames_collected % 5 === 0);  // ogni 5 frame come webcam PC
 
                         if (shouldRequest && typeof requestBestFramesUpdate === 'function') {
                             requestBestFramesUpdate();
@@ -2059,10 +2209,19 @@
                     if (data.connected_iphones.length > 0) {
                         updateIPhoneStatus(true, data.connected_iphones[0].deviceIdShort);
                         window.isIPhoneStreamActive = true;
+                        // iPhone già connesso al ricaricamento pagina → avvio automatico
+                        if (!window.isWebcamActive && typeof startWebcam === 'function') {
+                            setTimeout(() => startWebcam(), 300);
+                        }
                     }
                 } else if (data.action === 'iphone_status') {
                     if (data.connected_count > 0 && data.devices.length > 0) {
                         updateIPhoneStatus(true, data.devices[0].deviceIdShort);
+                        window.isIPhoneStreamActive = true;
+                        // iPhone già connesso → avvio automatico
+                        if (!window.isWebcamActive && typeof startWebcam === 'function') {
+                            setTimeout(() => startWebcam(), 300);
+                        }
                     } else {
                         updateIPhoneStatus(false);
                     }

@@ -108,6 +108,11 @@ function updateUserUI(user) {
   // Salva il nome utente globalmente per l'assistente vocale
   window.currentUserName = user.firstname || '';
 
+  // Pre-fetch audio benvenuto in background: sarà pronto appena l'utente interagisce
+  if (window.currentUserName && typeof voiceAssistant !== 'undefined') {
+    voiceAssistant.prefetchWelcome(window.currentUserName);
+  }
+
   if (userNameElement) {
     userNameElement.textContent = `${user.firstname} ${user.lastname}`;
   }
@@ -623,6 +628,7 @@ function resetForNewAnalysis() {
   if (window.greenDotsData) {
     window.greenDotsData = null;
   }
+  window.isDetectingGreenDots = false;
   // NON resettare imageOffset e imageScale - mantieni valori esistenti o default
   // Verranno sovrascritti quando la nuova immagine viene caricata
   if (!window.imageOffset) {
@@ -829,15 +835,16 @@ function compressImage(sourceCanvas, maxWidth = 1280, quality = 0.7) {
 // ============================================================================
 // PREPROCESSING VIDEO LATO CLIENT - Riduce PRIMA dell'upload
 // ============================================================================
-async function preprocessVideoClientSide(file, maxWidth = 720, progressCallback = null) {
+async function preprocessVideoClientSide(file, maxWidth = 1920, progressCallback = null) {
   /**
-   * Preprocessa video lato client riducendo risoluzione PRIMA dell'upload.
-   * Usa Canvas per catturare frame e MediaRecorder per ricreare video compresso.
-   * 
+   * Preprocessa video lato client riducendo a 1920px (lato maggiore).
+   * Garantisce almeno 1080px sul lato corto anche per video landscape,
+   * preservando il dettaglio necessario per rilevare i puntini LB/RB.
+   *
    * @param {File} file - File video originale
-   * @param {number} maxWidth - Larghezza massima target
+   * @param {number} maxWidth - Lato maggiore massimo (default 1920px)
    * @param {function} progressCallback - Callback per progress (0-100)
-   * @returns {Promise<Blob>} - Video compresso come Blob
+   * @returns {Promise<Blob>} - Video come Blob
    */
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
@@ -849,32 +856,41 @@ async function preprocessVideoClientSide(file, maxWidth = 720, progressCallback 
 
     video.onloadedmetadata = async () => {
       try {
-        // Calcola dimensioni ridotte mantenendo aspect ratio
+        // Mantieni risoluzione nativa, cap a 3024px (qualità successo.jpg)
         let targetWidth = video.videoWidth;
         let targetHeight = video.videoHeight;
 
-        if (targetWidth > maxWidth) {
-          const ratio = maxWidth / targetWidth;
-          targetWidth = maxWidth;
+        const maxDim = Math.max(targetWidth, targetHeight);
+        if (maxDim > maxWidth) {
+          const ratio = maxWidth / maxDim;
+          targetWidth = Math.round(targetWidth * ratio);
           targetHeight = Math.round(targetHeight * ratio);
           // Forza dimensioni pari per encoder
+          if (targetWidth % 2 !== 0) targetWidth++;
           if (targetHeight % 2 !== 0) targetHeight++;
         }
 
         console.log(`🎬 Preprocessing video lato client: ${video.videoWidth}x${video.videoHeight} → ${targetWidth}x${targetHeight}`);
 
-        // Canvas per cattura frame
+        // Canvas per cattura frame con alta qualità
         const canvas = document.createElement('canvas');
         canvas.width = targetWidth;
         canvas.height = targetHeight;
         const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
 
-        // MediaRecorder per ricreare video
+        // MediaRecorder per ricreare video ad alta qualità
         const stream = canvas.captureStream(30); // 30 FPS
         const options = {
-          mimeType: 'video/webm;codecs=vp8',
-          videoBitsPerSecond: 1500000 // 1.5 Mbps
+          mimeType: 'video/webm;codecs=vp9',
+          videoBitsPerSecond: 8000000 // 8 Mbps per alta qualità
         };
+        // Fallback a vp8 se vp9 non supportato
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+          options.mimeType = 'video/webm;codecs=vp8';
+          options.videoBitsPerSecond = 5000000; // 5 Mbps
+        }
 
         const mediaRecorder = new MediaRecorder(stream, options);
         const chunks = [];
@@ -1012,6 +1028,12 @@ async function handleUnifiedFileLoad(file, type) {
 
         updateStatus(`Immagine caricata: ${file.name}`);
         showToast('Immagine caricata con successo', 'success');
+        setWhiteDotsParamsForSource('image');
+
+        // Su mobile: porta il canvas in primo piano dopo il caricamento
+        if (window.innerWidth <= 768 && typeof window.focusCanvas === 'function') {
+          setTimeout(() => window.focusCanvas(), 300);
+        }
 
         if (window.DEBUG_MODE) {
           console.log(`✅ Immagine caricata - ${finalWidth}x${finalHeight}px`);
@@ -1039,6 +1061,7 @@ async function handleUnifiedFileLoad(file, type) {
     // RIPRISTINO SISTEMA ORIGINALE: Analisi automatica via WebSocket
     try {
       collapseDetectionSections();
+      setWhiteDotsParamsForSource('video');
 
       // ========================================================================
       // PREPROCESSING VIDEO LATO CLIENT: Riduce dimensioni PRIMA dell'upload
@@ -1059,8 +1082,8 @@ async function handleUnifiedFileLoad(file, type) {
             }
           };
 
-          // Preprocessing lato client con MediaRecorder
-          const processedBlob = await preprocessVideoClientSide(file, 720, progressCallback);
+          // Preprocessing lato client con MediaRecorder (max 1920px per preservare dettaglio LB/RB)
+          const processedBlob = await preprocessVideoClientSide(file, 1920, progressCallback);
 
           // Sostituisci file originale
           file = new File([processedBlob], file.name.replace(/\.[^.]+$/, '.webm'), { type: 'video/webm' });
@@ -1107,14 +1130,10 @@ async function handleUnifiedFileLoad(file, type) {
         // Attendi 2 secondi prima di chiudere il WebSocket
         // per permettere al backend di processare gli ultimi frame
         setTimeout(() => {
-          if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
-            // Richiesta finale risultati prima di chiudere
-            requestBestFramesUpdate();
-            setTimeout(() => {
-              webcamWebSocket.close();
-              currentBestScore = 0;
-            }, 1000);
-          }
+          // ✅ FIX: usa disconnectWebcamWebSocket() che invia get_results con final:true
+          // così handleResultsReady riceve is_final=true e aggiorna canvas+tabella
+          disconnectWebcamWebSocket();
+          currentBestScore = 0;
         }, 2000);
       });
 
@@ -1150,40 +1169,73 @@ async function handleUnifiedFileLoad(file, type) {
 // Eliminata duplicazione del 2024-01-16
 
 function startVideoFrameProcessing(video, fileName) {
-  let frameCount = 0;
-  const totalFrames = Math.floor(video.duration * 5); // 5 FPS per non sovraccaricare
-
   updateStatus(`Elaborazione video: ${fileName}`);
 
-  const processInterval = setInterval(() => {
-    if (frameCount >= totalFrames || !webcamWebSocket || webcamWebSocket.readyState !== WebSocket.OPEN) {
-      clearInterval(processInterval);
+  let lastCaptureTimestamp = 0;
+  let lastCaptureVideoTime = -1;   // traccia currentTime usato per l'ultimo invio
+  let framesCapturati = 0;
+  const FRAME_INTERVAL_MS = 500; // 2 FPS per il server
+
+  console.log(`🎬 captureLoop avviato: duration=${video.duration?.toFixed(1)}s paused=${video.paused} ended=${video.ended}`);
+
+  function captureLoop(timestamp) {
+    // Fermati se il video è finito o in pausa dopo l'inizio
+    if (video.ended) {
+      console.log(`🎬 captureLoop terminato: ${framesCapturati} frame inviati`);
+      return;
+    }
+    if (video.paused && video.currentTime > 0) {
+      console.log(`🎬 captureLoop: video in pausa a ${video.currentTime.toFixed(2)}s`);
       return;
     }
 
-    // Aggiorna posizione video
-    video.currentTime = frameCount / 5;
+    if (!webcamWebSocket || webcamWebSocket.readyState !== WebSocket.OPEN) {
+      // WS non ancora pronto — riprova al prossimo frame
+      requestAnimationFrame(captureLoop);
+      return;
+    }
 
-    // Cattura frame e invia tramite WebSocket (SISTEMA ORIGINALE)
-    captureFrameFromVideoElement(video);
+    if (timestamp - lastCaptureTimestamp >= FRAME_INTERVAL_MS) {
+      // ANTI-DUPLICATO: invia solo se il video ha avanzato di almeno 200ms
+      if (video.currentTime - lastCaptureVideoTime >= 0.2) {
+        captureFrameFromVideoElement(video);
+        lastCaptureVideoTime = video.currentTime;
+        framesCapturati++;
+        console.log(`🎬 Frame #${framesCapturati} inviato @ ${video.currentTime.toFixed(2)}s ws=${webcamWebSocket.readyState}`);
+      }
+      lastCaptureTimestamp = timestamp;
+    }
 
-    frameCount++;
-  }, 200); // 5 FPS
+    requestAnimationFrame(captureLoop);
+  }
+
+  requestAnimationFrame(captureLoop);
 }
 
 function captureFrameFromVideoElement(video) {
   try {
-    // ✅ NO COMPRESSIONE - video già preprocessato a 464x832
+    // Cap a 2048px (lato lungo): alta qualità per il best frame.
+    // Il server riduce a 640px per MediaPipe (veloce), ma conserva l'originale.
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
 
-    canvas.width = video.videoWidth || 464;
-    canvas.height = video.videoHeight || 832;
+    let w = video.videoWidth || 1080;
+    let h = video.videoHeight || 1920;
+    const maxDim = Math.max(w, h);
+    if (maxDim > 2048) {
+      const scale = 2048 / maxDim;
+      w = Math.round(w * scale);
+      h = Math.round(h * scale);
+    }
+    canvas.width = w;
+    canvas.height = h;
 
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Converti in base64 e invia
-    const frameBase64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+    // Qualità 0.95: ottimale per rilevamento e fedeltà del best frame
+    const frameBase64 = canvas.toDataURL('image/jpeg', 0.95).split(',')[1];
 
     // Riusa il protocollo WebSocket della webcam
     const frameMessage = {
@@ -1493,7 +1545,7 @@ async function runAutomaticVideoAnalysis(file) {
           }
         };
 
-        const processedBlob = await preprocessVideoClientSide(file, 720, progressCallback);
+        const processedBlob = await preprocessVideoClientSide(file, 1920, progressCallback);
         fileToUpload = new File([processedBlob], file.name.replace(/\.[^.]+$/, '.webm'), { type: 'video/webm' });
 
         console.log(`✅ Video compresso: ${fileSizeMB.toFixed(2)}MB → ${(fileToUpload.size / 1024 / 1024).toFixed(2)}MB`);
@@ -1960,8 +2012,20 @@ async function startWebcam() {
   }
   sessionStorage.removeItem('webcamRefreshDone');
 
-  // Reset stato prima di avviare webcam
-  resetForNewAnalysis();
+  if (window.isIPhoneStreamActive) {
+    // ⚠️ iPhone: NON chiamare resetForNewAnalysis() perché chiuderebbe il WebSocket
+    // già connesso per le notifiche iPhone e chiamerebbe stopWebcam() se isWebcamActive=true.
+    // Reset leggero: solo score e frame buffer, senza toccare WebSocket né stopWebcam.
+    currentBestScore = 0;
+    window.lastFramesHash = null;
+    window.bestIPhoneScore = 0;
+    window._populateTableCalled = false;  // reset throttle analisi tabella
+    if (typeof currentBestFrames !== 'undefined') currentBestFrames = [];
+    if (window.currentBestFrames) window.currentBestFrames = [];
+  } else {
+    // Webcam PC: reset completo
+    resetForNewAnalysis();
+  }
 
   // Procedi con startWebcamDirect
   await startWebcamDirect();
@@ -1976,11 +2040,13 @@ async function startWebcamDirect() {
       updateStatus('📱 iPhone Camera attiva - Anteprima in corso...');
       showToast('iPhone Camera avviata - Anteprima in corso', 'success');
 
-      // ✅ Reset miglior score all'avvio
-      window.bestIPhoneScore = 0;
-
-      // Invia start_webcam al server per iniziare a ricevere frames
+      // Invia start_session + start_webcam al server — uguale al flusso webcam PC
       if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+        // Reinizializza il buffer frame_scorer sul server
+        webcamWebSocket.send(JSON.stringify({
+          action: 'start_session',
+          session_id: `iphone_session_${new Date().toISOString().replace(/[:.]/g, '_')}`
+        }));
         webcamWebSocket.send(JSON.stringify({
           action: 'start_webcam'
         }));
@@ -2004,29 +2070,32 @@ async function startWebcamDirect() {
         previewInfo.innerHTML = '📱 iPhone Camera attiva - Anteprima in tempo reale';
       }
 
-      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
-        voiceAssistant.speak('iPhone camera avviata');
-      }
-
       // Marca webcam come attiva per permettere rendering frame
       isWebcamActive = true;
       updateWebcamBadge(true);
+
+      // Apri fullscreen anche per stream iPhone (senza video element locale,
+      // verrà renderizzato dal canvas preview esistente)
+      openWebcamFullscreen(null);
 
       return;
     }
 
     // Reset completo prima di avviare webcam
     resetForNewAnalysis('Avvio nuova sessione webcam');
+    setWhiteDotsParamsForSource('webcam');
 
     // Riconnetti WebSocket DOPO il reset
     await connectWebcamWebSocket();
 
     updateStatus('Avvio webcam...');
 
-    // Configura constraints video - LARGHEZZA TARGET 464px (altezza proporzionale)
+    // Configura constraints video - massima risoluzione disponibile (target: qualità simile a successo.jpg 3024x4032)
     let videoConstraints = {
-      width: { ideal: 464 },
-      facingMode: 'user'
+      width: { ideal: 3024, min: 640 },
+      height: { ideal: 4032, min: 480 },
+      facingMode: 'user',
+      aspectRatio: { ideal: 0.75 } // portrait 3:4 come successo.jpg
     };
 
     updateStatus('Avvio webcam integrata...');
@@ -2057,6 +2126,9 @@ async function startWebcamDirect() {
     showWebcamPreview(video);
     startLivePreview(video);
 
+    // Apri anteprima a tutto schermo durante l'acquisizione
+    openWebcamFullscreen(video);
+
     // ✅ WEBCAM: usa WebSocket per buffer circolare lato server
     // Invia frame a 2 FPS → server analizza e mantiene buffer migliori 40 frame
     startFrameCapture(video);
@@ -2082,6 +2154,9 @@ function stopWebcam() {
     isWebcamActive = false;
     updateWebcamBadge(false);
 
+    // Chiudi overlay fullscreen
+    closeWebcamFullscreen();
+
     // Invia stop_webcam al server per smettere di ricevere frames
     if (window.isIPhoneStreamActive && webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
       webcamWebSocket.send(JSON.stringify({
@@ -2091,7 +2166,7 @@ function stopWebcam() {
 
     // Ferma cattura frame webcam
     if (captureInterval) {
-      clearInterval(captureInterval);
+      cancelAnimationFrame(captureInterval);
       captureInterval = null;
     }
 
@@ -2248,53 +2323,68 @@ function disconnectWebcamWebSocket() {
 }
 
 function startFrameCapture(video) {
-  // Previeni interval duplicati
+  // Previeni loop duplicati
   if (captureInterval) {
-    clearInterval(captureInterval);
+    cancelAnimationFrame(captureInterval);
     captureInterval = null;
   }
 
   frameCounter = 0;
+  let lastCaptureTimestamp = 0;
+  const FRAME_INTERVAL_MS = 200; // 5 FPS per il server (più reattivo)
 
-  captureInterval = setInterval(() => {
-    if (isWebcamActive && webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
-      try {
-        // ✅ STEP 1: Cattura frame raw dalla webcam
-        const rawCanvas = document.createElement('canvas');
-        const context = rawCanvas.getContext('2d');
+  // ✅ requestAnimationFrame: scheduling più preciso, non blocca il thread principale
+  function captureLoop(timestamp) {
+    if (!isWebcamActive) return; // Ferma il loop se webcam disattivata
 
-        rawCanvas.width = video.videoWidth || 640;
-        rawCanvas.height = video.videoHeight || 480;
+    if (timestamp - lastCaptureTimestamp >= FRAME_INTERVAL_MS) {
+      if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+        try {
+          // Cattura frame raw dalla webcam alla massima risoluzione disponibile
+          const rawCanvas = document.createElement('canvas');
+          const context = rawCanvas.getContext('2d');
 
-        context.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
+          rawCanvas.width = video.videoWidth || 640;
+          rawCanvas.height = video.videoHeight || 480;
 
-        // Ridimensiona se necessario (max 1280px per performance)
-        let finalCanvas = rawCanvas;
-        if (Math.max(rawCanvas.width, rawCanvas.height) > 1280) {
-          const scale = 1280 / Math.max(rawCanvas.width, rawCanvas.height);
-          const resizedCanvas = document.createElement('canvas');
-          resizedCanvas.width = Math.round(rawCanvas.width * scale);
-          resizedCanvas.height = Math.round(rawCanvas.height * scale);
-          const resizedCtx = resizedCanvas.getContext('2d');
-          resizedCtx.drawImage(rawCanvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
-          finalCanvas = resizedCanvas;
+          context.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
+
+          // Cap a 2048px (lato lungo): alta qualità per il best frame.
+          // Il server riduce a 640px per MediaPipe ma conserva l'originale.
+          let finalCanvas = rawCanvas;
+          const maxDim = Math.max(rawCanvas.width, rawCanvas.height);
+          if (maxDim > 2048) {
+            const scale = 2048 / maxDim;
+            const resizedCanvas = document.createElement('canvas');
+            resizedCanvas.width = Math.round(rawCanvas.width * scale);
+            resizedCanvas.height = Math.round(rawCanvas.height * scale);
+            const resizedCtx = resizedCanvas.getContext('2d');
+            resizedCtx.imageSmoothingEnabled = true;
+            resizedCtx.imageSmoothingQuality = 'high';
+            resizedCtx.drawImage(rawCanvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
+            finalCanvas = resizedCanvas;
+          }
+
+          // Qualità 0.95: ottimale per rilevamento e fedeltà del best frame
+          const frameBase64 = finalCanvas.toDataURL('image/jpeg', 0.95).split(',')[1];
+
+          const frameMessage = {
+            action: 'process_frame',
+            frame_data: frameBase64
+          };
+          webcamWebSocket.send(JSON.stringify(frameMessage));
+          frameCounter++;
+        } catch (err) {
+          console.error('❌ Errore cattura/invio frame webcam:', err);
         }
-
-        // Converti in base64 (quality 0.7 per bilanciare qualità e banda)
-        const frameBase64 = finalCanvas.toDataURL('image/jpeg', 0.7).split(',')[1];
-
-        // Invia frame via WebSocket (protocollo unificato)
-        const frameMessage = {
-          action: 'process_frame',
-          frame_data: frameBase64
-        };
-        webcamWebSocket.send(JSON.stringify(frameMessage));
-        frameCounter++;
-      } catch (err) {
-        console.error('❌ Errore cattura/invio frame webcam:', err);
       }
+      lastCaptureTimestamp = timestamp;
     }
-  }, 500); // 2 FPS per il server
+
+    captureInterval = requestAnimationFrame(captureLoop);
+  }
+
+  captureInterval = requestAnimationFrame(captureLoop);
 }
 
 function openWebcamSection() {
@@ -2355,20 +2445,40 @@ function hideWebcamPreview() {
 
   // Ferma anteprima live
   stopLivePreview();
+
+  // Reset cache canvas iPhone (forza re-inizializzazione dimensioni alla prossima sessione)
+  if (typeof window.resetPreviewCache === 'function') {
+    window.resetPreviewCache();
+  }
 }
 
 function startLivePreview(video) {
   // Ferma loop precedente se esiste
+  window.livePreviewActive = false;
   if (window.livePreviewId) {
-    clearInterval(window.livePreviewId);
+    cancelAnimationFrame(window.livePreviewId);
+    window.livePreviewId = null;
   }
 
-  // Loop per anteprima live continua (30 FPS)
-  window.livePreviewId = setInterval(() => {
-    if (video && video.videoWidth > 0) {
-      renderLivePreview(video);
+  let lastRenderTimestamp = 0;
+  const RENDER_INTERVAL_MS = 33; // ~30 FPS
+
+  // ✅ requestAnimationFrame: sincronizzato con il refresh del browser, nessun jank
+  function renderLoop(timestamp) {
+    if (!window.livePreviewActive) return;
+
+    if (timestamp - lastRenderTimestamp >= RENDER_INTERVAL_MS) {
+      if (video && video.videoWidth > 0) {
+        renderLivePreview(video);
+      }
+      lastRenderTimestamp = timestamp;
     }
-  }, 33); // 30 FPS
+
+    window.livePreviewId = requestAnimationFrame(renderLoop);
+  }
+
+  window.livePreviewActive = true;
+  window.livePreviewId = requestAnimationFrame(renderLoop);
 }
 
 function renderLivePreview(video) {
@@ -2378,15 +2488,7 @@ function renderLivePreview(video) {
     return;
   }
 
-  // ✅ Throttling: aggiorna anteprima max 15 FPS per evitare scatti
-  const now = Date.now();
-  if (!window.lastPreviewUpdate) window.lastPreviewUpdate = 0;
-  const timeSinceLastUpdate = now - window.lastPreviewUpdate;
-  if (timeSinceLastUpdate < 66) {  // 66ms = ~15 FPS
-    return;  // Salta questo frame
-  }
-  window.lastPreviewUpdate = now;
-
+  // Throttling gestito da requestAnimationFrame (startLivePreview)
   try {
     const ctx = previewCanvas.getContext('2d');
 
@@ -2404,8 +2506,13 @@ function renderLivePreview(video) {
 
     // ✅ NO COMPRESSIONE - stream webcam già ridotto a monte (464x832)
     try {
-      // Disegna direttamente dal video - stream già ottimizzato
-      ctx.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
+      // Disegna a specchio (flip orizzontale) — solo visivo, il frame inviato al server NON è specchiato
+      const W = previewCanvas.width, H = previewCanvas.height;
+      ctx.save();
+      ctx.translate(W, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, 0, 0, W, H);
+      ctx.restore();
 
     } catch (drawError) {
       console.error('❌ Errore drawImage:', drawError);
@@ -2419,16 +2526,743 @@ function renderLivePreview(video) {
       ctx.fillText('CANVAS FUNZIONA', 50, 150);
     }
 
+    // Disegna overlay guida viso e HUD pose angles
+    drawFaceGuideOverlay(ctx, previewCanvas.width, previewCanvas.height);
+
   } catch (error) {
     console.error('❌ Errore renderLivePreview:', error);
   }
 }
 
+/**
+ * Overlay principale durante l'anteprima webcam.
+ *
+ * SEMANTICA ANGOLI (da calculate_head_pose_from_mediapipe):
+ *   pitch > 0  → testa ALZATA (mento su)   → correzione: "Abbassa il mento"
+ *   pitch < 0  → testa ABBASSATA (mento giù) → correzione: "Alza il mento"
+ *   yaw   > 0  → viso girato a DESTRA       → correzione: "Gira a sinistra"
+ *   yaw   < 0  → viso girato a SINISTRA     → correzione: "Gira a destra"
+ *   roll  > 0  → testa inclinata a DESTRA   → correzione: "Raddrizza a sinistra"
+ *   roll  < 0  → testa inclinata a SINISTRA → correzione: "Raddrizza a destra"
+ *
+ * Score breakdown (dal server):
+ *   poseScore     (60%) → frontalità Yaw/Pitch/Roll
+ *   sizeScore     (30%) → dimensione viso nel frame (30-45% = ottimo)
+ *   positionScore (10%) → centramento nel frame
+ */
+function drawFaceGuideOverlay(ctx, W, H) {
+  const pose = window.livePoseAngles || {
+    yaw: 0, pitch: 0, roll: 0, score: 0,
+    poseScore: 0, sizeScore: 0, positionScore: 0
+  };
+  const { yaw, pitch, roll, score, poseScore, sizeScore, positionScore } = pose;
+
+  // 1. Silhouette FISSA della posa ideale (non si muove mai)
+  drawIdealFaceSilhouette(ctx, W, H, score);
+
+  // 2. HUD angoli (angolo alto-sinistra)
+  drawAngleHUD(ctx, W, H, yaw, pitch, roll, score);
+
+  // 3. Barre score breakdown (angolo alto-destra)
+  drawScoreBreakdown(ctx, W, H, poseScore, sizeScore, positionScore, score);
+
+  // 4. Messaggio di guida semplificato (centro-basso)
+  drawGuidanceText(ctx, W, H, yaw, pitch, roll, score);
+}
+
+/* ─── Silhouette fissa della posa ideale ────────────────────────────────── */
+/*
+ * Disegna una silhouette STATICA che rappresenta la posizione e dimensione
+ * ottimale del viso per ottenere il massimo score:
+ *   - Centrata orizzontalmente e verticalmente nel frame
+ *   - Dimensione calibrata per occupare ~35% del frame (centro range 30-45%)
+ *   - Proporzioni tipiche di un viso adulto (ovale + occhi + naso + bocca)
+ *
+ * Il colore del bordo cambia con lo score: rosso→giallo→verde.
+ * NON cambia posizione né dimensione — è una guida fissa.
+ */
+function drawIdealFaceSilhouette(ctx, W, H, score) {
+  // ── Geometria base (invariata) ────────────────────────────────────────────
+  const cx = W * 0.50;
+  const cy = H * 0.42;
+  const rx = W * 0.26;
+  const ry = rx * 1.38;
+  const top = cy - ry;
+  const fy = (t) => top + ry * 2 * t;
+
+  // ── Palette colore (score-driven) ─────────────────────────────────────────
+  const isGood = score >= 85;
+  const isMid = score >= 55;
+  const colR = isGood ? 0 : isMid ? 255 : 255;
+  const colG = isGood ? 210 : isMid ? 200 : 65;
+  const colB = isGood ? 90 : isMid ? 0 : 65;
+  const colA = (a) => `rgba(${colR},${colG},${colB},${a})`;
+  const lw = Math.max(1.5, W * 0.003);
+
+  // ── Feature positions ──────────────────────────────────────────────────────
+  const browY = fy(0.38);
+  const eyeY = fy(0.46);
+  const eyeOff = rx * 0.38;
+  const eyeHW = rx * 0.22;
+  const eyeH = ry * 0.060;
+  const noseTY = fy(0.55);
+  const noseBY = fy(0.67);
+  const noseW = rx * 0.13;
+  const mouthY = fy(0.80);
+  const mouthHW = rx * 0.29;
+  const browHW = rx * 0.27;
+  const browH = ry * 0.018;
+  const lipH = ry * 0.032;
+
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LAYER 1 — Griglia interna (clippata all'ovale)
+  // ══════════════════════════════════════════════════════════════════════════
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.strokeStyle = colA(0.07);
+  ctx.lineWidth = 0.8;
+  const gs = ry * 0.11;
+  for (let gy = top; gy <= top + ry * 2 + gs; gy += gs) {
+    ctx.beginPath(); ctx.moveTo(cx - rx, gy); ctx.lineTo(cx + rx, gy); ctx.stroke();
+  }
+  for (let gx = cx - rx; gx <= cx + rx + gs; gx += gs) {
+    ctx.beginPath(); ctx.moveTo(gx, top); ctx.lineTo(gx, top + ry * 2); ctx.stroke();
+  }
+  ctx.restore();
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LAYER 2 — Linea di scansione animata
+  // ══════════════════════════════════════════════════════════════════════════
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.clip();
+  const scanT = (Date.now() % 2400) / 2400;
+  const scanY = top + ry * 2 * scanT;
+  const sg = ctx.createLinearGradient(cx, scanY - ry * 0.06, cx, scanY + ry * 0.06);
+  sg.addColorStop(0, colA(0));
+  sg.addColorStop(0.42, colA(0.06));
+  sg.addColorStop(0.50, colA(0.50));
+  sg.addColorStop(0.58, colA(0.06));
+  sg.addColorStop(1, colA(0));
+  ctx.fillStyle = sg;
+  ctx.fillRect(cx - rx, scanY - ry * 0.07, rx * 2, ry * 0.14);
+  ctx.strokeStyle = colA(0.55);
+  ctx.lineWidth = 0.8;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(cx - rx, scanY); ctx.lineTo(cx + rx, scanY); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LAYER 3 — Ovale principale (dashed)
+  // ══════════════════════════════════════════════════════════════════════════
+  ctx.setLineDash([lw * 3.5, lw * 2]);
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = colA(0.80);
+  ctx.lineWidth = lw * 1.3;
+  ctx.shadowColor = colA(0.40);
+  ctx.shadowBlur = Math.max(6, W * 0.012);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.shadowBlur = 0;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LAYER 4 — Corner brackets AR
+  // ══════════════════════════════════════════════════════════════════════════
+  const bLen = rx * 0.18;
+  ctx.strokeStyle = colA(0.95);
+  ctx.lineWidth = lw * 2.2;
+  [
+    [cx - rx * 0.74, cy - ry * 0.68, [bLen, 0], [0, bLen]],
+    [cx + rx * 0.74, cy - ry * 0.68, [-bLen, 0], [0, bLen]],
+    [cx - rx * 0.74, cy + ry * 0.68, [bLen, 0], [0, -bLen]],
+    [cx + rx * 0.74, cy + ry * 0.68, [-bLen, 0], [0, -bLen]],
+  ].forEach(([x, y, [dx1, dy1], [dx2, dy2]]) => {
+    ctx.beginPath();
+    ctx.moveTo(x + dx1, y + dy1);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + dx2, y + dy2);
+    ctx.stroke();
+  });
+  ctx.lineWidth = lw * 1.6;
+  ctx.strokeStyle = colA(0.65);
+  [[cx - rx, cy, 0, bLen * 0.5], [cx + rx, cy, 0, bLen * 0.5],
+  [cx, cy - ry, bLen * 0.5, 0], [cx, cy + ry, bLen * 0.5, 0]]
+    .forEach(([x, y, hw, hh]) => {
+      ctx.beginPath();
+      ctx.moveTo(x - hw, y - hh); ctx.lineTo(x + hw, y + hh);
+      ctx.stroke();
+    });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LAYER 5 — Wireframe connections
+  // ══════════════════════════════════════════════════════════════════════════
+  ctx.strokeStyle = colA(0.22);
+  ctx.lineWidth = lw * 0.65;
+  ctx.setLineDash([lw * 2, lw * 2.5]);
+  [
+    [[cx, cy - ry], [cx, cy + ry]],
+    [[cx - eyeOff, eyeY], [cx + eyeOff, eyeY]],
+    [[cx - eyeOff, browY], [cx - eyeOff, eyeY]],
+    [[cx + eyeOff, browY], [cx + eyeOff, eyeY]],
+    [[cx, noseTY], [cx, noseBY]],
+    [[cx - noseW * 0.95, noseBY], [cx + noseW * 0.95, noseBY]],
+    [[cx - mouthHW, mouthY], [cx + mouthHW, mouthY]],
+  ].forEach(pts => {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LAYER 6 — Sopracciglia (archi con tick terminali)
+  // ══════════════════════════════════════════════════════════════════════════
+  ctx.strokeStyle = colA(0.82);
+  ctx.lineWidth = lw * 1.8;
+  [-1, 1].forEach(s => {
+    const bx = cx + s * eyeOff;
+    ctx.beginPath();
+    ctx.moveTo(bx - browHW, browY + browH);
+    ctx.quadraticCurveTo(bx, browY - browH * 2.8, bx + browHW, browY + browH);
+    ctx.stroke();
+    ctx.lineWidth = lw * 0.9;
+    ctx.strokeStyle = colA(0.45);
+    [-browHW, browHW].forEach(dx => {
+      ctx.beginPath();
+      ctx.moveTo(bx + dx, browY - browH * 1.5);
+      ctx.lineTo(bx + dx, browY + browH * 2.2);
+      ctx.stroke();
+    });
+    ctx.lineWidth = lw * 1.8;
+    ctx.strokeStyle = colA(0.82);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LAYER 7 — Occhi (mandorla + crosshair + iride)
+  // ══════════════════════════════════════════════════════════════════════════
+  ctx.strokeStyle = colA(0.88);
+  ctx.lineWidth = lw * 1.2;
+  [-1, 1].forEach(s => {
+    const ex = cx + s * eyeOff;
+    ctx.beginPath();
+    ctx.moveTo(ex - eyeHW, eyeY);
+    ctx.quadraticCurveTo(ex, eyeY - eyeH * 1.25, ex + eyeHW, eyeY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(ex - eyeHW, eyeY);
+    ctx.quadraticCurveTo(ex, eyeY + eyeH * 0.85, ex + eyeHW, eyeY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(ex, eyeY, eyeHW * 0.38, 0, Math.PI * 2);
+    ctx.lineWidth = lw * 0.7;
+    ctx.strokeStyle = colA(0.42);
+    ctx.stroke();
+    const ch = eyeH * 0.85;
+    ctx.strokeStyle = colA(0.55);
+    ctx.lineWidth = lw * 0.6;
+    ctx.beginPath(); ctx.moveTo(ex - ch, eyeY); ctx.lineTo(ex + ch, eyeY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ex, eyeY - ch); ctx.lineTo(ex, eyeY + ch); ctx.stroke();
+    ctx.strokeStyle = colA(0.88);
+    ctx.lineWidth = lw * 1.2;
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LAYER 8 — Naso (ali + narici semicircolari)
+  // ══════════════════════════════════════════════════════════════════════════
+  ctx.strokeStyle = colA(0.55);
+  ctx.lineWidth = lw * 0.85;
+  ctx.beginPath();
+  ctx.moveTo(cx - noseW * 0.45, noseTY);
+  ctx.quadraticCurveTo(cx - noseW * 1.15, noseBY - ry * 0.015, cx - noseW * 0.95, noseBY);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + noseW * 0.45, noseTY);
+  ctx.quadraticCurveTo(cx + noseW * 1.15, noseBY - ry * 0.015, cx + noseW * 0.95, noseBY);
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx - noseW * 0.95, noseBY, noseW * 0.42, 0, Math.PI); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx + noseW * 0.95, noseBY, noseW * 0.42, 0, Math.PI); ctx.stroke();
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LAYER 9 — Bocca (arco di cupido + labbro inf + commessura dashed)
+  // ══════════════════════════════════════════════════════════════════════════
+  ctx.strokeStyle = colA(0.80);
+  ctx.lineWidth = lw * 1.15;
+  ctx.beginPath();
+  ctx.moveTo(cx - mouthHW, mouthY);
+  ctx.quadraticCurveTo(cx - mouthHW * 0.42, mouthY - lipH * 1.1, cx, mouthY - lipH * 0.35);
+  ctx.quadraticCurveTo(cx + mouthHW * 0.42, mouthY - lipH * 1.1, cx + mouthHW, mouthY);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - mouthHW, mouthY);
+  ctx.quadraticCurveTo(cx, mouthY + lipH * 1.6, cx + mouthHW, mouthY);
+  ctx.stroke();
+  ctx.strokeStyle = colA(0.28);
+  ctx.lineWidth = lw * 0.55;
+  ctx.setLineDash([lw * 1.5, lw * 1.5]);
+  ctx.beginPath(); ctx.moveTo(cx - mouthHW, mouthY); ctx.lineTo(cx + mouthHW, mouthY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LAYER 10 — Landmark dots numerati
+  // ══════════════════════════════════════════════════════════════════════════
+  const dotR = Math.max(2.2, lw * 1.6);
+  const fsSm = Math.max(7.5, Math.min(10, W * 0.015));
+  const pts = [
+    ['L01', cx - eyeOff, browY],
+    ['R01', cx + eyeOff, browY],
+    ['L02', cx - eyeOff - eyeHW, eyeY],
+    ['L03', cx - eyeOff + eyeHW, eyeY],
+    ['R02', cx + eyeOff - eyeHW, eyeY],
+    ['R03', cx + eyeOff + eyeHW, eyeY],
+    ['C01', cx, noseTY],
+    ['C02', cx - noseW * 0.95, noseBY],
+    ['C03', cx + noseW * 0.95, noseBY],
+    ['L04', cx - mouthHW, mouthY],
+    ['C04', cx, mouthY - lipH * 0.35],
+    ['R04', cx + mouthHW, mouthY],
+    ['T01', cx, cy - ry],
+    ['B01', cx, cy + ry],
+  ];
+  ctx.font = `bold ${fsSm}px monospace`;
+  ctx.textBaseline = 'middle';
+  pts.forEach(([label, x, y]) => {
+    ctx.beginPath();
+    ctx.arc(x, y, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = colA(0.92);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y, dotR * 2.4, 0, Math.PI * 2);
+    ctx.strokeStyle = colA(0.35);
+    ctx.lineWidth = lw * 0.65;
+    ctx.stroke();
+    const isLeft = x < cx - rx * 0.1;
+    const isCenter = Math.abs(x - cx) < rx * 0.1;
+    ctx.textAlign = isLeft ? 'right' : isCenter ? 'center' : 'left';
+    const offX = isLeft ? -dotR * 3.2 : isCenter ? 0 : dotR * 3.2;
+    const offY = y < cy ? -dotR * 3.0 : dotR * 3.0;
+    ctx.fillStyle = colA(0.58);
+    ctx.fillText(label, x + offX, y + offY);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LAYER 11 — Watermark tecnico
+  // ══════════════════════════════════════════════════════════════════════════
+  const fsWm = Math.max(7, Math.min(9, W * 0.014));
+  ctx.font = `bold ${fsWm}px monospace`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  ctx.fillStyle = colA(0.30);
+  ctx.fillText('BIOMETRIC OVERLAY v2', cx + rx - lw * 2, cy + ry - lw * 2);
+  ctx.textAlign = 'left';
+  ctx.fillText(`${pts.length} PTS`, cx - rx + lw * 2, cy + ry - lw * 2);
+
+  ctx.restore();
+}
+
+/* ─── helper: rettangolo con angoli arrotondati ─────────────────────────── */
+function _rrect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+/* ─── HUD angoli (alto-sinistra) ────────────────────────────────────────── */
+function drawAngleHUD(ctx, W, H, yaw, pitch, roll, score) {
+  const pad = W * 0.022;
+  const fs = Math.max(11, Math.min(16, W * 0.028));
+  const lh = fs * 1.65;
+
+  ctx.save();
+  ctx.globalAlpha = 0.88;
+
+  const boxW = W * 0.36;
+  const boxH = lh * 4 + pad;
+  ctx.fillStyle = 'rgba(0,0,0,0.58)';
+  _rrect(ctx, pad, pad, boxW, boxH, 6);
+  ctx.fill();
+
+  ctx.font = `bold ${fs}px monospace`;
+  ctx.textBaseline = 'middle';
+
+  const scoreColor = score >= 80 ? '#00e676' : score >= 50 ? '#ffd740' : '#ff5252';
+
+  const rows = [
+    { label: 'SCORE', val: score.toFixed(1), col: scoreColor },
+    // yaw > 0 = destra → mostra '+' per destra, '-' per sinistra
+    {
+      label: 'YAW  ', val: `${yaw >= 0 ? '+' : ''}${yaw.toFixed(1)}°`,
+      col: Math.abs(yaw) < 5 ? '#00e676' : Math.abs(yaw) < 12 ? '#ffd740' : '#ff5252'
+    },
+    // pitch > 0 = testa alzata
+    {
+      label: 'PITCH', val: `${pitch >= 0 ? '+' : ''}${pitch.toFixed(1)}°`,
+      col: Math.abs(pitch) < 5 ? '#00e676' : Math.abs(pitch) < 12 ? '#ffd740' : '#ff5252'
+    },
+    {
+      label: 'ROLL ', val: `${roll >= 0 ? '+' : ''}${roll.toFixed(1)}°`,
+      col: Math.abs(roll) < 5 ? '#00e676' : Math.abs(roll) < 12 ? '#ffd740' : '#ff5252'
+    },
+  ];
+
+  rows.forEach((r, i) => {
+    const cy = pad + lh * (i + 0.5) + lh * 0.1;
+    ctx.fillStyle = 'rgba(200,200,200,0.85)';
+    ctx.textAlign = 'left';
+    ctx.fillText(r.label + ':', pad + W * 0.012, cy + lh * 0.5);
+    ctx.fillStyle = r.col;
+    ctx.textAlign = 'right';
+    ctx.fillText(r.val, pad + boxW - W * 0.012, cy + lh * 0.5);
+  });
+
+  ctx.restore();
+}
+
+/* ─── Barre breakdown score (alto-destra) ───────────────────────────────── */
+function drawScoreBreakdown(ctx, W, H, poseScore, sizeScore, positionScore, totalScore) {
+  const pad = W * 0.022;
+  const fs = Math.max(10, Math.min(14, W * 0.024));
+  const lh = fs * 1.8;
+  const barW = W * 0.18;
+  const boxW = W * 0.33;
+  const boxH = lh * 3 + pad * 1.8;
+  const x0 = W - pad - boxW;
+
+  ctx.save();
+  ctx.globalAlpha = 0.88;
+  ctx.fillStyle = 'rgba(0,0,0,0.58)';
+  _rrect(ctx, x0, pad, boxW, boxH, 6);
+  ctx.fill();
+
+  const rows = [
+    { label: 'Posa', val: Number(poseScore) || 0, weight: '60%' },
+    { label: 'Dim.', val: Number(sizeScore) || 0, weight: '30%' },
+    { label: 'Centro', val: Number(positionScore) || 0, weight: '10%' },
+  ];
+
+  rows.forEach((r, i) => {
+    const cy = pad + lh * i + lh * 0.5 + pad * 0.4;
+    const barX = x0 + W * 0.015;
+    const barY = cy + fs * 0.2;
+    const barH = fs * 0.75;
+    const filled = Math.max(0, Math.min(1, r.val / 100));
+    const col = filled >= 0.8 ? '#00e676' : filled >= 0.5 ? '#ffd740' : '#ff5252';
+
+    // Etichetta
+    ctx.font = `bold ${fs}px sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(200,200,200,0.85)';
+    ctx.fillText(`${r.label} (${r.weight})`, barX, cy);
+
+    // Barra sfondo
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    _rrect(ctx, barX, barY + fs, barW, barH, 2);
+    ctx.fill();
+
+    // Barra riempimento
+    ctx.fillStyle = col;
+    if (filled > 0) {
+      _rrect(ctx, barX, barY + fs, barW * filled, barH, 2);
+      ctx.fill();
+    }
+
+    // Valore numerico
+    ctx.font = `bold ${fs}px monospace`;
+    ctx.textAlign = 'right';
+    ctx.fillStyle = col;
+    ctx.fillText(r.val.toFixed(0), x0 + boxW - W * 0.012, cy);
+  });
+
+  ctx.restore();
+}
+
+/* ─── Frecce direzionali sui bordi ─────────────────────────────────────── */
+/*
+ * LOGICA CORRETTA (verificata contro calculate_head_pose_from_mediapipe):
+ *
+ *   YAW   > 0 → viso gira DESTRA → freccia a sinistra  (← sul bordo sinistro)
+ *   YAW   < 0 → viso gira SINISTRA → freccia a destra  (→ sul bordo destro)
+ *   PITCH > 0 → testa ALZATA → freccia in basso         (↓ sul bordo basso)
+ *   PITCH < 0 → testa ABBASSATA → freccia in alto       (↑ sul bordo alto)
+ *   ROLL  > 0 → inclinata DESTRA → arco sinistra
+ *   ROLL  < 0 → inclinata SINISTRA → arco destra
+ *
+ *   size_score < 50 e face_ratio < 0.20  → avvicinati  (↕ centro)
+ *   size_score < 50 e face_ratio > 0.55  → allontanati (↕ centro, diverso colore)
+ *
+ *   Soglie: frecce compaiono solo oltre ±8° per yaw/pitch, ±6° per roll.
+ */
+/* ─── Overlay landmark live ──────────────────────────────────────────────── */
+/*
+ * Disegna i punti landmark MediaPipe ricevuti dal server sul canvas.
+ * I landmark sono normalizzati [0,1] e vengono scalati alle dimensioni del canvas.
+ * Gruppi: oval (contorno viso), occhi, naso, sopracciglia, bocca.
+ */
+function drawLandmarkOverlay(ctx, W, H) {
+  const pose = window.livePoseAngles || {};
+  const lm = pose.landmarks;
+  if (!lm) return;
+
+  // Converti lista flat [x0,y0,x1,y1,...] in array di punti {x,y} scalati
+  function toPoints(flatArr) {
+    const pts = [];
+    for (let i = 0; i + 1 < flatArr.length; i += 2) {
+      pts.push({ x: flatArr[i] * W, y: flatArr[i + 1] * H });
+    }
+    return pts;
+  }
+
+  ctx.save();
+  ctx.globalAlpha = 0.65;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  function polyline(pts, close) {
+    if (pts.length < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    if (close) ctx.closePath();
+    ctx.stroke();
+  }
+
+  const lw = Math.max(1, W * 0.0025);
+
+  // Contorno viso — bianco molto sottile
+  if (lm.oval) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.40)';
+    ctx.lineWidth = lw;
+    polyline(toPoints(lm.oval), true);
+  }
+
+  // Sopracciglia — ciano
+  ctx.strokeStyle = 'rgba(0,210,210,0.70)';
+  ctx.lineWidth = lw * 1.3;
+  if (lm.l_brow) polyline(toPoints(lm.l_brow), false);
+  if (lm.r_brow) polyline(toPoints(lm.r_brow), false);
+
+  // Occhi — verde
+  ctx.strokeStyle = 'rgba(0,210,100,0.75)';
+  ctx.lineWidth = lw * 1.3;
+  if (lm.l_eye) polyline(toPoints(lm.l_eye), true);
+  if (lm.r_eye) polyline(toPoints(lm.r_eye), true);
+
+  // Naso — arancione
+  ctx.strokeStyle = 'rgba(255,150,40,0.65)';
+  ctx.lineWidth = lw;
+  if (lm.nose) polyline(toPoints(lm.nose), false);
+
+  // Bocca — rosa
+  ctx.strokeStyle = 'rgba(255,70,110,0.70)';
+  ctx.lineWidth = lw * 1.3;
+  if (lm.mouth) polyline(toPoints(lm.mouth), true);
+
+  ctx.restore();
+}
+
+/* ─── Indicatori di guida semplificati ──────────────────────────────────── */
+/*
+ * Mostra UN messaggio testuale chiaro al centro-basso del frame.
+ * Priorità: distanza > yaw > pitch > roll > ok.
+ */
+function drawGuidanceText(ctx, W, H, yaw, pitch, roll, score) {
+  const pose = window.livePoseAngles || {};
+  const sz = pose.sizeScore || 0;
+  const ratio = pose.faceRatio || 0;
+
+  // Determina il messaggio di guida (solo il problema principale)
+  let msg = null;
+  let col = '#ffd740';
+
+  if (score >= 92) {
+    msg = '✓ Ottima posa!';
+    col = '#00e676';
+  } else if (ratio < 0.18) {
+    msg = '→ Avvicinati alla camera';
+    col = '#ff8c00';
+  } else if (ratio > 0.58) {
+    msg = '← Allontanati dalla camera';
+    col = '#ff8c00';
+  } else if (Math.abs(yaw) > 6) {
+    msg = yaw > 0 ? '← Gira il viso verso sinistra' : '→ Gira il viso verso destra';
+  } else if (Math.abs(pitch) > 6) {
+    msg = pitch > 0 ? '↓ Abbassa leggermente il mento' : '↑ Alza leggermente il mento';
+  } else if (Math.abs(roll) > 5) {
+    msg = roll > 0 ? '↺ Inclina la testa verso sinistra' : '↻ Inclina la testa verso destra';
+  } else if (sz < 40) {
+    msg = '→ Avvicinati un po\'';
+    col = '#ff8c00';
+  }
+
+  if (!msg) return;
+
+  const fs = Math.max(13, Math.min(18, W * 0.030));
+  const pad = W * 0.025;
+
+  ctx.save();
+  ctx.font = `bold ${fs}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const tw = ctx.measureText(msg).width;
+  const bw = tw + pad * 2.5;
+  const bh = fs * 1.8;
+  const bx = (W - bw) / 2;
+  const by = H - bh - H * 0.04;
+
+  // Sfondo etichetta
+  ctx.globalAlpha = 0.82;
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  _rrect(ctx, bx, by, bw, bh, 6);
+  ctx.fill();
+
+  // Testo
+  ctx.globalAlpha = 1.0;
+  ctx.fillStyle = col;
+  ctx.shadowColor = 'rgba(0,0,0,0.9)';
+  ctx.shadowBlur = 6;
+  ctx.fillText(msg, W / 2, by + bh / 2);
+
+  ctx.restore();
+}
+
 function stopLivePreview() {
+  window.livePreviewActive = false;
   if (window.livePreviewId) {
-    clearInterval(window.livePreviewId);
+    cancelAnimationFrame(window.livePreviewId);
     window.livePreviewId = null;
   }
+}
+
+/**
+ * Apre l'overlay webcam a tutto schermo.
+ * Crea un div fisso che copre tutto lo schermo e vi sposta il canvas di anteprima.
+ */
+function openWebcamFullscreen(video) {
+  if (document.getElementById('webcam-fullscreen-overlay')) return; // già aperto
+
+  const overlay = document.createElement('div');
+  overlay.id = 'webcam-fullscreen-overlay';
+
+  const stopBtn = document.createElement('button');
+  stopBtn.id = 'wfs-stop-btn';
+  stopBtn.innerHTML = '⏹ Stop Webcam';
+  stopBtn.onclick = () => stopWebcam();
+
+  const hint = document.createElement('div');
+  hint.id = 'wfs-hint';
+  hint.textContent = 'Dì "KIMERIKA, STOP" oppure premi il pulsante per terminare';
+
+  // Crea un canvas dedicato per il fullscreen (il canvas originale rimane nella sidebar)
+  const fsCanvas = document.createElement('canvas');
+  fsCanvas.id = 'webcam-fullscreen-canvas';
+  fsCanvas.style.cssText = 'display:block;max-width:100vw;max-height:100vh;object-fit:contain;';
+
+  overlay.appendChild(stopBtn);
+  overlay.appendChild(fsCanvas);
+  overlay.appendChild(hint);
+  document.body.appendChild(overlay);
+
+  // Avvia il rendering sul canvas fullscreen
+  startFullscreenPreviewLoop(video, fsCanvas);
+}
+
+/**
+ * Chiude l'overlay fullscreen e ferma il rendering dedicato.
+ */
+function closeWebcamFullscreen() {
+  window.fsPreviewActive = false;
+  if (window.fsPreviewId) {
+    cancelAnimationFrame(window.fsPreviewId);
+    window.fsPreviewId = null;
+  }
+  const overlay = document.getElementById('webcam-fullscreen-overlay');
+  if (overlay) overlay.remove();
+}
+
+/**
+ * Loop di rendering per il canvas fullscreen.
+ * Se video è disponibile (webcam PC), disegna direttamente dal video.
+ * Se video è null (iPhone), copia dal canvas di anteprima sidebar.
+ */
+function startFullscreenPreviewLoop(video, fsCanvas) {
+  window.fsPreviewActive = false;
+  if (window.fsPreviewId) {
+    cancelAnimationFrame(window.fsPreviewId);
+    window.fsPreviewId = null;
+  }
+
+  let lastTs = 0;
+  const INTERVAL = 33; // ~30 FPS
+
+  function loop(ts) {
+    if (!window.fsPreviewActive) return;
+
+    if (ts - lastTs >= INTERVAL) {
+      // Sorgente: video element (webcam PC) oppure canvas fullres iPhone (fallback: canvas sidebar)
+      const source = (video && video.videoWidth > 0)
+        ? video
+        : (document.getElementById('iphone-fullres-canvas') || document.getElementById('webcam-preview-canvas'));
+
+      if (source) {
+        const srcW = source.videoWidth || source.width;
+        const srcH = source.videoHeight || source.height;
+
+        if (srcW > 0 && srcH > 0) {
+          const ctx = fsCanvas.getContext('2d');
+
+          // Adatta dimensioni canvas fullscreen alla viewport preservando aspect ratio
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
+          const ar = srcW / srcH;
+          let cw, ch;
+          if (vw / vh > ar) {
+            ch = vh; cw = Math.round(ch * ar);
+          } else {
+            cw = vw; ch = Math.round(cw / ar);
+          }
+
+          if (fsCanvas.width !== cw || fsCanvas.height !== ch) {
+            fsCanvas.width = cw;
+            fsCanvas.height = ch;
+            fsCanvas.style.width = cw + 'px';
+            fsCanvas.style.height = ch + 'px';
+          }
+
+          // Disegna a specchio (flip orizzontale) — solo visivo
+          ctx.save();
+          ctx.translate(cw, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(source, 0, 0, cw, ch);
+          ctx.restore();
+          drawFaceGuideOverlay(ctx, cw, ch);
+        }
+      }
+
+      lastTs = ts;
+    }
+    window.fsPreviewId = requestAnimationFrame(loop);
+  }
+
+  window.fsPreviewActive = true;
+  window.fsPreviewId = requestAnimationFrame(loop);
 }
 
 function updateWebcamPreview(video) {
@@ -2439,6 +3273,9 @@ function updateWebcamPreview(video) {
 let currentBestScore = 0;
 let getResultsRequestId = 0; // Contatore richieste
 let pendingGetResultsRequests = new Set(); // Track richieste in corso
+
+// Pose angles live (aggiornati da ogni frame_processed del server)
+window.livePoseAngles = { yaw: 0, pitch: 0, roll: 0, score: 0 };
 
 function handleWebSocketMessage(data) {
   try {
@@ -2543,29 +3380,54 @@ function requestBestFramesUpdate(force = false) {
 }
 
 function updateFrameProcessingStats(data) {
-  // Aggiorna statistiche elaborazione frame
-  const frameInfo = document.getElementById('best-frame-info');
-  if (frameInfo) {
-    frameInfo.innerHTML = `
-      Frame elaborati: ${data.total_frames_collected || 0}<br>
-      Ultimo score: ${(data.current_score || 0).toFixed(3)}<br>
-      Volti rilevati: ${data.faces_detected || 0}
+  // Aggiorna statistiche di elaborazione live in un box SEPARATO
+  // così non sovrascrive il box del frame selezionato
+  const liveStats = document.getElementById('live-processing-stats');
+  if (liveStats) {
+    liveStats.innerHTML = `
+      ⏳ Frame elaborati: ${data.total_frames_collected || 0} ―
+      Ultimo: ${(data.current_score || data.score || 0).toFixed(1)} ―
+      Volti: ${data.faces_detected || 0}
     `;
   }
 
-  // Notifica audio per frame con score > 95
-  if (data.current_score && data.current_score > 95) {
-    playHighScoreSound();
+  // Salva pose angles live per il rendering dell'overlay nell'anteprima
+  // Il server invia 'pose' (non 'pose_angles') nel messaggio frame_processed,
+  // più 'score_breakdown' con i dettagli delle tre componenti.
+  const poseData = data.pose || data.pose_angles;
+  if (poseData) {
+    const sb = data.score_breakdown || {};
+    window.livePoseAngles = {
+      yaw: poseData.yaw || 0,
+      pitch: poseData.pitch || 0,
+      roll: poseData.roll || 0,
+      score: data.current_score || data.score || 0,  // iPhone usa 'score', webcam usa 'current_score'
+      poseScore: sb.pose_score || 0,
+      sizeScore: sb.size_score || 0,
+      positionScore: sb.position_score || 0,
+      faceRatio: sb.face_ratio || 0,
+      landmarks: data.landmarks || null,
+    };
+  } else if (data.current_score !== undefined || data.score !== undefined) {
+    window.livePoseAngles.score = data.current_score || data.score || 0;
+  }
+
+  // Notifica audio per frame con score ≥ 92 (solo webcam PC - iPhone usa playBeep in index.html)
+  // Non suonare se è un frame iPhone (evita doppio beep)
+  const _statsScore = data.current_score || data.score || 0;
+  const _isIPhoneFrame = data.action === 'iphone_frame_processed';
+  if (!_isIPhoneFrame && _statsScore >= 92 && _statsScore > currentBestScore) {
+    playHighScoreSound(_statsScore);
   }
 }
 
 // Variabile per throttling suono
 let lastSoundTime = 0;
 
-function playHighScoreSound() {
-  // Throttle: max 1 suono ogni 500ms
+function playHighScoreSound(score) {
+  // Throttle: max 1 suono ogni 800ms
   const now = Date.now();
-  if (now - lastSoundTime < 500) return;
+  if (now - lastSoundTime < 800) return;
   lastSoundTime = now;
 
   try {
@@ -2576,14 +3438,18 @@ function playHighScoreSound() {
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
 
-    oscillator.frequency.value = 800; // Frequenza acuta
+    // 1000 Hz se score ≥ 97, altrimenti 800 Hz
+    oscillator.frequency.value = (score >= 97) ? 1000 : 800;
     oscillator.type = 'sine';
 
     gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
 
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.2);
+    // Resume necessario su Chrome dopo policy autoplay
+    audioContext.resume().then(() => {
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.2);
+    });
   } catch (e) {
     console.error('Errore riproduzione suono:', e);
   }
@@ -2719,6 +3585,34 @@ function updateCanvasWithBestFrame(imageData, mimeType = 'image/jpeg') {
 // Variabile globale per conservare i frame (esposta su window)
 window.currentBestFrames = [];
 let currentBestFrames = window.currentBestFrames; // Alias per retrocompatibilità
+
+/**
+ * PUNTO UNICO di sincronizzazione canvas ↔ info-box.
+ * Aggiorna il canvas con l'immagine del frame E il box info con i metadati corretti.
+ * @param {Object} frame  - Oggetto frame con image_data, score, rank, yaw, pitch, roll
+ * @param {number} index  - Indice nella lista (0 = miglior frame)
+ * @param {boolean} silent - Se true non mostra toast
+ */
+function _syncCanvasFrame(frame, index, silent = false) {
+  if (!frame || !frame.image_data) return;
+  const frameNumber = frame.rank || (index + 1);
+
+  updateCanvasWithBestFrame(frame.image_data);
+
+  // Aggiorna sempre il box info con i dati reali del frame visualizzato
+  const frameInfo = document.getElementById('best-frame-info');
+  if (frameInfo) {
+    frameInfo.innerHTML = `
+      Frame selezionato: #${frameNumber}<br>
+      Score: ${(frame.score || 0).toFixed(3)}<br>
+      Pose: Y=${(frame.yaw || 0).toFixed(1)}° P=${(frame.pitch || 0).toFixed(1)}° R=${(frame.roll || 0).toFixed(1)}°
+    `;
+  }
+
+  if (!silent) {
+    showToast(`Frame ${frameNumber} visualizzato nel canvas`, 'info');
+  }
+}
 
 /**
  * Ri-aggancia gli event listener alle righe della tabella debug unificata
@@ -2875,8 +3769,9 @@ function updateDebugTable(bestFrames) {
     }
 
     // Mostra automaticamente il miglior frame (primo della lista) nel canvas centrale
+    // e aggiorna il box info in modo coerente (silent: no toast durante aggiornamenti periodici)
     if (bestFrames.length > 0 && bestFrames[0].image_data) {
-      updateCanvasWithBestFrame(bestFrames[0].image_data);
+      _syncCanvasFrame(bestFrames[0], 0, true);
     }
 
     // Scroll automatico DISABILITATO - la colonna rimane in alto
@@ -2891,103 +3786,6 @@ function updateDebugTable(bestFrames) {
 }
 
 // ✅ NUOVA FUNZIONE: Aggiorna solo tabella senza toccare canvas
-function updateDebugTableOnly(bestFrames) {
-  try {
-    const debugTableBody = document.getElementById('debug-data');
-    if (!debugTableBody) return;
-
-    // Salva i frame globalmente per il click handler
-    currentBestFrames = bestFrames;
-    window.currentBestFrames = bestFrames;
-
-    // Pulisci tabella esistente
-    debugTableBody.innerHTML = '';
-
-    // Aggiungi righe per ogni frame
-    bestFrames.forEach((frame, index) => {
-      const row = document.createElement('tr');
-
-      if (index === 0) {
-        row.classList.add('best-frame-row');
-      }
-
-      row.style.cursor = 'pointer';
-      row.title = 'Clicca per visualizzare questo frame nel canvas principale';
-
-      const frameTime = frame.timestamp ? new Date(frame.timestamp * 1000) : new Date();
-
-      row.innerHTML = `
-        <td>${String(frame.rank || index + 1).padStart(2, '0')}</td>
-        <td>${frameTime.toLocaleTimeString()}</td>
-        <td class="score-cell ${getScoreClass(frame.score)}">${(frame.score || 0).toFixed(3)}</td>
-        <td>${(frame.yaw || 0).toFixed(2)}°</td>
-        <td>${(frame.pitch || 0).toFixed(2)}°</td>
-        <td>${(frame.roll || 0).toFixed(2)}°</td>
-        <td><span class="status-badge status-success">Salvato</span></td>
-      `;
-
-      row.addEventListener('click', function () {
-        showFrameInMainCanvas(frame, index);
-        debugTableBody.querySelectorAll('tr').forEach(r => r.classList.remove('selected-frame'));
-        row.classList.add('selected-frame');
-      });
-
-      debugTableBody.appendChild(row);
-    });
-
-    // Aggiorna tabella unificata incrementalmente
-    const currentTab = window.unifiedTableCurrentTab;
-    const unifiedTableBody = document.getElementById('unified-table-body');
-
-    if (!currentTab || currentTab !== 'debug' || !unifiedTableBody || unifiedTableBody.children.length === 0) {
-      openUnifiedAnalysisSection();
-      switchUnifiedTab('debug');
-    } else {
-      const tableBody = document.getElementById('unified-table-body');
-      if (tableBody && debugTableBody) {
-        const currentRowCount = tableBody.children.length;
-        const newRowCount = debugTableBody.children.length;
-
-        if (currentRowCount < newRowCount) {
-          const newRows = Array.from(debugTableBody.children).slice(currentRowCount);
-          newRows.forEach(row => {
-            const clonedRow = row.cloneNode(true);
-            tableBody.appendChild(clonedRow);
-          });
-          reattachDebugTableListeners(tableBody, debugTableBody, currentRowCount);
-        } else if (currentRowCount > newRowCount) {
-          while (tableBody.children.length > newRowCount) {
-            tableBody.removeChild(tableBody.lastChild);
-          }
-        } else {
-          // ✅ FIX: Aggiorna contenuto celle quando numero righe invariato
-          const sourceRows = Array.from(debugTableBody.children);
-          const targetRows = Array.from(tableBody.children);
-
-          sourceRows.forEach((sourceRow, i) => {
-            if (targetRows[i]) {
-              const sourceCells = sourceRow.querySelectorAll('td');
-              const targetCells = targetRows[i].querySelectorAll('td');
-
-              sourceCells.forEach((cell, j) => {
-                if (targetCells[j] && targetCells[j].innerHTML !== cell.innerHTML) {
-                  targetCells[j].innerHTML = cell.innerHTML;
-                  targetCells[j].className = cell.className;
-                }
-              });
-            }
-          });
-        }
-      }
-    }
-
-    console.log(`📊 Tabella aggiornata (canvas non toccato) - ${bestFrames.length} frame`);
-
-  } catch (error) {
-    console.error('Errore aggiornamento tabella debug:', error);
-  }
-}
-
 function getScoreClass(score) {
   if (score >= 0.9) return 'excellent';
   if (score >= 0.8) return 'very-good';
@@ -3034,24 +3832,12 @@ function transformWebSocketFrames(data) {
 
 function showFrameInMainCanvas(frame, index) {
   try {
-    // Usa il rank del frame se disponibile, altrimenti usa index+1
     const frameNumber = frame.rank || (index + 1);
     console.log(`🖼️ Mostrando frame ${frameNumber} nel canvas principale`);
 
     if (frame.image_data) {
-      updateCanvasWithBestFrame(frame.image_data);
-
-      // Aggiorna info frame corrente
-      const frameInfo = document.getElementById('best-frame-info');
-      if (frameInfo) {
-        frameInfo.innerHTML = `
-          Frame selezionato: #${frameNumber}<br>
-          Score: ${(frame.score || 0).toFixed(3)}<br>
-          Pose: Y=${(frame.yaw || 0).toFixed(1)}° P=${(frame.pitch || 0).toFixed(1)}° R=${(frame.roll || 0).toFixed(1)}°
-        `;
-      }
-
-      showToast(`Frame ${frameNumber} visualizzato nel canvas`, 'info');
+      // Usa il punto unico di sync canvas + info box (con toast)
+      _syncCanvasFrame(frame, index, false);
     } else {
       showToast('Dati immagine non disponibili per questo frame', 'warning');
     }
@@ -3071,22 +3857,31 @@ function handleResultsReady(data) {
       pendingGetResultsRequests.delete(responseId);
     }
 
+    // 🔍 DIAGNOSTICA: log sempre visibile indipendentemente da success
+    console.log(`🔍 results_ready: success=${data.success} frames=${data.frames?.length ?? 'N/A'} error=${data.error ?? 'none'} is_final=${data.is_final ?? false}`);
+
     if (data.success && data.frames && data.frames.length > 0) {
       const newBestScore = data.best_score || 0;
       const scoreDiff = newBestScore - currentBestScore;
 
-      // Aggiorna solo se cambia: primo frame, score migliora, o numero frame diverso
+      // Hash affidabile: usa SCORES + RANKS di tutti i frame (non solo count+bestscore)
+      const newHash = data.frames.map(f => `${f.rank || 0}:${(f.score || 0).toFixed(2)}`).join('|');
+
+      // Aggiorna solo se cambia: primo frame, score migliora, contenuto frame diverso,
+      // oppure se è il risultato finale (fine sessione)
       const isFirstFrame = currentBestScore === 0;
       const hasImproved = scoreDiff > 0.05;
-      const framesChanged = !window.lastFramesHash || window.lastFramesHash !== data.frames.length + '_' + newBestScore.toFixed(2);
+      const framesChanged = !window.lastFramesHash || window.lastFramesHash !== newHash;
+      const isFinalResult = !!data.is_final;
+      console.log(`📊 handleResultsReady: frames=${data.frames?.length || 0} bestScore=${newBestScore.toFixed(2)} isFinal=${isFinalResult} first=${isFirstFrame} improved=${hasImproved} changed=${framesChanged}`);
 
-      if (!isFirstFrame && !hasImproved && !framesChanged) {
+      if (!isFirstFrame && !hasImproved && !framesChanged && !isFinalResult) {
         return;
       }
 
-      // Aggiorna score e hash
+      // Aggiorna score e hash (hash dettagliato)
       currentBestScore = newBestScore;
-      window.lastFramesHash = data.frames.length + '_' + newBestScore;
+      window.lastFramesHash = newHash;
 
       // Usa funzione centralizzata per trasformare i dati
       const bestFrames = transformWebSocketFrames(data);
@@ -3095,6 +3890,12 @@ function handleResultsReady(data) {
       updateDebugTable(bestFrames);
 
       updateStatus(`Ricevuti ${bestFrames.length} migliori frame dal server`);
+
+      // Al termine dell'analisi, forza sync canvas + info box con il vero miglior frame
+      if (isFinalResult && bestFrames.length > 0 && bestFrames[0].image_data) {
+        _syncCanvasFrame(bestFrames[0], 0, true);
+        showToast(`✅ Analisi completata − Score migliore: ${newBestScore.toFixed(1)}`, 'success');
+      }
     }
 
   } catch (error) {
@@ -3115,9 +3916,9 @@ function handleFinalResults(data) {
       // Aggiorna tabella debug
       updateDebugTable(debugFrames);
 
-      // Mostra il miglior frame nel canvas
+      // Mostra il miglior frame nel canvas con info box aggiornato
       if (debugFrames.length > 0 && debugFrames[0].image_data) {
-        updateCanvasWithBestFrame(debugFrames[0].image_data);
+        _syncCanvasFrame(debugFrames[0], 0, true);
       }
 
       // Salva i frame localmente nella cartella best_frontal_frames
@@ -3820,28 +4621,35 @@ function clearLandmarks() {
   }
 }
 
-function drawSymmetryAxis() {
+function drawSymmetryAxis({ autoDetect = true } = {}) {
   /**
    * === SISTEMA SEMPLIFICATO ===
    * Disegna l'asse di simmetria usando landmarks già disponibili
    * Landmarks MediaPipe: Glabella (9) e Philtrum (164)
+   * @param {boolean} autoDetect - Se true, tenta auto-rilevamento landmarks se mancano.
+   *   Passare false per evitare ricorsione quando chiamata da callback di auto-rilevamento.
    */
   console.log('📏 drawSymmetryAxis - Sistema Semplificato');
 
   // PRIMA rimuovi l'asse precedente (se esiste)
   clearSymmetryAxis();
 
-  // Se non ci sono landmarks, prova auto-rilevamento
+  // Se non ci sono landmarks, prova auto-rilevamento (una sola volta)
   if (!currentLandmarks || currentLandmarks.length === 0) {
-    console.log('🔍 Nessun landmark - Tentativo auto-rilevamento...');
-    showToast('Rilevamento landmarks in corso...', 'info');
-    autoDetectLandmarksOnImageChange().then(success => {
-      if (success) {
-        drawSymmetryAxis(); // Richiama se stesso dopo il rilevamento
-      } else {
-        showToast('Impossibile rilevare landmarks per l\'asse', 'error');
-      }
-    });
+    if (autoDetect) {
+      console.log('🔍 Nessun landmark - Tentativo auto-rilevamento...');
+      showToast('Rilevamento landmarks in corso...', 'info');
+      autoDetectLandmarksOnImageChange().then(success => {
+        if (success) {
+          drawSymmetryAxis({ autoDetect: false }); // Evita ricorsione infinita
+        } else {
+          showToast('Impossibile rilevare landmarks per l\'asse', 'error');
+        }
+      });
+    } else {
+      console.warn('⚠️ drawSymmetryAxis: landmarks non disponibili dopo auto-rilevamento');
+      showToast('Impossibile rilevare landmarks per l\'asse', 'error');
+    }
     return;
   }
 
@@ -5045,7 +5853,7 @@ function generateGreenDotsTableRows(result) {
 
       leftDots.forEach((dot, idx) => {
         const colorClass = dot.size > 35 ? 'color: #f44336' : dot.size > 25 ? 'color: #ff9800' : dot.size > 15 ? 'color: #ffc107' : 'color: #4caf50';
-        const compactStr = dot.compactness ? dot.compactness.toFixed(2) : 'N/A';
+        const compactStr = dot.compactness ? dot.compactness.toFixed(2) : null;
         const scoreStr = dot.score ? dot.score.toFixed(1) : (dot.size * 1.5).toFixed(1);
         const hsvStr = (dot.h !== undefined && dot.s !== undefined && dot.v !== undefined)
           ? `H:${dot.h}° S:${dot.s}% V:${dot.v}%`
@@ -5056,7 +5864,7 @@ function generateGreenDotsTableRows(result) {
 
         rows += `<tr data-type="green-dots" style="font-size: 0.9em;">
           <td style="padding-left: 20px;"><strong>⚪ ${label}</strong> (${dot.x}, ${dot.y})</td>
-          <td style="${colorClass}">Size:${dot.size}px | C:${compactStr} | Score:${scoreStr}</td>
+          <td style="${colorClass}">Size:${dot.size}px${compactStr ? ` | C:${compactStr}` : ''} | Score:${scoreStr}</td>
           <td>${hsvStr}</td>
           <td>✅</td>
         </tr>`;
@@ -5071,7 +5879,7 @@ function generateGreenDotsTableRows(result) {
 
       rightDots.forEach((dot, idx) => {
         const colorClass = dot.size > 35 ? 'color: #f44336' : dot.size > 25 ? 'color: #ff9800' : dot.size > 15 ? 'color: #ffc107' : 'color: #4caf50';
-        const compactStr = dot.compactness ? dot.compactness.toFixed(2) : 'N/A';
+        const compactStr = dot.compactness ? dot.compactness.toFixed(2) : null;
         const scoreStr = dot.score ? dot.score.toFixed(1) : (dot.size * 1.5).toFixed(1);
         const hsvStr = (dot.h !== undefined && dot.s !== undefined && dot.v !== undefined)
           ? `H:${dot.h}° S:${dot.s}% V:${dot.v}%`
@@ -5082,7 +5890,7 @@ function generateGreenDotsTableRows(result) {
 
         rows += `<tr data-type="green-dots" style="font-size: 0.9em;">
           <td style="padding-left: 20px;"><strong>⚪ ${label}</strong> (${dot.x}, ${dot.y})</td>
-          <td style="${colorClass}">Size:${dot.size}px | C:${compactStr} | Score:${scoreStr}</td>
+          <td style="${colorClass}">Size:${dot.size}px${compactStr ? ` | C:${compactStr}` : ''} | Score:${scoreStr}</td>
           <td>${hsvStr}</td>
           <td>✅</td>
         </tr>`;
@@ -5255,6 +6063,131 @@ function analyzeEyebrowDesignFromGreenDotsTable() {
   }
 
   console.log('✅ [FEEDBACK VOCALE] Feedback generato:', feedback);
+  return feedback || null;
+}
+
+function analyzeEyebrowDesignFromData(greenDotsData) {
+  /**
+   * Genera il feedback vocale leggendo direttamente dalla struttura dati JSON,
+   * senza fare parsing del DOM. Sostituisce analyzeEyebrowDesignFromGreenDotsTable().
+   *
+   * Struttura attesa in greenDotsData:
+   *   statistics.left.area, statistics.right.area
+   *   coordinates.Sx[idx], coordinates.Dx[idx]  — in coordinate immagine originale
+   *   Indici: 0=C1, 1=A0, 2=A, 3=C, 4=B  (Sx) / 0=RC1, 1=RB, 2=RC, 3=RA, 4=RA0  (Dx)
+   */
+  console.log('📊 [FEEDBACK VOCALE] Analisi da dati JSON green dots');
+
+  if (!greenDotsData || !greenDotsData.success) {
+    console.warn('⚠️ [FEEDBACK VOCALE] Dati non validi o assenti');
+    return null;
+  }
+
+  let externalEyebrow = null; // quale sopracciglio inizia più esternamente (punto A)
+  let higherEyebrow = null;   // quale sopracciglio è più alto (punto C1)
+  let longerTail = null;      // quale ha la coda più lunga (punto B)
+  let thickerEyebrow = null;  // quale è più spesso (area)
+
+  // === Analisi area (spessore) ===
+  const stats = greenDotsData.statistics;
+  if (stats && stats.left && stats.right) {
+    const leftArea = stats.left.area || 0;
+    const rightArea = stats.right.area || 0;
+    if (leftArea !== rightArea) {
+      thickerEyebrow = leftArea > rightArea ? 'sinistro' : 'destro';
+    }
+  }
+
+  // === Analisi coordinate (punto A, B, C1) ===
+  const coords = greenDotsData.coordinates;
+  if (coords && coords.Sx && coords.Dx) {
+    const sx = coords.Sx; // [LC1, LA0, LA, LC, LB]
+    const dx = coords.Dx; // [RC1, RB, RC, RA, RA0]
+
+    // Asse di simmetria: necessario per calcolare distanze
+    const axisData = getSymmetryAxisPosition();
+    if (axisData && axisData.lineOriginal) {
+      const axis = axisData.lineOriginal;
+
+      // Punto A (indice 2 in Sx = LA, indice 3 in Dx = RA) — più lontano = più esterno
+      if (sx[2] && dx[3]) {
+        const distLA = typeof getPerpendicularDistanceFromLine === 'function'
+          ? getPerpendicularDistanceFromLine(sx[2][0], sx[2][1], axis)
+          : Math.abs(sx[2][0] - axisData.x);
+        const distRA = typeof getPerpendicularDistanceFromLine === 'function'
+          ? getPerpendicularDistanceFromLine(dx[3][0], dx[3][1], axis)
+          : Math.abs(dx[3][0] - axisData.x);
+        if (Math.abs(distLA - distRA) > 1) {
+          externalEyebrow = distLA > distRA ? 'sinistro' : 'destro';
+        }
+      }
+
+      // Punto C1 (indice 0 in Sx = LC1, indice 0 in Dx = RC1) — y più bassa = più in alto
+      if (sx[0] && dx[0]) {
+        const heightLA = typeof getProjectionAlongLine === 'function'
+          ? getProjectionAlongLine(sx[0][0], sx[0][1], axis)
+          : sx[0][1];
+        const heightRA = typeof getProjectionAlongLine === 'function'
+          ? getProjectionAlongLine(dx[0][0], dx[0][1], axis)
+          : dx[0][1];
+        if (Math.abs(heightLA - heightRA) > 1) {
+          higherEyebrow = heightLA < heightRA ? 'sinistro' : 'destro';
+        }
+      }
+
+      // Punto B (indice 4 in Sx = LB, indice 1 in Dx = RB) — più lontano = coda più lunga
+      if (sx[4] && dx[1]) {
+        const distLB = typeof getPerpendicularDistanceFromLine === 'function'
+          ? getPerpendicularDistanceFromLine(sx[4][0], sx[4][1], axis)
+          : Math.abs(sx[4][0] - axisData.x);
+        const distRB = typeof getPerpendicularDistanceFromLine === 'function'
+          ? getPerpendicularDistanceFromLine(dx[1][0], dx[1][1], axis)
+          : Math.abs(dx[1][0] - axisData.x);
+        if (Math.abs(distLB - distRB) > 1) {
+          longerTail = distLB > distRB ? 'sinistro' : 'destro';
+        }
+      }
+    } else {
+      console.warn('⚠️ [FEEDBACK VOCALE] Asse non disponibile, skip analisi coordinate');
+    }
+  }
+
+  console.log('🔍 [FEEDBACK VOCALE] Risultati da dati JSON:', {
+    externalEyebrow, higherEyebrow, longerTail, thickerEyebrow
+  });
+
+  if (!externalEyebrow && !higherEyebrow && !longerTail && !thickerEyebrow) {
+    console.warn('⚠️ [FEEDBACK VOCALE] Nessun dato sufficiente per generare feedback');
+    return null;
+  }
+
+  let feedback = '';
+
+  if (externalEyebrow === 'destro') {
+    feedback += 'Il sopracciglio alla tua destra inizia più esternamente. ';
+  } else if (externalEyebrow === 'sinistro') {
+    feedback += 'Il sopracciglio alla tua sinistra inizia più esternamente. ';
+  }
+
+  if (higherEyebrow === 'sinistro') {
+    feedback += 'Il sopracciglio alla tua sinistra è più alto rispetto all\'altro. ';
+  } else if (higherEyebrow === 'destro') {
+    feedback += 'Il sopracciglio alla tua destra è più alto rispetto all\'altro. ';
+  }
+
+  if (longerTail === 'sinistro') {
+    feedback += 'La coda del sopracciglio alla tua sinistra è più lunga. ';
+  } else if (longerTail === 'destro') {
+    feedback += 'La coda del sopracciglio alla tua destra è più lunga. ';
+  }
+
+  if (thickerEyebrow === 'sinistro') {
+    feedback += 'Ed infine il sopracciglio sinistro è più spesso.';
+  } else if (thickerEyebrow === 'destro') {
+    feedback += 'Ed infine il sopracciglio destro è più spesso.';
+  }
+
+  console.log('✅ [FEEDBACK VOCALE] Feedback generato da dati JSON:', feedback);
   return feedback || null;
 }
 
@@ -6228,31 +7161,31 @@ function highlightSelectedLandmark(landmarkId, color) {
   fabricCanvas.renderAll();
 }
 
-function toggleGreenDots() {
+async function toggleGreenDots() {
   /**
    * Gestisce il toggle del pulsante GREEN DOTS nella sezione RILEVAMENTI.
    * Replica esattamente canvas_app.py:toggle_green_dots_section()
    */
+  // Guard: evita doppi click durante elaborazione
+  if (window.isDetectingGreenDots) {
+    console.log('⚠️ Rilevamento già in corso, toggle ignorato');
+    return;
+  }
+
   const btn = document.getElementById('green-dots-btn');
   btn.classList.toggle('active');
 
   const isActive = btn.classList.contains('active');
 
-  // Mostra/nascondi il pannello parametri
-  const paramsPanel = document.getElementById('white-dots-params-panel');
-  if (paramsPanel) {
-    paramsPanel.style.display = isActive ? 'block' : 'none';
-  }
-
   if (isActive) {
     // Se non ci sono green dots rilevati, rilevali automaticamente
     if (!window.greenDotsDetected) {
-      detectGreenDots();
+      await detectGreenDots();
     } else {
       updateCanvasDisplay();
-      // Se i dati esistono già, pronuncia comunque il feedback se non soppresso
-      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak && !window.suppressVoiceFeedback) {
-        const feedback = analyzeEyebrowDesignFromGreenDotsTable();
+      // Se i dati esistono già, pronuncia comunque il feedback
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak && window.greenDotsData) {
+        const feedback = analyzeEyebrowDesignFromData(window.greenDotsData);
         if (feedback) {
           voiceAssistant.speak(feedback);
         }
@@ -6281,41 +7214,31 @@ async function detectGreenDots() {
     return;
   }
 
+  // Lock: evita richieste parallele
+  if (window.isDetectingGreenDots) {
+    console.log('⚠️ Rilevamento già in corso, skip');
+    return;
+  }
+  window.isDetectingGreenDots = true;
+
+  const btn = document.getElementById('green-dots-btn');
+  if (btn) btn.disabled = true;
+
   try {
-    // VERIFICA se l'asse di simmetria è già disponibile
+    // VERIFICA se i landmarks sono già disponibili, altrimenti rileva direttamente
     let symmetryAxisData = getSymmetryAxisPosition();
 
-    // ATTIVA automaticamente l'asse SOLO se non disponibile (senza feedback vocale)
     if (!symmetryAxisData) {
-      const axisBtn = document.getElementById('axis-btn');
-      if (axisBtn && !axisBtn.classList.contains('active')) {
-        console.log('🔄 Attivazione automatica asse di simmetria (silente)...');
-        window.suppressVoiceFeedback = true;
-        axisBtn.click();
-
-        // ATTENDI il completamento del rilevamento landmarks
-        // Il click attiva drawSymmetryAxis che chiama autoDetectLandmarksOnImageChange
-        // Aspetta max 3 secondi per il rilevamento
-        let attempts = 0;
-        while (attempts < 30 && (!currentLandmarks || currentLandmarks.length === 0)) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          attempts++;
-        }
-
-        setTimeout(() => { window.suppressVoiceFeedback = false; }, 100);
-
-        // Verifica che sia stato attivato
+      console.log('🔄 Landmarks non disponibili - rilevamento diretto (senza click simulato)...');
+      const gotLandmarks = await autoDetectLandmarksOnImageChange();
+      if (gotLandmarks) {
         symmetryAxisData = getSymmetryAxisPosition();
-        if (symmetryAxisData) {
-          console.log('✅ Asse di simmetria attivato e disponibile');
-        } else {
-          console.warn('⚠️ Asse di simmetria non disponibile dopo attivazione (timeout o errore)');
-        }
+        console.log('✅ Landmarks rilevati - asse disponibile:', !!symmetryAxisData);
       } else {
-        console.log('ℹ️ Asse di simmetria già attivo ma dati non disponibili');
+        console.warn('⚠️ Landmarks non disponibili - procedo senza asse di simmetria');
       }
     } else {
-      console.log('✅ Asse di simmetria già disponibile, skip attivazione');
+      console.log('✅ Asse di simmetria già disponibile, skip rilevamento');
     }
 
     updateStatus('🔄 Rilevamento green dots in corso...');
@@ -6336,14 +7259,8 @@ async function detectGreenDots() {
     // Chiamata all'API - usa funzione centralizzata se disponibile, altrimenti fallback
     let result;
     if (typeof analyzeGreenDotsViaAPI === 'function') {
-      console.log('✅ Usando funzione API centralizzata');
-      result = await analyzeGreenDotsViaAPI(canvasImageData, {
-        hue_range: [60, 150],           // Mantenuto per retrocompatibilità (ignorato)
-        saturation_min: 15,             // Mantenuto per retrocompatibilità (ignorato)
-        value_range: [70, 95],          // Range luminosità puntini BIANCHI
-        cluster_size_range: [9, 40],    // Range ottimale puntini bianchi
-        clustering_radius: 2
-      });
+      console.log('✅ Usando funzione API centralizzata con parametri correnti');
+      result = await analyzeGreenDotsViaAPI(canvasImageData, window.whiteDotsParams);
     } else {
       console.log('⚠️ Fallback: chiamata API diretta');
       // USA ENDPOINT ESISTENTE green-dots con logica WHITE DOTS
@@ -6354,6 +7271,7 @@ async function detectGreenDots() {
       console.log('🌍 URL API (green-dots endpoint con white dots logic):', apiUrl);
       console.log('🔧 API_CONFIG disponibile:', typeof API_CONFIG !== 'undefined');
 
+      const p = window.whiteDotsParams;
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -6361,10 +7279,13 @@ async function detectGreenDots() {
         },
         body: JSON.stringify({
           image: canvasImageData,
-          hue_range: [60, 150],           // Mantenuto per retrocompatibilità (ignorato)
-          saturation_min: 15,             // Mantenuto per retrocompatibilità (ignorato) 
-          value_range: [70, 95],          // Range luminosità puntini BIANCHI
-          cluster_size_range: [9, 40],    // Range ottimale 9-40px
+          saturation_max: p.saturation_max,
+          value_min: p.value_min,
+          value_max: p.value_max,
+          cluster_size_min: p.cluster_size_min,
+          cluster_size_max: p.cluster_size_max,
+          cluster_size_range: [p.cluster_size_min, p.cluster_size_max],
+          min_distance: p.min_distance,
           clustering_radius: 2
         })
       });
@@ -6387,18 +7308,16 @@ async function detectGreenDots() {
       updateMeasurementsFromGreenDots(result);
 
       // AUTOMAZIONE: Feedback vocale con analisi delle differenze
-      // Aspetta un attimo che i dati siano nella tabella, poi pronuncia l'analisi
-      setTimeout(() => {
-        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak && !window.suppressVoiceFeedback) {
-          const feedback = analyzeEyebrowDesignFromGreenDotsTable();
-          if (feedback) {
-            console.log('🔊 [GREEN DOTS] Feedback vocale generato:', feedback);
-            voiceAssistant.speak(feedback);
-          }
+      // Legge direttamente dai dati JSON (non dalla tabella HTML)
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+        const feedback = analyzeEyebrowDesignFromData(result);
+        if (feedback) {
+          console.log('🔊 [GREEN DOTS] Feedback vocale generato:', feedback);
+          voiceAssistant.speak(feedback);
         }
-      }, 500);
+      }
 
-      // NOTA: Asse di simmetria già attivato all'inizio di detectGreenDots() - no duplicati
+      // NOTA: Asse di simmetria disponibile tramite landmarks rilevati all'inizio
 
       // AUTOMAZIONE: Espandi la sezione correzione sopracciglia se è chiusa (nella LEFT sidebar!)
       console.log('🔍 Cercando sezione CORREZIONE SOPRACCIGLIA nella left sidebar...');
@@ -6449,10 +7368,15 @@ async function detectGreenDots() {
     showToast(`Errore: ${error.message}`, 'error');
 
     // Disattiva il pulsante green dots in caso di errore
-    const btn = document.getElementById('green-dots-btn');
-    if (btn && btn.classList.contains('active')) {
-      btn.classList.remove('active');
+    const errBtn = document.getElementById('green-dots-btn');
+    if (errBtn && errBtn.classList.contains('active')) {
+      errBtn.classList.remove('active');
     }
+  } finally {
+    // Rilascia il lock e riabilita il pulsante in ogni caso
+    window.isDetectingGreenDots = false;
+    const finalBtn = document.getElementById('green-dots-btn');
+    if (finalBtn) finalBtn.disabled = false;
   }
 }
 
@@ -6460,16 +7384,18 @@ async function detectGreenDots() {
 
 /**
  * Parametri correnti per il rilevamento white dots.
- * Questi valori vengono modificati dagli sliders e usati per le chiamate API.
- * Valori ottimizzati: Sat≤20%, Val 54-100%, Cluster 9-66px, Dist≥9px
+ * Il sistema usa 2-pass adattivi automatici (nessun tuning HSV manuale).
+ * I parametri pass1_X/pass2_X sono modificabili solo per immagini statiche.
  */
 window.whiteDotsParams = {
-  saturation_max: 20,
-  value_min: 54,
-  value_max: 100,
-  cluster_size_min: 9,
-  cluster_size_max: 66,
-  min_distance: 9
+  cluster_size_min: 6,
+  cluster_size_max: 300,
+  min_distance: 10,
+  // Parametri adattivi 2-pass (valori di default)
+  pass1_percentile: 50,
+  pass1_sat_cap: 30,
+  pass2_percentile: 80,
+  pass2_sat_cap: 25,
 };
 
 /**
@@ -6511,6 +7437,7 @@ function updateWhiteDotsParam(paramName, value) {
   // Mappa i nomi dei parametri agli ID degli span
   const paramToSpanId = {
     'saturation_max': 'saturation-max-value',
+    'saturation_min': 'saturation-min-value',
     'value_min': 'value-min-value',
     'value_max': 'value-max-value',
     'cluster_size_min': 'cluster-min-value',
@@ -6605,42 +7532,98 @@ function updateSliderRangesForZoom(zoomLevel) {
 }
 
 /**
- * Resetta tutti i parametri ai valori di default ottimizzati.
+ * Resetta i parametri ai valori di default.
  */
 function resetWhiteDotsParams() {
   const defaults = {
-    saturation_max: 20,
-    value_min: 54,
-    value_max: 100,
-    cluster_size_min: 9,
-    cluster_size_max: 66,
-    min_distance: 9
+    cluster_size_min: 6,
+    cluster_size_max: 300,
+    min_distance: 10,
+    pass1_percentile: 50,
+    pass1_sat_cap: 30,
+    pass2_percentile: 80,
+    pass2_sat_cap: 25,
   };
 
-  // Aggiorna i valori
   window.whiteDotsParams = { ...defaults };
 
-  // Aggiorna gli sliders e i display
-  document.getElementById('saturation-max-slider').value = defaults.saturation_max;
-  document.getElementById('saturation-max-value').textContent = defaults.saturation_max;
+  const _s = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+  const _t = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
 
-  document.getElementById('value-min-slider').value = defaults.value_min;
-  document.getElementById('value-min-value').textContent = defaults.value_min;
+  _s('cluster-min-slider', defaults.cluster_size_min); _t('cluster-min-value', defaults.cluster_size_min);
+  _s('cluster-max-slider', defaults.cluster_size_max); _t('cluster-max-value', defaults.cluster_size_max);
+  _s('min-distance-slider', defaults.min_distance); _t('min-distance-value', defaults.min_distance);
 
-  document.getElementById('value-max-slider').value = defaults.value_max;
-  document.getElementById('value-max-value').textContent = defaults.value_max;
-
-  document.getElementById('cluster-min-slider').value = defaults.cluster_size_min;
-  document.getElementById('cluster-min-value').textContent = defaults.cluster_size_min;
-
-  document.getElementById('cluster-max-slider').value = defaults.cluster_size_max;
-  document.getElementById('cluster-max-value').textContent = defaults.cluster_size_max;
-
-  document.getElementById('min-distance-slider').value = defaults.min_distance;
-  document.getElementById('min-distance-value').textContent = defaults.min_distance;
+  // Slider avanzati pass1/pass2
+  _s('p1-percentile-slider', defaults.pass1_percentile); _t('p1-percentile-value', defaults.pass1_percentile); _t('badge-p1-perc', defaults.pass1_percentile);
+  _s('p1-sat-cap-slider', defaults.pass1_sat_cap); _t('p1-sat-cap-value', defaults.pass1_sat_cap); _t('badge-p1-sat', defaults.pass1_sat_cap);
+  _s('p2-percentile-slider', defaults.pass2_percentile); _t('p2-percentile-value', defaults.pass2_percentile); _t('badge-p2-perc', defaults.pass2_percentile);
+  _s('p2-sat-cap-slider', defaults.pass2_sat_cap); _t('p2-sat-cap-value', defaults.pass2_sat_cap); _t('badge-p2-sat', defaults.pass2_sat_cap);
 
   showToast('Parametri resettati ai valori di default', 'info');
   console.log('🔄 Parametri white dots resettati:', defaults);
+}
+
+/**
+ * Aggiorna un parametro adattivo (pass1/pass2) e i relativi badge nel pannello info.
+ * @param {string} paramName   - Nome del parametro in whiteDotsParams
+ * @param {string|number} value - Nuovo valore
+ * @param {string} spanId      - ID span del valore slider
+ * @param {string} badgeId     - ID span del badge nel riepilogo
+ */
+function updateAdaptiveParam(paramName, value, spanId, badgeId) {
+  const v = parseInt(value, 10);
+  window.whiteDotsParams[paramName] = v;
+  const spanEl = document.getElementById(spanId); if (spanEl) spanEl.textContent = v;
+  const badgeEl = document.getElementById(badgeId); if (badgeEl) badgeEl.textContent = v;
+}
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Imposta i parametri white-dots in base alla sorgente (image | video | webcam).
+ * Per video e webcam usa valori ottimizzati per flussi in movimento;
+ * per immagini statiche ripristina i default originali.
+ */
+function setWhiteDotsParamsForSource(sourceType) {
+  const isVideoOrWebcam = (sourceType === 'video' || sourceType === 'webcam');
+
+  const params = isVideoOrWebcam ? {
+    cluster_size_min: 3,
+    cluster_size_max: 360,
+    min_distance: 30,
+    pass1_percentile: 50,
+    pass1_sat_cap: 28,
+    pass2_percentile: 80,
+    pass2_sat_cap: 25,
+  } : {
+    cluster_size_min: 6,
+    cluster_size_max: 300,
+    min_distance: 10,
+    pass1_percentile: 60,
+    pass1_sat_cap: 25,
+    pass2_percentile: 80,
+    pass2_sat_cap: 20,
+  };
+
+  window.whiteDotsParams = { ...params };
+
+  const s = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  const t = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+  s('cluster-min-slider', params.cluster_size_min); t('cluster-min-value', params.cluster_size_min);
+  s('cluster-max-slider', params.cluster_size_max); t('cluster-max-value', params.cluster_size_max);
+  s('min-distance-slider', params.min_distance); t('min-distance-value', params.min_distance);
+
+  // Slider avanzati: aggiornali sempre, ma mostrali SOLO per immagini statiche
+  s('p1-percentile-slider', params.pass1_percentile); t('p1-percentile-value', params.pass1_percentile); t('badge-p1-perc', params.pass1_percentile);
+  s('p1-sat-cap-slider', params.pass1_sat_cap); t('p1-sat-cap-value', params.pass1_sat_cap); t('badge-p1-sat', params.pass1_sat_cap);
+  s('p2-percentile-slider', params.pass2_percentile); t('p2-percentile-value', params.pass2_percentile); t('badge-p2-perc', params.pass2_percentile);
+  s('p2-sat-cap-slider', params.pass2_sat_cap); t('p2-sat-cap-value', params.pass2_sat_cap); t('badge-p2-sat', params.pass2_sat_cap);
+
+  const advPanel = document.getElementById('adaptive-advanced-params');
+  if (advPanel) advPanel.style.display = isVideoOrWebcam ? 'none' : '';
+
+  console.log(`🎛️ Parametri white-dots impostati per [${sourceType}]:`, params);
 }
 
 /**
@@ -6652,6 +7635,16 @@ async function detectWithCurrentParams() {
     return;
   }
 
+  // Guard: evita richieste parallele
+  if (window.isDetectingGreenDots) {
+    console.log('⚠️ Rilevamento già in corso, skip');
+    return;
+  }
+  window.isDetectingGreenDots = true;
+
+  const detectBtn = document.getElementById('detect-with-params-btn');
+  if (detectBtn) detectBtn.disabled = true;
+
   const params = window.whiteDotsParams;
   console.log('🔍 Rilevamento con parametri custom:', params);
 
@@ -6659,7 +7652,7 @@ async function detectWithCurrentParams() {
   const infoPanel = document.getElementById('current-params-info');
   if (infoPanel) {
     infoPanel.innerHTML = `<strong>Rilevamento in corso...</strong><br>` +
-      `Sat≤${params.saturation_max}% | Val ${params.value_min}-${params.value_max}% | ` +
+      `Sat ${params.saturation_min}-${params.saturation_max}% | Val ${params.value_min}-${params.value_max}% | ` +
       `Cluster ${params.cluster_size_min}-${params.cluster_size_max}px | Dist≥${params.min_distance}px`;
   }
 
@@ -6694,7 +7687,7 @@ async function detectWithCurrentParams() {
 
         infoPanel.innerHTML = `<strong style="color: #00ff88;">✅ Rilevati ${dotsCount} punti</strong><br>` +
           `Sx: ${leftCount} | Dx: ${rightCount}<br>` +
-          `<span style="color: #888;">Sat≤${params.saturation_max}% | Val ${params.value_min}-${params.value_max}%</span>`;
+          `<span style="color: #888;">Sat ${params.saturation_min}-${params.saturation_max}% | Val ${params.value_min}-${params.value_max}%</span>`;
       }
 
       // Aggiorna tabella e canvas
@@ -6718,6 +7711,10 @@ async function detectWithCurrentParams() {
     if (infoPanel) {
       infoPanel.innerHTML = `<span style="color: #ff6b6b;">❌ Errore: ${error.message}</span>`;
     }
+  } finally {
+    // Rilascia il lock e riabilita il pulsante in ogni caso
+    window.isDetectingGreenDots = false;
+    if (detectBtn) detectBtn.disabled = false;
   }
 }
 
@@ -6754,6 +7751,7 @@ function loadLastSuccessfulParams() {
         const value = params[paramName];
         const sliderMap = {
           'saturation_max': 'saturation-max-slider',
+          'saturation_min': 'saturation-min-slider',
           'value_min': 'value-min-slider',
           'value_max': 'value-max-slider',
           'cluster_size_min': 'cluster-min-slider',
@@ -7522,6 +8520,7 @@ function resetPointPairHighlightOnUpdate() {
 // Esponi le funzioni globalmente
 window.updateWhiteDotsParam = updateWhiteDotsParam;
 window.resetWhiteDotsParams = resetWhiteDotsParams;
+window.setWhiteDotsParamsForSource = setWhiteDotsParamsForSource;
 window.detectWithCurrentParams = detectWithCurrentParams;
 window.showWhiteDotsParamsPanel = showWhiteDotsParamsPanel;
 window.highlightPointPair = highlightPointPair;
@@ -9182,7 +10181,9 @@ function syncGreenDotsOverlayWithViewport() {
 // ===================================
 
 window.addEventListener('DOMContentLoaded', async () => {
-  // STEP 0: Controlla se c'è un'azione pendente da hard refresh
+  // STEP 0: Controlla se c'è un'azione pendente da hard refresh.
+  // Leggi il flag PRIMA di checkPendingAction (che lo cancella).
+  const _hasPendingAction = !!sessionStorage.getItem('pendingAction');
   checkPendingAction();
 
   // STEP 1: Verifica autenticazione
@@ -9192,11 +10193,24 @@ window.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // STEP 2: Messaggio di benvenuto personalizzato
-  if (window.currentUserName && typeof voiceAssistant !== 'undefined') {
-    setTimeout(() => {
-      voiceAssistant.speakWelcome(window.currentUserName);
-    }, 1000);
+  // STEP 2: Messaggio di benvenuto personalizzato.
+  // Salta se si tratta di un reload dovuto a pendingAction (AVVIA WEBCAM, CARICA VIDEO, ecc.)
+  // per evitare il benvenuto duplicato.
+  if (!_hasPendingAction && window.currentUserName && typeof voiceAssistant !== 'undefined') {
+    // Pre-carica frasi di sistema e coaching in background (non blocca)
+    const _prefetchTexts = [
+      'Gìrati leggermente a sinistra.',
+      'Gìrati leggermente a destra.',
+      'Abbassa leggermente il mento.',
+      'Alza leggermente il mento.',
+      'Raddrizza la testa.',
+      'Avvicinati alla fotocamera.',
+      'Allontanati un po\' dalla fotocamera.',
+      'Ottimo! Mantieni questa posizione.',
+      'Nessun viso rilevato. Posizionati davanti alla fotocamera.',
+    ];
+    voiceAssistant.prefetchAudio(_prefetchTexts); // fire-and-forget
+    voiceAssistant.speakWelcome(window.currentUserName);
   }
 });
 

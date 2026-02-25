@@ -11,7 +11,13 @@ class VoiceAssistant {
     this.isListening = false;
     this.isMuted = false;
 
-    // Nuovo sistema: ascolto passivo/attivo
+    // Unlock audio autoplay
+    this.audioUnlocked = false;
+    this.pendingQueue = [];  // { src, text } in attesa di unlock
+    this._flushRunning = false; // mutex: evita riproduzioni concorrenti
+    this._audioCache = new Map(); // cache audio pre-fetched per latenza zero
+    this._registerUnlockListeners();
+
     this.listeningMode = "inactive";  // Può essere: "inactive", "passive", "active"
     this.activationKeyword = "kimerika";
     // Varianti fonetiche per il riconoscimento italiano (K→C, K→CH, K→G, etc.)
@@ -34,8 +40,151 @@ class VoiceAssistant {
   }
 
   /**
-   * Inizializza Web Speech API per riconoscimento vocale
+   * Registra listener per sbloccare autoplay al primo gesto utente
    */
+  _registerUnlockListeners() {
+    const unlock = () => this._unlockAudio();
+    document.addEventListener('click', unlock, { once: true, capture: true });
+    document.addEventListener('keydown', unlock, { once: true, capture: true });
+    document.addEventListener('touchend', unlock, { once: true, capture: true });
+  }
+
+  /**
+   * Sblocca l'audio e svuota la coda di messaggi in attesa
+   */
+  _unlockAudio() {
+    if (this.audioUnlocked) return;
+    this.audioUnlocked = true;
+
+    // Play silenzioso per sbloccare il contesto audio del browser
+    const silentSrc = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+    this.audioPlayer.src = silentSrc;
+    this.audioPlayer.play().then(() => {
+      console.log('🔊 Audio sbloccato - riproduco coda in attesa');
+      this._flushQueue();
+    }).catch(() => {
+      // Non è ancora possibile sbloccare — ci riprova al prossimo gesto
+      this.audioUnlocked = false;
+      this._registerUnlockListeners();
+    });
+  }
+
+  /**
+   * Riproduce tutti i messaggi in coda dopo lo sblocco (serializzato con mutex)
+   */
+  async _flushQueue() {
+    if (this._flushRunning) return;
+    this._flushRunning = true;
+    while (this.pendingQueue.length > 0) {
+      const item = this.pendingQueue.shift();
+      if (item.text) console.log(`🔊 (coda) ${item.text}`);
+      this.audioPlayer.src = item.src;
+      try {
+        await this.audioPlayer.play();
+        // Aspetta fine riproduzione prima del prossimo
+        await new Promise(res => {
+          this.audioPlayer.onended = res;
+          setTimeout(res, 12000); // safety timeout
+        });
+      } catch (e) {
+        if (e.name === 'NotAllowedError') {
+          // Rimetti in testa alla coda e attendi sblocco
+          this.pendingQueue.unshift(item);
+          this.audioUnlocked = false;
+          this._registerUnlockListeners();
+          break;
+        }
+        console.warn('Errore riproduzione coda:', e);
+      }
+    }
+    this._flushRunning = false;
+  }
+
+  /**
+   * Metodo interno per riprodurre un src audio (accodam sempre, flush serializzato)
+   */
+  async _playAudio(src, label) {
+    // Accoda sempre: evita race condition con _flushQueue in corso
+    this.pendingQueue.push({ src, text: label || '' });
+    if (!this.audioUnlocked) {
+      console.log(`🕐 Audio messo in coda (unlock pendente): ${label || src.substring(0, 40)}...`);
+      return;
+    }
+    // Avvia il flush solo se non è già in esecuzione
+    if (!this._flushRunning) {
+      this._flushQueue();
+    }
+  }
+
+  /**
+   * Pre-carica in parallelo una lista di frasi in cache (nessuna riproduzione)
+   */
+  async prefetchAudio(texts) {
+    const jobs = texts.map(async (text) => {
+      if (this._audioCache.has(text)) return;
+      try {
+        const r = await fetch(`${this.apiUrl}/api/voice/speak`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const d = await r.json();
+        if (d.success && d.audio) this._audioCache.set(text, d.audio);
+      } catch (_) { /* silent fail */ }
+    });
+    await Promise.all(jobs);
+    console.log(`🎧 Cache audio: ${this._audioCache.size} frasi pre-caricate`);
+  }
+
+  /**
+   * Pre-carica il messaggio di benvenuto personalizzato (nessuna riproduzione)
+   */
+  async prefetchWelcome(userName) {
+    const key = '__welcome__' + userName;
+    if (this._audioCache.has(key)) return;
+    try {
+      const r = await fetch(`${this.apiUrl}/api/voice/speak-welcome`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_name: userName })
+      });
+      const d = await r.json();
+      if (d.success && d.audio) {
+        this._audioCache.set(key, { src: d.audio, text: d.text });
+        console.log('🎧 Audio benvenuto pre-caricato');
+      }
+    } catch (_) { /* silent fail */ }
+  }
+
+  /**
+   * Coaching di posa: svuota coaching obsoleto in coda, poi riproduce (usa cache)
+   */
+  async speakCoach(text) {
+    if (this.isMuted) return;
+    // Rimuovi eventuali coaching precedenti ancora in coda (stale)
+    this.pendingQueue = this.pendingQueue.filter(item => !item.isCoach);
+    // Controlla cache
+    let src = this._audioCache.get(text);
+    if (!src) {
+      try {
+        const r = await fetch(`${this.apiUrl}/api/voice/speak`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const d = await r.json();
+        if (d.success && d.audio) {
+          src = d.audio;
+          this._audioCache.set(text, src);
+        }
+      } catch (_) { return; }
+    }
+    if (!src) return;
+    this.pendingQueue.push({ src, text: `coach: ${text.substring(0, 50)}`, isCoach: true });
+    if (!this.audioUnlocked) return;
+    if (!this._flushRunning) this._flushQueue();
+  }
+
   initSpeechRecognition() {
     // Controlla supporto browser
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -421,24 +570,22 @@ class VoiceAssistant {
    */
   async speak(text) {
     if (this.isMuted) return;
-
+    // Usa cache se disponibile (latenza zero)
+    const cachedSrc = this._audioCache.get(text);
+    if (cachedSrc) {
+      await this._playAudio(cachedSrc, `speak: ${text.substring(0, 40)}`);
+      return;
+    }
     try {
       const response = await fetch(`${this.apiUrl}/api/voice/speak`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text })
       });
-
       const data = await response.json();
-
       if (data.success && data.audio) {
-        this.audioPlayer.src = data.audio;
-        try {
-          await this.audioPlayer.play();
-        } catch (playError) {
-          // Gestisci errore autoplay silenziosamente
-          console.log('ℹ️ Audio non riprodotto (autoplay bloccato dal browser)');
-        }
+        this._audioCache.set(text, data.audio); // Cache per le prossime volte
+        await this._playAudio(data.audio, `speak: ${text.substring(0, 40)}`);
       }
     } catch (error) {
       console.error('Errore TTS:', error);
@@ -462,12 +609,7 @@ class VoiceAssistant {
 
       if (data.success && data.audio) {
         console.log(`🔊 Isabella: "${data.text}"`);
-        this.audioPlayer.src = data.audio;
-        try {
-          await this.audioPlayer.play();
-        } catch (playError) {
-          console.log('ℹ️ Audio non riprodotto (autoplay bloccato dal browser)');
-        }
+        await this._playAudio(data.audio, `Isabella: ${data.text}`);
       }
     } catch (error) {
       console.error('Errore TTS messaggio:', error);
@@ -479,24 +621,25 @@ class VoiceAssistant {
    */
   async speakWelcome(userName) {
     if (this.isMuted) return;
-
+    // Usa cache se disponibile (pre-fetch in background aveva già scaricato l'audio)
+    const key = '__welcome__' + userName;
+    const cached = this._audioCache.get(key);
+    if (cached) {
+      console.log(`🔊 Kimerika (cache): "${cached.text}"`);
+      await this._playAudio(cached.src, `Kimerika: ${cached.text}`);
+      return;
+    }
     try {
       const response = await fetch(`${this.apiUrl}/api/voice/speak-welcome`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_name: userName })
       });
-
       const data = await response.json();
-
       if (data.success && data.audio) {
+        this._audioCache.set(key, { src: data.audio, text: data.text });
         console.log(`🔊 Kimerika: "${data.text}"`);
-        this.audioPlayer.src = data.audio;
-        try {
-          await this.audioPlayer.play();
-        } catch (playError) {
-          console.log('ℹ️ Audio non riprodotto (autoplay bloccato dal browser)');
-        }
+        await this._playAudio(data.audio, `Kimerika: ${data.text}`);
       }
     } catch (error) {
       console.error('Errore TTS benvenuto:', error);

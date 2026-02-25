@@ -273,17 +273,28 @@ class GreenDotsAnalysisRequest(BaseModel):
     image: str  # Base64 encoded image
     # Parametri legacy (mantenuti per retrocompatibilità, ignorati)
     hue_range: Optional[Tuple[int, int]] = (60, 150)
-    saturation_min: Optional[int] = 15
     value_range: Optional[Tuple[int, int]] = (15, 95)
     cluster_size_range: Optional[Tuple[int, int]] = (9, 40)
     clustering_radius: Optional[int] = 2
-    # Nuovi parametri per white dots (usati dal frontend sliders)
-    saturation_max: Optional[int] = None  # Se None, usa config
+    # Parametri per white dots (usati dal frontend sliders)
+    saturation_min: Optional[int] = None
+    saturation_max: Optional[int] = None
+    saturation_max_tail: Optional[int] = None   # dual-pass legacy
+    cluster_min_tail: Optional[int] = None       # dual-pass legacy
     value_min: Optional[int] = None
     value_max: Optional[int] = None
     cluster_size_min: Optional[int] = None
     cluster_size_max: Optional[int] = None
     min_distance: Optional[int] = None
+    # ── Modalità adattiva ───────────────────────────────────
+    adaptive: Optional[bool] = True
+    brightness_percentile: Optional[int] = None
+    sat_cap: Optional[int] = None
+    # Parametri 2-pass (se None usa i valori fissi del backend: 50/30 e 80/25)
+    pass1_percentile: Optional[int] = None
+    pass1_sat_cap: Optional[int] = None
+    pass2_percentile: Optional[int] = None
+    pass2_sat_cap: Optional[int] = None
 
 class GreenDotsAnalysisResult(BaseModel):
     success: bool
@@ -627,14 +638,15 @@ def calculate_head_pose_angles_enhanced(landmarks: List[LandmarkPoint]) -> Dict[
         if np.any(np.isnan(points_2d)):
             return {"pitch": 0.0, "yaw": 0.0, "roll": 0.0}
         
-        # Modello 3D del volto - proporzioni anatomiche realistiche (enhanced)
+        # Modello 3D del volto — convenzione Y-UP (standard dlib/OpenCV tutorials):
+        # X: positivo a destra, Y: positivo verso l'alto, Z: positivo verso la camera
         model_points = np.array([
-            (0.0, 0.0, 0.0),             # Punta del naso (origine)
-            (0.0, -330.0, -65.0),        # Mento 
-            (-225.0, 170.0, -135.0),     # Angolo interno occhio sinistro
-            (225.0, 170.0, -135.0),      # Angolo interno occhio destro  
-            (-150.0, -150.0, -125.0),    # Angolo sinistro bocca
-            (150.0, -150.0, -125.0)      # Angolo destro bocca
+            (0.0,    0.0,    0.0),          # Punta del naso (origine)
+            (0.0,  -330.0,  -65.0),         # Mento  (più in basso → Y-)
+            (-225.0,  170.0, -135.0),       # Angolo interno occhio sinistro (più in alto → Y+)
+            ( 225.0,  170.0, -135.0),       # Angolo interno occhio destro
+            (-150.0, -150.0, -125.0),       # Angolo sinistro bocca
+            ( 150.0, -150.0, -125.0)        # Angolo destro bocca
         ], dtype=np.float32)
         
         image_points = np.array([
@@ -645,23 +657,18 @@ def calculate_head_pose_angles_enhanced(landmarks: List[LandmarkPoint]) -> Dict[
         min_x, max_x = min(landmark_array[:, 0]), max(landmark_array[:, 0])
         min_y, max_y = min(landmark_array[:, 1]), max(landmark_array[:, 1])
         
-        print(f"🔍 LANDMARKS RANGE: X=[{min_x:.1f}, {max_x:.1f}] Y=[{min_y:.1f}, {max_y:.1f}]")
-        
         # Stima dimensioni immagine dai landmarks (CORRETTA PER ENHANCED)
         img_width = max_x - min_x
         img_height = max_y - min_y
         
         # Se le coordinate sembrano normalizzate (0-1), usa dimensioni standard
         if max_x <= 1.0 and max_y <= 1.0:
-            print("⚠️ Le coordinate sembrano normalizzate! Usando dimensioni standard.")
             img_width = 640
             img_height = 480
         else:
             # Aggiungi margine alle dimensioni reali
             img_width = max(640, img_width * 1.2)
             img_height = max(480, img_height * 1.2)
-        
-        print(f"📐 DIMENSIONI STIMATE: {img_width:.0f}x{img_height:.0f}")
         
         # Parametri camera (enhanced)
         focal_length = img_width
@@ -696,19 +703,15 @@ def calculate_head_pose_angles_enhanced(landmarks: List[LandmarkPoint]) -> Dict[
                 yaw = 0
                 roll = np.arctan2(-rotation_matrix[1,2], rotation_matrix[1,1]) * 180.0 / np.pi
             
-            # Normalizza il Roll per la valutazione (da enhanced.py)
-            normalized_roll = roll
-            while normalized_roll > 90:
-                normalized_roll -= 180
-            while normalized_roll < -90:
-                normalized_roll += 180
-            
-            # 🔧 DEBUG: Mostra angoli calcolati
-            print(f"🎯 ANGOLI CALCOLATI: Pitch={pitch:.1f}° Yaw={yaw:.1f}° Roll={roll:.1f}° (Norm={normalized_roll:.1f}°)")
+            # Normalizza il Roll a [-90, 90]
+            normalized_roll = roll % 360
+            if normalized_roll > 180: normalized_roll -= 360
+            if normalized_roll > 90:  normalized_roll = 180 - normalized_roll
+            elif normalized_roll < -90: normalized_roll = -180 - normalized_roll
             
             clipped_pitch = float(np.clip(pitch, -90, 90))
-            clipped_yaw = float(np.clip(yaw, -90, 90))
-            clipped_roll = float(np.clip(normalized_roll, -90, 90))
+            clipped_yaw   = float(np.clip(yaw, -90, 90))
+            clipped_roll  = float(np.clip(normalized_roll, -90, 90))
             
             return {
                 "pitch": clipped_pitch,
@@ -880,13 +883,14 @@ def load_white_dots_config() -> Dict:
         filtering = config.get('filtering_parameters', {})
         
         params = {
-            'saturation_max': detection.get('saturation_max', {}).get('value', 30),
-            'value_min': detection.get('value_min', {}).get('value', 70),
-            'value_max': detection.get('value_max', {}).get('value', 95),
+            'saturation_max': detection.get('saturation_max', {}).get('value', 21),
+            'saturation_min': detection.get('saturation_min', {}).get('value', 0),
+            'value_min': detection.get('value_min', {}).get('value', 62),
+            'value_max': detection.get('value_max', {}).get('value', 100),
             'clustering_radius': clustering.get('clustering_radius', {}).get('value', 2),
-            'cluster_size_min': clustering.get('cluster_size_range', {}).get('value', [9, 40])[0],
-            'cluster_size_max': clustering.get('cluster_size_range', {}).get('value', [9, 40])[1],
-            'min_distance': filtering.get('min_distance', {}).get('value', 10),
+            'cluster_size_min': clustering.get('cluster_size_range', {}).get('value', [6, 300])[0],
+            'cluster_size_max': clustering.get('cluster_size_range', {}).get('value', [6, 300])[1],
+            'min_distance': filtering.get('min_distance', {}).get('value', 22),
             'large_cluster_threshold': filtering.get('large_cluster_threshold', {}).get('value', 35)
         }
         
@@ -900,13 +904,14 @@ def load_white_dots_config() -> Dict:
         print(f"⚠️ Errore caricamento config: {e}, uso valori ottimali di default")
         # Fallback su valori ottimali raccomandati nella documentazione
         return {
-            'saturation_max': 30,
-            'value_min': 70,
-            'value_max': 95,
+            'saturation_max': 21,
+            'saturation_min': 0,
+            'value_min': 62,
+            'value_max': 100,
             'clustering_radius': 2,
-            'cluster_size_min': 9,
-            'cluster_size_max': 40,
-            'min_distance': 10,
+            'cluster_size_min': 6,
+            'cluster_size_max': 300,
+            'min_distance': 22,
             'large_cluster_threshold': 35
         }
 
@@ -1027,19 +1032,34 @@ def sort_points_anatomical(points: List[Dict], is_left: bool) -> List[Dict]:
 
 def process_green_dots_analysis(
     image_base64: str,
-    hue_range: Tuple[int, int] = (60, 150),  # Mantenuto per retrocompatibilità, ignorato
-    saturation_min: int = 15,                 # Mantenuto per retrocompatibilità, ignorato
-    value_range: Tuple[int, int] = (70, 95),  # Aggiornato per puntini bianchi
-    cluster_size_range: Tuple[int, int] = (9, 40),  # Range ottimale puntini bianchi
+    hue_range: Tuple[int, int] = (60, 150),
+    saturation_min: int = None,
+    value_range: Tuple[int, int] = (70, 95),
+    cluster_size_range: Tuple[int, int] = (9, 40),
     clustering_radius: int = 2,
-    # Nuovi parametri dinamici (override del config se specificati)
     saturation_max: int = None,
+    saturation_max_tail: int = None,
+    cluster_min_tail: int = None,
     value_min: int = None,
     value_max: int = None,
     cluster_size_min: int = None,
     cluster_size_max: int = None,
-    min_distance: int = None
+    min_distance: int = None,
+    adaptive: bool = True,
+    brightness_percentile: int = None,
+    sat_cap: int = None,
+    # Parametri 2-pass sovrascrivibili (None = usa i valori fissi ottimizzati)
+    pass1_percentile: int = None,
+    pass1_sat_cap: int = None,
+    pass2_percentile: int = None,
+    pass2_sat_cap: int = None,
 ) -> Dict:
+    """
+    Rilevamento puntini bianchi con 2-pass adattivi automatici:
+      Pass 1  (percentile=50, sat_cap=30)  → LB (x minimo) + RB (x massimo)
+      Pass 2  (percentile=80, sat_cap=25)  → top-4 per metà immagine (8 punti centrali)
+      Totale atteso: 10 punti (LB + RB + 4 sx + 4 dx)
+    """
     """Processa un'immagine per il rilevamento dei puntini bianchi sulle sopracciglia.
 
     NOTA: Usa WhiteDotsProcessorV2 ottimizzato per rilevamento puntini bianchi.
@@ -1062,6 +1082,7 @@ def process_green_dots_analysis(
         # Override con parametri dinamici se specificati
         final_params = {
             'saturation_max': saturation_max if saturation_max is not None else config_params['saturation_max'],
+            'saturation_min': saturation_min if saturation_min is not None else config_params.get('saturation_min', 0),
             'value_min': value_min if value_min is not None else config_params['value_min'],
             'value_max': value_max if value_max is not None else config_params['value_max'],
             'cluster_size_min': cluster_size_min if cluster_size_min is not None else config_params['cluster_size_min'],
@@ -1076,20 +1097,116 @@ def process_green_dots_analysis(
         # Decodifica l'immagine
         pil_image = decode_base64_to_pil_image(image_base64)
 
-        # Inizializza il nuovo processore ottimizzato per puntini BIANCHI
-        # Usa MASCHERE SOPRACCIGLIA per limitare ricerca (no scan intera immagine)
-        processor = WhiteDotsProcessorV2(
-            saturation_max=final_params['saturation_max'],
-            value_min=final_params['value_min'],
-            value_max=final_params['value_max'],
-            cluster_size_range=(final_params['cluster_size_min'], final_params['cluster_size_max']),
-            clustering_radius=final_params['clustering_radius'],
-            min_distance=final_params['min_distance'],
-            large_cluster_threshold=final_params['large_cluster_threshold']
-        )
-        
-        # Rileva puntini SOLO nelle maschere sopracciglia MediaPipe
-        results = processor.detect_white_dots(pil_image)
+        # ── SCALA PARAMETRI IN BASE ALLA RISOLUZIONE REALE ───────────────────
+        # I parametri in pixels (cluster_size, radius, distance) sono stati
+        # calibrati su successo.jpg (3024×4032). Su immagini a risoluzione
+        # inferiore (es. frame webcam 810×1080) i puntini occupano meno pixel,
+        # quindi scaliamo proporzionalmente per non perdere rilevamenti.
+        REF_LONG_SIDE = 3024  # lato lungo di successo.jpg
+        img_long_side = max(pil_image.width, pil_image.height)
+        res_scale = img_long_side / REF_LONG_SIDE
+        # Clamp: non scalare oltre 1.0 (immagini ad alta res usano i valori base)
+        res_scale = min(1.0, max(0.25, res_scale))
+
+        def scale_px(value: float, minimum: int = 1) -> int:
+            return max(minimum, round(value * res_scale))
+
+        scaled_params = {
+            'cluster_size_min': scale_px(final_params['cluster_size_min'], 2),
+            'cluster_size_max': scale_px(final_params['cluster_size_max'], 4),
+            'clustering_radius': scale_px(final_params['clustering_radius'], 1),
+            'min_distance': scale_px(final_params['min_distance'], 3),
+            'large_cluster_threshold': scale_px(final_params['large_cluster_threshold'], 5),
+        }
+        print(f"📐 Scala risoluzione: {img_long_side}px / {REF_LONG_SIDE}px = {res_scale:.3f}")
+        print(f"   Parametri scalati: cluster=[{scaled_params['cluster_size_min']},{scaled_params['cluster_size_max']}] "
+              f"radius={scaled_params['clustering_radius']} min_dist={scaled_params['min_distance']} "
+              f"large_thr={scaled_params['large_cluster_threshold']}")
+        # ─────────────────────────────────────────────────────────────────────
+
+        import math as _math
+
+        def _make_proc(bp: int, sc: int) -> 'WhiteDotsProcessorV2':
+            return WhiteDotsProcessorV2(
+                saturation_max=final_params['saturation_max'],
+                saturation_min=final_params['saturation_min'],
+                value_min=final_params['value_min'],
+                value_max=final_params['value_max'],
+                cluster_size_range=(scaled_params['cluster_size_min'], scaled_params['cluster_size_max']),
+                clustering_radius=scaled_params['clustering_radius'],
+                min_distance=scaled_params['min_distance'],
+                large_cluster_threshold=scaled_params['large_cluster_threshold'],
+                adaptive=True,
+                brightness_percentile=bp,
+                sat_cap=sc,
+            )
+
+        # ── PASS 1: code LB + RB ────────────────────────────────────────────
+        _p1_perc = pass1_percentile if pass1_percentile is not None else 50
+        _p1_sat  = pass1_sat_cap    if pass1_sat_cap    is not None else 30
+        proc1 = _make_proc(bp=_p1_perc, sc=_p1_sat)
+        res1  = proc1.detect_white_dots(pil_image)
+        dots1 = res1.get('dots', [])
+
+        if len(dots1) == 0:
+            return {
+                'error': 'Pass 1: nessun puntino rilevato. Verificare qualità immagine o maschera sopracciglia.',
+                'dots': [], 'total_white_pixels': 0
+            }
+
+        # LB = punto più a sinistra nell'immagine, RB = più a destra
+        lb_dot = min(dots1, key=lambda d: d['x'])
+        rb_dot = max(dots1, key=lambda d: d['x'])
+        lb_dot = {**lb_dot, 'label': 'LB', 'pass': 1}
+        rb_dot = {**rb_dot, 'label': 'RB', 'pass': 1}
+        tail_dots = [lb_dot, rb_dot]
+        print(f"🔵 Pass1: {len(dots1)} candidati → LB=({lb_dot['x']},{lb_dot['y']}) RB=({rb_dot['x']},{rb_dot['y']})")
+
+        # ── PASS 2: 4 punti per sopracciglio = 8 centrali (perc=80, sat=25) ─
+        # Soglia più alta: solo i puntini bianchi brillanti (tattoo ink)
+        _p2_perc = pass2_percentile if pass2_percentile is not None else 80
+        _p2_sat  = pass2_sat_cap    if pass2_sat_cap    is not None else 25
+        proc2 = _make_proc(bp=_p2_perc, sc=_p2_sat)
+        res2  = proc2.detect_white_dots(pil_image)
+        dots2 = res2.get('dots', [])
+
+        min_d  = scaled_params['min_distance']
+        img_cx = pil_image.width / 2  # centro orizzontale per separare i due sopraccigli
+
+        # Escludi candidati troppo vicini a LB/RB già trovati
+        central_cand = [
+            d for d in dots2
+            if all(_math.hypot(d['x'] - t['x'], d['y'] - t['y']) >= min_d for t in tail_dots)
+        ]
+
+        # Top-4 per metà immagine (x < centro = sopracciglio sx nell'immagine, viceversa dx)
+        left_cand  = sorted([d for d in central_cand if d['x'] <  img_cx], key=lambda d: -d['score'])
+        right_cand = sorted([d for d in central_cand if d['x'] >= img_cx], key=lambda d: -d['score'])
+        left_4  = [{**d, 'pass': 2} for d in left_cand[:4]]
+        right_4 = [{**d, 'pass': 2} for d in right_cand[:4]]
+        print(f"🔶 Pass2 (perc={_p2_perc}%, sat={_p2_sat}%): {len(dots2)} candidati → sx={len(left_4)}/4 dx={len(right_4)}/4 "
+              f"(central_cand={len(central_cand)})")
+
+        # ── Merge finale: [LB, RB] + left_4 + right_4 ──────────────────────
+        all_dots = tail_dots + left_4 + right_4
+        print(f"✅ Totale punti rilevati: {len(all_dots)}/10")
+
+        results = {
+            'dots': all_dots,
+            'total_white_pixels': res1.get('total_white_pixels', 0) + res2.get('total_white_pixels', 0),
+            'total_clusters': len(all_dots),
+            'image_size': res1.get('image_size', (pil_image.width, pil_image.height)),
+            'parameters': {
+                'adaptive': True,
+                'pass1': {'brightness_percentile': _p1_perc, 'sat_cap': _p1_sat},
+                'pass2': {'brightness_percentile': _p2_perc, 'sat_cap': _p2_sat},
+                'cluster_size_range': (scaled_params['cluster_size_min'], scaled_params['cluster_size_max']),
+                'min_distance': scaled_params['min_distance'],
+            },
+            'left_polygon':  res1.get('left_polygon', []),
+            'right_polygon': res1.get('right_polygon', []),
+        }
+        # ────────────────────────────────────────────────────────────────────
         
         # Adatta risultati WhiteDotsProcessorV2 al formato atteso dal frontend
         # (mantiene retrocompatibilità con struttura JSON esistente)
@@ -1141,7 +1258,29 @@ def process_green_dots_analysis(
         left_dots = [d for d in formatted_dots if d.get('eyebrow') == 'left']
         right_dots = [d for d in formatted_dots if d.get('eyebrow') == 'right']
         unknown_dots = [d for d in formatted_dots if d.get('eyebrow') not in ['left', 'right']]
-        
+
+        def select_best_5_for_eyebrow(dots: list, is_left: bool) -> list:
+            """
+            Seleziona i 5 dots migliori per un sopracciglio garantendo che il punto
+            più esterno (LB/RB) sia SEMPRE incluso, indipendentemente dal suo score.
+            LB/RB è spesso il puntino più piccolo e perciò ha score basso, ma è
+            fondamentale per l'ordinamento anatomico corretto.
+            """
+            if len(dots) <= 5:
+                return dots
+            # Identifica il punto più esterno (LB o RB)
+            if is_left:
+                extreme = min(dots, key=lambda p: p['x'])   # LB: x minima
+            else:
+                extreme = max(dots, key=lambda p: p['x'])   # RB: x massima
+            # Ordina i rimanenti per score decrescente e prendi i 4 migliori
+            others = [d for d in dots if d is not extreme]
+            top4 = sorted(others, key=lambda d: d['score'], reverse=True)[:4]
+            return [extreme] + top4
+
+        left_dots  = select_best_5_for_eyebrow(left_dots,  is_left=True)
+        right_dots = select_best_5_for_eyebrow(right_dots, is_left=False)
+
         # ORDINAMENTO ANATOMICO: usa criteri fissi LC1, LA0, LA, LC, LB (sinistra) e RC1, RB, RC, RA, RA0 (destra)
         left_dots = sort_points_anatomical(left_dots, is_left=True)
         right_dots = sort_points_anatomical(right_dots, is_left=False)
@@ -2204,11 +2343,20 @@ async def analyze_green_dots(request: GreenDotsAnalysisRequest):
             clustering_radius=request.clustering_radius,
             # Nuovi parametri dinamici dal frontend sliders
             saturation_max=request.saturation_max,
+            saturation_max_tail=request.saturation_max_tail,
+            cluster_min_tail=request.cluster_min_tail,
             value_min=request.value_min,
             value_max=request.value_max,
             cluster_size_min=request.cluster_size_min,
             cluster_size_max=request.cluster_size_max,
-            min_distance=request.min_distance
+            min_distance=request.min_distance,
+            adaptive=request.adaptive,
+            brightness_percentile=request.brightness_percentile,
+            sat_cap=request.sat_cap,
+            pass1_percentile=request.pass1_percentile,
+            pass1_sat_cap=request.pass1_sat_cap,
+            pass2_percentile=request.pass2_percentile,
+            pass2_sat_cap=request.pass2_sat_cap,
         )
 
         print(f"🟢 Analisi completata - Successo: {results.get('success', False)}")
@@ -3641,17 +3789,7 @@ async def generate_qr_code(request: Request):
         print(f"Errore generazione QR code: {e}")
         raise HTTPException(status_code=500, detail=f"Errore generazione QR: {str(e)}")
 
-@app.get("/camera")
-async def camera_page():
-    """
-    Serve la pagina camera per iPhone.
-    Questa pagina usa getUserMedia per accedere alla camera e invia frame via WebSocket.
-    """
-    import os
-    camera_file = os.path.join(webapp_dir, "templates", "camera.html")
-    if not os.path.exists(camera_file):
-        raise HTTPException(status_code=404, detail="Camera page not found")
-    return FileResponse(camera_file)
+# /camera route defined below (single definition with no-cache headers)
 
 # === CONTACT FORM HELPERS ===
 

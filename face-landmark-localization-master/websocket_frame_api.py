@@ -17,9 +17,16 @@ import os
 import io
 from collections import deque
 import logging
+import sys
 
-# Configurazione logging
-logging.basicConfig(level=logging.INFO)
+# Configurazione logging: usa stdout (già unbuffered con python3 -u)
+# così i log vengono scritti immediatamente senza buffering su stderr
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stdout,
+    format='%(asctime)s %(levelname)s:%(name)s:%(message)s',
+    force=True
+)
 logger = logging.getLogger(__name__)
 
 class WebSocketFrameScorer:
@@ -36,12 +43,15 @@ class WebSocketFrameScorer:
         self.min_score_threshold = 70  # Soglia minima: scarta solo frame molto scarsi
         
         # MediaPipe setup
+        # static_image_mode=True: tratta ogni frame come immagine indipendente
+        # (non come video-stream). Essenziale perché riceve JPEG indipendenti via WebSocket.
+        # Con False, se il 1° frame non rileva il volto, il tracking fallisce su tutti.
         self.mp_face_mesh = mp.solutions.face_mesh
         self.face_mesh = self.mp_face_mesh.FaceMesh(
-            static_image_mode=False,
+            static_image_mode=True,
             max_num_faces=1,
             refine_landmarks=True,
-            min_detection_confidence=0.5,  # Abbassato da 0.7 per catturare più pose frontali
+            min_detection_confidence=0.5,
             min_tracking_confidence=0.5
         )
         
@@ -79,85 +89,96 @@ class WebSocketFrameScorer:
         return all_landmarks
     
     def calculate_head_pose_from_mediapipe(self, landmarks_array, img_width, img_height):
-        """Calcola la pose della testa usando landmark MediaPipe"""
+        """Calcola pitch/yaw/roll direttamente dalla geometria 2D dei landmark.
+
+        Approccio landmark-geometrico puro, senza solvePnP né modelli 3D.
+        Produce valori ≈ 0° per un viso frontale per costruzione geometrica.
+
+        Convenzione angoli output (tutti in gradi):
+          yaw   > 0  → viso gira a destra (camera)  → utente deve girare a SINISTRA
+          yaw   < 0  → viso gira a sinistra          → utente deve girare a DESTRA
+          pitch > 0  → testa alzata (mento su)       → utente deve ABBASSARE il mento
+          pitch < 0  → testa abbassata               → utente deve ALZARE il mento
+          roll  > 0  → testa inclinata a destra      → raddrizzare a sinistra
+          roll  < 0  → testa inclinata a sinistra    → raddrizzare a destra
+        """
         try:
-            # Indici MediaPipe Face Mesh corretti
-            NOSE_TIP = 4
-            CHIN = 152
-            LEFT_EYE_CORNER = 33
-            RIGHT_EYE_CORNER = 263
-            LEFT_MOUTH_CORNER = 78
-            RIGHT_MOUTH_CORNER = 308
-            
             if len(landmarks_array) < 468:
                 return np.array([0.0, 0.0, 0.0])
-            
-            # Punti chiave
-            nose_tip = landmarks_array[NOSE_TIP]
-            chin = landmarks_array[CHIN] 
-            left_eye = landmarks_array[LEFT_EYE_CORNER]
-            right_eye = landmarks_array[RIGHT_EYE_CORNER]
-            left_mouth = landmarks_array[LEFT_MOUTH_CORNER]
-            right_mouth = landmarks_array[RIGHT_MOUTH_CORNER]
-            
-            points_2d = np.array([nose_tip, chin, left_eye, right_eye, left_mouth, right_mouth])
-            if np.any(np.isnan(points_2d)):
-                return np.array([0.0, 0.0, 0.0])
-            
-            # Modello 3D del volto
-            model_points = np.array([
-                (0.0, 0.0, 0.0),             # Punta del naso
-                (0.0, -330.0, -65.0),        # Mento 
-                (-225.0, 170.0, -135.0),     # Angolo interno occhio sinistro
-                (225.0, 170.0, -135.0),      # Angolo interno occhio destro  
-                (-150.0, -150.0, -125.0),    # Angolo sinistro bocca
-                (150.0, -150.0, -125.0)      # Angolo destro bocca
-            ], dtype=np.float32)
-            
-            image_points = np.array([
-                nose_tip, chin, left_eye, right_eye, left_mouth, right_mouth
-            ], dtype=np.float32)
-            
-            # Parametri camera
-            focal_length = img_width
-            center = (img_width/2, img_height/2)
-            camera_matrix = np.array([
-                [focal_length, 0, center[0]],
-                [0, focal_length, center[1]],
-                [0, 0, 1]
-            ], dtype=np.float32)
-            
-            dist_coeffs = np.zeros((4,1))
-            
-            # Risolvi PnP
-            success, rotation_vector, translation_vector = cv2.solvePnP(
-                model_points, image_points, camera_matrix, dist_coeffs)
-            
-            if success:
-                rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
-                sy = np.sqrt(rotation_matrix[0,0]**2 + rotation_matrix[1,0]**2)
-                
-                singular = sy < 1e-6
-                
-                if not singular:
-                    # ✅ YAW/PITCH SWAP FIX: Le formule erano invertite!
-                    # Yaw (rotazione orizzontale) usa R[2,0] non R[1,0]
-                    # Pitch (rotazione verticale) usa R[1,0] non R[2,0]
-                    yaw = np.arctan2(-rotation_matrix[2,0], sy) * 180.0 / np.pi
-                    pitch = -np.arctan2(rotation_matrix[1,0], rotation_matrix[0,0]) * 180.0 / np.pi
-                    roll = np.arctan2(rotation_matrix[2,1], rotation_matrix[2,2]) * 180.0 / np.pi
-                else:
-                    yaw = 0
-                    pitch = np.arctan2(-rotation_matrix[2,0], sy) * 180.0 / np.pi
-                    roll = np.arctan2(-rotation_matrix[1,2], rotation_matrix[1,1]) * 180.0 / np.pi
-                
-                return np.array([pitch, yaw, roll])
-                
+
+            # ── Indici MediaPipe Face Mesh ─────────────────────────────────────
+            # Occhi: centri approssimati come media degli angoli interni+esterni
+            L_EYE_OUTER  = 33;   L_EYE_INNER  = 133
+            R_EYE_OUTER  = 263;  R_EYE_INNER  = 362
+            NOSE_TIP     = 4
+            # Punto nasion (radice del naso tra gli occhi, stabile per pitch/yaw)
+            NOSE_BRIDGE  = 6
+            CHIN         = 152
+            L_CHEEK      = 234   # punto laterale guancia sinistra (dal punto di vista camera)
+            R_CHEEK      = 454   # punto laterale guancia destra
+
+            lm = landmarks_array
+
+            # Centri occhi
+            l_eye = (lm[L_EYE_OUTER] + lm[L_EYE_INNER]) * 0.5
+            r_eye = (lm[R_EYE_OUTER] + lm[R_EYE_INNER]) * 0.5
+            eye_mid = (l_eye + r_eye) * 0.5          # punto medio tra gli occhi
+
+            nose  = lm[NOSE_TIP]
+            bridge= lm[NOSE_BRIDGE]
+            chin  = lm[CHIN]
+            l_cheek = lm[L_CHEEK]
+            r_cheek = lm[R_CHEEK]
+
+            # ── ROLL: angolo della linea degli occhi rispetto all'orizzontale ──
+            # roll > 0: occhio sinistro (sx camera) più in alto → testa inclinata a destra
+            dx = r_eye[0] - l_eye[0]
+            dy = r_eye[1] - l_eye[1]
+            roll_deg = np.degrees(np.arctan2(dy, dx))
+            # roll_deg ≈ 0° per occhi orizzontali; piccole deviazioni → piccoli angoli
+
+            # ── YAW: asimmetria orizzontale del viso ─────────────────────────
+            # Distanza naso dagli angoli laterali delle guance.
+            # Per viso frontale: dist_left ≈ dist_right.
+            # Per viso girato a destra (camera): l_cheek più vicino al naso.
+            dist_left  = nose[0] - l_cheek[0]   # positivo se naso è a destra della guancia sx
+            dist_right = r_cheek[0] - nose[0]   # positivo se guancia dx è a destra del naso
+            total_width = dist_left + dist_right
+
+            if total_width > 1e-3:
+                # asimmetria normalizzata in [-1, +1]: 0 = frontale
+                # se dist_right < dist_left → viso girato a sinistra → yaw < 0
+                asym = (dist_right - dist_left) / total_width
+                # scala a gradi: asym=1 → ~45°, usiamo arcsin per rispettare la geometria
+                yaw_deg = float(np.degrees(np.arcsin(np.clip(asym * 0.95, -0.95, 0.95))))
+            else:
+                yaw_deg = 0.0
+
+            # ── PITCH: posizione verticale del naso rispetto alla linea occhi-mento ─
+            # Per viso frontale: il naso è a metà tra occhi e mento.
+            # pitch > 0 (testa alzata): il naso si avvicina agli occhi (chin va su in immagine Y-down)
+            eye_y  = eye_mid[1]
+            chin_y = chin[1]
+            nose_y = nose[1]
+            face_height = chin_y - eye_y
+
+            if face_height > 1e-3:
+                # rapporto dove si trova il naso [0=occhi, 1=mento].
+                # 0.46: posa calibrata con mento leggermente alzato rispetto alla verticale
+                # (valore abbassato da 0.55 → meno penalità per postura naturale della testa)
+                FRONTAL_NOSE_RATIO = 0.46
+                nose_ratio = (nose_y - eye_y) / face_height
+                deviation = (nose_ratio - FRONTAL_NOSE_RATIO) / FRONTAL_NOSE_RATIO
+                pitch_deg = float(np.degrees(np.arcsin(np.clip(-deviation * 0.85, -0.85, 0.85))))
+            else:
+                pitch_deg = 0.0
+
+            logger.debug(f"Pose geo: P={pitch_deg:.1f}° Y={yaw_deg:.1f}° R={roll_deg:.1f}°")
+            return np.array([pitch_deg, yaw_deg, roll_deg])
+
         except Exception as e:
             logger.error(f"Errore nel calcolo pose: {e}")
             return np.array([0.0, 0.0, 0.0])
-        
-        return np.array([0.0, 0.0, 0.0])
     
     def calculate_face_score(self, pitch, yaw, roll, face_bbox, frame_width, frame_height):
         """Sistema di scoring a 3 parametri ottimizzato"""
@@ -165,26 +186,14 @@ class WebSocketFrameScorer:
         # 1. POSE SCORE (0-100) - 60% del punteggio
         # YAW e PITCH hanno peso UGUALE per bilanciare frontalità verticale/orizzontale
         
-        # ✅ Normalizza Roll a range [-180, 180] → [-90, 90]
-        # MediaPipe a volte inverte di 180° l'asse Roll per orientamento video
-        normalized_roll = roll
-        while normalized_roll > 180:
+        # Normalizza Roll a range [-90, 90] (wrap semplice, niente inversione ±180°)
+        normalized_roll = roll % 360
+        if normalized_roll > 180:
             normalized_roll -= 360
-        while normalized_roll < -180:
-            normalized_roll += 360
-            
-        # Se Roll è vicino a ±180°, è equivalente a 0° (inversione asse)
-        if abs(normalized_roll) > 150:
-            # Esempio: Roll=-177° → equivalente a +3° (180-177=3)
-            normalized_roll = 180 - abs(normalized_roll)
-            if roll < 0:
-                normalized_roll = -normalized_roll
-        
-        # Ora normalizza a [-90, 90]
-        while normalized_roll > 90:
-            normalized_roll -= 180
-        while normalized_roll < -90:
-            normalized_roll += 180
+        if normalized_roll > 90:
+            normalized_roll = 180 - normalized_roll
+        elif normalized_roll < -90:
+            normalized_roll = -180 - normalized_roll
         
         roll_weighted = abs(normalized_roll) * 0.3
 
@@ -254,20 +263,39 @@ class WebSocketFrameScorer:
             # Incrementa contatore frame processati
             self.frames_processed += 1
             current_frame_number = self.frames_processed
-            
+
             # Decodifica il frame da base64
             frame_bytes = base64.b64decode(frame_data)
             nparr = np.frombuffer(frame_bytes, np.uint8)
             frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
+
             if frame is None:
                 return {"error": "Impossibile decodificare il frame"}
-            
+
             h, w = frame.shape[:2]
-            
-            # Processa con MediaPipe
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # ── RESIZE PER MEDIAPIPE ──────────────────────────────────────────
+            # MediaPipe è ottimizzato per immagini ~640px: su frame ad alta
+            # risoluzione (>1280px) il calcolo diventa molto lento senza
+            # alcun guadagno di accuratezza. Facciamo il resize SOLO per
+            # il rilevamento; conserviamo il frame originale per la restituzione.
+            MEDIAPIPE_MAX_DIM = 640
+            if max(h, w) > MEDIAPIPE_MAX_DIM:
+                scale = MEDIAPIPE_MAX_DIM / max(h, w)
+                mp_w = int(w * scale)
+                mp_h = int(h * scale)
+                mp_frame = cv2.resize(frame, (mp_w, mp_h), interpolation=cv2.INTER_AREA)
+            else:
+                mp_frame = frame
+                mp_w, mp_h = w, h
+            # ─────────────────────────────────────────────────────────────────
+
+            # Processa con MediaPipe sul frame ridotto
+            rgb_frame = cv2.cvtColor(mp_frame, cv2.COLOR_BGR2RGB)
             results = self.face_mesh.process(rgb_frame)
+
+            faces_found = len(results.multi_face_landmarks) if results.multi_face_landmarks else 0
+            logger.info(f"[FRAME #{current_frame_number:04d}] orig={w}x{h} mp={mp_w}x{mp_h} volti={faces_found}")
             
             response = {
                 "frame_processed": True,
@@ -278,30 +306,30 @@ class WebSocketFrameScorer:
             
             if results.multi_face_landmarks:
                 for face_landmarks in results.multi_face_landmarks:
-                    # Estrai landmark
-                    all_landmarks = self.get_all_mediapipe_landmarks(face_landmarks, w, h)
-                    
+                    # Estrai landmark usando le dimensioni del frame ridotto (per MediaPipe)
+                    all_landmarks = self.get_all_mediapipe_landmarks(face_landmarks, mp_w, mp_h)
+
                     if len(all_landmarks) >= 6:
-                        # Calcola bounding box
+                        # Calcola bounding box nel frame ridotto
                         valid_x = [x for x in all_landmarks[:, 0] if x > 0]
                         valid_y = [y for y in all_landmarks[:, 1] if y > 0]
-                        
+
                         if valid_x and valid_y:
                             x_min, x_max = min(valid_x), max(valid_x)
                             y_min, y_max = min(valid_y), max(valid_y)
-                            
+
                             margin = 30
                             bbox = [
-                                max(0, x_min-margin), min(w, x_max+margin),
-                                max(0, y_min-margin), min(h, y_max+margin)
+                                max(0, x_min-margin), min(mp_w, x_max+margin),
+                                max(0, y_min-margin), min(mp_h, y_max+margin)
                             ]
-                            
-                            # Calcola pose
-                            head_pose = self.calculate_head_pose_from_mediapipe(all_landmarks, w, h)
-                            
-                            # Calcola score
+
+                            # Calcola pose usando il frame ridotto
+                            head_pose = self.calculate_head_pose_from_mediapipe(all_landmarks, mp_w, mp_h)
+
+                            # Score calcolato rispetto al frame ridotto (le proporzioni sono identiche)
                             score, score_details = self.calculate_face_score(
-                                head_pose[0], head_pose[1], head_pose[2], bbox, w, h
+                                head_pose[0], head_pose[1], head_pose[2], bbox, mp_w, mp_h
                             )
                             
                             # ✅ FILTRO: Scarta solo Yaw/Pitch invalidi (>170°)
@@ -310,7 +338,10 @@ class WebSocketFrameScorer:
                                          abs(head_pose[1]) > 170)      # Yaw invalido
                             
                             if is_invalid:
-                                # ⚠️ LOG RIDOTTO: Non stampare ogni frame scartato
+                                logger.info(
+                                    f"[FRAME #{current_frame_number:04d}] INVALIDO "
+                                    f"P={head_pose[0]:.1f}° Y={head_pose[1]:.1f}° R={head_pose[2]:.1f}°"
+                                )
                                 response.update({
                                     "faces_detected": 1,
                                     "current_score": 0,
@@ -333,58 +364,111 @@ class WebSocketFrameScorer:
                             
                             # ✅ BUFFER CIRCOLARE INTELLIGENTE CON PRIORITÀ PER FRAME ECCELLENTI
                             # Frame con score >95 hanno SEMPRE priorità (pose quasi perfette)
+                            # Frame con |yaw|<8° E |pitch|<8° bypassano la soglia (frontalità prioritaria)
                             is_excellent = score >= 95
+                            is_frontal_pose = (abs(head_pose[1]) < 8 and abs(head_pose[0]) < 8)
                             
+                            reason = "" 
+                            if is_excellent:       reason = "EXCELLENT(>=95)"
+                            elif is_frontal_pose:  reason = "FRONTAL(|yaw|<8,|pitch|<8)"
+                            elif score >= self.min_score_threshold: reason = "SCORE_OK"
+
                             if len(self.best_frames) < self.buffer_size:
                                 # Buffer non pieno - aggiungi se supera soglia minima
-                                if score >= self.min_score_threshold or is_excellent:
+                                if reason:
                                     self.best_frames.append(frame_data)
                                     self.frames_added += 1
-                                    
+                                    logger.info(
+                                        f"[FRAME #{current_frame_number:04d}] ACCETTATO({reason}) "
+                                        f"score={score:.1f} pose_s={score_details['pose_score']:.1f} "
+                                        f"size_s={score_details['size_score']:.1f} "
+                                        f"P={head_pose[0]:.1f}° Y={head_pose[1]:.1f}° R={head_pose[2]:.1f}° "
+                                        f"buf={len(self.best_frames)}/{self.buffer_size} thr={self.min_score_threshold:.1f}"
+                                    )
                                     # Riordina e aggiorna soglia quando raggiungi buffer_size
                                     if len(self.best_frames) == self.buffer_size:
                                         self.best_frames.sort(key=lambda x: x['score'], reverse=True)
-                                        self.min_score_threshold = max(70, self.best_frames[-1]['score'])
-                            elif score > self.min_score_threshold or is_excellent:
-                                # Buffer pieno - sostituisci il peggiore se questo è migliore O se è eccellente
+                                        self.min_score_threshold = max(50, self.best_frames[-1]['score'])
+                                        logger.info(f"[BUFFER PIENO] soglia aggiornata → {self.min_score_threshold:.1f}")
+                                else:
+                                    logger.info(
+                                        f"[FRAME #{current_frame_number:04d}] SCARTATO "
+                                        f"score={score:.1f} < thr={self.min_score_threshold:.1f} "
+                                        f"P={head_pose[0]:.1f}° Y={head_pose[1]:.1f}° R={head_pose[2]:.1f}°"
+                                    )
+                            elif reason:
+                                # Buffer pieno - sostituisci il peggiore se questo è migliore O se è eccellente/frontale
+                                logger.info(
+                                    f"[FRAME #{current_frame_number:04d}] SOSTITUZIONE({reason}) "
+                                    f"score={score:.1f} pose_s={score_details['pose_score']:.1f} "
+                                    f"size_s={score_details['size_score']:.1f} "
+                                    f"P={head_pose[0]:.1f}° Y={head_pose[1]:.1f}° R={head_pose[2]:.1f}°"
+                                )
                                 self.best_frames[-1] = frame_data
                                 self.frames_added += 1
                                 
                                 # Riordina e aggiorna soglia
                                 self.best_frames.sort(key=lambda x: x['score'], reverse=True)
-                                old_threshold = self.min_score_threshold
-                                self.min_score_threshold = max(70, self.best_frames[-1]['score'])
-                                
-                                # Log solo per frame eccellenti (score >= 95) - ridotto per performance
+                                self.min_score_threshold = max(50, self.best_frames[-1]['score'])
                             else:
-                                # ⚠️ LOG RIDOTTO: Non stampare ogni frame scartato
-                                pass
+                                logger.info(
+                                    f"[FRAME #{current_frame_number:04d}] SCARTATO "
+                                    f"score={score:.1f} < thr={self.min_score_threshold:.1f} "
+                                    f"P={head_pose[0]:.1f}° Y={head_pose[1]:.1f}° R={head_pose[2]:.1f}°"
+                                )
                             
-                            # Calcola Roll normalizzato per la UI
+                            # Roll già in range naturale dall'approccio geometrico
                             normalized_roll_display = head_pose[2]
-                            while normalized_roll_display > 180:
-                                normalized_roll_display -= 360
-                            while normalized_roll_display < -180:
-                                normalized_roll_display += 360
-                            if abs(normalized_roll_display) > 150:
-                                # Inversione asse: 173° → 7°, -177° → -3°
-                                normalized_roll_display = 180 - abs(normalized_roll_display)
-                                if head_pose[2] < 0:
-                                    normalized_roll_display = -normalized_roll_display
-                            
+
+                            # ── LANDMARK COMPATTI PER OVERLAY LIVE ───────────────────────
+                            # Inviamo i landmark normalizzati [0,1] come lista flat [x0,y0,x1,y1,...]
+                            # Solo i punti necessari al rendering: contorno viso, occhi, naso, bocca.
+                            # Gruppi: OVAL(36), L_EYE(16), R_EYE(16), NOSE(9), L_BROW(10), R_BROW(10)
+                            LM_GROUPS = {
+                                # Oval: contorno viso sinistro→alto→destro→basso
+                                'oval': [10,338,297,332,284,251,389,356,454,323,361,288,
+                                         397,365,379,378,400,377,152,148,176,149,150,136,
+                                         172,58,132,93,234,127,162,21,54,103,67,109],
+                                # Occhio sinistro (esterno → interno)
+                                'l_eye': [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246],
+                                # Occhio destro
+                                'r_eye': [362,382,381,380,374,373,390,249,263,466,388,387,386,385,384,398],
+                                # Naso (ponte + punta + narici)
+                                'nose': [168,6,197,195,5,4,45,220,115,48],
+                                # Sopracciglio sinistro
+                                'l_brow': [276,283,282,295,285,300,293,334,296,336],
+                                # Sopracciglio destro
+                                'r_brow': [46,53,52,65,55,70,63,105,66,107],
+                                # Bocca (labbro esterno)
+                                'mouth': [61,146,91,181,84,17,314,405,321,375,291,
+                                          308,324,318,402,317,14,87,178,88,95],
+                            }
+                            lm_out = {}
+                            for group, indices in LM_GROUPS.items():
+                                coords = []
+                                for idx in indices:
+                                    if idx < len(face_landmarks.landmark):
+                                        lm = face_landmarks.landmark[idx]
+                                        coords.append(round(lm.x, 4))
+                                        coords.append(round(lm.y, 4))
+                                lm_out[group] = coords
+                            # ─────────────────────────────────────────────────────────────
+
                             response.update({
                                 "faces_detected": 1,
                                 "current_score": round(score, 2),
                                 "pose": {
                                     "pitch": round(head_pose[0], 2),
                                     "yaw": round(head_pose[1], 2),
-                                    "roll": round(normalized_roll_display, 2)  # Roll normalizzato
+                                    "roll": round(normalized_roll_display, 2)
                                 },
                                 "score_breakdown": {
                                     "pose_score": round(score_details['pose_score'], 2),
                                     "size_score": round(score_details['size_score'], 2),
-                                    "position_score": round(score_details['position_score'], 2)
-                                }
+                                    "position_score": round(score_details['position_score'], 2),
+                                    "face_ratio": round(score_details['face_ratio'], 4)
+                                },
+                                "landmarks": lm_out
                             })
             
             return response
@@ -412,13 +496,13 @@ class WebSocketFrameScorer:
         frames_data = []
         
         for i, frame_data in enumerate(best_frames):
-            # Salva frame come immagine
+            # Salva frame come immagine (qualità 97 per massima fedeltà - vicino a successo.jpg)
             filename = f"frame_{i+1:02d}.jpg"
             filepath = os.path.join(self.session_dir, filename)
-            cv2.imwrite(filepath, frame_data['frame'])
+            cv2.imwrite(filepath, frame_data['frame'], [cv2.IMWRITE_JPEG_QUALITY, 97])
             
-            # Converti frame in base64 per la risposta
-            _, buffer = cv2.imencode('.jpg', frame_data['frame'])
+            # Converti frame in base64 per la risposta (qualità 97 per preservare dettagli LB/RB)
+            _, buffer = cv2.imencode('.jpg', frame_data['frame'], [cv2.IMWRITE_JPEG_QUALITY, 97])
             frame_b64 = base64.b64encode(buffer).decode('utf-8')
             frames_base64.append({
                 'filename': filename,
@@ -427,28 +511,16 @@ class WebSocketFrameScorer:
                 'score': round(frame_data['score'], 2)
             })
             
-            # Normalizza Roll per la UI
-            roll_raw = frame_data['roll']
-            normalized_roll_display = roll_raw
-            while normalized_roll_display > 180:
-                normalized_roll_display -= 360
-            while normalized_roll_display < -180:
-                normalized_roll_display += 360
-            if abs(normalized_roll_display) > 150:
-                normalized_roll_display = 180 - abs(normalized_roll_display)
-                if roll_raw < 0:
-                    normalized_roll_display = -normalized_roll_display
-            
             # Prepara dati JSON
             json_data = {
                 'filename': filename,
-                'rank': frame_data.get('frame_number', i + 1),  # Usa frame_number originale
+                'rank': frame_data.get('frame_number', i + 1),
                 'total_score': round(frame_data['score'], 2),
                 'timestamp': frame_data['timestamp'],
                 'pose': {
                     'pitch': round(frame_data['pitch'], 2),
                     'yaw': round(frame_data['yaw'], 2),
-                    'roll': round(normalized_roll_display, 2)  # Roll normalizzato
+                    'roll': round(frame_data['roll'], 2)
                 },
                 'face_bbox': {
                     'x_min': int(frame_data['bbox'][0]),
@@ -468,6 +540,22 @@ class WebSocketFrameScorer:
             }
             frames_data.append(json_data)
         
+        # ── RIEPILGO TOP-10 SU LOG ──────────────────────────────────────────────
+        logger.info("=" * 72)
+        logger.info(f"TOP-{len(best_frames)} FRAMES SELEZIONATI (sessione {self.session_id})")
+        logger.info(f"{'Rank':>4}  {'Frame':>6}  {'Score':>6}  {'Pose':>5}  {'Size':>5}  {'Pos':>5}  {'Pitch':>7}  {'Yaw':>7}  {'Roll':>7}")
+        logger.info("-" * 72)
+        for i, fd in enumerate(best_frames):
+            sd = fd['score_details']
+            logger.info(
+                f"{i+1:>4}  #{fd.get('frame_number',i+1):>5}  "
+                f"{fd['score']:>6.2f}  {sd['pose_score']:>5.1f}  "
+                f"{sd['size_score']:>5.1f}  {sd['position_score']:>5.1f}  "
+                f"{fd['pitch']:>+7.2f}°  {fd['yaw']:>+7.2f}°  {fd['roll']:>+7.2f}°"
+            )
+        logger.info("=" * 72)
+        # ────────────────────────────────────────────────────────────────────────
+
         # Crea JSON finale
         json_result = {
             'metadata': {
@@ -584,6 +672,9 @@ async def handle_websocket(websocket):
                     # Include request_id per correlazione richiesta/risposta
                     if 'request_id' in data:
                         result['request_id'] = data['request_id']
+                    # Propaga il flag final per consentire al client di forzare l'aggiornamento canvas
+                    if data.get('final'):
+                        result['is_final'] = True
                     await websocket.send(json.dumps(result))
 
                 elif action == 'ping':
@@ -648,11 +739,14 @@ async def handle_websocket(websocket):
                         "action": "iphone_frame_processed",
                         "deviceId": device_id,
                         "score": result.get('current_score', 0),
+                        "current_score": result.get('current_score', 0),  # alias per compatibilità con updateFrameProcessingStats
                         "faces_detected": result.get('faces_detected', 0),
-                        "total_frames_collected": result.get('total_frames_collected', 0),  # ✅ Per requestBestFramesUpdate
-                        "landmarks": result.get('landmarks'),  # ✅ Includi landmarks per canvas
+                        "total_frames_collected": result.get('total_frames_collected', 0),
+                        "landmarks": result.get('landmarks'),
+                        "pose": result.get('pose'),               # ✅ Overlay inclinazione testa nel fullscreen
+                        "score_breakdown": result.get('score_breakdown'),  # ✅ Dettagli punteggio live
                         "timestamp": time.time(),
-                        "frame_data": frame_data  # Invia frame corrente
+                        "frame_data": frame_data
                     }
                     
                     await broadcast_to_active_desktops(desktop_message)
@@ -727,9 +821,15 @@ async def handle_websocket(websocket):
 
             except json.JSONDecodeError:
                 await websocket.send(json.dumps({"error": "Messaggio JSON non valido"}))
+            except websockets.exceptions.ConnectionClosed:
+                # Client ha chiuso la connessione durante il processing — normale fine sessione
+                break
             except Exception as e:
                 logger.error(f"Errore handling message: {e}")
-                await websocket.send(json.dumps({"error": f"Errore server: {str(e)}"}))
+                try:
+                    await websocket.send(json.dumps({"error": f"Errore server: {str(e)}"}))
+                except websockets.exceptions.ConnectionClosed:
+                    break
 
     except websockets.exceptions.ConnectionClosed:
         pass

@@ -262,6 +262,93 @@
         canvas {
             display: none;
         }
+
+        /* Specchio lato frontale */
+        video.mirrored {
+            transform: scaleX(-1);
+        }
+
+        /* Guida ovale viso */
+        #face-guide {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        #face-oval {
+            width: min(74vw, 295px);
+            height: min(106vw, 420px);
+            border: 2.5px solid rgba(255, 255, 255, 0.85);
+            border-radius: 50%;
+            box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.30);
+            transition: border-color 0.4s;
+            overflow: hidden;
+            position: relative;
+            /* Sposta leggermente verso l'alto rispetto al centro */
+            margin-bottom: 10vh;
+        }
+
+        #face-oval.good {
+            border-color: rgba(0, 255, 120, 0.90);
+            box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.22), 0 0 20px rgba(0, 255, 120, 0.55);
+        }
+
+        #face-markers {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Score su iPhone */
+        #score-display {
+            position: fixed;
+            bottom: calc(env(safe-area-inset-bottom, 20px) + 85px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            padding: 8px 22px;
+            border-radius: 20px;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            z-index: 100;
+            color: #fff;
+            min-width: 100px;
+            text-align: center;
+            display: none;
+        }
+
+        /* Toast coaching vocale */
+        #coaching-toast {
+            position: fixed;
+            top: calc(env(safe-area-inset-top, 20px) + 58px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 122, 255, 0.88);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 9px 22px;
+            border-radius: 20px;
+            font-size: 15px;
+            font-weight: 600;
+            z-index: 110;
+            color: #fff;
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+
+        #coaching-toast.visible {
+            opacity: 1;
+        }
     </style>
 </head>
 
@@ -294,6 +381,43 @@
         <p id="error-message">Impossibile accedere alla fotocamera.</p>
         <button onclick="retryCamera()">Riprova</button>
     </div>
+
+    <div id="face-guide">
+        <div id="face-oval">
+            <!-- Marcatori anatomici di riferimento per posizionamento viso -->
+            <svg id="face-markers" viewBox="0 0 100 143" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+                <!-- Asse di simmetria verticale -->
+                <line x1="50" y1="4" x2="50" y2="136" stroke="rgba(255,255,255,0.22)" stroke-width="0.7"
+                    stroke-dasharray="3,3" />
+                <!-- Linea orizzontale occhi -->
+                <line x1="16" y1="46" x2="84" y2="46" stroke="rgba(255,255,255,0.18)" stroke-width="0.7" />
+                <!-- Sopracciglio sinistro -->
+                <path d="M 18,40 Q 29,34 43,39" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="1.6"
+                    stroke-linecap="round" />
+                <!-- Sopracciglio destro -->
+                <path d="M 57,39 Q 71,34 82,40" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="1.6"
+                    stroke-linecap="round" />
+                <!-- Occhio sinistro -->
+                <ellipse cx="30" cy="46" rx="11" ry="4.5" fill="none" stroke="rgba(255,255,255,0.58)"
+                    stroke-width="1.6" />
+                <!-- Occhio destro -->
+                <ellipse cx="70" cy="46" rx="11" ry="4.5" fill="none" stroke="rgba(255,255,255,0.58)"
+                    stroke-width="1.6" />
+                <!-- Ali del naso -->
+                <path d="M 37,82 Q 44,88 50,85 Q 56,88 63,82" fill="none" stroke="rgba(255,255,255,0.35)"
+                    stroke-width="1.3" stroke-linecap="round" />
+                <!-- Bocca - labbro inefiore -->
+                <path d="M 31,103 Q 50,116 69,103" fill="none" stroke="rgba(255,255,255,0.52)" stroke-width="1.8"
+                    stroke-linecap="round" />
+                <!-- Bocca - arco di Cupido -->
+                <path d="M 31,103 Q 40,98 50,100 Q 60,98 69,103" fill="none" stroke="rgba(255,255,255,0.32)"
+                    stroke-width="1.2" stroke-linecap="round" />
+            </svg>
+        </div>
+    </div>
+
+    <div id="score-display">--</div>
+    <div id="coaching-toast"></div>
 
     <div id="video-container">
         <video id="video" autoplay playsinline muted></video>
@@ -341,12 +465,27 @@
         let lastFpsUpdate = Date.now();
         let bytesSent = 0;
 
+        // rAF streaming
+        let animFrameId = null;
+        let lastFrameTime = 0;
+
+        // Toast coaching visivo
+        let lastCoachTime = 0;
+        let coachToastTimer = null;
+        const COACH_MIN_INTERVAL = 4500; // ms minimi tra avvisi visivi
+        let lastHighScoreSaid = false;
+
         // === CONFIGURAZIONE ===
         function loadConfig() {
             const saved = localStorage.getItem(CONFIG_KEY);
             if (saved) {
                 config = JSON.parse(saved);
                 console.log('Configurazione caricata:', config.deviceId.substring(0, 8) + '...');
+                // Migrazione: aggiorna fps/quality se troppo basse (config salvate con vecchi default)
+                let migrated = false;
+                if (!config.fps || config.fps < 12) { config.fps = 15; migrated = true; }
+                if (!config.quality || config.quality > 0.61) { config.quality = 0.60; migrated = true; }
+                if (migrated) { saveConfig(); console.log('\u2b06\ufe0f Config aggiornata: fps=15 quality=0.60'); }
             } else {
                 config = {
                     deviceId: generateDeviceId(),
@@ -354,8 +493,8 @@
                     wsUrl: null,
                     savedAt: new Date().toISOString(),
                     cameraPreference: 'user',
-                    quality: 0.6,
-                    fps: 6,
+                    quality: 0.60,
+                    fps: 15,
                     installPromptShown: false
                 };
                 saveConfig();
@@ -484,10 +623,12 @@
             if (data.action === 'connected') {
                 console.log('Device registrato sul server:', data.deviceId);
             } else if (data.action === 'frame_processed') {
-                // Feedback dal server sull'elaborazione frame
-                if (data.current_score) {
-                    console.log('Score:', data.current_score);
+                // Aggiorna score display
+                if (data.current_score !== undefined) {
+                    updateScoreDisplay(data.current_score);
                 }
+                // Avvia coaching vocale
+                updateCoaching(data);
             } else if (data.action === 'error') {
                 console.error('Errore server:', data.message);
             }
@@ -526,6 +667,9 @@
                 currentFacingMode = facingMode;
                 config.cameraPreference = facingMode;
                 saveConfig();
+
+                // Specchio per camera frontale
+                applyMirror();
 
                 // Nascondi errore se visibile
                 errorOverlay.style.display = 'none';
@@ -573,86 +717,81 @@
         }
 
         // === STREAMING ===
-        function startStreaming() {
-            if (streamingInterval) {
-                clearInterval(streamingInterval);
+        function streamingLoop(timestamp) {
+            if (!isStreaming) return;
+            animFrameId = requestAnimationFrame(streamingLoop);
+
+            const fps = config.fps || 15;
+            if (timestamp - lastFrameTime < (1000 / fps)) return;
+            lastFrameTime = timestamp;
+
+            if (!socket || socket.readyState !== WebSocket.OPEN) return;
+            if (!video.videoWidth || !video.videoHeight) return;
+
+            // Backpressure: salta frame se la coda WS è già carica
+            if (socket.bufferedAmount > 65536) return;
+
+            // Resize canvas solo se necessario
+            const maxWidth = 480;
+            const targetW = Math.min(video.videoWidth, maxWidth);
+            const targetH = Math.round(video.videoHeight * (targetW / video.videoWidth));
+            if (canvas.width !== targetW || canvas.height !== targetH) {
+                canvas.width = targetW;
+                canvas.height = targetH;
             }
+
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            try {
+                const q = config.quality || 0.60;
+                const dataUrl = canvas.toDataURL('image/jpeg', q);
+                const base64data = dataUrl.slice(dataUrl.indexOf(',') + 1);
+
+                const msg = JSON.stringify({
+                    action: 'iphone_frame',
+                    deviceId: config.deviceId,
+                    frame: base64data,
+                    timestamp: Date.now(),
+                    width: canvas.width,
+                    height: canvas.height
+                });
+
+                socket.send(msg);
+                framesSent++;
+                bytesSent += msg.length;
+                updateFpsCounter();
+            } catch (e) {
+                console.error('Errore invio frame:', e);
+            }
+        }
+
+        function startStreaming() {
+            // Cancella loop precedenti
+            if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+            if (streamingInterval) { clearInterval(streamingInterval); streamingInterval = null; }
 
             isStreaming = true;
             streamBtn.classList.add('active');
             streamBtnText.textContent = 'Streaming';
 
-            const fps = config.fps || 15;
-            const quality = config.quality || 0.75;
-            const interval = 1000 / fps;
-
+            lastFrameTime = 0;
             framesSent = 0;
             bytesSent = 0;
             lastFpsUpdate = Date.now();
+            lastHighScoreSaid = false;
+            if (scoreDisplayEl) scoreDisplayEl.style.display = 'none';
+            faceOval.classList.remove('good');
 
-            streamingInterval = setInterval(() => {
-                if (!socket || socket.readyState !== WebSocket.OPEN || !isStreaming) {
-                    return;
-                }
-
-                if (!video.videoWidth || !video.videoHeight) {
-                    return;
-                }
-
-                // Ridimensiona per ottimizzare banda (480px per ridurre latenza)
-                const maxWidth = 480;
-                const scale = Math.min(1, maxWidth / video.videoWidth);
-                canvas.width = Math.round(video.videoWidth * scale);
-                canvas.height = Math.round(video.videoHeight * scale);
-
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                canvas.toBlob((blob) => {
-                    if (!blob) return;
-
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                        const base64data = reader.result.split(',')[1];
-
-                        const message = {
-                            action: 'iphone_frame',
-                            deviceId: config.deviceId,
-                            frame: base64data,
-                            timestamp: Date.now(),
-                            width: canvas.width,
-                            height: canvas.height
-                        };
-
-                        try {
-                            const jsonStr = JSON.stringify(message);
-                            socket.send(jsonStr);
-
-                            framesSent++;
-                            bytesSent += jsonStr.length;
-
-                            updateFpsCounter();
-                        } catch (e) {
-                            console.error('Errore invio frame:', e);
-                        }
-                    };
-                    reader.readAsDataURL(blob);
-                }, 'image/jpeg', quality);
-
-            }, interval);
-
+            animFrameId = requestAnimationFrame(streamingLoop);
             updateStatus('Streaming attivo', 'streaming');
         }
 
         function stopStreaming() {
             isStreaming = false;
+            if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+            if (streamingInterval) { clearInterval(streamingInterval); streamingInterval = null; }
             streamBtn.classList.remove('active');
             streamBtnText.textContent = 'Avvia';
-
-            if (streamingInterval) {
-                clearInterval(streamingInterval);
-                streamingInterval = null;
-            }
-
             updateStatus('Stream in pausa', 'connected');
         }
 
@@ -684,6 +823,114 @@
             }
         }
 
+        // === SPECCHIO CAMERA ===
+        function applyMirror() {
+            if (currentFacingMode === 'user') {
+                video.classList.add('mirrored');
+            } else {
+                video.classList.remove('mirrored');
+            }
+        }
+
+        // === SCORE DISPLAY SU IPHONE ===
+        const scoreDisplayEl = document.getElementById('score-display');
+        const faceOval = document.getElementById('face-oval');
+
+        function updateScoreDisplay(score) {
+            if (!scoreDisplayEl) return;
+            scoreDisplayEl.style.display = 'block';
+            const s = Math.round(score || 0);
+            scoreDisplayEl.textContent = s;
+            if (s >= 92) {
+                scoreDisplayEl.style.color = '#00ff88';
+                faceOval.classList.add('good');
+            } else if (s >= 70) {
+                scoreDisplayEl.style.color = '#ffcc00';
+                faceOval.classList.remove('good');
+            } else {
+                scoreDisplayEl.style.color = '#ff5555';
+                faceOval.classList.remove('good');
+            }
+        }
+
+        // === COACHING VOCALE ===
+        const coachingToastEl = document.getElementById('coaching-toast');
+
+        function showCoachingToast(text) {
+            if (!coachingToastEl) return;
+            coachingToastEl.textContent = text;
+            coachingToastEl.classList.add('visible');
+            if (coachToastTimer) clearTimeout(coachToastTimer);
+            coachToastTimer = setTimeout(() => {
+                coachingToastEl.classList.remove('visible');
+            }, 3200);
+        }
+
+        // Mostra il coaching come toast visivo (solo testo, nessuna voce su iPhone)
+        function showCoaching(text) {
+            const now = Date.now();
+            if (now - lastCoachTime < COACH_MIN_INTERVAL) return;
+            lastCoachTime = now;
+            showCoachingToast(text);
+        }
+
+        function updateCoaching(data) {
+            if (!data) return;
+
+            const faces = data.faces_detected || 0;
+            const pose = data.pose;
+            const breakdown = data.score_breakdown;
+            const score = data.current_score || 0;
+
+            // Nessun viso rilevato
+            if (faces === 0) {
+                showCoaching('Inquadra il viso nell\'ovale');
+                return;
+            }
+
+            if (!pose || !breakdown) return;
+
+            const yaw = pose.yaw || 0;
+            const pitch = pose.pitch || 0;
+            const roll = pose.roll || 0;
+            const faceRatio = breakdown.face_ratio || 0;
+
+            // Distanza
+            if (faceRatio < 0.18) {
+                showCoaching('Avvicinati ▲');
+                return;
+            }
+            if (faceRatio > 0.58) {
+                showCoaching('Allontanati ▼');
+                return;
+            }
+
+            const absYaw = Math.abs(yaw);
+            const absPitch = Math.abs(pitch);
+            const absRoll = Math.abs(roll);
+
+            if (absYaw >= 14 && absYaw >= absPitch && absYaw >= absRoll) {
+                showCoaching(yaw > 0 ? '← Girati a sinistra' : 'Girati a destra →');
+                return;
+            }
+            if (absPitch >= 12 && absPitch >= absRoll) {
+                showCoaching(pitch > 0 ? '↓ Abbassa il mento' : '↑ Alza il mento');
+                return;
+            }
+            if (absRoll >= 14) {
+                showCoaching(roll > 0 ? '↶ Raddrizza la testa' : 'Raddrizza la testa ↷');
+                return;
+            }
+
+            // Posa buona
+            if (score >= 92 && !lastHighScoreSaid) {
+                lastHighScoreSaid = true;
+                showCoaching('✔ Ottimo! Mantieni la posizione');
+            } else if (score < 85) {
+                lastHighScoreSaid = false;
+            }
+        }
+
         // === UI ===
         function updateStatus(text, type) {
             statusEl.textContent = text;
@@ -699,6 +946,9 @@
 
             // Poi avvia camera
             await startCamera(config.cameraPreference || 'user');
+
+            // Specchio iniziale in base alla camera preferita
+            applyMirror();
         };
 
         window.onbeforeunload = function () {

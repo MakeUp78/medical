@@ -381,15 +381,15 @@ async function analyzeGreenDotsViaAPI(imageBase64, parameters = {}) {
     console.log('⚪ API White Dots URL (via green-dots endpoint):', url);
 
     const defaultParams = {
-      // Parametri ottimizzati per puntini BIANCHI
-      // Valori: Sat≤20%, Val 54-100%, Cluster 9-66px, Dist≥9px
-      saturation_max: 20,
-      value_min: 54,
-      value_max: 100,
       cluster_size_min: 9,
-      cluster_size_max: 66,
+      cluster_size_max: 331,
       clustering_radius: 2,
-      min_distance: 9
+      min_distance: 22,
+      // Parametri adattivi 2-pass (sovrascrivono i valori fissi del backend)
+      pass1_percentile: 60,
+      pass1_sat_cap: 25,
+      pass2_percentile: 80,
+      pass2_sat_cap: 20,
     };
 
     // Merge parametri con precedenza a quelli passati
@@ -405,12 +405,11 @@ async function analyzeGreenDotsViaAPI(imageBase64, parameters = {}) {
       ...mergedParams
     };
 
-    console.log('⚙️ Parametri rilevamento:', {
-      saturation_max: mergedParams.saturation_max,
-      value_min: mergedParams.value_min,
-      value_max: mergedParams.value_max,
+    console.log('⚙️ Parametri rilevamento (2-pass adattivo):', {
       cluster_size_range: mergedParams.cluster_size_range,
-      min_distance: mergedParams.min_distance
+      min_distance: mergedParams.min_distance,
+      pass1: { percentile: mergedParams.pass1_percentile, sat_cap: mergedParams.pass1_sat_cap },
+      pass2: { percentile: mergedParams.pass2_percentile, sat_cap: mergedParams.pass2_sat_cap },
     });
 
     const response = await fetch(url, {

@@ -47,8 +47,13 @@ class IsabellaVoiceAssistant:
         
         # Setup sintesi vocale con edge-tts e pygame (ORIGINALE)
         try:
-            pygame.mixer.init()
-            print("✅ Audio mixer inizializzato")
+            # OTTIMIZZAZIONE: Configura mixer per ridurre latenza audio
+            # frequency=44100 -> qualità audio standard
+            # size=-16 -> audio 16-bit signed
+            # channels=2 -> stereo
+            # buffer=512 -> buffer più piccolo = minor latenza (ma maggior carico CPU)
+            pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+            print("✅ Audio mixer inizializzato (buffer ottimizzato per ridurre latenza)")
         except Exception as e:
             print(f"⚠️ Audio mixer non disponibile (normale su server senza audio): {e}")
             print("   I file audio verranno generati ma non riprodotti localmente")
@@ -122,15 +127,34 @@ class IsabellaVoiceAssistant:
             audio_file = loop.run_until_complete(self._generate_speech_async(text))
             
             if audio_file:
-                # Riproduci con pygame
+                # SOLUZIONE TAGLIO INIZIO MESSAGGIO:
+                # 1. Pre-carica il file audio (questo richiede tempo)
                 pygame.mixer.music.load(audio_file)
+                
+                # 2. Attendi che il sistema sia pronto (fix per latenza iniziale)
+                time.sleep(0.1)  # Piccolo buffer per evitare taglio iniziale
+                
+                # 3. Riproduci con pygame
                 pygame.mixer.music.play()
                 
-                # Aspetta che finisca
+                # 4. Doppio controllo: verifica che la riproduzione sia effettivamente iniziata
+                retry_count = 0
+                max_retries = 5
+                while not pygame.mixer.music.get_busy() and retry_count < max_retries:
+                    time.sleep(0.05)
+                    retry_count += 1
+                
+                if retry_count >= max_retries:
+                    print(f"⚠️ Avviso: la riproduzione potrebbe aver avuto problemi di latenza")
+                
+                # 5. Aspetta che finisca con controllo più robusto
                 while pygame.mixer.music.get_busy():
                     time.sleep(0.1)
                 
-                # Pulisci file temporaneo
+                # 6. Attendi un momento finale per essere sicuri (evita troncamento finale)
+                time.sleep(0.05)
+                
+                # 7. Pulisci file temporaneo
                 try:
                     os.unlink(audio_file)
                 except:
@@ -332,15 +356,34 @@ class IsabellaVoiceAssistant:
                 audio_file = await self._generate_speech_async(text)
                 
                 if audio_file:
-                    # Riproduci con pygame e aspetta
+                    # SOLUZIONE TAGLIO INIZIO MESSAGGIO:
+                    # 1. Pre-carica il file audio
                     pygame.mixer.music.load(audio_file)
+                    
+                    # 2. Buffer di attesa per latenza iniziale
+                    await asyncio.sleep(0.1)
+                    
+                    # 3. Riproduci con pygame e aspetta
                     pygame.mixer.music.play()
                     
-                    # Aspetta che finisca
+                    # 4. Verifica che la riproduzione sia iniziata
+                    retry_count = 0
+                    max_retries = 5
+                    while not pygame.mixer.music.get_busy() and retry_count < max_retries:
+                        await asyncio.sleep(0.05)
+                        retry_count += 1
+                    
+                    if retry_count >= max_retries:
+                        print(f"⚠️ Avviso: la riproduzione potrebbe aver avuto problemi di latenza")
+                    
+                    # 5. Aspetta che finisca con controllo robusto
                     while pygame.mixer.music.get_busy():
                         await asyncio.sleep(0.1)
                     
-                    # Pulisci file temporaneo
+                    # 6. Buffer finale per evitare troncamento
+                    await asyncio.sleep(0.05)
+                    
+                    # 7. Pulisci file temporaneo
                     try:
                         os.unlink(audio_file)
                     except:

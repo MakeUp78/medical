@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Clear Cache - Kimerika</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+</head>
+
+<body style="font-family: Arial; padding: 50px; background: #1a1a2e; color: #fff;">
+    <h1>✅ Cache Cleared</h1>
+    <p>La cache del browser è stata forzata al refresh.</p>
+    <h2>Istruzioni:</h2>
+    <ol>
+        <li>Premi <strong>CTRL + SHIFT + R</strong> (o CMD + SHIFT + R su Mac)</li>
+        <li>Oppure apri DevTools (F12) e fai click destro sul pulsante reload → "Svuota cache e ricarica di nuovo"</li>
+        <li><a href="/" style="color: #00d4ff;">Torna all'applicazione</a></li>
+    </ol>
+
+    <h2>✅ Modifiche Applicate:</h2>
+    <ul>
+        <li>✅ Ordine poligono sinistro corretto: LA → LC → LB → LC1 → LA0</li>
+        <li>✅ Ordine poligono destro corretto: RA → RC → RB → RC1 → RA0</li>
+        <li>✅ Poligoni disegnati SOLO con 5 punti anatomici</li>
+        <li>✅ Slider dinamici adattati allo zoom</li>
+        <li>✅ Contagocce applica automaticamente i suggerimenti e avvia il rilevamento</li>
+    </ul>
+
+    <h2>🔧 Server Status:</h2>
+    <p>Server API riavviato alle
+        <script>document.write(new Date().toLocaleString());</script>
+    </p>
+
+    <script>
+        // Forza il reload dei file JS
+        const timestamp = Date.now();
+        console.log('%c🔄 Cache cleared at: ' + timestamp, 'color: #00ff88; font-size: 16px; font-weight: bold');
+
+        // Test API
+        fetch('/health')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('api-status').innerHTML = '✅ API Online: ' + JSON.stringify(data, null, 2);
+            })
+            .catch(e => {
+                document.getElementById('api-status').innerHTML = '❌ API Offline: ' + e.message;
+            });
+    </script>
+    <pre id="api-status"
+        style="background: #0d0d1a; padding: 15px; border-radius: 5px; margin-top: 20px;">Checking API...</pre>
+</body>
+
+</html>
