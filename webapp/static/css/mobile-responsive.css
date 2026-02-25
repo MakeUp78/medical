@@ -1220,20 +1220,18 @@
     margin-top: 2px;
   }
 
-  /* === CANVAS TOOLBAR: indicatore scroll laterale === */
-  .canvas-toolbar {
-    position: relative;
-  }
-
-  .canvas-toolbar::after {
+  /* === CANVAS TOOLBAR: indicatore scroll laterale (sul container, non sulla toolbar) === */
+  /* Il ::after sul container rimane fisso sul bordo visivo, non scrolla con i pulsanti */
+  .canvas-container::after {
     content: '';
     position: absolute;
     right: 0;
     top: 0;
-    bottom: 0;
-    width: 32px;
+    height: var(--mobile-toolbar-height);
+    width: 40px;
     background: linear-gradient(to right, transparent, rgba(22, 22, 34, 0.95));
     pointer-events: none;
+    z-index: 10;
   }
 
   /* === SEZIONE DATI DESTRA: testo cards e etichette === */
