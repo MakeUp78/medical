@@ -1756,6 +1756,20 @@ body {
   z-index: 10000;
   backdrop-filter: blur(4px);
   transition: background 0.2s;
+  /* Safe area iOS per il notch/Dynamic Island */
+  top: calc(18px + env(safe-area-inset-top, 0px));
+  right: calc(22px + env(safe-area-inset-right, 0px));
+}
+
+@media (max-width: 768px) {
+  #webcam-fullscreen-overlay #wfs-stop-btn {
+    min-height: 52px;
+    min-width: 140px;
+    font-size: 16px;
+    padding: 14px 24px;
+    border-radius: 12px;
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
 #webcam-fullscreen-overlay #wfs-stop-btn:hover {
@@ -1771,4 +1785,16 @@ body {
   font-size: 12px;
   pointer-events: none;
   white-space: nowrap;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (max-width: 768px) {
+  #webcam-fullscreen-overlay #wfs-hint {
+    font-size: 13px;
+    white-space: normal;
+    text-align: center;
+    left: 16px;
+    right: 16px;
+    transform: none;
+  }
 }

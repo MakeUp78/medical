@@ -2003,9 +2003,13 @@ function startRealTimeFaceDetection(video) {
 }
 
 async function startWebcam() {
-  // Hard refresh se non c'è iPhone connesso (webcam locale richiede pagina pulita)
-  // Se iPhone è connesso, procede direttamente senza refresh
-  if (!window.isIPhoneStreamActive && !sessionStorage.getItem('webcamRefreshDone')) {
+  const _onMobile = window.innerWidth <= 768;
+
+  // Hard refresh solo su DESKTOP per garantire stato pulito.
+  // Su mobile il reload rompe il contesto del gesto utente: iOS Safari richiede
+  // che getUserMedia() sia chiamata nella stessa call-stack del tap dell'utente.
+  // Su mobile eseguiamo un reset inline e procediamo direttamente.
+  if (!_onMobile && !window.isIPhoneStreamActive && !sessionStorage.getItem('webcamRefreshDone')) {
     sessionStorage.setItem('webcamRefreshDone', 'true');
     hardRefreshForNewSession('webcam');
     return;
@@ -2023,7 +2027,7 @@ async function startWebcam() {
     if (typeof currentBestFrames !== 'undefined') currentBestFrames = [];
     if (window.currentBestFrames) window.currentBestFrames = [];
   } else {
-    // Webcam PC: reset completo
+    // Desktop (post-refresh) + Mobile: reset completo inline
     resetForNewAnalysis();
   }
 
@@ -2088,17 +2092,27 @@ async function startWebcamDirect() {
     // Riconnetti WebSocket DOPO il reset
     await connectWebcamWebSocket();
 
+    // Constraints video adattivi per dispositivo:
+    // - Mobile: no min (evita OverconstrainedError su camera portrait iOS/Android)
+    // - Desktop: massima risoluzione disponibile
+    const _isMobileDevice = window.innerWidth <= 768;
+    let videoConstraints;
+    if (_isMobileDevice) {
+      videoConstraints = {
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        facingMode: 'user',  // fotocamera frontale per analisi facciale
+      };
+    } else {
+      videoConstraints = {
+        width: { ideal: 3024, min: 640 },
+        height: { ideal: 4032, min: 480 },
+        facingMode: 'user',
+        aspectRatio: { ideal: 0.75 }  // portrait 3:4 come successo.jpg
+      };
+    }
+
     updateStatus('Avvio webcam...');
-
-    // Configura constraints video - massima risoluzione disponibile (target: qualità simile a successo.jpg 3024x4032)
-    let videoConstraints = {
-      width: { ideal: 3024, min: 640 },
-      height: { ideal: 4032, min: 480 },
-      facingMode: 'user',
-      aspectRatio: { ideal: 0.75 } // portrait 3:4 come successo.jpg
-    };
-
-    updateStatus('Avvio webcam integrata...');
 
     // Avvia stream webcam
     webcamStream = await navigator.mediaDevices.getUserMedia({
@@ -2121,8 +2135,15 @@ async function startWebcamDirect() {
     const canvas = document.getElementById('main-canvas');
     canvas.style.display = 'block';
 
-    // Apri automaticamente la sezione anteprima webcam
-    openWebcamSection();
+    // Su mobile: chiudi tutti i pannelli e porta al canvas prima di aprire fullscreen
+    if (window.innerWidth <= 768 && typeof closeAllMobilePanels === 'function') {
+      closeAllMobilePanels();
+    }
+
+    // Apri sezione anteprima webcam (solo desktop: su mobile è nella sidebar nascosta)
+    if (window.innerWidth > 768) {
+      openWebcamSection();
+    }
     showWebcamPreview(video);
     startLivePreview(video);
 
@@ -2600,15 +2621,15 @@ function drawIdealFaceSilhouette(ctx, W, H, score) {
   const lw = Math.max(1.5, W * 0.003);
 
   // ── Feature positions ──────────────────────────────────────────────────────
-  const browY = fy(0.38);
-  const eyeY = fy(0.46);
+  const browY = fy(0.44);
+  const eyeY = fy(0.52);
   const eyeOff = rx * 0.38;
   const eyeHW = rx * 0.22;
   const eyeH = ry * 0.060;
-  const noseTY = fy(0.55);
-  const noseBY = fy(0.67);
+  const noseTY = fy(0.61);
+  const noseBY = fy(0.73);
   const noseW = rx * 0.13;
-  const mouthY = fy(0.80);
+  const mouthY = fy(0.86);
   const mouthHW = rx * 0.29;
   const browHW = rx * 0.27;
   const browH = ry * 0.018;

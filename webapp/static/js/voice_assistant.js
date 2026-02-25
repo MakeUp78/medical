@@ -56,12 +56,56 @@ class VoiceAssistant {
     if (this.audioUnlocked) return;
     this.audioUnlocked = true;
 
-    // Play silenzioso per sbloccare il contesto audio del browser
+    // Sblocca AudioContext (necessario su iOS 13+ per rilascio vincolo autoplay)
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        ctx.resume().catch(() => { });
+      }
+    } catch (_) { }
+
+    // Strategia mobile: se c'è già audio in coda (es. benvenuto scaricato),
+    // reproducilo DIRETTAMENTE nel contesto del gesto utente (non in .then async)
+    // così iOS Safari non lo blocca come NotAllowedError.
+    if (this.pendingQueue.length > 0) {
+      const item = this.pendingQueue.shift();
+      if (item.text) console.log(`🔊 (unlock diretto) ${item.text}`);
+      this.audioPlayer.src = item.src;
+      this.audioPlayer.load(); // Obbligatorio su iOS dopo cambio src
+      this.audioPlayer.play().then(() => {
+        console.log('🔊 Audio sbloccato + primo elemento riprodotto');
+        // Aspetta la fine e poi svuota la coda rimanente
+        this.audioPlayer.onended = () => {
+          this.audioPlayer.onended = null;
+          this._flushQueue();
+        };
+        setTimeout(() => {
+          if (this.audioPlayer.onended) {
+            this.audioPlayer.onended = null;
+            this._flushQueue();
+          }
+        }, 15000); // safety timeout
+      }).catch((e) => {
+        if (e.name === 'NotAllowedError') {
+          // Rimetti in coda e riprova al prossimo gesto
+          this.pendingQueue.unshift(item);
+          this.audioUnlocked = false;
+          this._registerUnlockListeners();
+        } else {
+          console.warn('Errore unlock diretto:', e);
+          this._flushQueue();
+        }
+      });
+      return;
+    }
+
+    // Nessun audio in coda: play silenzioso per preparare l'elemento audio
     const silentSrc = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
     this.audioPlayer.src = silentSrc;
+    this.audioPlayer.load();
     this.audioPlayer.play().then(() => {
-      console.log('🔊 Audio sbloccato - riproduco coda in attesa');
-      this._flushQueue();
+      console.log('🔊 Audio sbloccato (silent) - pronto per coda futura');
     }).catch(() => {
       // Non è ancora possibile sbloccare — ci riprova al prossimo gesto
       this.audioUnlocked = false;
@@ -79,8 +123,10 @@ class VoiceAssistant {
       const item = this.pendingQueue.shift();
       if (item.text) console.log(`🔊 (coda) ${item.text}`);
       this.audioPlayer.src = item.src;
+      this.audioPlayer.load(); // iOS richiede .load() dopo cambio src
       try {
         await this.audioPlayer.play();
+        this._hideMobileWelcomeBadge(); // Audio partito: nascondi badge mobile
         // Aspetta fine riproduzione prima del prossimo
         await new Promise(res => {
           this.audioPlayer.onended = res;
@@ -617,6 +663,76 @@ class VoiceAssistant {
   }
 
   /**
+   * Mostra un badge mobile "Tappa per ascoltare il benvenuto"
+   * che scompare quando l'audio viene riprodotto o dopo 30 secondi.
+   */
+  _showMobileWelcomeBadge(replayFn) {
+    // Solo su mobile (≤768px)
+    if (window.innerWidth > 768) return;
+    // Rimuovi badge precedenti
+    const existing = document.getElementById('mobile-welcome-badge');
+    if (existing) existing.remove();
+
+    const badge = document.createElement('button');
+    badge.id = 'mobile-welcome-badge';
+    badge.innerHTML = '🔊 Tappa per il benvenuto';
+    badge.setAttribute('aria-label', 'Riproduci messaggio di benvenuto');
+    Object.assign(badge.style, {
+      position: 'fixed',
+      bottom: 'calc(68px + env(safe-area-inset-bottom, 0px))',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      zIndex: '9999',
+      background: 'linear-gradient(135deg, #667eea, #764ba2)',
+      color: 'white',
+      border: 'none',
+      borderRadius: '24px',
+      padding: '12px 24px',
+      fontSize: '15px',
+      fontWeight: '600',
+      boxShadow: '0 4px 20px rgba(102,126,234,0.5)',
+      cursor: 'pointer',
+      animation: 'mwbPulse 2s ease-in-out infinite',
+      whiteSpace: 'nowrap',
+      webkitTapHighlightColor: 'transparent',
+    });
+
+    // Aggiungi keyframe se non esiste
+    if (!document.getElementById('mwb-style')) {
+      const style = document.createElement('style');
+      style.id = 'mwb-style';
+      style.textContent = `@keyframes mwbPulse {
+        0%,100%{box-shadow:0 4px 20px rgba(102,126,234,0.5);}
+        50%{box-shadow:0 4px 28px rgba(102,126,234,0.9), 0 0 0 6px rgba(102,126,234,0.2);}
+      }`;
+      document.head.appendChild(style);
+    }
+
+    const dismiss = () => {
+      badge.remove();
+      clearTimeout(autoHide);
+    };
+    badge.addEventListener('click', () => {
+      dismiss();
+      replayFn();
+    });
+    const autoHide = setTimeout(dismiss, 30000);
+
+    // Esporta dismiss per poterlo chiamare quando l'audio parte
+    badge._dismiss = dismiss;
+    document.body.appendChild(badge);
+    console.log('📱 Mobile welcome badge mostrato');
+  }
+
+  /**
+   * Nasconde il badge di benvenuto mobile (chiamato quando l'audio inizia)
+   */
+  _hideMobileWelcomeBadge() {
+    const badge = document.getElementById('mobile-welcome-badge');
+    if (badge && badge._dismiss) badge._dismiss();
+  }
+
+  /**
    * Fa parlare Isabella con messaggio di benvenuto personalizzato
    */
   async speakWelcome(userName) {
@@ -624,9 +740,26 @@ class VoiceAssistant {
     // Usa cache se disponibile (pre-fetch in background aveva già scaricato l'audio)
     const key = '__welcome__' + userName;
     const cached = this._audioCache.get(key);
+
+    const doPlay = async (src, text) => {
+      console.log(`🔊 Kimerika: "${text}"`);
+      await this._playAudio(src, `Kimerika: ${text}`);
+      // Nascondi il badge appena l'audio parte
+      this._hideMobileWelcomeBadge();
+    };
+
+    // Mostra badge mobile di fallback dopo 3s se l'audio non parte ancora
+    let badgeShown = false;
+    const badgeTimer = setTimeout(() => {
+      if (!this.audioUnlocked || this.pendingQueue.length > 0) {
+        badgeShown = true;
+        this._showMobileWelcomeBadge(() => this.speakWelcome(userName));
+      }
+    }, 3000);
+
     if (cached) {
-      console.log(`🔊 Kimerika (cache): "${cached.text}"`);
-      await this._playAudio(cached.src, `Kimerika: ${cached.text}`);
+      clearTimeout(badgeTimer);
+      await doPlay(cached.src, cached.text);
       return;
     }
     try {
@@ -637,11 +770,14 @@ class VoiceAssistant {
       });
       const data = await response.json();
       if (data.success && data.audio) {
+        clearTimeout(badgeTimer);
         this._audioCache.set(key, { src: data.audio, text: data.text });
-        console.log(`🔊 Kimerika: "${data.text}"`);
-        await this._playAudio(data.audio, `Kimerika: ${data.text}`);
+        await doPlay(data.audio, data.text);
+      } else {
+        clearTimeout(badgeTimer);
       }
     } catch (error) {
+      clearTimeout(badgeTimer);
       console.error('Errore TTS benvenuto:', error);
     }
   }

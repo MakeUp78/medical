@@ -10,10 +10,10 @@
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>🏥 Facial Analysis Application v2.0 - Web Edition</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <link rel="stylesheet" href="static/css/main.css?v=20260129b">
+    <link rel="stylesheet" href="static/css/main.css?v=20260225-mobilecam">
     <link rel="stylesheet" href="static/css/components.css?v=20260129b">
     <link rel="stylesheet" href="static/css/tables.css?v=20260129b">
-    <link rel="stylesheet" href="static/css/mobile-responsive.css?v=20260129b">
+    <link rel="stylesheet" href="static/css/mobile-responsive.css?v=20260226">
 </head>
 
 <body>
@@ -69,6 +69,80 @@
                             <button class="btn btn-info" onclick="loadVideo()">🎥 Carica Video</button>
                             <button class="btn btn-success" onclick="startWebcam()">📹 Avvia Webcam</button>
                             <button class="btn btn-warning" onclick="stopWebcam()">⏹️ Stop Webcam</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sezione IMPOSTAZIONI -->
+                <div class="section" data-expanded="false" id="settings-section">
+                    <div class="section-header" onclick="toggleSection(this)">
+                        <button class="toggle-btn">⚙️ IMPOSTAZIONI</button>
+                        <span class="icon">►</span>
+                    </div>
+                    <div class="section-content" style="display: none;">
+                        <div
+                            style="background: #ffffff; border-radius: 10px; padding: 1rem; border: 1px solid #e2e8f0;">
+
+                            <!-- Titolo -->
+                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                                <span style="font-size: 1.3em;">📱</span>
+                                <div>
+                                    <div style="font-weight: 700; color: #1a202c; font-size: 0.95em;">Camera iPhone via
+                                        Browser</div>
+                                    <div style="font-size: 0.8em; color: #718096;">Nessuna app da installare</div>
+                                </div>
+                            </div>
+
+                            <!-- QR Code -->
+                            <div id="iphone-qr-container"
+                                style="text-align: center; padding: 1rem; background: #f7fafc; border-radius: 8px; margin-bottom: 0.75rem; border: 1px solid #e2e8f0;">
+                                <div id="qr-code-wrapper"
+                                    style="background: white; display: inline-block; padding: 10px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
+                                    <img id="qr-code-img" src="/api/qrcode.png" alt="QR Code"
+                                        style="width: 160px; height: 160px; display: block;">
+                                </div>
+                                <p style="margin: 0.6rem 0 0.4rem; font-size: 0.82em; color: #4a5568;">Scansiona con la
+                                    fotocamera iPhone</p>
+                                <button onclick="refreshQRCode()" class="btn btn-secondary"
+                                    style="font-size: 0.8em; padding: 0.3rem 0.8rem;">↻ Aggiorna QR</button>
+                            </div>
+
+                            <!-- Stato connessione -->
+                            <div id="iphone-status-container"
+                                style="display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.8rem; background: #fffbeb; border-radius: 6px; border-left: 3px solid #f6ad55; margin-bottom: 0.75rem;">
+                                <span id="iphone-status-icon" style="font-size: 1.1em;">⏳</span>
+                                <div>
+                                    <div id="iphone-status-text"
+                                        style="font-size: 0.83em; font-weight: 600; color: #744210;">Nessun iPhone
+                                        connesso</div>
+                                    <div id="iphone-device-info"
+                                        style="display: none; font-size: 0.78em; color: #975a16;">ID: <span
+                                            id="iphone-device-id">--</span></div>
+                                </div>
+                            </div>
+
+                            <!-- Passi rapidi -->
+                            <div
+                                style="background: #f0fff4; border-radius: 6px; padding: 0.7rem 0.8rem; margin-bottom: 0.75rem; border: 1px solid #c6f6d5;">
+                                <div
+                                    style="font-size: 0.82em; font-weight: 700; color: #276749; margin-bottom: 0.4rem;">
+                                    Come funziona</div>
+                                <ol
+                                    style="margin: 0 0 0 1.1rem; padding: 0; font-size: 0.81em; color: #2f855a; line-height: 1.7;">
+                                    <li>Scansiona il QR con iPhone</li>
+                                    <li>Apri il link dalla notifica</li>
+                                    <li>Consenti accesso fotocamera</li>
+                                    <li>Lo streaming parte in automatico</li>
+                                </ol>
+                            </div>
+
+                            <!-- Nota WiFi -->
+                            <div
+                                style="display: flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.75rem; background: #ebf8ff; border-radius: 6px; border-left: 3px solid #63b3ed;">
+                                <span style="font-size: 1em;">📶</span>
+                                <span style="font-size: 0.8em; color: #2c5282;"><strong>Requisito:</strong> iPhone e PC
+                                    sulla stessa rete WiFi</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -448,94 +522,6 @@
                     </div>
                 </div>
 
-                <!-- Sezione IMPOSTAZIONI -->
-                <div class="section" data-expanded="false" id="settings-section">
-                    <div class="section-header" onclick="toggleSection(this)">
-                        <button class="toggle-btn">⚙️ IMPOSTAZIONI</button>
-                        <span class="icon">►</span>
-                    </div>
-                    <div class="section-content" style="display: none;">
-                        <!-- Sistema Camera iPhone via Browser -->
-                        <div class="settings-info">
-                            <h4 style="margin-top: 0; color: #333;">Camera iPhone via Browser</h4>
-                            <p style="font-size: 0.9em; color: #555; margin-bottom: 1rem;">
-                                Usa il tuo iPhone come webcam professionale senza installare app.
-                                Scansiona il QR code e inizia subito.
-                            </p>
-
-                            <!-- QR Code Container -->
-                            <div id="iphone-qr-container"
-                                style="text-align: center; padding: 1.5rem; background: #f8f9fa; border-radius: 12px; margin-bottom: 1rem;">
-                                <div id="qr-code-wrapper"
-                                    style="background: white; display: inline-block; padding: 15px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                                    <img id="qr-code-img" src="/api/qrcode.png" alt="QR Code per Camera iPhone"
-                                        style="width: 180px; height: 180px; display: block;">
-                                </div>
-                                <p style="margin-top: 1rem; font-size: 0.9em; color: #666;">
-                                    Scansiona con la fotocamera del tuo iPhone
-                                </p>
-                                <button onclick="refreshQRCode()" class="btn btn-secondary"
-                                    style="margin-top: 0.5rem; font-size: 0.85em;">
-                                    Aggiorna QR Code
-                                </button>
-                            </div>
-
-                            <!-- Stato Connessione iPhone -->
-                            <div id="iphone-status-container"
-                                style="padding: 1rem; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 1rem;">
-                                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                    <span id="iphone-status-icon" style="font-size: 1.2em;">In attesa</span>
-                                    <span id="iphone-status-text" style="font-size: 0.9em; color: #856404;">Nessun
-                                        iPhone connesso</span>
-                                </div>
-                                <div id="iphone-device-info"
-                                    style="display: none; margin-top: 0.5rem; font-size: 0.85em; color: #666;">
-                                    Device ID: <span id="iphone-device-id">--</span>
-                                </div>
-                            </div>
-
-                            <!-- Istruzioni Rapide -->
-                            <details style="margin-bottom: 1rem;">
-                                <summary
-                                    style="cursor: pointer; font-weight: bold; padding: 0.5rem; background: #667eea; color: white; border-radius: 4px;">
-                                    Come Funziona
-                                </summary>
-                                <div
-                                    style="padding: 1rem; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; margin-top: 0.5rem; font-size: 0.9em; line-height: 1.6;">
-                                    <ol style="margin-left: 1.2rem; color: #444;">
-                                        <li><strong>Scansiona il QR</strong> con la fotocamera del tuo iPhone</li>
-                                        <li><strong>Apri il link</strong> che appare nella notifica</li>
-                                        <li><strong>Consenti l'accesso</strong> alla fotocamera quando richiesto</li>
-                                        <li><strong>Lo streaming inizia</strong> automaticamente</li>
-                                    </ol>
-
-                                    <div
-                                        style="margin-top: 1rem; padding: 0.8rem; background: #d1ecf1; border-radius: 4px; border-left: 4px solid #0c5460; color: #0c5460;">
-                                        <strong>Suggerimento:</strong> Dopo la prima connessione, tocca "Aggiungi a
-                                        Home" per creare un'icona di accesso rapido. Non dovrai piu' scansionare il QR!
-                                    </div>
-
-                                    <div style="margin-top: 1rem;">
-                                        <strong>Vantaggi:</strong>
-                                        <ul style="margin-left: 1.2rem; margin-top: 0.5rem; color: #444;">
-                                            <li>Nessuna app da installare</li>
-                                            <li>Funziona su iPhone e iPad</li>
-                                            <li>Qualita' video professionale</li>
-                                            <li>Configurazione salvata automaticamente</li>
-                                            <li>Accesso rapido dalla home screen</li>
-                                        </ul>
-                                    </div>
-                                </div>
-                            </details>
-
-                            <!-- Note WiFi -->
-                            <div
-                                style="padding: 0.8rem; background: #fff3cd; border-radius: 4px; border-left: 4px solid #ffc107; font-size: 0.85em; color: #856404;">
-                                <strong>Requisito:</strong> iPhone e PC devono essere sulla stessa rete WiFi.
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
             </div>
         </div>
@@ -860,19 +846,19 @@
 
     <!-- Bottom Navigation Mobile -->
     <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
-        <button class="mobile-nav-item" data-panel="camera" onclick="openMobileCameraActions()">
+        <button class="mobile-nav-item" data-panel="home" onclick="openMobileHomePanel()">
+            <span class="mobile-nav-icon">🏠</span>
+            <span class="mobile-nav-label">Home</span>
+        </button>
+        <button class="mobile-nav-item" data-panel="differenze" onclick="toggleGreenDots(); focusCanvas();">
+            <span class="mobile-nav-icon">🔍</span>
+            <span class="mobile-nav-label">Differenze</span>
+        </button>
+        <button class="mobile-nav-item" data-panel="camera" onclick="startWebcam();">
             <span class="mobile-nav-icon">📷</span>
             <span class="mobile-nav-label">Camera</span>
         </button>
-        <button class="mobile-nav-item" data-panel="left" onclick="openMobilePanel('left')">
-            <span class="mobile-nav-icon">🔬</span>
-            <span class="mobile-nav-label">Analisi</span>
-        </button>
-        <button class="mobile-nav-item active" data-panel="canvas" onclick="focusCanvas()">
-            <span class="mobile-nav-icon">🖼️</span>
-            <span class="mobile-nav-label">Canvas</span>
-        </button>
-        <button class="mobile-nav-item" data-panel="right" onclick="openMobilePanel('right')">
+        <button class="mobile-nav-item" data-panel="dati" onclick="openMobileDatiPanel();">
             <span class="mobile-nav-icon">📊</span>
             <span class="mobile-nav-label">Dati</span>
         </button>
@@ -909,31 +895,31 @@
         </div>
     </div>
 
-    <!-- Quick Actions Panel per Tools (Mobile) -->
-    <div class="mobile-quick-panel" id="mobile-tools-panel">
-        <div class="mobile-quick-panel-content">
-            <div class="mobile-quick-panel-header">
-                <h3>🛠️ Strumenti Rapidi</h3>
-                <button class="mobile-panel-close" onclick="closeMobileQuickPanel('tools')">&times;</button>
-            </div>
-            <div class="mobile-quick-panel-buttons">
-                <button class="btn btn-analysis btn-mobile-action" id="mobile-axis-btn"
-                    onclick="toggleAxis(); updateMobileToolsState();">
-                    📏 Asse Simmetria
-                </button>
-                <button class="btn btn-analysis btn-mobile-action" id="mobile-landmarks-btn"
-                    onclick="toggleLandmarks(); updateMobileToolsState();">
-                    🎯 Landmarks
-                </button>
-                <button class="btn btn-analysis btn-mobile-action" id="mobile-measure-btn"
-                    onclick="toggleMeasureMode(); updateMobileToolsState();">
-                    📐 Misura Manuale
-                </button>
-                <button class="btn btn-analysis btn-mobile-action btn-analysis-complete"
-                    onclick="performCompleteAnalysis(event); closeMobileQuickPanel('tools');">
-                    🧬 Analisi Completa
-                </button>
-            </div>
+    <!-- Tools Strip Panel (Mobile) - barra orizzontale scrollabile -->
+    <div class="mobile-quick-panel mobile-tools-strip-panel" id="mobile-tools-panel">
+        <div class="mobile-tools-strip" id="mobile-tools-strip">
+            <!-- Toggle tools -->
+            <button class="btn-tool-strip" id="mobile-strip-axis-btn"
+                onclick="toggleAxis(); updateMobileToolsState();">📏 Asse</button>
+            <button class="btn-tool-strip" id="mobile-strip-landmarks-btn"
+                onclick="toggleLandmarks(); updateMobileToolsState();">🎯 Landmarks</button>
+            <button class="btn-tool-strip" id="mobile-strip-measure-btn"
+                onclick="toggleMeasureMode(); updateMobileToolsState();">📐 Misura</button>
+            <!-- Misurazioni -->
+            <button class="btn-tool-strip" onclick="measureFaceWidth(event);">📐 L.Viso</button>
+            <button class="btn-tool-strip" onclick="measureFaceHeight(event);">📏 H.Viso</button>
+            <button class="btn-tool-strip" onclick="measureEyeDistance(event);">👁️ Occhi</button>
+            <button class="btn-tool-strip" onclick="measureNoseWidth(event);">👃 L.Naso</button>
+            <button class="btn-tool-strip" onclick="measureNoseHeight(event);">📏 H.Naso</button>
+            <button class="btn-tool-strip" onclick="measureMouthWidth(event);">👄 L.Bocca</button>
+            <button class="btn-tool-strip" onclick="measureEyebrowAreas(event);">✂️ Sopracciglia</button>
+            <button class="btn-tool-strip" onclick="measureEyeAreas(event);">👁️ Aree Occhi</button>
+            <button class="btn-tool-strip" onclick="measureForeheadWidth(event);">🤔 L.Fronte</button>
+            <button class="btn-tool-strip" onclick="measureFaceProportions(event);">📏 Proporzioni</button>
+            <button class="btn-tool-strip" onclick="measureFacialSymmetry(event);">⚖️ Simmetria</button>
+            <button class="btn-tool-strip" onclick="estimateAge(event);">🎂 Età</button>
+            <button class="btn-tool-strip btn-tool-strip-complete" onclick="performCompleteAnalysis(event);">🧬 Analisi
+                Completa</button>
         </div>
     </div>
 
@@ -1053,8 +1039,72 @@
 
             window.openMobileToolsPanel = function () {
                 if (!isMobile()) return;
-                openMobileQuickPanel('tools');
-                updateMobileToolsState();
+                const panel = document.getElementById('mobile-tools-panel');
+                if (!panel) return;
+
+                const isOpen = panel.classList.contains('open');
+
+                // Chiudi pannelli laterali se aperti (ma NON attivare overlay)
+                if (currentOpenPanel) {
+                    const sidePanel = document.getElementById(`${currentOpenPanel}-sidebar`);
+                    if (sidePanel) sidePanel.classList.remove('mobile-panel-open');
+                    const overlay = document.getElementById('mobile-overlay');
+                    if (overlay) overlay.classList.remove('active');
+                    currentOpenPanel = null;
+                }
+                // Chiudi altri quick panels (non tools)
+                if (currentOpenQuickPanel && currentOpenQuickPanel !== 'tools') {
+                    const oldPanel = document.getElementById(`mobile-${currentOpenQuickPanel}-panel`);
+                    if (oldPanel) oldPanel.classList.remove('open');
+                    currentOpenQuickPanel = null;
+                }
+
+                if (isOpen) {
+                    // Toggle OFF
+                    panel.classList.remove('open');
+                    currentOpenQuickPanel = null;
+                    updateNavState('canvas');
+                    document.body.style.overflow = '';
+                } else {
+                    // Toggle ON - NO overlay, NO overflow block
+                    panel.classList.add('open');
+                    currentOpenQuickPanel = 'tools';
+                    updateNavState('tools');
+                    updateMobileToolsState();
+                    // Nessun overlay, nessun overflow:hidden
+                }
+            };
+
+            // ========================================
+            // APRI PANNELLO DATI ANALISI (mobile)
+            // ========================================
+            window.openMobileDatiPanel = function () {
+                if (!isMobile()) return;
+
+                // Chiudi tools strip se aperto
+                const toolsPanel = document.getElementById('mobile-tools-panel');
+                if (toolsPanel) toolsPanel.classList.remove('open');
+                if (currentOpenQuickPanel === 'tools') currentOpenQuickPanel = null;
+
+                openMobilePanel('right');
+
+                // Auto-espandi DATI ANALISI, collassa le altre sezioni
+                setTimeout(function () {
+                    const rightSidebar = document.getElementById('right-sidebar');
+                    if (!rightSidebar) return;
+                    const sections = rightSidebar.querySelectorAll(':scope > .section');
+                    sections.forEach(function (sec) {
+                        const btn = sec.querySelector('.toggle-btn');
+                        const content = sec.querySelector('.section-content');
+                        const icon = sec.querySelector('.icon');
+                        const isDati = btn && (btn.textContent.includes('DATI') || btn.textContent.includes('Dati'));
+                        sec.dataset.expanded = isDati ? 'true' : 'false';
+                        if (content) content.style.display = isDati ? 'block' : 'none';
+                        if (icon) icon.textContent = isDati ? '\u25bc' : '\u25ba';
+                    });
+                }, 80);
+
+                updateNavState('dati');
             };
 
             function openMobileQuickPanel(panelId) {
@@ -1106,19 +1156,22 @@
                 const landmarksBtn = document.getElementById('landmarks-btn');
                 const measureBtn = document.getElementById('measure-btn');
 
+                // Sync strip buttons (nuova toolbar)
+                const stripAxis = document.getElementById('mobile-strip-axis-btn');
+                const stripLandmarks = document.getElementById('mobile-strip-landmarks-btn');
+                const stripMeasure = document.getElementById('mobile-strip-measure-btn');
+
+                if (stripAxis && axisBtn) stripAxis.classList.toggle('active', axisBtn.classList.contains('active'));
+                if (stripLandmarks && landmarksBtn) stripLandmarks.classList.toggle('active', landmarksBtn.classList.contains('active'));
+                if (stripMeasure && measureBtn) stripMeasure.classList.toggle('active', measureBtn.classList.contains('active'));
+
+                // Compatibilità legacy (vecchi ID rimossi, ma defensivo)
                 const mobileAxisBtn = document.getElementById('mobile-axis-btn');
                 const mobileLandmarksBtn = document.getElementById('mobile-landmarks-btn');
                 const mobileMeasureBtn = document.getElementById('mobile-measure-btn');
-
-                if (mobileAxisBtn && axisBtn) {
-                    mobileAxisBtn.classList.toggle('active', axisBtn.classList.contains('active'));
-                }
-                if (mobileLandmarksBtn && landmarksBtn) {
-                    mobileLandmarksBtn.classList.toggle('active', landmarksBtn.classList.contains('active'));
-                }
-                if (mobileMeasureBtn && measureBtn) {
-                    mobileMeasureBtn.classList.toggle('active', measureBtn.classList.contains('active'));
-                }
+                if (mobileAxisBtn && axisBtn) mobileAxisBtn.classList.toggle('active', axisBtn.classList.contains('active'));
+                if (mobileLandmarksBtn && landmarksBtn) mobileLandmarksBtn.classList.toggle('active', landmarksBtn.classList.contains('active'));
+                if (mobileMeasureBtn && measureBtn) mobileMeasureBtn.classList.toggle('active', measureBtn.classList.contains('active'));
             };
 
             // ========================================
@@ -1185,11 +1238,134 @@
             // INIZIALIZZAZIONE
             // ========================================
             document.addEventListener('DOMContentLoaded', function () {
-                // Nascondi elementi desktop su mobile se necessario
-                if (isMobile()) {
-                    console.log('📱 Mobile UI initialized');
-                }
+                if (!isMobile()) return;
+                console.log('📱 Mobile UI initialized');
+
+                // Apri automaticamente il pannello Home appena il login è completato.
+                // Usiamo MutationObserver su #user-name: quando cambia da "Caricamento..."
+                // a un nome reale, significa che checkAuthentication() è riuscita.
+                var userNameEl = document.getElementById('user-name');
+                if (!userNameEl) return;
+
+                var _homeOpened = false;
+                var _observer = new MutationObserver(function () {
+                    var name = userNameEl.textContent.trim();
+                    if (!_homeOpened && name && name !== 'Caricamento...') {
+                        _homeOpened = true;
+                        _observer.disconnect();
+                        // Piccolo delay per dare tempo al DOM di stabilizzarsi
+                        setTimeout(function () {
+                            if (typeof openMobileHomePanel === 'function') {
+                                openMobileHomePanel();
+                            }
+                        }, 200);
+                    }
+                });
+                _observer.observe(userNameEl, { childList: true, characterData: true, subtree: true });
             });
+
+        })();
+    </script>
+
+    <!-- ========================================
+         HOME PANEL MOBILE
+         Pulsante Home = left-sidebar + ANTEPRIMA/DATI ANALISI + senza IMPOSTAZIONI
+         ======================================== -->
+    <script>
+        (function () {
+            'use strict';
+
+            // Flag: impedisce che le patch di chiusura rimuovano il home-mode
+            // mentre openMobileHomePanel lo sta ancora configurando
+            var _settingUpHome = false;
+
+            function _cleanupHomeMode() {
+                if (_settingUpHome) return;
+                var leftSidebar = document.getElementById('left-sidebar');
+                if (!leftSidebar || leftSidebar.dataset.homeMode !== 'true') return;
+
+                var rightSidebar = document.getElementById('right-sidebar');
+                var panelHeader = leftSidebar.querySelector('.mobile-panel-header h2');
+
+                leftSidebar.dataset.homeMode = '';
+                leftSidebar.classList.remove('mobile-home-mode');
+                if (panelHeader) panelHeader.textContent = 'Controlli';
+
+                // Rimetti le sezioni borrowate nel right-sidebar,
+                // prima del div con le tabelle nascoste
+                var hiddenDiv = rightSidebar.querySelector(':scope > div[style*="display: none"]');
+                var borrowed = leftSidebar.querySelectorAll('.scrollable-controls > .section.mobile-borrowed');
+                borrowed.forEach(function (sec) {
+                    sec.classList.remove('mobile-borrowed');
+                    if (hiddenDiv) {
+                        rightSidebar.insertBefore(sec, hiddenDiv);
+                    } else {
+                        rightSidebar.appendChild(sec);
+                    }
+                });
+            }
+
+            window.openMobileHomePanel = function () {
+                if (window.innerWidth > 768) return;
+
+                var leftSidebar = document.getElementById('left-sidebar');
+                var rightSidebar = document.getElementById('right-sidebar');
+                var panelHeader = leftSidebar.querySelector('.mobile-panel-header h2');
+                var scrollable = leftSidebar.querySelector('.scrollable-controls');
+
+                // Se home-mode era già attivo (riapertura) fai cleanup prima
+                if (leftSidebar.dataset.homeMode === 'true') {
+                    _settingUpHome = true;
+                    _cleanupHomeMode();
+                    _settingUpHome = false;
+                }
+
+                _settingUpHome = true;
+
+                // Attiva home-mode
+                leftSidebar.dataset.homeMode = 'true';
+                leftSidebar.classList.add('mobile-home-mode');
+                if (panelHeader) panelHeader.textContent = 'Home';
+
+                // Sposta ANTEPRIMA e DATI ANALISI dal right-sidebar in fondo al left-sidebar
+                var rightSections = rightSidebar.querySelectorAll(':scope > .section');
+                rightSections.forEach(function (sec) {
+                    sec.classList.add('mobile-borrowed');
+                    scrollable.appendChild(sec);
+                });
+
+                // Apri il pannello sinistro
+                openMobilePanel('left');
+
+                _settingUpHome = false;
+
+                // Forza nav state su 'home' (openMobilePanel lo imposta su 'left')
+                document.querySelectorAll('.mobile-nav-item').forEach(function (item) {
+                    item.classList.toggle('active', item.dataset.panel === 'home');
+                });
+            };
+
+            // ---- Patch funzioni di chiusura ----
+
+            var _origCloseSingle = window.closeMobilePanel;
+            window.closeMobilePanel = function (side) {
+                if (side === 'left') _cleanupHomeMode();
+                if (_origCloseSingle) _origCloseSingle(side);
+            };
+
+            var _origCloseAll = window.closeAllMobilePanels;
+            window.closeAllMobilePanels = function () {
+                _cleanupHomeMode();
+                if (_origCloseAll) _origCloseAll();
+            };
+
+            // Quando il pannello Analisi (left) viene aperto normalmente,
+            // assicurati di uscire dal home-mode prima
+            var _origOpenPanel = window.openMobilePanel;
+            window.openMobilePanel = function (side) {
+                if (side === 'left' && !_settingUpHome) _cleanupHomeMode();
+                if (_origOpenPanel) _origOpenPanel(side);
+            };
 
         })();
     </script>
@@ -1235,7 +1411,7 @@
     <script src="static/js/face-analysis-complete.js"></script>
     <!-- Frame Processor Unificato -->
     <script src="static/js/frame-processor.js"></script>
-    <script src="static/js/main.js?v=20260226-dedup"></script>
+    <script src="static/js/main.js?v=20260225-mobilecam"></script>
 
     <!-- MediaPipe per face detection -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -1248,7 +1424,7 @@
          ======================================== -->
 
     <!-- Voice Assistant Script -->
-    <script src="static/js/voice_assistant.js?v=20260226-dedup"></script>
+    <script src="static/js/voice_assistant.js?v=20260225-mobilewelcome"></script>
 
     <!-- Voice Widget Container (NASCOSTO - ora è nella sidebar) -->
     <div id="voice-widget-container" style="display: none;"></div>
