@@ -536,10 +536,17 @@
                     title="Ingrandisci al click">🔍+ Zoom In</button>
                 <button class="tool-btn" data-tool="zoom-out" onclick="setTool('zoom-out')"
                     title="Rimpicciolisci al click">🔍- Zoom Out</button>
-                <button class="tool-btn" onclick="rotateImageClockwise()" title="Ruota immagine 1° in senso orario">↻
-                    Ruota ⟲</button>
+                <button class="tool-btn" onclick="rotateImage90CounterClockwise()"
+                    title="Ruota immagine 90° in senso antiorario">↺ 90°</button>
                 <button class="tool-btn" onclick="rotateImageCounterClockwise()"
-                    title="Ruota immagine 1° in senso antiorario">↺ Ruota ⟳</button>
+                    title="Ruota immagine 1° in senso antiorario">↺ 1°</button>
+                <button class="tool-btn" onclick="rotateImageClockwise()" title="Ruota immagine 1° in senso orario">↻
+                    1°</button>
+                <button class="tool-btn" onclick="rotateImage90Clockwise()" title="Ruota immagine 90° in senso orario">↻
+                    90°</button>
+                <button class="tool-btn" onclick="autoRotateToVerticalAxis()"
+                    title="Ruota automaticamente l'immagine per allineare l'asse di simmetria in verticale">⬆️ Allinea
+                    Asse</button>
                 <button class="tool-btn" data-tool="line" onclick="setTool('line')" title="Disegna linea">📏
                     Linea</button>
                 <button class="tool-btn" data-tool="couple" onclick="setTool('couple')"
@@ -1402,7 +1409,7 @@
     <script src="static/js/face-detection.js"></script>
     <script src="static/js/measurements.js?v=20260120-0612"></script>
     <script src="static/js/scoring.js"></script>
-    <script src="static/js/canvas.js?v=20260119-2327"></script>
+    <script src="static/js/canvas.js?v=20260225-fix2"></script>
     <!-- Sistema modalità canvas (PAN, ZOOM, SELEZIONE) -->
     <script src="static/js/canvas-modes.js"></script>
     <!-- NUOVO FILE PULITO - Correzione sopracciglia -->
@@ -1411,7 +1418,7 @@
     <script src="static/js/face-analysis-complete.js"></script>
     <!-- Frame Processor Unificato -->
     <script src="static/js/frame-processor.js"></script>
-    <script src="static/js/main.js?v=20260225-mobilecam"></script>
+    <script src="static/js/main.js?v=20260225-fix5"></script>
 
     <!-- MediaPipe per face detection -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>

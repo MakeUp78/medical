@@ -251,37 +251,34 @@ async function detectLandmarksSilent() {
   try {
     console.log('🔍 detectLandmarksSilent: Inizio rilevamento...');
 
-    // Converti immagine in base64 (stessa logica di detectLandmarks)
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-
     let base64Image;
 
-    if (currentImage.getElement) {
+    // Acquisisce SEMPRE l'immagine originale via getElement() a piena risoluzione.
+    // Non si usa mai il canvas renderizzato: i landmark restituiti sarebbero in
+    // coordinate canvas (già ruotate/scalate) e corromperebbero il sistema di
+    // coordinate usato da transformLandmarkCoordinate() e drawSymmetryAxis().
+    if (currentImage && typeof currentImage.getElement === 'function') {
       const fabricElement = currentImage.getElement();
-      canvas.width = fabricElement.width || fabricElement.naturalWidth;
-      canvas.height = fabricElement.height || fabricElement.naturalHeight;
-      ctx.drawImage(fabricElement, 0, 0);
+      if (fabricElement != null) {
+        try {
+          const w = fabricElement.naturalWidth || fabricElement.videoWidth || fabricElement.width;
+          const h = fabricElement.naturalHeight || fabricElement.videoHeight || fabricElement.height;
+          if (w > 0 && h > 0) {
+            const snapEl = document.createElement('canvas');
+            snapEl.width = w;
+            snapEl.height = h;
+            snapEl.getContext('2d').drawImage(fabricElement, 0, 0, w, h);
+            base64Image = snapEl.toDataURL('image/jpeg', 0.98);
+          }
+        } catch (elErr) {
+          console.warn('🔍 detectLandmarksSilent: getElement() drawImage fallito:', elErr.message);
+        }
+      }
+    }
 
-      // Converti direttamente senza elaborazioni aggiuntive
-      base64Image = canvas.toDataURL('image/jpeg', 0.98);
-    } else if (currentImage.width && currentImage.height) {
-      canvas.width = currentImage.width;
-      canvas.height = currentImage.height;
-      ctx.drawImage(currentImage, 0, 0);
-
-      // Converti direttamente senza elaborazioni aggiuntive
-      base64Image = canvas.toDataURL('image/jpeg', 0.98);
-    } else {
-      // Fabric canvas - crea temp canvas, normalizza e comprimi
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = fabricCanvas.width;
-      tempCanvas.height = fabricCanvas.height;
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.drawImage(fabricCanvas.lowerCanvasEl, 0, 0);
-
-      // Converti direttamente senza elaborazioni aggiuntive
-      base64Image = tempCanvas.toDataURL('image/jpeg', 0.98);
+    if (!base64Image) {
+      console.warn('⚠️ detectLandmarksSilent: impossibile acquisire immagine originale, skip');
+      return false;
     }
 
     // Chiama API tramite percorso relativo (nginx proxy)
@@ -296,27 +293,21 @@ async function detectLandmarksSilent() {
     const result = await response.json();
 
     if (result.landmarks && result.landmarks.length > 0) {
-      // Trasforma landmarks (stessa logica)
+      // Coordinate restituite dal backend in pixel immagine originale.
+      // refW/refH corrispondono alle dimensioni della sorgente inviata all'API.
+      const el = currentImage.getElement();
+      const refW = el.naturalWidth || el.videoWidth || el.width || fabricCanvas.getWidth();
+      const refH = el.naturalHeight || el.videoHeight || el.height || fabricCanvas.getHeight();
+
       const firstLandmark = result.landmarks[0];
       const isNormalized = firstLandmark.x <= 1.0 && firstLandmark.y <= 1.0;
 
-      currentLandmarks = result.landmarks.map(lm => {
-        let x = lm.x;
-        let y = lm.y;
-
-        if (isNormalized && currentImage) {
-          if (currentImage.getElement) {
-            const element = currentImage.getElement();
-            x = lm.x * (element.width || element.naturalWidth);
-            y = lm.y * (element.height || element.naturalHeight);
-          } else {
-            x = lm.x * currentImage.width;
-            y = lm.y * currentImage.height;
-          }
-        }
-
-        return { x, y, z: lm.z || 0, visibility: lm.visibility || 1.0 };
-      });
+      currentLandmarks = result.landmarks.map(lm => ({
+        x: isNormalized ? lm.x * refW : lm.x,
+        y: isNormalized ? lm.y * refH : lm.y,
+        z: lm.z || 0,
+        visibility: lm.visibility || 1.0
+      }));
 
       window.currentLandmarks = currentLandmarks;
       console.log(`✅ detectLandmarksSilent: ${currentLandmarks.length} landmarks rilevati`);
@@ -4105,9 +4096,202 @@ function rotateImageCounterClockwise() {
   console.log(`↺ Immagine ruotata: ${currentAngle}° → ${newAngle}°`);
 }
 
+function rotateImage90Clockwise() {
+  /**
+   * Ruota l'immagine di 90 gradi in senso orario
+   */
+  if (!currentImage) {
+    console.warn('⚠️ Nessuna immagine da ruotare');
+    return;
+  }
+
+  const currentAngle = currentImage.angle || 0;
+  const newAngle = currentAngle + 90;
+
+  currentImage.rotate(newAngle);
+  fabricCanvas.renderAll();
+
+  // Sincronizza TUTTI gli overlay
+  setTimeout(() => {
+    if (window.originalLandmarks && window.originalLandmarks.length > 0 && typeof window.redrawLandmarks === 'function') {
+      window.redrawLandmarks();
+    }
+    if (window.currentGreenDotsOverlay && typeof syncGreenDotsOverlayWithViewport === 'function') {
+      syncGreenDotsOverlayWithViewport();
+    }
+    if (typeof redrawAllMeasurementOverlays === 'function') {
+      redrawAllMeasurementOverlays();
+    }
+    if (window.symmetryAxisVisible && typeof drawSymmetryAxis === 'function') {
+      drawSymmetryAxis();
+    }
+    if (typeof redrawPerpendicularLines === 'function') {
+      redrawPerpendicularLines();
+    }
+    if (typeof redrawCoupleLines === 'function') {
+      redrawCoupleLines();
+    }
+  }, 50);
+
+  console.log(`↻ Immagine ruotata 90°: ${currentAngle}° → ${newAngle}°`);
+}
+
+function rotateImage90CounterClockwise() {
+  /**
+   * Ruota l'immagine di 90 gradi in senso antiorario
+   */
+  if (!currentImage) {
+    console.warn('⚠️ Nessuna immagine da ruotare');
+    return;
+  }
+
+  const currentAngle = currentImage.angle || 0;
+  const newAngle = currentAngle - 90;
+
+  currentImage.rotate(newAngle);
+  fabricCanvas.renderAll();
+
+  // Sincronizza TUTTI gli overlay
+  setTimeout(() => {
+    if (window.originalLandmarks && window.originalLandmarks.length > 0 && typeof window.redrawLandmarks === 'function') {
+      window.redrawLandmarks();
+    }
+    if (window.currentGreenDotsOverlay && typeof syncGreenDotsOverlayWithViewport === 'function') {
+      syncGreenDotsOverlayWithViewport();
+    }
+    if (typeof redrawAllMeasurementOverlays === 'function') {
+      redrawAllMeasurementOverlays();
+    }
+    if (window.symmetryAxisVisible && typeof drawSymmetryAxis === 'function') {
+      drawSymmetryAxis();
+    }
+    if (typeof redrawPerpendicularLines === 'function') {
+      redrawPerpendicularLines();
+    }
+    if (typeof redrawCoupleLines === 'function') {
+      redrawCoupleLines();
+    }
+  }, 50);
+
+  console.log(`↺ Immagine ruotata -90°: ${currentAngle}° → ${newAngle}°`);
+}
+
 // Rendi le funzioni globali
 window.rotateImageClockwise = rotateImageClockwise;
 window.rotateImageCounterClockwise = rotateImageCounterClockwise;
+window.rotateImage90Clockwise = rotateImage90Clockwise;
+window.rotateImage90CounterClockwise = rotateImage90CounterClockwise;
+
+// === ROTAZIONE AUTOMATICA ASSE VERTICALE ===
+
+async function autoRotateToVerticalAxis() {
+  /**
+   * Ruota automaticamente l'immagine in modo che l'asse di simmetria
+   * risulti verticale (perpendicolare allo schermo).
+   *
+   * Strategia:
+   *  1. Usa currentLandmarks (in coordinate pixel immagine originale).
+   *     Se mancano, chiama autoDetectLandmarksOnImageChange() una sola volta.
+   *  2. Calcola axisAngleInImage = atan2(dx, dy) fra i landmark 9 (glabella) e
+   *     164 (philtrum) nello spazio immagine originale — NON trasformati.
+   *     Viso dritto → dx≈0, dy>0 → 0°. Viso inclinato CW di α° → +α°.
+   *  3. Applica newAngle = -axisAngleInImage (valore ASSOLUTO, indipendente
+   *     dall'angolo corrente → idempotente: premere più volte = stesso risultato).
+   *  Nessuna chiamata API aggiuntiva se i landmark sono già stati rilevati.
+   */
+  if (!currentImage || !fabricCanvas) {
+    showToast('Nessuna immagine caricata', 'warning');
+    return;
+  }
+
+  // ── Passo 1: ottieni landmark (solo se mancano) ───────────────────────────
+  if (!currentLandmarks || currentLandmarks.length === 0) {
+    showToast('Rilevamento landmarks in corso...', 'info');
+    const ok = await autoDetectLandmarksOnImageChange();
+    if (!ok || !currentLandmarks || currentLandmarks.length === 0) {
+      showToast('Impossibile rilevare il viso nell\'immagine', 'error');
+      return;
+    }
+  }
+
+  if (!currentLandmarks[9] || !currentLandmarks[164]) {
+    showToast('Landmark mediofacciali non trovati (punti 9 e 164)', 'warning');
+    return;
+  }
+
+  // ── Passo 2: calcola l'angolo dell'asse nello spazio IMMAGINE ORIGINALE ────
+  // currentLandmarks sono SEMPRE in coordinate pixel dell'immagine originale
+  // (non del canvas). Usiamo questi coord diretti, senza transformLandmarkCoordinate,
+  // per evitare doppia applicazione della rotazione canvas.
+  //
+  // atan2(dx, dy): angolo rispetto alla verticale verso il basso (+Y immagine).
+  // Per un viso dritto: philtrum(164) è sotto la glabella(9) → dx≈0, dy>0 → 0°.
+  // Se il viso è inclinato CW di α gradi: axisAngleInImage = +α.
+  // Nota sulla convenzione di segno in questo sistema:
+  // Con Fabric.js in coordinate schermo (Y verso il basso) la relazione empirica
+  // fra l'angolo del canvas (fabricAngle) e la direzione visiva dell'asse è:
+  //   screen_axis_angle = axisAngleInImage - fabricAngle
+  // Per ottenere screen_axis_angle = 0 (verticale): fabricAngle = axisAngleInImage.
+  // Formula ASSOLUTA e IDEMPOTENTE: indipendente da prevAngle.
+  const dx = currentLandmarks[164].x - currentLandmarks[9].x;
+  const dy = currentLandmarks[164].y - currentLandmarks[9].y;
+  const axisAngleInImage = Math.atan2(dx, dy) * (180 / Math.PI);
+
+  // ── Passo 3: applica correzione angolare (formula assoluta) ──────────────
+  const imgRef = currentImage;
+  const prevAngle = imgRef.angle || 0;
+  const newAngle = axisAngleInImage; // NON negato: vedi nota convenzione segno sopra
+
+  console.log(`🎯 autoRotateToVerticalAxis: axisAngleInImage=${axisAngleInImage.toFixed(2)}° prevAngle=${prevAngle.toFixed(2)}° → newAngle=${newAngle.toFixed(2)}°`);
+
+  if (!fabricCanvas.getObjects().includes(imgRef)) {
+    showToast('Immagine non più disponibile nel canvas', 'warning');
+    return;
+  }
+
+  try {
+    imgRef.rotate(newAngle);
+    fabricCanvas.renderAll();
+  } catch (e) {
+    console.warn('⚠️ autoRotateToVerticalAxis: renderAll exceptioned', e.message);
+    requestAnimationFrame(() => {
+      try { fabricCanvas.renderAll(); } catch (_) { /* patch fabric in canvas.js */ }
+    });
+  }
+
+  // ── Passo 4: attiva pulsante asse + ridisegna overlay ─────────────────────
+  const axisBtn = document.getElementById('axis-btn');
+  if (axisBtn && !axisBtn.classList.contains('active')) {
+    axisBtn.classList.add('active');
+    window.symmetryAxisVisible = true;
+  }
+
+  setTimeout(() => {
+    if (window.symmetryAxisVisible && typeof drawSymmetryAxis === 'function') {
+      drawSymmetryAxis({ autoDetect: false });
+    }
+    if (window.originalLandmarks && window.originalLandmarks.length > 0 && typeof window.redrawLandmarks === 'function') {
+      window.redrawLandmarks();
+    }
+    if (window.currentGreenDotsOverlay && typeof syncGreenDotsOverlayWithViewport === 'function') {
+      syncGreenDotsOverlayWithViewport();
+    }
+    if (typeof redrawAllMeasurementOverlays === 'function') {
+      redrawAllMeasurementOverlays();
+    }
+    if (typeof redrawPerpendicularLines === 'function') {
+      redrawPerpendicularLines();
+    }
+    if (typeof redrawCoupleLines === 'function') {
+      redrawCoupleLines();
+    }
+  }, 80);
+
+  showToast(`Asse allineato (${newAngle.toFixed(1)}°)`, 'success');
+  console.log(`🎯 Auto-rotazione asse verticale: ${prevAngle.toFixed(1)}° → ${newAngle.toFixed(1)}° (axisAngleInImage: ${axisAngleInImage.toFixed(2)}°)`);
+}
+
+window.autoRotateToVerticalAxis = autoRotateToVerticalAxis;
 
 function updateCanvasCursor(tool) {
   const canvas = document.getElementById('main-canvas');

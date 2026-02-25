@@ -47,6 +47,51 @@ function initializeFabricCanvas() {
 
   console.log('✅ Fabric canvas creato:', fabricCanvas);
 
+  // ── Patch difensivo fabric.Image per evitare crash drawImage ─────────────
+  // Fabric chiama ctx.drawImage(this._element, ...). Se _element è null/undefined
+  // (immagine disposta, stream interrotto, ecc.) lancia un TypeError non catturabile.
+  // Questo patch controlla la validità PRIMA di ogni tentativo di rendering.
+  (function patchFabricImageRender() {
+    const VALID_TYPES = [
+      HTMLImageElement, HTMLCanvasElement, HTMLVideoElement,
+      ...(typeof ImageBitmap !== 'undefined' ? [ImageBitmap] : []),
+      ...(typeof OffscreenCanvas !== 'undefined' ? [OffscreenCanvas] : []),
+      ...(typeof SVGImageElement !== 'undefined' ? [SVGImageElement] : []),
+      ...(typeof VideoFrame !== 'undefined' ? [VideoFrame] : [])
+    ];
+
+    function isDrawable(el) {
+      return el != null && VALID_TYPES.some(T => el instanceof T);
+    }
+
+    if (fabric && fabric.Image && fabric.Image.prototype) {
+      // Patch _render (Fabric v4/v5)
+      const origRender = fabric.Image.prototype._render;
+      if (origRender) {
+        fabric.Image.prototype._render = function (ctx) {
+          if (!isDrawable(this._element)) {
+            if (this._element !== undefined) {
+              console.warn('fabric.Image._render: _element non valido, skip', this._element);
+            }
+            return;
+          }
+          try { origRender.call(this, ctx); }
+          catch (e) { console.warn('fabric.Image._render: errore gestito', e.message); }
+        };
+      }
+      // Patch _renderFill (alcune versioni usano questo metodo)
+      const origFill = fabric.Image.prototype._renderFill;
+      if (origFill) {
+        fabric.Image.prototype._renderFill = function (ctx) {
+          if (!isDrawable(this._element)) return;
+          try { origFill.call(this, ctx); }
+          catch (e) { console.warn('fabric.Image._renderFill: errore gestito', e.message); }
+        };
+      }
+      console.log('✅ Patch fabric.Image._render applicato');
+    }
+  })();
+
   // Correzione più robusta: intercetta errori della console
   window.addEventListener('error', function (e) {
     if (e.message && e.message.includes('alphabetical') && e.message.includes('CanvasTextBaseline')) {
