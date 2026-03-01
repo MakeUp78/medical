@@ -148,3 +148,4 @@ GOOGLE_OAUTH_REDIRECT_URIS.md
 # WebSocket session data (auto-generated)
 websocket_best_frames/
 best_frontal_frames/
+face-landmark-localization-master/shape_predictor_68_face_landmarks.dat
