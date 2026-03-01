@@ -10,6 +10,7 @@ from typing import List, Optional, Dict, Any, Tuple
 from contextlib import asynccontextmanager
 import cv2
 import numpy as np
+import math
 import json
 import base64
 from io import BytesIO
@@ -42,6 +43,18 @@ except Exception as e:
 # Aggiunge il percorso src per importare green_dots_processor
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
+# Aggiunge il percorso per importare eyebrow_overlay.py
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'face-landmark-localization-master'))
+
+# Istanza globale EyebrowOverlay (lazy loading: carica il modello una sola volta)
+_eyebrow_overlay_instance = None
+def _get_eyebrow_overlay():
+    global _eyebrow_overlay_instance
+    if _eyebrow_overlay_instance is None:
+        from eyebrow_overlay import EyebrowOverlay
+        _eyebrow_overlay_instance = EyebrowOverlay()
+    return _eyebrow_overlay_instance
+
 # Import MediaPipe solo quando necessario per evitare conflitti TensorFlow
 try:
     import mediapipe as mp
@@ -51,6 +64,10 @@ except ImportError as e:
     MEDIAPIPE_AVAILABLE = False
 
 # Import del modulo WhiteDotsProcessorV2 (sostituisce GreenDotsProcessor)
+# Aggiunge src/ al path per trovare il modulo indipendentemente dalla cwd
+_SRC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src')
+if _SRC_PATH not in sys.path:
+    sys.path.insert(0, _SRC_PATH)
 try:
     from white_dots_processor_v2 import WhiteDotsProcessorV2
     WHITE_DOTS_AVAILABLE = True
@@ -62,6 +79,16 @@ except ImportError as e:
 # Retrocompatibilità: mantieni alias per codice esistente
 GREEN_DOTS_AVAILABLE = WHITE_DOTS_AVAILABLE
 
+# ── Parametri fissi condivisi tra production e debug ─────────────────────────
+# Modificare QUI per cambiare i parametri: vengono usati da:
+#   • _detect_white_dots_v3()  (default degli argomenti)
+#   • process_green_dots_analysis()  (chiamata esplicita)
+#   • /api/white-dots/debug-images  (default del modello Pydantic)
+#   • finestra debug HTML: slider wdots-perc default=25 → 100-25=75, wdots-sat default=28
+WHITE_DOTS_THRESH_PERC   = 75    # percentile luminosità (top 25% = percentile 75)
+WHITE_DOTS_SAT_MAX_FRAC  = 0.28  # saturazione max (28% → sat_max_pct=28 nella finestra debug)
+WHITE_DOTS_MAX_BLOB      = 2500  # area max blob dopo dilatazione merge 8px (LA0/RA0 raggiungono ~1200–1500px²)
+
 # Import Voice Assistant
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 try:
@@ -71,6 +98,11 @@ try:
 except ImportError as e:
     print(f"❌ Warning: IsabellaVoiceAssistant not available: {e}")
     VOICE_ASSISTANT_AVAILABLE = False
+
+# EyebrowOverlay via MediaPipe FaceMesh (dlib non disponibile su questo server)
+# L'overlay viene generato interamente con OpenCV+MediaPipe, stessa filosofia
+# di eyebrow_overlay.py: fill semi-trasparente + contorno colorato (verde=sx, arancio=dx)
+EYEBROW_OVERLAY_AVAILABLE = MEDIAPIPE_AVAILABLE  # dipende solo da MediaPipe
 
 # === INIZIALIZZAZIONE MEDIAPIPE ===
 
@@ -888,8 +920,8 @@ def load_white_dots_config() -> Dict:
             'value_min': detection.get('value_min', {}).get('value', 62),
             'value_max': detection.get('value_max', {}).get('value', 100),
             'clustering_radius': clustering.get('clustering_radius', {}).get('value', 2),
-            'cluster_size_min': clustering.get('cluster_size_range', {}).get('value', [6, 300])[0],
-            'cluster_size_max': clustering.get('cluster_size_range', {}).get('value', [6, 300])[1],
+            'cluster_size_min': clustering.get('cluster_size_range', {}).get('value', [64, 616])[0],
+            'cluster_size_max': clustering.get('cluster_size_range', {}).get('value', [64, 616])[1],
             'min_distance': filtering.get('min_distance', {}).get('value', 22),
             'large_cluster_threshold': filtering.get('large_cluster_threshold', {}).get('value', 35)
         }
@@ -902,15 +934,17 @@ def load_white_dots_config() -> Dict:
         
     except Exception as e:
         print(f"⚠️ Errore caricamento config: {e}, uso valori ottimali di default")
-        # Fallback su valori ottimali raccomandati nella documentazione
+        # Fallback su valori calibrati con dot_selector su IMG_8116 (lato lungo 2112px)
+        # cluster_size_min=64 → scala a 45px @ 2112px  (res_scale=0.698)
+        # cluster_size_max=616 → scala a 430px @ 2112px
         return {
             'saturation_max': 21,
             'saturation_min': 0,
             'value_min': 62,
             'value_max': 100,
             'clustering_radius': 2,
-            'cluster_size_min': 6,
-            'cluster_size_max': 300,
+            'cluster_size_min': 64,
+            'cluster_size_max': 616,
             'min_distance': 22,
             'large_cluster_threshold': 35
         }
@@ -1030,45 +1064,157 @@ def sort_points_anatomical(points: List[Dict], is_left: bool) -> List[Dict]:
         # Ordine finale: [RC1, RB, RC, RA, RA0]
         return [c1_point, b_point, c_point, a_point, a0_point]
 
+def _detect_white_dots_v3(img_bgr: np.ndarray,
+                         thresh_perc: int   = WHITE_DOTS_THRESH_PERC,
+                         sat_max_frac: float = WHITE_DOTS_SAT_MAX_FRAC) -> dict:
+    """
+    Rileva i 10 puntini bianchi del tatuaggio sopracciglio.
+
+    Flusso semplificato (3 passi):
+    1. eyebrows.py (dlib) → maschera binaria sopracciglio sx e dx.
+    2. Striscia di 50px centrata sul perimetro dlib:
+         expanded  = dilate(mask, 25px)   → 25px fuori
+         shrunk    = erode(mask,  25px)   → 25px dentro
+         strip     = expanded − shrunk
+    3. Blob bianchi brillanti nella striscia → top-5 per lato.
+
+    Non genera overlay né audio.
+    """
+    try:
+        from eyebrows import extract_eyebrows_from_array
+    except ImportError:
+        return {'error': 'Modulo eyebrows (dlib) non disponibile.', 'dots': [], 'total_white_pixels': 0}
+
+    _dat = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), '..', '..',
+        'face-landmark-localization-master', 'shape_predictor_68_face_landmarks.dat'
+    ))
+
+    # Passo 1 – maschere dlib (identiche a "Sim. Sopracciglia")
+    res_dlib = extract_eyebrows_from_array(img_bgr, predictor_path=_dat)
+    if not res_dlib["face_detected"]:
+        return {'error': 'Volto non rilevato da dlib.', 'dots': [], 'total_white_pixels': 0}
+
+    h, w = img_bgr.shape[:2]
+    hsv  = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    v_ch = hsv[:, :, 2].astype(np.float32)
+    s_ch = hsv[:, :, 1].astype(np.float32)
+
+    # Striscia simmetrica: 25px fuori + 25px dentro al perimetro dlib.
+    OUTER_PX = 25
+    INNER_PX = 25
+    k_outer = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (OUTER_PX*2+1, OUTER_PX*2+1))
+    k_inner = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (INNER_PX*2+1, INNER_PX*2+1))
+    # Kernel di merge: fonde pixel adiacenti per evitare frammentazione
+    MERGE_PX = 8
+    k_merge  = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MERGE_PX*2+1, MERGE_PX*2+1))
+
+    all_dots      = []
+    left_polygon  = None
+    right_polygon = None
+
+    for side, mask in [('left', res_dlib['left_mask']), ('right', res_dlib['right_mask'])]:
+        if not np.any(mask):
+            continue
+
+        # Passo 2 – striscia simmetrica: 25px fuori + 25px dentro
+        expanded   = cv2.dilate(mask, k_outer, iterations=1)
+        shrunk     = cv2.erode(mask,  k_inner, iterations=1)
+        strip_mask = cv2.subtract(expanded, shrunk)
+
+        # Salva contorno espanso per l'overlay del frontend
+        cnts, _ = cv2.findContours(expanded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if cnts:
+            polygon = max(cnts, key=cv2.contourArea).squeeze()
+            if side == 'left':
+                left_polygon = polygon
+            else:
+                right_polygon = polygon
+
+        # Passo 3 – pixel bianchi nella striscia
+        strip_v  = v_ch[strip_mask > 0]
+        if len(strip_v) < 10:
+            continue
+
+        # Soglia adattiva: configurabile (default top 25%, sat 28%)
+        thresh_v = float(np.percentile(strip_v, thresh_perc))
+        thresh_s = sat_max_frac * 255
+
+        bright = np.zeros((h, w), dtype=np.uint8)
+        bright[(v_ch >= thresh_v) & (s_ch <= thresh_s) & (strip_mask > 0)] = 255
+
+        # Fondi pixel adiacenti per evitare che un singolo punto bianco
+        # venga spezzato in più blob separati (causa di selezione errata nel top-5)
+        bright_m = cv2.dilate(bright, k_merge, iterations=1)
+
+        # Connected components sul merged → un blob = un punto bianco
+        MAX_BLOB = WHITE_DOTS_MAX_BLOB  # dilation merge 8px gonfia i blob: LA0/RA0 arrivano a ~1500px²
+        n_lbl, lbl_map, stats_cc, centroids = cv2.connectedComponentsWithStats(bright_m, 8)
+        candidates = []
+        for lbl in range(1, n_lbl):
+            area = int(stats_cc[lbl, cv2.CC_STAT_AREA])
+            if area < 3 or area > MAX_BLOB:
+                continue
+            cx     = float(centroids[lbl, 0])
+            cy     = float(centroids[lbl, 1])
+            b_mask = lbl_map == lbl
+            # Valuta luminosità e saturazione sui pixel del blob (sul merged)
+            mean_v = float(np.mean(v_ch[b_mask]))
+            mean_s = float(np.mean(s_ch[b_mask]))
+            # Score: luminosità media, penalizza blob troppo grandi (pelle)
+            score = round(mean_v * (1.0 - area / (MAX_BLOB * 2.0)), 2)
+            candidates.append({
+                'x':           int(round(cx)),
+                'y':           int(round(cy)),
+                'size':        area,
+                'score':       max(0.0, score),
+                'compactness': 0.0,
+                'h':           0,
+                's':           int(round(mean_s / 255.0 * 100)),
+                'v':           int(round(mean_v / 255.0 * 100)),
+            })
+
+        candidates.sort(key=lambda d: -d['score'])
+        all_dots.extend(candidates[:5])
+        print(f"🔍 v3-strip [{side}]: {len(candidates)} candidati (merged) → top-{min(5, len(candidates))} selezionati")
+
+    return {
+        'dots':               all_dots,
+        'total_white_pixels': int(np.sum(v_ch > 153)),
+        'left_polygon':       left_polygon,
+        'right_polygon':      right_polygon,
+    }
+
+
+def _select_best_5_for_eyebrow(dots: list, is_left: bool) -> list:
+    """
+    Seleziona i 5 dots migliori per un sopracciglio garantendo che il punto
+    più esterno (LB/RB) sia SEMPRE incluso, indipendentemente dal suo score.
+    LB/RB è spesso il puntino più piccolo e perciò ha score basso, ma è
+    fondamentale per l'ordinamento anatomico corretto.
+    """
+    if len(dots) <= 5:
+        return dots
+    if is_left:
+        extreme = min(dots, key=lambda p: p['x'])   # LB: x minima
+    else:
+        extreme = max(dots, key=lambda p: p['x'])   # RB: x massima
+    others = [d for d in dots if d is not extreme]
+    top4 = sorted(others, key=lambda d: d['score'], reverse=True)[:4]
+    return [extreme] + top4
+
+
 def process_green_dots_analysis(
     image_base64: str,
-    hue_range: Tuple[int, int] = (60, 150),
-    saturation_min: int = None,
-    value_range: Tuple[int, int] = (70, 95),
-    cluster_size_range: Tuple[int, int] = (9, 40),
-    clustering_radius: int = 2,
-    saturation_max: int = None,
-    saturation_max_tail: int = None,
-    cluster_min_tail: int = None,
-    value_min: int = None,
-    value_max: int = None,
-    cluster_size_min: int = None,
-    cluster_size_max: int = None,
-    min_distance: int = None,
-    adaptive: bool = True,
-    brightness_percentile: int = None,
-    sat_cap: int = None,
-    # Parametri 2-pass sovrascrivibili (None = usa i valori fissi ottimizzati)
-    pass1_percentile: int = None,
-    pass1_sat_cap: int = None,
-    pass2_percentile: int = None,
-    pass2_sat_cap: int = None,
+    # Tutti i parametri legacy sotto sono ignorati: il backend usa _detect_white_dots_v3
+    # con parametri fissi (OUTER_PX=25, INNER_PX=25, thresh_perc=75, sat_max_frac=0.28).
+    # Mantenuti solo per retrocompatibilità con i caller esistenti.
+    **kwargs
 ) -> Dict:
     """
-    Rilevamento puntini bianchi con 2-pass adattivi automatici:
-      Pass 1  (percentile=50, sat_cap=30)  → LB (x minimo) + RB (x massimo)
-      Pass 2  (percentile=80, sat_cap=25)  → top-4 per metà immagine (8 punti centrali)
-      Totale atteso: 10 punti (LB + RB + 4 sx + 4 dx)
+    Rileva i puntini bianchi del tatuaggio sopracciglio via _detect_white_dots_v3 (dlib perimeter strip).
+    Tutti i parametri HSV/cluster/pass1/pass2 sono ignorati: usa valori fissi hardcoded.
     """
-    """Processa un'immagine per il rilevamento dei puntini bianchi sulle sopracciglia.
-
-    NOTA: Usa WhiteDotsProcessorV2 ottimizzato per rilevamento puntini bianchi.
-    Parametri hue_range e saturation_min mantenuti per retrocompatibilità ma ignorati.
-
-    I parametri dinamici (saturation_max, value_min, etc.) se specificati sovrascrivono
-    quelli del config file. Questo permette al frontend di regolare i parametri in tempo reale.
-    """
-
     if not WHITE_DOTS_AVAILABLE:
         raise HTTPException(
             status_code=500,
@@ -1076,140 +1222,44 @@ def process_green_dots_analysis(
         )
 
     try:
-        # Carica parametri base dal config
-        config_params = load_white_dots_config()
 
-        # Override con parametri dinamici se specificati
-        final_params = {
-            'saturation_max': saturation_max if saturation_max is not None else config_params['saturation_max'],
-            'saturation_min': saturation_min if saturation_min is not None else config_params.get('saturation_min', 0),
-            'value_min': value_min if value_min is not None else config_params['value_min'],
-            'value_max': value_max if value_max is not None else config_params['value_max'],
-            'cluster_size_min': cluster_size_min if cluster_size_min is not None else config_params['cluster_size_min'],
-            'cluster_size_max': cluster_size_max if cluster_size_max is not None else config_params['cluster_size_max'],
-            'clustering_radius': config_params['clustering_radius'],
-            'min_distance': min_distance if min_distance is not None else config_params['min_distance'],
-            'large_cluster_threshold': config_params['large_cluster_threshold']
-        }
-
-        print(f"⚙️ Parametri rilevamento attivi: {final_params}")
-
-        # Decodifica l'immagine
         pil_image = decode_base64_to_pil_image(image_base64)
 
-        # ── SCALA PARAMETRI IN BASE ALLA RISOLUZIONE REALE ───────────────────
-        # I parametri in pixels (cluster_size, radius, distance) sono stati
-        # calibrati su successo.jpg (3024×4032). Su immagini a risoluzione
-        # inferiore (es. frame webcam 810×1080) i puntini occupano meno pixel,
-        # quindi scaliamo proporzionalmente per non perdere rilevamenti.
-        REF_LONG_SIDE = 3024  # lato lungo di successo.jpg
-        img_long_side = max(pil_image.width, pil_image.height)
-        res_scale = img_long_side / REF_LONG_SIDE
-        # Clamp: non scalare oltre 1.0 (immagini ad alta res usano i valori base)
-        res_scale = min(1.0, max(0.25, res_scale))
+        # ── Rilevamento via dlib perimeter strip ──────────────────────────────
+        # Usa le stesse maschere del pulsante "Sim. Sopracciglia",
+        # le espande per includere i punti sul bordo, poi rileva blob bianchi.
+        img_array = np.array(pil_image)
+        if img_array.ndim == 3 and img_array.shape[2] == 4:
+            img_bgr_v3 = cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
+        else:
+            img_bgr_v3 = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
 
-        def scale_px(value: float, minimum: int = 1) -> int:
-            return max(minimum, round(value * res_scale))
+        det_v3 = _detect_white_dots_v3(img_bgr_v3,
+                                        thresh_perc=WHITE_DOTS_THRESH_PERC,
+                                        sat_max_frac=WHITE_DOTS_SAT_MAX_FRAC)
 
-        scaled_params = {
-            'cluster_size_min': scale_px(final_params['cluster_size_min'], 2),
-            'cluster_size_max': scale_px(final_params['cluster_size_max'], 4),
-            'clustering_radius': scale_px(final_params['clustering_radius'], 1),
-            'min_distance': scale_px(final_params['min_distance'], 3),
-            'large_cluster_threshold': scale_px(final_params['large_cluster_threshold'], 5),
-        }
-        print(f"📐 Scala risoluzione: {img_long_side}px / {REF_LONG_SIDE}px = {res_scale:.3f}")
-        print(f"   Parametri scalati: cluster=[{scaled_params['cluster_size_min']},{scaled_params['cluster_size_max']}] "
-              f"radius={scaled_params['clustering_radius']} min_dist={scaled_params['min_distance']} "
-              f"large_thr={scaled_params['large_cluster_threshold']}")
-        # ─────────────────────────────────────────────────────────────────────
-
-        import math as _math
-
-        def _make_proc(bp: int, sc: int) -> 'WhiteDotsProcessorV2':
-            return WhiteDotsProcessorV2(
-                saturation_max=final_params['saturation_max'],
-                saturation_min=final_params['saturation_min'],
-                value_min=final_params['value_min'],
-                value_max=final_params['value_max'],
-                cluster_size_range=(scaled_params['cluster_size_min'], scaled_params['cluster_size_max']),
-                clustering_radius=scaled_params['clustering_radius'],
-                min_distance=scaled_params['min_distance'],
-                large_cluster_threshold=scaled_params['large_cluster_threshold'],
-                adaptive=True,
-                brightness_percentile=bp,
-                sat_cap=sc,
-            )
-
-        # ── PASS 1: code LB + RB ────────────────────────────────────────────
-        _p1_perc = pass1_percentile if pass1_percentile is not None else 50
-        _p1_sat  = pass1_sat_cap    if pass1_sat_cap    is not None else 30
-        proc1 = _make_proc(bp=_p1_perc, sc=_p1_sat)
-        res1  = proc1.detect_white_dots(pil_image)
-        dots1 = res1.get('dots', [])
-
-        if len(dots1) == 0:
+        if 'error' in det_v3:
             return {
-                'error': 'Pass 1: nessun puntino rilevato. Verificare qualità immagine o maschera sopracciglia.',
-                'dots': [], 'total_white_pixels': 0
+                'success': False,
+                'error': det_v3['error'],
+                'detection_results': {
+                    'dots': [], 'total_dots': 0, 'total_green_pixels': 0,
+                    'image_size': [pil_image.width, pil_image.height], 'parameters': {}
+                }
             }
 
-        # LB = punto più a sinistra nell'immagine, RB = più a destra
-        lb_dot = min(dots1, key=lambda d: d['x'])
-        rb_dot = max(dots1, key=lambda d: d['x'])
-        lb_dot = {**lb_dot, 'label': 'LB', 'pass': 1}
-        rb_dot = {**rb_dot, 'label': 'RB', 'pass': 1}
-        tail_dots = [lb_dot, rb_dot]
-        print(f"🔵 Pass1: {len(dots1)} candidati → LB=({lb_dot['x']},{lb_dot['y']}) RB=({rb_dot['x']},{rb_dot['y']})")
-
-        # ── PASS 2: 4 punti per sopracciglio = 8 centrali (perc=80, sat=25) ─
-        # Soglia più alta: solo i puntini bianchi brillanti (tattoo ink)
-        _p2_perc = pass2_percentile if pass2_percentile is not None else 80
-        _p2_sat  = pass2_sat_cap    if pass2_sat_cap    is not None else 25
-        proc2 = _make_proc(bp=_p2_perc, sc=_p2_sat)
-        res2  = proc2.detect_white_dots(pil_image)
-        dots2 = res2.get('dots', [])
-
-        min_d  = scaled_params['min_distance']
-        img_cx = pil_image.width / 2  # centro orizzontale per separare i due sopraccigli
-
-        # Escludi candidati troppo vicini a LB/RB già trovati
-        central_cand = [
-            d for d in dots2
-            if all(_math.hypot(d['x'] - t['x'], d['y'] - t['y']) >= min_d for t in tail_dots)
-        ]
-
-        # Top-4 per metà immagine (x < centro = sopracciglio sx nell'immagine, viceversa dx)
-        left_cand  = sorted([d for d in central_cand if d['x'] <  img_cx], key=lambda d: -d['score'])
-        right_cand = sorted([d for d in central_cand if d['x'] >= img_cx], key=lambda d: -d['score'])
-        left_4  = [{**d, 'pass': 2} for d in left_cand[:4]]
-        right_4 = [{**d, 'pass': 2} for d in right_cand[:4]]
-        print(f"🔶 Pass2 (perc={_p2_perc}%, sat={_p2_sat}%): {len(dots2)} candidati → sx={len(left_4)}/4 dx={len(right_4)}/4 "
-              f"(central_cand={len(central_cand)})")
-
-        # ── Merge finale: [LB, RB] + left_4 + right_4 ──────────────────────
-        all_dots = tail_dots + left_4 + right_4
-        print(f"✅ Totale punti rilevati: {len(all_dots)}/10")
-
         results = {
-            'dots': all_dots,
-            'total_white_pixels': res1.get('total_white_pixels', 0) + res2.get('total_white_pixels', 0),
-            'total_clusters': len(all_dots),
-            'image_size': res1.get('image_size', (pil_image.width, pil_image.height)),
-            'parameters': {
-                'adaptive': True,
-                'pass1': {'brightness_percentile': _p1_perc, 'sat_cap': _p1_sat},
-                'pass2': {'brightness_percentile': _p2_perc, 'sat_cap': _p2_sat},
-                'cluster_size_range': (scaled_params['cluster_size_min'], scaled_params['cluster_size_max']),
-                'min_distance': scaled_params['min_distance'],
-            },
-            'left_polygon':  res1.get('left_polygon', []),
-            'right_polygon': res1.get('right_polygon', []),
+            'dots':               det_v3['dots'],
+            'total_white_pixels': det_v3['total_white_pixels'],
+            'total_clusters':     len(det_v3['dots']),
+            'image_size':         (pil_image.width, pil_image.height),
+            'parameters':         {'adaptive': True, 'method': 'dlib_perimeter_v3'},
+            'left_polygon':       det_v3.get('left_polygon'),
+            'right_polygon':      det_v3.get('right_polygon'),
         }
-        # ────────────────────────────────────────────────────────────────────
-        
-        # Adatta risultati WhiteDotsProcessorV2 al formato atteso dal frontend
-        # (mantiene retrocompatibilità con struttura JSON esistente)
+        print(f"✅ [v3] Totale punti rilevati: {len(results['dots'])}/10")
+
+        # Adatta al formato atteso dal frontend
         
         if 'error' in results:
             return {
@@ -1259,27 +1309,8 @@ def process_green_dots_analysis(
         right_dots = [d for d in formatted_dots if d.get('eyebrow') == 'right']
         unknown_dots = [d for d in formatted_dots if d.get('eyebrow') not in ['left', 'right']]
 
-        def select_best_5_for_eyebrow(dots: list, is_left: bool) -> list:
-            """
-            Seleziona i 5 dots migliori per un sopracciglio garantendo che il punto
-            più esterno (LB/RB) sia SEMPRE incluso, indipendentemente dal suo score.
-            LB/RB è spesso il puntino più piccolo e perciò ha score basso, ma è
-            fondamentale per l'ordinamento anatomico corretto.
-            """
-            if len(dots) <= 5:
-                return dots
-            # Identifica il punto più esterno (LB o RB)
-            if is_left:
-                extreme = min(dots, key=lambda p: p['x'])   # LB: x minima
-            else:
-                extreme = max(dots, key=lambda p: p['x'])   # RB: x massima
-            # Ordina i rimanenti per score decrescente e prendi i 4 migliori
-            others = [d for d in dots if d is not extreme]
-            top4 = sorted(others, key=lambda d: d['score'], reverse=True)[:4]
-            return [extreme] + top4
-
-        left_dots  = select_best_5_for_eyebrow(left_dots,  is_left=True)
-        right_dots = select_best_5_for_eyebrow(right_dots, is_left=False)
+        left_dots  = _select_best_5_for_eyebrow(left_dots,  is_left=True)
+        right_dots = _select_best_5_for_eyebrow(right_dots, is_left=False)
 
         # ORDINAMENTO ANATOMICO: usa criteri fissi LC1, LA0, LA, LC, LB (sinistra) e RC1, RB, RC, RA, RA0 (destra)
         left_dots = sort_points_anatomical(left_dots, is_left=True)
@@ -1325,7 +1356,9 @@ def process_green_dots_analysis(
                 'image_size': list(pil_image.size),
                 'parameters': results.get('parameters', {})
             },
-            'config_parameters': config_params,  # Parametri attivi dal config
+            'config_parameters': {'method': 'dlib_perimeter_v3',
+                                  'thresh_perc': WHITE_DOTS_THRESH_PERC,
+                                  'sat_max_frac': WHITE_DOTS_SAT_MAX_FRAC},
             'groups': {
                 'Sx': left_dots,
                 'Dx': right_dots
@@ -3613,87 +3646,180 @@ async def complete_face_analysis(file: UploadFile = File(...)):
 
 @app.post("/api/estimate-age")
 async def estimate_age(request: AnalysisRequest):
-    """Endpoint per stimare l'età dal viso usando un modello leggero basato su proporzioni."""
+    """Endpoint per stimare l'età dal viso usando proporzioni facciali multi-parametro."""
     try:
         # Decodifica immagine base64
         image_data = base64.b64decode(request.image.split(',')[1] if ',' in request.image else request.image)
         nparr = np.frombuffer(image_data, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
+
         if image is None:
             raise HTTPException(status_code=400, detail="Impossibile decodificare l'immagine")
-        
+
         # Usa MediaPipe per rilevare landmarks facciali
         if not MEDIAPIPE_AVAILABLE or face_mesh is None:
             raise HTTPException(status_code=500, detail="MediaPipe non disponibile")
-        
+
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         results = face_mesh.process(rgb_image)
-        
+
         if not results.multi_face_landmarks:
             raise HTTPException(status_code=404, detail="Nessun volto rilevato nell'immagine")
-        
+
         landmarks = results.multi_face_landmarks[0]
         h, w = image.shape[:2]
-        
-        # Estrai proporzioni facciali per stima età
-        # Indici landmarks MediaPipe
-        forehead_top = landmarks.landmark[10]  # Parte alta fronte
-        chin_bottom = landmarks.landmark[152]  # Mento
-        left_eye = landmarks.landmark[33]      # Occhio sinistro
-        right_eye = landmarks.landmark[263]    # Occhio destro
-        nose_tip = landmarks.landmark[1]       # Punta naso
-        upper_lip = landmarks.landmark[13]     # Labbro superiore
-        
-        # Calcola distanze in pixel
-        face_height = abs(forehead_top.y - chin_bottom.y) * h
-        eye_distance = abs(left_eye.x - right_eye.x) * w
-        nose_mouth_dist = abs(nose_tip.y - upper_lip.y) * h
-        
-        # Ratio facciali (cambiano con l'età)
-        face_ratio = face_height / max(eye_distance, 1)
-        lower_face_ratio = nose_mouth_dist / max(face_height, 1)
-        
-        # Stima età basata su ratios (calibrata empiricamente)
-        # Giovani: ratio alto, viso più allungato
-        # Anziani: ratio più basso, viso più squadrato
-        base_age = 30
-        
-        # Aggiustamento per face ratio (18-70 anni)
-        if face_ratio > 2.8:
-            age_adjustment = -15  # Viso molto giovane
-        elif face_ratio > 2.5:
-            age_adjustment = -8
-        elif face_ratio > 2.2:
-            age_adjustment = 0
-        elif face_ratio > 1.9:
-            age_adjustment = 10
+        lm = landmarks.landmark
+
+        def pt(idx):
+            """Restituisce (x_px, y_px) del landmark idx."""
+            return (lm[idx].x * w, lm[idx].y * h)
+
+        def dist(a, b):
+            return math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2)
+
+        # ── Punti chiave ──────────────────────────────────────────────────────
+        forehead      = pt(10)   # fronte alta
+        chin          = pt(152)  # mento
+        left_eye_out  = pt(33)   # canto esterno occhio sx
+        right_eye_out = pt(263)  # canto esterno occhio dx
+        left_eye_in   = pt(133)  # canto interno occhio sx
+        right_eye_in  = pt(362)  # canto interno occhio dx
+        left_eye_top  = pt(159)  # palpebra sup sx
+        left_eye_bot  = pt(145)  # palpebra inf sx
+        right_eye_top = pt(386)  # palpebra sup dx
+        right_eye_bot = pt(374)  # palpebra inf dx
+        nose_tip      = pt(1)    # punta naso
+        nose_root     = pt(168)  # radice naso (nasion)
+        upper_lip     = pt(13)   # labbro superiore
+        lower_lip     = pt(14)   # labbro inferiore
+        left_jaw      = pt(234)  # mascella sinistra
+        right_jaw     = pt(454)  # mascella destra
+        left_cheek    = pt(116)  # zigomo sinistro
+        right_cheek   = pt(345)  # zigomo destro
+        left_brow_in  = pt(55)   # sopracciglio sx interno
+        right_brow_in = pt(285)  # sopracciglio dx interno
+        left_brow_out = pt(46)   # sopracciglio sx esterno
+        right_brow_out= pt(276)  # sopracciglio dx esterno
+        mouth_left    = pt(61)   # angolo bocca sx
+        mouth_right   = pt(291)  # angolo bocca dx
+
+        # ── Misure base ───────────────────────────────────────────────────────
+        face_height      = dist(forehead, chin)
+        biiocular_w      = dist(left_eye_out, right_eye_out)    # larghezza biinoculare
+        interocular_d    = dist(left_eye_in, right_eye_in)      # distanza inter-occhi
+        jaw_width        = dist(left_jaw, right_jaw)
+        cheek_width      = dist(left_cheek, right_cheek)
+        mouth_width      = dist(mouth_left, mouth_right)
+        nose_height      = dist(nose_root, nose_tip)
+        nose_to_chin     = dist(nose_tip, chin)
+        forehead_to_eye  = dist(forehead, pt(159))              # fronte → palpebra sup sx
+        eye_to_nose      = dist(left_eye_bot, nose_tip)         # occhio → punta naso
+        lip_height_top   = abs(upper_lip[1] - lower_lip[1])     # altezza labbra
+        eye_h_left       = dist(left_eye_top, left_eye_bot)     # apertura occhio sx
+        eye_h_right      = dist(right_eye_top, right_eye_bot)   # apertura occhio dx
+        eye_h_avg        = (eye_h_left + eye_h_right) / 2
+        eye_w_left       = dist(left_eye_out, left_eye_in)
+        eye_w_right      = dist(right_eye_out, right_eye_in)
+        eye_w_avg        = (eye_w_left + eye_w_right) / 2
+        brow_eye_sx      = abs(left_brow_in[1] - left_eye_top[1])
+        brow_eye_dx      = abs(right_brow_in[1] - right_eye_top[1])
+        brow_eye_avg     = (brow_eye_sx + brow_eye_dx) / 2
+
+        # ── Ratio facciali normalizzati ────────────────────────────────────────
+        # Ogni ratio viene normalizzato su face_height per essere invariante alla scala
+        r_jaw_face       = jaw_width / max(face_height, 1)          # più alto = viso giovane
+        r_cheek_jaw      = cheek_width / max(jaw_width, 1)          # cheekbone prominence
+        r_lower_face     = nose_to_chin / max(face_height, 1)       # terzo inferiore
+        r_upper_face     = forehead_to_eye / max(face_height, 1)    # terzo superiore
+        r_nose           = nose_height / max(face_height, 1)        # altezza naso
+        r_mouth          = mouth_width / max(biiocular_w, 1)        # larghezza bocca
+        r_eye_open       = eye_h_avg / max(eye_w_avg, 1)            # apertura occhio
+        r_brow_eye       = brow_eye_avg / max(face_height, 1)       # distanza sopracciglio-occhio
+        r_interocular    = interocular_d / max(biiocular_w, 1)      # spaziatura occhi
+
+        # ── Sistema a punteggio pesato ────────────────────────────────────────
+        # Ogni feature contribuisce con un punteggio età parziale
+        # Basato su studi antropometrici: con l'età
+        #   - la mandibola si allarga relativamente (ptosi)
+        #   - il terzo inferiore del viso aumenta
+        #   - le sopracciglia scendono verso gli occhi
+        #   - l'apertura oculare si riduce (blefaroptosi senile)
+        #   - il naso si allunga
+        #   - la bocca si restringe
+
+        age_votes = []
+
+        # 1) Rapporto mascella/altezza viso
+        # giovani (20): ~0.55-0.60 | medi (40): ~0.58-0.65 | anziani (60+): ~0.62-0.70
+        v1 = 20 + (r_jaw_face - 0.55) / (0.15) * 40
+        age_votes.append(("jaw_face", float(np.clip(v1, 16, 75)), 1.5))
+
+        # 2) Terzo inferiore (naso-mento / altezza viso)
+        # giovani: ~0.30-0.35 | anziani: ~0.38-0.45
+        v2 = 20 + (r_lower_face - 0.30) / (0.15) * 50
+        age_votes.append(("lower_face", float(np.clip(v2, 16, 80)), 1.8))
+
+        # 3) Terzo superiore (fronte-occhio / altezza viso)
+        # giovani: ~0.28-0.32 | anziani: ~0.24-0.28 (fronte sembra più piccola)
+        v3 = 20 + (0.32 - r_upper_face) / (0.08) * 50
+        age_votes.append(("upper_face", float(np.clip(v3, 16, 75)), 1.0))
+
+        # 4) Altezza naso normalizzata
+        # giovani: ~0.35-0.40 | anziani: ~0.42-0.50
+        v4 = 18 + (r_nose - 0.35) / (0.15) * 55
+        age_votes.append(("nose_height", float(np.clip(v4, 16, 80)), 1.2))
+
+        # 5) Distanza sopracciglio-occhio
+        # giovani: brow_eye/face_height ~0.05-0.07 (alte) | anziani: ~0.02-0.04 (basse, ptosi)
+        v5 = 20 + (0.07 - r_brow_eye) / (0.05) * 50
+        age_votes.append(("brow_drop", float(np.clip(v5, 16, 75)), 1.4))
+
+        # 6) Apertura oculare (eye_h / eye_w)
+        # giovani: ~0.28-0.35 | anziani: ~0.20-0.27 (blefaroptosi)
+        v6 = 18 + (0.35 - r_eye_open) / (0.15) * 55
+        age_votes.append(("eye_open", float(np.clip(v6, 16, 80)), 1.3))
+
+        # 7) Larghezza bocca relativa
+        # giovani: ~0.65-0.75 | anziani: ~0.55-0.65 (labbra più sottili, assottigliamento)
+        v7 = 18 + (0.72 - r_mouth) / (0.20) * 55
+        age_votes.append(("mouth_width", float(np.clip(v7, 16, 80)), 0.8))
+
+        # ── Media pesata ──────────────────────────────────────────────────────
+        total_weight = sum(w_ for _, _, w_ in age_votes)
+        estimated_age = sum(age * w_ for _, age, w_ in age_votes) / total_weight
+
+        # Limita range plausibile
+        estimated_age = float(np.clip(estimated_age, 16, 80))
+
+        # ── Confidenza ────────────────────────────────────────────────────────
+        visibility_lms = [10, 152, 33, 263, 1, 13, 159, 145]
+        visibility_avg = sum(lm[i].visibility for i in visibility_lms) / len(visibility_lms)
+        # Dispersion dei voti come misura di incertezza interna
+        ages_only = [a for _, a, _ in age_votes]
+        spread = max(ages_only) - min(ages_only)
+        if visibility_avg > 0.85 and spread < 20:
+            confidence = "high"
+        elif visibility_avg > 0.65 and spread < 35:
+            confidence = "medium"
         else:
-            age_adjustment = 20  # Viso più maturo
-        
-        # Aggiustamento per lower face ratio
-        if lower_face_ratio < 0.15:
-            age_adjustment -= 5
-        elif lower_face_ratio > 0.25:
-            age_adjustment += 5
-        
-        estimated_age = max(18, min(80, base_age + age_adjustment))
-        
-        # Calcola confidenza basata sulla qualità del rilevamento
-        visibility_avg = sum(lm.visibility for lm in [forehead_top, chin_bottom, left_eye, right_eye]) / 4
-        confidence = "high" if visibility_avg > 0.9 else "medium" if visibility_avg > 0.7 else "low"
-        
+            confidence = "low"
+
         return JSONResponse({
             "success": True,
-            "age": int(estimated_age),
+            "age": int(round(estimated_age)),
             "confidence": confidence,
-            "method": "facial_proportions",
+            "method": "multi_parameter_proportions",
             "ratios": {
-                "face_ratio": round(face_ratio, 2),
-                "lower_face_ratio": round(lower_face_ratio, 3)
+                "face_ratio": round(face_height / max(biiocular_w, 1), 2),
+                "lower_face_ratio": round(r_lower_face, 3),
+                "jaw_face_ratio": round(r_jaw_face, 3),
+                "nose_ratio": round(r_nose, 3),
+                "eye_openness": round(r_eye_open, 3),
+                "brow_drop": round(r_brow_eye, 3),
+                "vote_spread": round(spread, 1)
             }
         })
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -3725,10 +3851,11 @@ def get_local_ip():
         return "127.0.0.1"
 
 @app.get("/api/qrcode.png")
-async def generate_qr_code(request: Request):
+async def generate_qr_code(request: Request, st: str = ""):
     """
     Genera un QR code dinamico per connettere iPhone alla camera.
-    Il QR code contiene l'URL della pagina /camera con l'IP locale del server.
+    Il QR code contiene l'URL della pagina /camera?st=<session_token> con l'IP locale del server.
+    Il parametro 'st' (session_token) è obbligatorio per l'isolamento sicuro tra utenti.
     """
     qrcode = get_qr_module()
     if not qrcode:
@@ -3745,15 +3872,19 @@ async def generate_qr_code(request: Request):
         # Ottieni l'host dalla richiesta
         host = request.headers.get('host', '')
 
-        # Se siamo in locale (localhost o IP privato), usa IP locale
+        # Costruisci URL base della camera
         if 'localhost' in host or '127.0.0.1' in host or host.startswith('192.168.') or host.startswith('10.'):
             local_ip = get_local_ip()
-            # Estrai porta se presente
             port = host.split(':')[1] if ':' in host else '80'
-            camera_url = f"http://{local_ip}:{port}/camera"
+            base_camera_url = f"http://{local_ip}:{port}/camera"
         else:
-            # Siamo su dominio pubblico
-            camera_url = f"{proto}://{host}/camera"
+            base_camera_url = f"{proto}://{host}/camera"
+
+        # Aggiungi session_token all'URL se fornito (isolamento sessione utente)
+        if st:
+            camera_url = f"{base_camera_url}?st={st}"
+        else:
+            camera_url = base_camera_url
 
         print(f"QR Code generato per URL: {camera_url}")
 
@@ -4091,6 +4222,328 @@ async def camera_info(request: Request):
         "camera_url": f"{proto}://{host}/camera",
         "websocket_port": 8765,
         "qrcode_url": f"{proto}://{host}/qrcode.png"
+    }
+
+
+# ---------------------------------------------------------------------------
+# WHITE DOTS DEBUG – immagini diagnostiche per _detect_white_dots_v3
+# ---------------------------------------------------------------------------
+
+class WhiteDotsDebugRequest(BaseModel):
+    image: str  # dataURL base64
+    # default = WHITE_DOTS_THRESH_PERC / WHITE_DOTS_SAT_MAX_FRAC*100 → coincidono con production
+    thresh_percentile: int = WHITE_DOTS_THRESH_PERC        # 75 = top 25%
+    sat_max_pct: int      = round(WHITE_DOTS_SAT_MAX_FRAC * 100)  # 28
+
+
+@app.post("/api/white-dots/debug-images")
+async def white_dots_debug_images(payload: WhiteDotsDebugRequest):
+    """
+    Genera due immagini di debug per _detect_white_dots_v3:
+      1. zone_image  – strip di ricerca dal convex hull dlib (60px fuori + 10px dentro)
+      2. detect_image – pixel bianchi rilevati + blobs + top-5 punti selezionati
+
+    Risposta: { zone_b64: "data:image/jpeg...", detect_b64: "data:image/jpeg..." }
+    """
+    try:
+        from eyebrows import extract_eyebrows_from_array
+        import base64 as _b64
+
+        # Decodifica immagine
+        b64 = payload.image
+        if ',' in b64:
+            b64 = b64.split(',', 1)[1]
+        img_bytes = _b64.b64decode(b64)
+        arr = np.frombuffer(img_bytes, dtype=np.uint8)
+        img_bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img_bgr is None:
+            raise ValueError("Impossibile decodificare l'immagine")
+
+        _dat = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), '..', '..',
+            'face-landmark-localization-master', 'shape_predictor_68_face_landmarks.dat'
+        ))
+
+        res_dlib = extract_eyebrows_from_array(img_bgr, predictor_path=_dat)
+        if not res_dlib["face_detected"]:
+            raise ValueError("Volto non rilevato da dlib")
+
+        h, w = img_bgr.shape[:2]
+        hsv  = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+        v_ch = hsv[:, :, 2].astype(np.float32)
+        s_ch = hsv[:, :, 1].astype(np.float32)
+
+        # Parametri morfologici fissi (identici a _detect_white_dots_v3)
+        OUTER_PX = 25
+        INNER_PX = 25
+        k_outer = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (OUTER_PX*2+1, OUTER_PX*2+1))
+        k_inner = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (INNER_PX*2+1, INNER_PX*2+1))
+        MERGE_PX = 8
+        k_merge  = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MERGE_PX*2+1, MERGE_PX*2+1))
+
+        # Parametri configurabili dal frontend
+        THRESH_PERC = max(1, min(99, int(payload.thresh_percentile)))
+        SAT_MAX     = max(0, min(100, int(payload.sat_max_pct))) / 100.0 * 255
+
+        # ── Dot canonici: STESSA chiamata di "Trova Differenze" ─────────────
+        # Garantisce che debug e output del pulsante mostrino esattamente gli stessi punti.
+        v3_result = _detect_white_dots_v3(img_bgr,
+                                          thresh_perc=THRESH_PERC,
+                                          sat_max_frac=SAT_MAX / 255.0)
+        if 'error' in v3_result:
+            raise ValueError(v3_result['error'])
+
+        middle_x = w // 2
+        left_v3  = [d for d in v3_result['dots'] if d['x'] <  middle_x]
+        right_v3 = [d for d in v3_result['dots'] if d['x'] >= middle_x]
+        left_v3  = _select_best_5_for_eyebrow(left_v3,  is_left=True)
+        right_v3 = _select_best_5_for_eyebrow(right_v3, is_left=False)
+        all_selected = left_v3 + right_v3
+
+        # ── Immagine 1: zone di ricerca ──────────────────────────────────────
+        zone_img = img_bgr.copy()
+
+        # ── Immagine 2: rilevamento pixel bianchi ─────────────────────────────
+        detect_img = img_bgr.copy()
+
+        for side, mask, c_mask, c_zone, c_bright in [
+            ('left',  res_dlib['left_mask'],
+             (0, 255, 255),
+             (0, 255, 0),
+             (255, 0, 255)),
+            ('right', res_dlib['right_mask'],
+             (255, 255, 0),
+             (0, 200, 200),
+             (0, 100, 255)),
+        ]:
+            if not np.any(mask):
+                continue
+
+            # Striscia 25px fuori + 25px dentro
+            expanded    = cv2.dilate(mask, k_outer, iterations=1)
+            shrunk      = cv2.erode(mask,  k_inner, iterations=1)
+            search_zone = cv2.subtract(expanded, shrunk)
+
+            # IMG 1 — dlib mask + striscia con tinte semi-trasparenti
+            overlay_tmp = zone_img.copy()
+            overlay_tmp[mask > 0]        = c_mask
+            overlay_tmp[search_zone > 0] = c_zone
+            cv2.addWeighted(overlay_tmp, 0.35, zone_img, 0.65, 0, zone_img)
+
+            # Contorno della striscia
+            cnts_sz, _ = cv2.findContours(search_zone, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(zone_img, cnts_sz, -1, c_zone, max(2, h // 400))
+
+            # IMG 2 — pixel bianchi con parametri configurabili
+            zone_v = v_ch[search_zone > 0]
+            if len(zone_v) < 10:
+                continue
+            thresh_v = float(np.percentile(zone_v, THRESH_PERC))
+            thresh_s = SAT_MAX
+
+            bright = np.zeros((h, w), dtype=np.uint8)
+            bright[(v_ch >= thresh_v) & (s_ch <= thresh_s) & (search_zone > 0)] = 255
+
+            # Colora i pixel bianchi sull'immagine di rilevamento
+            overlay_d = detect_img.copy()
+            overlay_d[bright > 0] = c_bright
+            cv2.addWeighted(overlay_d, 0.5, detect_img, 0.5, 0, detect_img)
+
+            # Fondi frammenti adiacenti (stesso kernel di _detect_white_dots_v3)
+            bright_m = cv2.dilate(bright, k_merge, iterations=1)
+            MAX_BLOB = WHITE_DOTS_MAX_BLOB
+            n_lbl, lbl_map, stats_cc, centroids = cv2.connectedComponentsWithStats(bright_m, 8)
+            cands = []
+            for lbl in range(1, n_lbl):
+                area = int(stats_cc[lbl, cv2.CC_STAT_AREA])
+                if area < 3 or area > MAX_BLOB:
+                    continue
+                cx_ = float(centroids[lbl, 0])
+                cy_ = float(centroids[lbl, 1])
+                bm  = lbl_map == lbl
+                mv  = float(np.mean(v_ch[bm]))
+                score = mv * (1.0 - area / (MAX_BLOB * 2.0))
+                cands.append({'x': int(round(cx_)), 'y': int(round(cy_)),
+                              'size': area, 'score': score})
+
+            # Dots canonici per questo lato (identici a "Trova Differenze")
+            side_selected = left_v3 if side == 'left' else right_v3
+            sel_xy_side   = {(d['x'], d['y']) for d in side_selected}
+
+            # Cerchi: grigio = candidato non selezionato, colorato = selezionato canonico
+            dot_r = max(5, h // 200)
+            for cc in cands:
+                if (cc['x'], cc['y']) not in sel_xy_side:
+                    cv2.circle(detect_img, (cc['x'], cc['y']), dot_r, (80, 80, 80), 1)
+            for i, cc in enumerate(side_selected):
+                cv2.circle(detect_img, (cc['x'], cc['y']), dot_r + 4, c_bright, -1)
+                cv2.circle(detect_img, (cc['x'], cc['y']), dot_r + 6, (255, 255, 255), 2)
+                cv2.putText(detect_img, str(i + 1),
+                            (cc['x'] - dot_r, cc['y'] - dot_r - 4),
+                            cv2.FONT_HERSHEY_SIMPLEX, max(0.5, h / 3000.0),
+                            (255, 255, 255), max(1, h // 800))
+
+            # Info testo su zona
+            ys_m, xs_m = np.where(mask > 0)
+            x_txt = int(xs_m.min())
+            y_txt = max(20, int(ys_m.min()) - 10)
+            txt = f"{side} strip=25+25px cand={len(cands)} sel={len(side_selected)}"
+            cv2.putText(zone_img, txt, (x_txt, y_txt),
+                        cv2.FONT_HERSHEY_SIMPLEX, max(0.5, h / 3000.0),
+                        (255, 255, 255), max(1, h // 800))
+
+        # Disegna anche i top-5 sull'immagine 1 (zone) per riferimento
+        for cc in all_selected:
+            cv2.circle(zone_img, (cc['x'], cc['y']),
+                       max(6, h // 200), (0, 0, 255), -1)
+            cv2.circle(zone_img, (cc['x'], cc['y']),
+                       max(8, h // 200) + 2, (255, 255, 255), 2)
+
+        # Immagine 3: porzione ORIGINALE visibile solo nella strip (nero fuori)
+        # Mostra esattamente i pixel analizzati per il rilevamento
+        both_strips = cv2.bitwise_or(
+            *[cv2.subtract(
+                cv2.dilate(res_dlib[f'{s}_mask'], k_outer, iterations=1),
+                cv2.erode( res_dlib[f'{s}_mask'], k_inner, iterations=1)
+              ) for s in ('left', 'right')]
+        )
+        masked_img = np.zeros_like(img_bgr)
+        masked_img[both_strips > 0] = img_bgr[both_strips > 0]
+        # Bordo verde della strip per chiarezza
+        cnts_all, _ = cv2.findContours(both_strips, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(masked_img, cnts_all, -1, (0, 230, 0), max(2, h // 500))
+        # Disegna top-5 selezionati anche qui
+        for cc in all_selected:
+            cv2.circle(masked_img, (cc['x'], cc['y']), max(6, h // 200), (0, 0, 255), -1)
+            cv2.circle(masked_img, (cc['x'], cc['y']), max(8, h // 200) + 2, (255, 255, 255), 2)
+
+        # Ridimensiona a max 1200px per il trasferimento
+        def _resize_for_transfer(img, max_side=1200):
+            mh, mw = img.shape[:2]
+            s = min(1.0, max_side / max(mh, mw))
+            if s < 1.0:
+                img = cv2.resize(img, (int(mw * s), int(mh * s)), interpolation=cv2.INTER_AREA)
+            return img
+
+        zone_img   = _resize_for_transfer(zone_img)
+        detect_img = _resize_for_transfer(detect_img)
+        masked_img = _resize_for_transfer(masked_img)
+
+        _, buf_z = cv2.imencode('.jpg', zone_img,   [cv2.IMWRITE_JPEG_QUALITY, 88])
+        _, buf_d = cv2.imencode('.jpg', detect_img, [cv2.IMWRITE_JPEG_QUALITY, 88])
+        _, buf_m = cv2.imencode('.jpg', masked_img, [cv2.IMWRITE_JPEG_QUALITY, 88])
+
+        return {
+            "success":        True,
+            "zone_b64":       "data:image/jpeg;base64," + _b64.b64encode(buf_z.tobytes()).decode(),
+            "detect_b64":     "data:image/jpeg;base64," + _b64.b64encode(buf_d.tobytes()).decode(),
+            "masked_b64":     "data:image/jpeg;base64," + _b64.b64encode(buf_m.tobytes()).decode(),
+            "total_selected": len(all_selected),
+            "params": {
+                "outer_px":          OUTER_PX,
+                "inner_px":          INNER_PX,
+                "merge_px":          MERGE_PX,
+                "thresh_percentile": THRESH_PERC,
+                "sat_max_pct":       int(payload.sat_max_pct),
+                "min_blob_area":     3,
+                "max_blob_area":     WHITE_DOTS_MAX_BLOB,
+                "top_n_per_side":    5,
+            },
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Errore debug images: {e}")
+
+
+# ---------------------------------------------------------------------------
+# EYEBROW SYMMETRY – usa modulo eyebrows.py (dlib + segmentazione pixel)
+# ---------------------------------------------------------------------------
+
+_DAT_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..', '..',
+                 'face-landmark-localization-master',
+                 'shape_predictor_68_face_landmarks.dat')
+)
+
+
+class EyebrowSymmetryRequest(BaseModel):
+    image: str  # dataURL base64 (con o senza prefisso data:image/...)
+
+
+@app.post("/api/eyebrow-symmetry")
+async def eyebrow_symmetry(payload: EyebrowSymmetryRequest):
+    """
+    Analizza la simmetria delle sopracciglia tramite eyebrows.py (dlib).
+    Decodifica l'immagine base64, esegue la segmentazione pixel e restituisce:
+      - overlay_b64: PNG trasparente (verde=sx, arancio=dx) con stessa dimensione dell'immagine inviata
+      - left_area, right_area: pixel count
+      - face_detected: bool
+    """
+    import base64
+    from eyebrows import extract_eyebrows_from_array
+    try:
+        # --- decodifica base64 ---
+        b64 = payload.image
+        if ',' in b64:
+            b64 = b64.split(',', 1)[1]
+        img_bytes = base64.b64decode(b64)
+        arr = np.frombuffer(img_bytes, dtype=np.uint8)
+        img_bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img_bgr is None:
+            raise ValueError("Impossibile decodificare l'immagine base64.")
+
+        # --- segmentazione dlib ---
+        res = extract_eyebrows_from_array(img_bgr, predictor_path=_DAT_PATH)
+        if not res["face_detected"]:
+            return {"face_detected": False, "overlay_b64": "", "left_area": 0, "right_area": 0}
+
+        # --- crea PNG BGRA trasparente ---
+        h, w = img_bgr.shape[:2]
+        bgra = np.zeros((h, w, 4), dtype=np.uint8)
+        lm, rm = res["left_mask"], res["right_mask"]
+
+        # Usa il contorno smoothed (approxPolyDP ε=1.5) sia per il fill che per l'outline:
+        # il perimetro risulta lineare senza frastagliature; le aree restituite (left_area/
+        # right_area) restano calcolate sul mask grezzo → nessuna distorsione nell'analisi.
+        for mask, fill_color, edge_color in [
+            (lm, (128, 222, 74, 115), (60, 255, 74, 220)),   # verde sx
+            (rm, (60, 147, 251, 115), (60, 165, 251, 220)),  # arancio dx
+        ]:
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS)
+            if not contours:
+                continue
+            # prendi solo il contorno più grande, smoothing leggero con ε=1.5
+            main_cnt = max(contours, key=cv2.contourArea)
+            smooth = cv2.approxPolyDP(main_cnt, 1.5, True)
+
+            # fill semi-trasparente
+            tmp_fill = np.zeros((h, w), dtype=np.uint8)
+            cv2.fillPoly(tmp_fill, [smooth], 255)
+            for c_idx, c_val in enumerate(fill_color):
+                bgra[tmp_fill > 0, c_idx] = c_val
+
+            # outline opaco
+            tmp_edge = np.zeros((h, w), dtype=np.uint8)
+            cv2.drawContours(tmp_edge, [smooth], -1, 255, 2)
+            for c_idx, c_val in enumerate(edge_color):
+                bgra[tmp_edge > 0, c_idx] = c_val
+
+        # encoding PNG
+        ok, buf = cv2.imencode('.png', bgra)
+        if not ok:
+            raise ValueError("Errore encoding PNG overlay.")
+        overlay_b64 = "data:image/png;base64," + base64.b64encode(buf.tobytes()).decode()
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore analisi sopracciglia: {e}")
+
+    return {
+        "face_detected": True,
+        "overlay_b64":   overlay_b64,
+        "left_area":     res["left_area"],
+        "right_area":    res["right_area"],
     }
 
 

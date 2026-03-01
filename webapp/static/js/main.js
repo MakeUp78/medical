@@ -6,7 +6,23 @@
  * ULTIMO AGGIORNAMENTO: Corretto openUnifiedAnalysisSection con log dettagliati
  */
 
-// main.js v6.17
+// main.js v6.18
+
+// ============================================================
+// COSTANTI DI RISOLUZIONE — usate su tutti i tre flussi
+// (webcam, video, immagine statica) per garantire che
+// dlib / MediaPipe / white-dots ricevano SEMPRE la stessa
+// scala e qualità JPEG, rendendo i rilevamenti coerenti.
+// ============================================================
+// Risoluzione massima per ANALISI (puntini, landmarks, ecc.)
+// Deve coincidere con la risoluzione max del flusso più frequente (webcam desktop).
+const ANALYSIS_MAX_PX = 1280;
+// Qualità JPEG per le immagini di analisi (uguale a webcam desktop).
+const ANALYSIS_JPEG_QUALITY = 0.88;
+// Risoluzione max per i frame LIVE in streaming (WebSocket).
+// Mobile usa metà per ridurre latenza.
+const STREAM_MAX_PX_DESKTOP = 1280;
+const STREAM_MAX_PX_MOBILE = 640;
 
 // Variabili globali (controllo per evitare ridichiarazioni)
 if (typeof currentTool === 'undefined') var currentTool = 'selection';
@@ -108,9 +124,18 @@ function updateUserUI(user) {
   // Salva il nome utente globalmente per l'assistente vocale
   window.currentUserName = user.firstname || '';
 
-  // Pre-fetch audio benvenuto in background: sarà pronto appena l'utente interagisce
-  if (window.currentUserName && typeof voiceAssistant !== 'undefined') {
-    voiceAssistant.prefetchWelcome(window.currentUserName);
+  // Persisti il nome per il benvenuto speculativo alla prossima visita.
+  if (window.currentUserName) {
+    localStorage.setItem('_kimerika_welcome_name', window.currentUserName);
+  }
+
+  // Avvia speakWelcome se non già partito in anticipo (speculativo pre-await).
+  // _welcomeStarted evita doppia chiamata se updateUserUI viene invocata di nuovo.
+  // _hasPendingAction: non salutare sui reload da "Avvia Webcam" / "Carica Video".
+  if (window.currentUserName && typeof voiceAssistant !== 'undefined'
+    && !window._welcomeStarted && !window._hasPendingAction) {
+    window._welcomeStarted = true;
+    voiceAssistant.speakWelcome(window.currentUserName);
   }
 
   if (userNameElement) {
@@ -243,14 +268,9 @@ async function detectLandmarksSilent() {
   /**
    * Versione silenziosa di detectLandmarks() - senza toast/status
    */
-  if (!currentImage) {
-    console.warn('⚠️ detectLandmarksSilent: currentImage non disponibile');
-    return false;
-  }
+  if (!currentImage) return false;
 
   try {
-    console.log('🔍 detectLandmarksSilent: Inizio rilevamento...');
-
     let base64Image;
 
     // Acquisisce SEMPRE l'immagine originale via getElement() a piena risoluzione.
@@ -259,26 +279,42 @@ async function detectLandmarksSilent() {
     // coordinate usato da transformLandmarkCoordinate() e drawSymmetryAxis().
     if (currentImage && typeof currentImage.getElement === 'function') {
       const fabricElement = currentImage.getElement();
-      if (fabricElement != null) {
+      // Valida che sia un tipo effettivamente disegnabile su canvas.
+      // Fabric.js imposta _element in modo asincrono: nei primi ms l'oggetto
+      // esiste ma non è ancora un HTMLImageElement/HTMLCanvasElement valido.
+      const _DRAWABLE = [HTMLImageElement, HTMLCanvasElement, HTMLVideoElement,
+        ...(typeof ImageBitmap !== 'undefined' ? [ImageBitmap] : []),
+        ...(typeof OffscreenCanvas !== 'undefined' ? [OffscreenCanvas] : [])];
+      const _isDrawable = fabricElement != null && _DRAWABLE.some(T => fabricElement instanceof T);
+      // Per HTMLImageElement attendere il caricamento completo
+      const _imgReady = !(fabricElement instanceof HTMLImageElement)
+        || (fabricElement.complete && fabricElement.naturalWidth > 0);
+      if (_isDrawable && _imgReady) {
         try {
           const w = fabricElement.naturalWidth || fabricElement.videoWidth || fabricElement.width;
           const h = fabricElement.naturalHeight || fabricElement.videoHeight || fabricElement.height;
           if (w > 0 && h > 0) {
+            // ⚠️ LANDMARK DETECTION: NON ridimensionare qui.
+            // Le coordinate restituite dal backend (normalizzate 0-1 o assolute in pixel)
+            // vengono mappate tramite transformLandmarkCoordinate() che usa
+            // el.naturalWidth/naturalHeight come base. Se si invia un'immagine ridotta
+            // e il backend restituisce coordinate assolute, queste sarebbero nel sistema
+            // dell'immagine ridotta e non in quello originale → misallineamento overlay.
+            // Per la sola rilevazione landmark si usa sempre la piena risoluzione.
             const snapEl = document.createElement('canvas');
             snapEl.width = w;
             snapEl.height = h;
             snapEl.getContext('2d').drawImage(fabricElement, 0, 0, w, h);
-            base64Image = snapEl.toDataURL('image/jpeg', 0.98);
+            base64Image = snapEl.toDataURL('image/jpeg', 0.92);
           }
         } catch (elErr) {
-          console.warn('🔍 detectLandmarksSilent: getElement() drawImage fallito:', elErr.message);
+          console.warn('🔍 detectLandmarksSilent: drawImage fallito:', elErr.message);
         }
       }
     }
 
     if (!base64Image) {
-      console.warn('⚠️ detectLandmarksSilent: impossibile acquisire immagine originale, skip');
-      return false;
+      return false; // Elemento non ancora pronto: verrà ritentato alla prossima chiamata
     }
 
     // Chiama API tramite percorso relativo (nginx proxy)
@@ -490,10 +526,38 @@ function resetForNewAnalysis() {
     window.currentCanvasMode = null;
   }
 
-  // ✅ RESET TUTTI I PULSANTI ATTIVI (rimuovi classe 'active')
-  document.querySelectorAll('.btn.active, .toggle-btn.active, button.active').forEach(btn => {
-    btn.classList.remove('active');
+  // ✅ RESET TUTTI I PULSANTI ATTIVI (rimuovi classe 'active' e 'btn-active')
+  document.querySelectorAll('.btn.active, .toggle-btn.active, button.active, .btn-analysis.btn-active, .btn-tool-strip.btn-active').forEach(btn => {
+    btn.classList.remove('active', 'btn-active');
   });
+
+  // ✅ RESET OVERLAY MISURAZIONI (mappa, cache sopracciglia, pulsanti rimasti)
+  if (typeof clearAllMeasurementOverlays === 'function') {
+    clearAllMeasurementOverlays();
+  }
+
+  // ✅ RESET POINT-PAIR HIGHLIGHT (overlay da click su righe tabella)
+  if (typeof clearPointPairHighlight === 'function') {
+    clearPointPairHighlight();
+  }
+  window.highlightedPair = null;
+  window.highlightOverlayObjects = [];
+
+  // ✅ RESET GREEN DOTS / WHITE DOTS STATE
+  window.greenDotsData = null;
+  window.greenDotsDetected = false;
+  window.currentGreenDotsOverlay = null;
+  window.currentGreenDotsOverlayNaturalW = null;
+  window.currentGreenDotsOverlayNaturalH = null;
+  window.greenDotsDetectionAngle = null;
+  window.greenDotsOverlayScaleXAtDetection = null;
+  window.greenDotsOverlayScaleYAtDetection = null;
+  window.greenDotsDetectionCenterX = null;
+  window.greenDotsDetectionCenterY = null;
+  window.highResCanvasForAnalysis = null;
+  window.lastImageResizeScale = 1.0;
+  window.eyebrowSymmetryCache = null;
+  window._eyebrowSymmetryCache = null;
 
   // ✅ RESET CURSORE CANVAS
   if (fabricCanvas) {
@@ -730,7 +794,9 @@ function initializeFileHandlers() {
 }
 
 function loadImage() {
-  // Reset gestito da handleUnifiedFileLoad() - no duplicati
+  // Reset inline: non si può usare hardRefreshForNewSession perché i browser
+  // bloccano input[type=file].click() se non è direttamente nel gestore utente.
+  resetForNewAnalysis();
   loadImageDirect();
 }
 
@@ -767,7 +833,8 @@ function collapseDetectionSections() {
 }
 
 function loadVideo() {
-  // Reset gestito da handleUnifiedFileLoad() - no duplicati
+  // Reset inline: stesso motivo di loadImage (file picker bloccato dopo reload).
+  resetForNewAnalysis();
   loadVideoDirect();
 }
 
@@ -986,9 +1053,10 @@ async function handleUnifiedFileLoad(file, type) {
         const rawCtx = rawCanvas.getContext('2d');
         rawCtx.drawImage(img, 0, 0);
 
-        // Target: larghezza fissa 1200px, altezza proporzionale per mantenere aspect ratio
-        // ✅ OTTIMIZZATO: 1200px per bilanciare qualità e performance nel rilevamento punti
-        const targetWidth = 1200;
+        // Target: larghezza fissa 1800px, altezza proporzionale per mantenere aspect ratio
+        // ✅ OTTIMIZZATO: 1800px per bilanciare qualità e performance nel rilevamento punti bianchi
+        // ⬆️ AUMENTATO da 1200px a 1800px: risoluzione più alta = rilevamento puntini più affidabile
+        const targetWidth = 1800;
         let finalWidth = rawCanvas.width;
         let finalHeight = rawCanvas.height;
 
@@ -1014,8 +1082,15 @@ async function handleUnifiedFileLoad(file, type) {
         const base64Image = finalCanvas.toDataURL('image/jpeg', 0.98);
         const base64Data = base64Image.split(',')[1];
 
-        // Carica immagine sul canvas
+        // Carica immagine sul canvas (versione ridotta per display performance)
         updateCanvasWithBestFrame(base64Data, img._originalMimeType);
+
+        // ⚠️ IMPORTANTE: assegna DOPO updateCanvasWithBestFrame (che è sincrono nel setup).
+        // Conserva il rawCanvas full-res come sorgente per l'analisi (es. trova differenze).
+        // getCanvasImageAsBase64 userà questo invece dell'elemento ridimensionato in Fabric.js,
+        // garantendo la stessa qualità del flusso video.
+        window.highResCanvasForAnalysis = rawCanvas;
+        console.log(`💾 Canvas full-res pronto per analisi: ${rawCanvas.width}x${rawCanvas.height}`);
 
         updateStatus(`Immagine caricata: ${file.name}`);
         showToast('Immagine caricata con successo', 'success');
@@ -1049,6 +1124,8 @@ async function handleUnifiedFileLoad(file, type) {
     reader.readAsDataURL(file);
 
   } else if (type === 'video') {
+    // Nasconde la guida viso sul canvas: non serve durante l'analisi di un video
+    window.faceGuideHidden = true;
     // RIPRISTINO SISTEMA ORIGINALE: Analisi automatica via WebSocket
     try {
       collapseDetectionSections();
@@ -1212,9 +1289,12 @@ function captureFrameFromVideoElement(video) {
 
     let w = video.videoWidth || 1080;
     let h = video.videoHeight || 1920;
+    // Usa STREAM_MAX_PX_DESKTOP: stesso cap del flusso webcam desktop
+    // → i frame video e webcam vanno sullo stesso canale WebSocket,
+    //   devono avere scala e qualità identiche.
     const maxDim = Math.max(w, h);
-    if (maxDim > 2048) {
-      const scale = 2048 / maxDim;
+    if (maxDim > STREAM_MAX_PX_DESKTOP) {
+      const scale = STREAM_MAX_PX_DESKTOP / maxDim;
       w = Math.round(w * scale);
       h = Math.round(h * scale);
     }
@@ -1225,8 +1305,7 @@ function captureFrameFromVideoElement(video) {
     context.imageSmoothingQuality = 'high';
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Qualità 0.95: ottimale per rilevamento e fedeltà del best frame
-    const frameBase64 = canvas.toDataURL('image/jpeg', 0.95).split(',')[1];
+    const frameBase64 = canvas.toDataURL('image/jpeg', ANALYSIS_JPEG_QUALITY).split(',')[1];
 
     // Riusa il protocollo WebSocket della webcam
     const frameMessage = {
@@ -1365,12 +1444,17 @@ function drawVideoFrame(video, currentTime) {
   video.addEventListener('seeked', function onSeeked() {
     video.removeEventListener('seeked', onSeeked);
 
-    // Cattura frame corrente
+    // Cattura frame corrente a ANALYSIS_MAX_PX
+    const _dvw = video.videoWidth || 1280;
+    const _dvh = video.videoHeight || 720;
+    const _dvs = Math.min(1.0, ANALYSIS_MAX_PX / Math.max(_dvw, _dvh));
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = Math.round(_dvw * _dvs);
+    canvas.height = Math.round(_dvh * _dvs);
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     // Converti in immagine
     canvas.toBlob(blob => {
@@ -1384,7 +1468,7 @@ function drawVideoFrame(video, currentTime) {
         updateVideoTimeDisplay(currentTime, video.duration);
       };
       img.src = URL.createObjectURL(blob);
-    }, 'image/jpeg', 0.9);
+    }, 'image/jpeg', ANALYSIS_JPEG_QUALITY);
   });
 }
 
@@ -1782,12 +1866,18 @@ function setupVideoControls(video, file) {
       console.log(`🎯 Analisi frame al tempo: ${currentTime}s`);
 
       try {
-        // Cattura il frame corrente
+        // Cattura il frame corrente a ANALYSIS_MAX_PX per uniformare la scala
+        // con il flusso webcam (stessa risoluzione per dlib/MediaPipe).
+        const _vw = video.videoWidth || 1280;
+        const _vh = video.videoHeight || 720;
+        const _vs = Math.min(1.0, ANALYSIS_MAX_PX / Math.max(_vw, _vh));
         const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        canvas.width = Math.round(_vw * _vs);
+        canvas.height = Math.round(_vh * _vs);
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         // Converti in blob
         canvas.toBlob(async (blob) => {
@@ -1810,7 +1900,7 @@ function setupVideoControls(video, file) {
           };
 
           img.src = URL.createObjectURL(blob);
-        }, 'image/jpeg', 0.9);
+        }, 'image/jpeg', ANALYSIS_JPEG_QUALITY);
 
       } catch (error) {
         console.error('❌ Errore cattura frame:', error);
@@ -1950,13 +2040,8 @@ function displayImageOnCanvas(image) {
   window.imageScale = scale;
   window.imageOffset = { x: x, y: y };
 
-  console.log('✅ imageScale e imageOffset impostati:', { scale, offset: { x, y } });
-
-  // Auto-rilevamento landmarks - con delay per assicurarsi che l'immagine sia pronta
-  setTimeout(() => {
-    console.log('🔍 Avvio auto-rilevamento landmarks dopo 300ms...');
-    autoDetectLandmarksOnImageChange();
-  }, 300);
+  // Auto-rilevamento landmarks con delay: attende che Fabric.js completi l'init interno
+  setTimeout(() => autoDetectLandmarksOnImageChange(), 300);
 }
 
 // === GESTIONE WEBCAM ===
@@ -2040,10 +2125,12 @@ async function startWebcamDirect() {
         // Reinizializza il buffer frame_scorer sul server
         webcamWebSocket.send(JSON.stringify({
           action: 'start_session',
-          session_id: `iphone_session_${new Date().toISOString().replace(/[:.]/g, '_')}`
+          session_id: `iphone_session_${new Date().toISOString().replace(/[:.]/g, '_')}`,
+          session_token: window._iphoneSessionToken || ''
         }));
         webcamWebSocket.send(JSON.stringify({
-          action: 'start_webcam'
+          action: 'start_webcam',
+          session_token: window._iphoneSessionToken || ''
         }));
       }
 
@@ -2066,12 +2153,26 @@ async function startWebcamDirect() {
       }
 
       // Marca webcam come attiva per permettere rendering frame
+      window.faceGuideHidden = false;
       isWebcamActive = true;
       updateWebcamBadge(true);
 
       // Apri fullscreen anche per stream iPhone (senza video element locale,
       // verrà renderizzato dal canvas preview esistente)
       openWebcamFullscreen(null);
+
+      // Pre-carica frasi di guida posa e avvia guida vocale
+      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.prefetchAudio) {
+        voiceAssistant.prefetchAudio([
+          'Avvicìnati alla camera', 'Allontànati dalla camera',
+          'Avvicìnati un po\'',
+          'Gira il viso verso sinistra', 'Gira il viso verso destra',
+          'Abbassa leggermente il mento', 'Alza leggermente il mento',
+          'Inclina la testa verso sinistra', 'Inclina la testa verso destra',
+          'Ottima posa!'
+        ]);
+      }
+      startPoseVoiceGuidance();
 
       return;
     }
@@ -2134,17 +2235,38 @@ async function startWebcamDirect() {
     // Apri sezione anteprima webcam (solo desktop: su mobile è nella sidebar nascosta)
     if (window.innerWidth > 768) {
       openWebcamSection();
+      showWebcamPreview(video);
+      startLivePreview(video); // Solo desktop: su mobile la sidebar è nascosta,
+      // il rendering viene fatto dal loop fullscreen.
     }
-    showWebcamPreview(video);
-    startLivePreview(video);
+
+    // Pre-carica in cache le frasi di guida posa per latenza zero su mobile
+    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.prefetchAudio) {
+      voiceAssistant.prefetchAudio([
+        'Avvicìnati alla camera',
+        'Allontànati dalla camera',
+        'Avvicìnati un po\'',
+        'Gira il viso verso sinistra',
+        'Gira il viso verso destra',
+        'Abbassa leggermente il mento',
+        'Alza leggermente il mento',
+        'Inclina la testa verso sinistra',
+        'Inclina la testa verso destra',
+        'Ottima posa!'
+      ]);
+    }
 
     // Apri anteprima a tutto schermo durante l'acquisizione
     openWebcamFullscreen(video);
+
+    // Avvia guida vocale posa (frasi già pre-fetchate sopra → latenza zero)
+    startPoseVoiceGuidance();
 
     // ✅ WEBCAM: usa WebSocket per buffer circolare lato server
     // Invia frame a 2 FPS → server analizza e mantiene buffer migliori 40 frame
     startFrameCapture(video);
 
+    window.faceGuideHidden = false;
     isWebcamActive = true;
 
     // Mostra stato webcam
@@ -2169,10 +2291,14 @@ function stopWebcam() {
     // Chiudi overlay fullscreen
     closeWebcamFullscreen();
 
+    // Ferma guida vocale posa
+    stopPoseVoiceGuidance();
+
     // Invia stop_webcam al server per smettere di ricevere frames
     if (window.isIPhoneStreamActive && webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
       webcamWebSocket.send(JSON.stringify({
-        action: 'stop_webcam'
+        action: 'stop_webcam',
+        session_token: window._iphoneSessionToken || ''
       }));
     }
 
@@ -2256,15 +2382,17 @@ async function connectWebcamWebSocket() {
         webcamWebSocket = newWebSocket;
         updateStatus('WebSocket connesso - Avvio sessione...');
 
-        // Registra desktop per ricevere notifiche iPhone
+        // Registra desktop per ricevere notifiche iPhone (con session_token per isolamento utente)
         webcamWebSocket.send(JSON.stringify({
-          action: 'register_desktop'
+          action: 'register_desktop',
+          session_token: window._iphoneSessionToken || ''
         }));
 
         // Avvia sessione
         const startMessage = {
           action: 'start_session',
-          session_id: `webapp_session_${new Date().toISOString().replace(/[:.]/g, '_')}`
+          session_id: `webapp_session_${new Date().toISOString().replace(/[:.]/g, '_')}`,
+          session_token: window._iphoneSessionToken || ''
         };
         webcamWebSocket.send(JSON.stringify(startMessage));
 
@@ -2307,6 +2435,7 @@ function disconnectWebcamWebSocket() {
       const stopMessage = {
         action: 'get_results',
         request_id: requestId,
+        session_token: window._iphoneSessionToken || '',
         final: true
       };
 
@@ -2343,7 +2472,24 @@ function startFrameCapture(video) {
 
   frameCounter = 0;
   let lastCaptureTimestamp = 0;
-  const FRAME_INTERVAL_MS = 200; // 5 FPS per il server (più reattivo)
+
+  const _captureMobile = window.innerWidth <= 768;
+  // 8 FPS sia mobile che desktop: frame più piccoli → round-trip più rapido → feedback posa fluido
+  const FRAME_INTERVAL_MS = 125; // 8 FPS
+
+  // Pre-allocazione canvas fuori dal loop: evita migliaia di allocazioni GC nell'RAF
+  const rawCanvas = document.createElement('canvas');
+  const rawCtx = rawCanvas.getContext('2d');
+  const resizedCanvas = document.createElement('canvas');
+  const resizedCtx = resizedCanvas.getContext('2d');
+
+  // Dimensioni e qualità:
+  //   Mobile  → max  640px, quality 0.72 (payload ≈20-40KB, bassa latenza)
+  //   Desktop → max 1280px, quality 0.88 (payload ≈80-180KB, ottima qualità)
+  //   (era 2048px q=0.95 → ≈600KB-1.5MB → encoding lento, server lento)
+  const maxAllowed = _captureMobile ? STREAM_MAX_PX_MOBILE : STREAM_MAX_PX_DESKTOP;
+  const jpegQuality = _captureMobile ? 0.72 : ANALYSIS_JPEG_QUALITY;
+  const smoothingQuality = _captureMobile ? 'medium' : 'high';
 
   // ✅ requestAnimationFrame: scheduling più preciso, non blocca il thread principale
   function captureLoop(timestamp) {
@@ -2352,33 +2498,34 @@ function startFrameCapture(video) {
     if (timestamp - lastCaptureTimestamp >= FRAME_INTERVAL_MS) {
       if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
         try {
-          // Cattura frame raw dalla webcam alla massima risoluzione disponibile
-          const rawCanvas = document.createElement('canvas');
-          const context = rawCanvas.getContext('2d');
+          const vw = video.videoWidth || 640;
+          const vh = video.videoHeight || 480;
 
-          rawCanvas.width = video.videoWidth || 640;
-          rawCanvas.height = video.videoHeight || 480;
+          // 1. Disegna sul rawCanvas (riuso: aggiorna width/height solo se cambiano)
+          if (rawCanvas.width !== vw || rawCanvas.height !== vh) {
+            rawCanvas.width = vw;
+            rawCanvas.height = vh;
+          }
+          rawCtx.drawImage(video, 0, 0, vw, vh);
 
-          context.drawImage(video, 0, 0, rawCanvas.width, rawCanvas.height);
-
-          // Cap a 2048px (lato lungo): alta qualità per il best frame.
-          // Il server riduce a 640px per MediaPipe ma conserva l'originale.
+          // 2. Scala se necessario (riuso resizedCanvas)
           let finalCanvas = rawCanvas;
-          const maxDim = Math.max(rawCanvas.width, rawCanvas.height);
-          if (maxDim > 2048) {
-            const scale = 2048 / maxDim;
-            const resizedCanvas = document.createElement('canvas');
-            resizedCanvas.width = Math.round(rawCanvas.width * scale);
-            resizedCanvas.height = Math.round(rawCanvas.height * scale);
-            const resizedCtx = resizedCanvas.getContext('2d');
-            resizedCtx.imageSmoothingEnabled = true;
-            resizedCtx.imageSmoothingQuality = 'high';
-            resizedCtx.drawImage(rawCanvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
+          const maxDim = Math.max(vw, vh);
+          if (maxDim > maxAllowed) {
+            const scale = maxAllowed / maxDim;
+            const rw = Math.round(vw * scale);
+            const rh = Math.round(vh * scale);
+            if (resizedCanvas.width !== rw || resizedCanvas.height !== rh) {
+              resizedCanvas.width = rw;
+              resizedCanvas.height = rh;
+              resizedCtx.imageSmoothingEnabled = true;
+              resizedCtx.imageSmoothingQuality = smoothingQuality;
+            }
+            resizedCtx.drawImage(rawCanvas, 0, 0, rw, rh);
             finalCanvas = resizedCanvas;
           }
 
-          // Qualità 0.95: ottimale per rilevamento e fedeltà del best frame
-          const frameBase64 = finalCanvas.toDataURL('image/jpeg', 0.95).split(',')[1];
+          const frameBase64 = finalCanvas.toDataURL('image/jpeg', jpegQuality).split(',')[1];
 
           const frameMessage = {
             action: 'process_frame',
@@ -2563,6 +2710,9 @@ function renderLivePreview(video) {
  *   positionScore (10%) → centramento nel frame
  */
 function drawFaceGuideOverlay(ctx, W, H) {
+  // Overlay nascosto quando è stato caricato un video (non è una sessione webcam)
+  if (window.faceGuideHidden) return;
+
   const pose = window.livePoseAngles || {
     yaw: 0, pitch: 0, roll: 0, score: 0,
     poseScore: 0, sizeScore: 0, positionScore: 0
@@ -2582,115 +2732,68 @@ function drawFaceGuideOverlay(ctx, W, H) {
   drawGuidanceText(ctx, W, H, yaw, pitch, roll, score);
 }
 
-/* ─── Silhouette fissa della posa ideale ────────────────────────────────── */
+/* ─── Cache immagine guida viso ─────────────────────────────────────────── */
+let _faceGuideImg = null;
+(function _initFaceGuideImg() {
+  const img = new Image();
+  img.src = '/static/face_guide.png';
+  img.onload = () => { _faceGuideImg = img; };
+}());
+
+/* ─── Guida viso basata su immagine IMG_8112 ─────────────────────────────── */
 /*
- * Disegna una silhouette STATICA che rappresenta la posizione e dimensione
- * ottimale del viso per ottenere il massimo score:
- *   - Centrata orizzontalmente e verticalmente nel frame
- *   - Dimensione calibrata per occupare ~35% del frame (centro range 30-45%)
- *   - Proporzioni tipiche di un viso adulto (ovale + occhi + naso + bocca)
- *
- * Il colore del bordo cambia con lo score: rosso→giallo→verde.
- * NON cambia posizione né dimensione — è una guida fissa.
+ * Disegna IMG_8112.PNG come guida fissa per il posizionamento ottimale del
+ * viso. L'immagine (640×640, aspect ratio 1:1) viene scalata proporzionalmente
+ * e centrata nella stessa area geometrica dell'ovale precedente, garantendo
+ * la corretta area di inquadratura per massimizzare lo score di rilevamento.
+ * I corner brackets AR indicano lo stato dello score con colori rosso/giallo/verde.
  */
 function drawIdealFaceSilhouette(ctx, W, H, score) {
-  // ── Geometria base (invariata) ────────────────────────────────────────────
+  // ── Geometria base ────────────────────────────────────────────────────────
   const cx = W * 0.50;
   const cy = H * 0.42;
-  const rx = W * 0.26;
+  const rx = W * 0.30;   // aumentato da 0.26 → overlay più grande per score migliore
   const ry = rx * 1.38;
-  const top = cy - ry;
-  const fy = (t) => top + ry * 2 * t;
-
-  // ── Palette colore (score-driven) ─────────────────────────────────────────
-  const isGood = score >= 85;
-  const isMid = score >= 55;
-  const colR = isGood ? 0 : isMid ? 255 : 255;
-  const colG = isGood ? 210 : isMid ? 200 : 65;
-  const colB = isGood ? 90 : isMid ? 0 : 65;
-  const colA = (a) => `rgba(${colR},${colG},${colB},${a})`;
   const lw = Math.max(1.5, W * 0.003);
 
-  // ── Feature positions ──────────────────────────────────────────────────────
-  const browY = fy(0.44);
-  const eyeY = fy(0.52);
-  const eyeOff = rx * 0.38;
-  const eyeHW = rx * 0.22;
-  const eyeH = ry * 0.060;
-  const noseTY = fy(0.61);
-  const noseBY = fy(0.73);
-  const noseW = rx * 0.13;
-  const mouthY = fy(0.86);
-  const mouthHW = rx * 0.29;
-  const browHW = rx * 0.27;
-  const browH = ry * 0.018;
-  const lipH = ry * 0.032;
+  // ── Palette colore score-driven ───────────────────────────────────────────
+  const isGood = score >= 85;
+  const isMid = score >= 55;
+  const colR = isGood ? 0 : isMid ? 255 : 220;
+  const colG = isGood ? 210 : isMid ? 185 : 50;
+  const colB = isGood ? 90 : isMid ? 0 : 50;
+  const colStr = `rgba(${colR},${colG},${colB},`;
 
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // LAYER 1 — Griglia interna (clippata all'ovale)
-  // ══════════════════════════════════════════════════════════════════════════
-  ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-  ctx.clip();
-  ctx.strokeStyle = colA(0.07);
-  ctx.lineWidth = 0.8;
-  const gs = ry * 0.11;
-  for (let gy = top; gy <= top + ry * 2 + gs; gy += gs) {
-    ctx.beginPath(); ctx.moveTo(cx - rx, gy); ctx.lineTo(cx + rx, gy); ctx.stroke();
+  // ── Immagine guida viso (pngwing.com.png, 1158×2188) ────────────────────────
+  // Contiene viso frontale (top ~70%) + collo (bottom ~30%).
+  // Si scala per LARGHEZZA (imgW = rx*2): il viso copre l'area orizzontale
+  // dell'ovale di rilevamento. drawY allineato al TOP dell'ovale (cy - ry):
+  // viso coincide con la zona di detection, il collo si estende sotto.
+  const imgW = rx * 2;                   // larghezza = diametro ovale
+  const imgH = imgW * (2188 / 1158);    // ≈ imgW × 1.889 (aspect originale)
+  const drawX = cx - rx;                // allineato a sinistra dell'ovale
+  const drawY = cy - ry;               // top immagine = top ovale
+
+  if (_faceGuideImg) {
+    ctx.globalAlpha = 0.85;
+    ctx.drawImage(_faceGuideImg, drawX, drawY, imgW, imgH);
+    ctx.globalAlpha = 1;
+  } else {
+    // Fallback ellisse mentre l'immagine si carica
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = colStr + '0.80)';
+    ctx.lineWidth = lw * 1.3;
+    ctx.stroke();
   }
-  for (let gx = cx - rx; gx <= cx + rx + gs; gx += gs) {
-    ctx.beginPath(); ctx.moveTo(gx, top); ctx.lineTo(gx, top + ry * 2); ctx.stroke();
-  }
-  ctx.restore();
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // LAYER 2 — Linea di scansione animata
-  // ══════════════════════════════════════════════════════════════════════════
-  ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-  ctx.clip();
-  const scanT = (Date.now() % 2400) / 2400;
-  const scanY = top + ry * 2 * scanT;
-  const sg = ctx.createLinearGradient(cx, scanY - ry * 0.06, cx, scanY + ry * 0.06);
-  sg.addColorStop(0, colA(0));
-  sg.addColorStop(0.42, colA(0.06));
-  sg.addColorStop(0.50, colA(0.50));
-  sg.addColorStop(0.58, colA(0.06));
-  sg.addColorStop(1, colA(0));
-  ctx.fillStyle = sg;
-  ctx.fillRect(cx - rx, scanY - ry * 0.07, rx * 2, ry * 0.14);
-  ctx.strokeStyle = colA(0.55);
-  ctx.lineWidth = 0.8;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath(); ctx.moveTo(cx - rx, scanY); ctx.lineTo(cx + rx, scanY); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // LAYER 3 — Ovale principale (dashed)
-  // ══════════════════════════════════════════════════════════════════════════
-  ctx.setLineDash([lw * 3.5, lw * 2]);
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-  ctx.strokeStyle = colA(0.80);
-  ctx.lineWidth = lw * 1.3;
-  ctx.shadowColor = colA(0.40);
-  ctx.shadowBlur = Math.max(6, W * 0.012);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.shadowBlur = 0;
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // LAYER 4 — Corner brackets AR
-  // ══════════════════════════════════════════════════════════════════════════
+  // ── Corner brackets AR (indicatore score) ─────────────────────────────────
   const bLen = rx * 0.18;
-  ctx.strokeStyle = colA(0.95);
+  ctx.strokeStyle = colStr + '0.90)';
   ctx.lineWidth = lw * 2.2;
   [
     [cx - rx * 0.74, cy - ry * 0.68, [bLen, 0], [0, bLen]],
@@ -2704,178 +2807,6 @@ function drawIdealFaceSilhouette(ctx, W, H, score) {
     ctx.lineTo(x + dx2, y + dy2);
     ctx.stroke();
   });
-  ctx.lineWidth = lw * 1.6;
-  ctx.strokeStyle = colA(0.65);
-  [[cx - rx, cy, 0, bLen * 0.5], [cx + rx, cy, 0, bLen * 0.5],
-  [cx, cy - ry, bLen * 0.5, 0], [cx, cy + ry, bLen * 0.5, 0]]
-    .forEach(([x, y, hw, hh]) => {
-      ctx.beginPath();
-      ctx.moveTo(x - hw, y - hh); ctx.lineTo(x + hw, y + hh);
-      ctx.stroke();
-    });
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // LAYER 5 — Wireframe connections
-  // ══════════════════════════════════════════════════════════════════════════
-  ctx.strokeStyle = colA(0.22);
-  ctx.lineWidth = lw * 0.65;
-  ctx.setLineDash([lw * 2, lw * 2.5]);
-  [
-    [[cx, cy - ry], [cx, cy + ry]],
-    [[cx - eyeOff, eyeY], [cx + eyeOff, eyeY]],
-    [[cx - eyeOff, browY], [cx - eyeOff, eyeY]],
-    [[cx + eyeOff, browY], [cx + eyeOff, eyeY]],
-    [[cx, noseTY], [cx, noseBY]],
-    [[cx - noseW * 0.95, noseBY], [cx + noseW * 0.95, noseBY]],
-    [[cx - mouthHW, mouthY], [cx + mouthHW, mouthY]],
-  ].forEach(pts => {
-    ctx.beginPath();
-    pts.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
-    ctx.stroke();
-  });
-  ctx.setLineDash([]);
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // LAYER 6 — Sopracciglia (archi con tick terminali)
-  // ══════════════════════════════════════════════════════════════════════════
-  ctx.strokeStyle = colA(0.82);
-  ctx.lineWidth = lw * 1.8;
-  [-1, 1].forEach(s => {
-    const bx = cx + s * eyeOff;
-    ctx.beginPath();
-    ctx.moveTo(bx - browHW, browY + browH);
-    ctx.quadraticCurveTo(bx, browY - browH * 2.8, bx + browHW, browY + browH);
-    ctx.stroke();
-    ctx.lineWidth = lw * 0.9;
-    ctx.strokeStyle = colA(0.45);
-    [-browHW, browHW].forEach(dx => {
-      ctx.beginPath();
-      ctx.moveTo(bx + dx, browY - browH * 1.5);
-      ctx.lineTo(bx + dx, browY + browH * 2.2);
-      ctx.stroke();
-    });
-    ctx.lineWidth = lw * 1.8;
-    ctx.strokeStyle = colA(0.82);
-  });
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // LAYER 7 — Occhi (mandorla + crosshair + iride)
-  // ══════════════════════════════════════════════════════════════════════════
-  ctx.strokeStyle = colA(0.88);
-  ctx.lineWidth = lw * 1.2;
-  [-1, 1].forEach(s => {
-    const ex = cx + s * eyeOff;
-    ctx.beginPath();
-    ctx.moveTo(ex - eyeHW, eyeY);
-    ctx.quadraticCurveTo(ex, eyeY - eyeH * 1.25, ex + eyeHW, eyeY);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(ex - eyeHW, eyeY);
-    ctx.quadraticCurveTo(ex, eyeY + eyeH * 0.85, ex + eyeHW, eyeY);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(ex, eyeY, eyeHW * 0.38, 0, Math.PI * 2);
-    ctx.lineWidth = lw * 0.7;
-    ctx.strokeStyle = colA(0.42);
-    ctx.stroke();
-    const ch = eyeH * 0.85;
-    ctx.strokeStyle = colA(0.55);
-    ctx.lineWidth = lw * 0.6;
-    ctx.beginPath(); ctx.moveTo(ex - ch, eyeY); ctx.lineTo(ex + ch, eyeY); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(ex, eyeY - ch); ctx.lineTo(ex, eyeY + ch); ctx.stroke();
-    ctx.strokeStyle = colA(0.88);
-    ctx.lineWidth = lw * 1.2;
-  });
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // LAYER 8 — Naso (ali + narici semicircolari)
-  // ══════════════════════════════════════════════════════════════════════════
-  ctx.strokeStyle = colA(0.55);
-  ctx.lineWidth = lw * 0.85;
-  ctx.beginPath();
-  ctx.moveTo(cx - noseW * 0.45, noseTY);
-  ctx.quadraticCurveTo(cx - noseW * 1.15, noseBY - ry * 0.015, cx - noseW * 0.95, noseBY);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(cx + noseW * 0.45, noseTY);
-  ctx.quadraticCurveTo(cx + noseW * 1.15, noseBY - ry * 0.015, cx + noseW * 0.95, noseBY);
-  ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx - noseW * 0.95, noseBY, noseW * 0.42, 0, Math.PI); ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx + noseW * 0.95, noseBY, noseW * 0.42, 0, Math.PI); ctx.stroke();
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // LAYER 9 — Bocca (arco di cupido + labbro inf + commessura dashed)
-  // ══════════════════════════════════════════════════════════════════════════
-  ctx.strokeStyle = colA(0.80);
-  ctx.lineWidth = lw * 1.15;
-  ctx.beginPath();
-  ctx.moveTo(cx - mouthHW, mouthY);
-  ctx.quadraticCurveTo(cx - mouthHW * 0.42, mouthY - lipH * 1.1, cx, mouthY - lipH * 0.35);
-  ctx.quadraticCurveTo(cx + mouthHW * 0.42, mouthY - lipH * 1.1, cx + mouthHW, mouthY);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(cx - mouthHW, mouthY);
-  ctx.quadraticCurveTo(cx, mouthY + lipH * 1.6, cx + mouthHW, mouthY);
-  ctx.stroke();
-  ctx.strokeStyle = colA(0.28);
-  ctx.lineWidth = lw * 0.55;
-  ctx.setLineDash([lw * 1.5, lw * 1.5]);
-  ctx.beginPath(); ctx.moveTo(cx - mouthHW, mouthY); ctx.lineTo(cx + mouthHW, mouthY); ctx.stroke();
-  ctx.setLineDash([]);
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // LAYER 10 — Landmark dots numerati
-  // ══════════════════════════════════════════════════════════════════════════
-  const dotR = Math.max(2.2, lw * 1.6);
-  const fsSm = Math.max(7.5, Math.min(10, W * 0.015));
-  const pts = [
-    ['L01', cx - eyeOff, browY],
-    ['R01', cx + eyeOff, browY],
-    ['L02', cx - eyeOff - eyeHW, eyeY],
-    ['L03', cx - eyeOff + eyeHW, eyeY],
-    ['R02', cx + eyeOff - eyeHW, eyeY],
-    ['R03', cx + eyeOff + eyeHW, eyeY],
-    ['C01', cx, noseTY],
-    ['C02', cx - noseW * 0.95, noseBY],
-    ['C03', cx + noseW * 0.95, noseBY],
-    ['L04', cx - mouthHW, mouthY],
-    ['C04', cx, mouthY - lipH * 0.35],
-    ['R04', cx + mouthHW, mouthY],
-    ['T01', cx, cy - ry],
-    ['B01', cx, cy + ry],
-  ];
-  ctx.font = `bold ${fsSm}px monospace`;
-  ctx.textBaseline = 'middle';
-  pts.forEach(([label, x, y]) => {
-    ctx.beginPath();
-    ctx.arc(x, y, dotR, 0, Math.PI * 2);
-    ctx.fillStyle = colA(0.92);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x, y, dotR * 2.4, 0, Math.PI * 2);
-    ctx.strokeStyle = colA(0.35);
-    ctx.lineWidth = lw * 0.65;
-    ctx.stroke();
-    const isLeft = x < cx - rx * 0.1;
-    const isCenter = Math.abs(x - cx) < rx * 0.1;
-    ctx.textAlign = isLeft ? 'right' : isCenter ? 'center' : 'left';
-    const offX = isLeft ? -dotR * 3.2 : isCenter ? 0 : dotR * 3.2;
-    const offY = y < cy ? -dotR * 3.0 : dotR * 3.0;
-    ctx.fillStyle = colA(0.58);
-    ctx.fillText(label, x + offX, y + offY);
-  });
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // LAYER 11 — Watermark tecnico
-  // ══════════════════════════════════════════════════════════════════════════
-  const fsWm = Math.max(7, Math.min(9, W * 0.014));
-  ctx.font = `bold ${fsWm}px monospace`;
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'bottom';
-  ctx.fillStyle = colA(0.30);
-  ctx.fillText('BIOMETRIC OVERLAY v2', cx + rx - lw * 2, cy + ry - lw * 2);
-  ctx.textAlign = 'left';
-  ctx.fillText(`${pts.length} PTS`, cx - rx + lw * 2, cy + ry - lw * 2);
 
   ctx.restore();
 }
@@ -3107,10 +3038,10 @@ function drawGuidanceText(ctx, W, H, yaw, pitch, roll, score) {
     msg = '✓ Ottima posa!';
     col = '#00e676';
   } else if (ratio < 0.18) {
-    msg = '→ Avvicinati alla camera';
+    msg = '→ Avvicìnati alla camera';
     col = '#ff8c00';
   } else if (ratio > 0.58) {
-    msg = '← Allontanati dalla camera';
+    msg = '← Allontànati dalla camera';
     col = '#ff8c00';
   } else if (Math.abs(yaw) > 6) {
     msg = yaw > 0 ? '← Gira il viso verso sinistra' : '→ Gira il viso verso destra';
@@ -3119,13 +3050,38 @@ function drawGuidanceText(ctx, W, H, yaw, pitch, roll, score) {
   } else if (Math.abs(roll) > 5) {
     msg = roll > 0 ? '↺ Inclina la testa verso sinistra' : '↻ Inclina la testa verso destra';
   } else if (sz < 40) {
-    msg = '→ Avvicinati un po\'';
+    msg = '→ Avvicìnati un po\'';
     col = '#ff8c00';
   }
 
-  if (!msg) return;
+  if (!msg) {
+    // Nessuna guida necessaria in questo frame: resetta per evitare stale messages
+    window.lastGuidanceMsg = null;
+    const _domG = document.getElementById('wfs-guidance-text');
+    if (_domG) _domG.style.display = 'none';
+    return;
+  }
 
-  const fs = Math.max(13, Math.min(18, W * 0.030));
+  // Esponi il messaggio corrente per il sistema di guida vocale
+  window.lastGuidanceMsg = msg;
+  window.lastGuidanceMsgTime = Date.now();
+
+  // Su mobile: aggiorna solo il DOM element (posizionato in CSS); no canvas.
+  // Su desktop: nascondi DOM e disegna solo sul canvas (evita il duplicato sotto al canvas).
+  const _domGuidance = document.getElementById('wfs-guidance-text');
+  if (window.innerWidth <= 768) {
+    if (_domGuidance) {
+      _domGuidance.textContent = msg;
+      _domGuidance.style.color = col;
+      _domGuidance.style.display = 'block';
+    }
+    return; // mobile: testo mostrato dal DOM, nessun ridisegno canvas
+  }
+  // Desktop: nascondi DOM, usa solo il canvas
+  if (_domGuidance) _domGuidance.style.display = 'none';
+
+  const _mobileFs = W <= 480;
+  const fs = _mobileFs ? Math.max(18, Math.min(26, W * 0.055)) : Math.max(13, Math.min(18, W * 0.030));
   const pad = W * 0.025;
 
   ctx.save();
@@ -3178,18 +3134,19 @@ function openWebcamFullscreen(video) {
   stopBtn.innerHTML = '⏹ Stop Webcam';
   stopBtn.onclick = () => stopWebcam();
 
-  const hint = document.createElement('div');
-  hint.id = 'wfs-hint';
-  hint.textContent = 'Dì "KIMERIKA, STOP" oppure premi il pulsante per terminare';
+  const guidanceText = document.createElement('div');
+  guidanceText.id = 'wfs-guidance-text';
 
   // Crea un canvas dedicato per il fullscreen (il canvas originale rimane nella sidebar)
   const fsCanvas = document.createElement('canvas');
   fsCanvas.id = 'webcam-fullscreen-canvas';
-  fsCanvas.style.cssText = 'display:block;max-width:100vw;max-height:100vh;object-fit:contain;';
+  // Le dimensioni (width/height) vengono impostate dinamicamente dal loop di rendering
+  // in base all'aspect ratio del video — NON usare object-fit che non funziona su <canvas>.
+  fsCanvas.style.cssText = 'display:block;';
 
-  overlay.appendChild(stopBtn);
   overlay.appendChild(fsCanvas);
-  overlay.appendChild(hint);
+  overlay.appendChild(guidanceText);
+  overlay.appendChild(stopBtn);
   document.body.appendChild(overlay);
 
   // Avvia il rendering sul canvas fullscreen
@@ -3210,6 +3167,129 @@ function closeWebcamFullscreen() {
 }
 
 /**
+ * Pronuncia una frase di guida posa con strategia a doppio livello:
+ *
+ *   1. Audio TTS server (voce Isabella) se già in cache → zero latenza
+ *   2. Cache miss → voiceAssistant.speakCoach() → TTS server (voce Isabella)
+ *      NOTA: Rimosso il fallback window.speechSynthesis che usava la voce
+ *      di default del browser (spesso maschile), incoerente con Isabella.
+ *
+ * ANTI-ACCODAMENTO: la funzione verifica prima se il voiceAssistant
+ * ha già elementi in coda o se la sintesi nativa è in corso.
+ * In tal caso NON aggiunge nulla → l'utente sente UNA frase alla volta.
+ */
+function speakPoseInstant(text) {
+  if (!text) return;
+
+  // ── Controllo audio TTS server in coda ───────────────────────────────────
+  // Se il voiceAssistant ha già elementi pendenti (da guida posa o altro),
+  // non accodiamo: aspettiamo che finisca prima di parlare di nuovo.
+  if (typeof voiceAssistant !== 'undefined') {
+    if (voiceAssistant.pendingQueue && voiceAssistant.pendingQueue.length > 0) return;
+    if (voiceAssistant._flushRunning) return;
+  }
+
+  // ── Controllo Web Speech API in corso ────────────────────────────────────
+  // (mantenuto per sicurezza nel caso altri moduli la usino ancora)
+  try {
+    if (window.speechSynthesis && window.speechSynthesis.speaking) return;
+  } catch (_) { }
+
+  // 1. Cache hit: riproduce audio TTS server (voce Isabella, già scaricata)
+  if (typeof voiceAssistant !== 'undefined' && voiceAssistant._audioCache &&
+    voiceAssistant._audioCache.has(text)) {
+    voiceAssistant.speak(text).catch(() => { });
+    return;
+  }
+
+  // 2. Cache miss: usa voiceAssistant.speakCoach() → voce Isabella (TTS server).
+  // NON usare window.speechSynthesis perché usa la voce di default del browser
+  // (spesso maschile) creando incongruenza con la voce Isabella.
+  if (typeof voiceAssistant !== 'undefined') {
+    voiceAssistant.speakCoach(text).catch(() => { });
+  }
+}
+
+/**
+ * Avvia il sistema di guida vocale durante la webcam.
+ *
+ * REGOLE DI MODERAZIONE:
+ *   • Stessa frase → non viene ripetuta prima di SAME_MSG_COOLDOWN_MS (12s).
+ *     Questo evita il loop "Abbassa il mento… Abbassa il mento… Abbassa il mento".
+ *   • Frase diversa → può essere pronunciata subito, ma non prima di
+ *     MIN_BETWEEN_SPEAKS_MS (3s) dall'ultima pronuncia (evita raffiche).
+ *   • Anti-accodamento: speakPoseInstant() non aggiunge se c'è già qualcosa
+ *     in coda/in riproduzione, quindi al massimo 1 frase per volta.
+ *   • Poll ogni 250ms → reazione visivamente "istantanea" al cambio di posa.
+ */
+function startPoseVoiceGuidance() {
+  stopPoseVoiceGuidance(); // Ferma e pulisce ogni stato precedente
+
+  const SAME_MSG_COOLDOWN_MS = 12000; // Stessa frase: non ripetere prima di 12s
+  const MIN_BETWEEN_SPEAKS_MS = 3000; // Tra frasi diverse: almeno 3s
+
+  // Variabili locali — la chiusura le mantiene vive per tutta la sessione
+  let lastSpokenMsg = null;
+  let lastSpokenTime = 0;
+
+  window._poseVoiceTimer = setInterval(() => {
+    if (!isWebcamActive) { stopPoseVoiceGuidance(); return; }
+
+    const msg = window.lastGuidanceMsg;
+    if (!msg) return;
+
+    // Rimuovi frecce/emoji, mantieni solo il testo leggibile
+    const voiceText = msg.replace(/^[↑↓←→↺↻✓]\s*/, '').trim();
+    if (!voiceText) return;
+
+    const now = Date.now();
+    const isSameMsg = (voiceText === lastSpokenMsg);
+    const elapsed = now - lastSpokenTime;
+
+    // Salta se:
+    //   • stessa frase E non sono passati 12s  (anti-ripetizione)
+    //   • frase diversa ma non sono passati 3s  (anti-raffica)
+    if (isSameMsg && elapsed < SAME_MSG_COOLDOWN_MS) return;
+    if (!isSameMsg && elapsed < MIN_BETWEEN_SPEAKS_MS) return;
+
+    lastSpokenMsg = voiceText;
+    lastSpokenTime = now;
+    speakPoseInstant(voiceText);
+  }, 250);
+}
+
+/**
+ * Ferma la guida vocale e interrompe IMMEDIATAMENTE qualsiasi audio in corso.
+ *
+ * Oltre a fermare il timer, svuota anche la pendingQueue del voiceAssistant
+ * e ferma l'audioPlayer → nessuna frase residua viene pronunciata dopo Stop.
+ */
+function stopPoseVoiceGuidance() {
+  if (window._poseVoiceTimer) {
+    clearInterval(window._poseVoiceTimer);
+    window._poseVoiceTimer = null;
+  }
+  window.lastGuidanceMsg = null;
+  const _domG = document.getElementById('wfs-guidance-text');
+  if (_domG) _domG.style.display = 'none';
+
+  // 1. Nessuna sintesi nativa da fermare (rimossa per evitare voce maschile del browser)
+
+  // 2. Svuota coda + ferma audioPlayer del voiceAssistant (evita la "coda lunga")
+  if (typeof voiceAssistant !== 'undefined') {
+    try {
+      voiceAssistant.pendingQueue = [];   // svuota la coda
+      voiceAssistant._flushRunning = false; // sblocca il mutex
+      if (voiceAssistant.audioPlayer) {
+        voiceAssistant.audioPlayer.pause();
+        voiceAssistant.audioPlayer.onended = null;
+        voiceAssistant.audioPlayer.src = '';
+      }
+    } catch (_) { }
+  }
+}
+
+/**
  * Loop di rendering per il canvas fullscreen.
  * Se video è disponibile (webcam PC), disegna direttamente dal video.
  * Se video è null (iPhone), copia dal canvas di anteprima sidebar.
@@ -3223,6 +3303,9 @@ function startFullscreenPreviewLoop(video, fsCanvas) {
 
   let lastTs = 0;
   const INTERVAL = 33; // ~30 FPS
+
+  // Timestamp ultima stima posa locale (throttle 10fps)
+  let _localPoseTs = 0;
 
   function loop(ts) {
     if (!window.fsPreviewActive) return;
@@ -3240,15 +3323,45 @@ function startFullscreenPreviewLoop(video, fsCanvas) {
         if (srcW > 0 && srcH > 0) {
           const ctx = fsCanvas.getContext('2d');
 
-          // Adatta dimensioni canvas fullscreen alla viewport preservando aspect ratio
+          const _fsIsMobile = window.innerWidth <= 768;
           const vw = window.innerWidth;
-          const vh = window.innerHeight;
-          const ar = srcW / srcH;
+          const vh = _fsIsMobile ? window.innerHeight : (window.innerHeight - 70);
+
           let cw, ch;
-          if (vw / vh > ar) {
-            ch = vh; cw = Math.round(ch * ar);
+          let drawX = 0, drawY = 0, drawW, drawH;
+
+          if (_fsIsMobile) {
+            // Mobile — modalità COVER: il canvas occupa TUTTO lo schermo, i margini
+            // del video vengono tagliati ma il centro (dove si trova il viso) rimane
+            // visibile. Questo elimina le barre nere sopra/sotto ("doppio fondo").
+            cw = vw;
+            ch = vh;
+            const srcAr = srcW / srcH;
+            const canvasAr = cw / ch;
+            if (canvasAr > srcAr) {
+              // Canvas più largo del video → riempie larghezza, ritaglia altezza
+              drawW = cw;
+              drawH = Math.round(cw / srcAr);
+              drawX = 0;
+              drawY = Math.round((ch - drawH) / 2); // centro verticale
+            } else {
+              // Canvas più alto del video → riempie altezza, ritaglia larghezza
+              drawH = ch;
+              drawW = Math.round(ch * srcAr);
+              drawX = Math.round((cw - drawW) / 2); // centro orizzontale
+              drawY = 0;
+            }
           } else {
-            cw = vw; ch = Math.round(cw / ar);
+            // Desktop — modalità CONTAIN: rispetta l'aspect ratio del video,
+            // eventuale sfondo nero intorno al canvas.
+            const ar = srcW / srcH;
+            if (vw / vh > ar) {
+              ch = vh; cw = Math.round(ch * ar);
+            } else {
+              cw = vw; ch = Math.round(cw / ar);
+            }
+            drawW = cw;
+            drawH = ch;
           }
 
           if (fsCanvas.width !== cw || fsCanvas.height !== ch) {
@@ -3258,12 +3371,62 @@ function startFullscreenPreviewLoop(video, fsCanvas) {
             fsCanvas.style.height = ch + 'px';
           }
 
-          // Disegna a specchio (flip orizzontale) — solo visivo
+          // Disegna a specchio (flip orizzontale) — solo visivo.
+          // Con il flip + la centratura simmetrica di drawX/drawY, il ritaglio
+          // cover rimane centrato anche dopo il ribaltamento.
           ctx.save();
           ctx.translate(cw, 0);
           ctx.scale(-1, 1);
-          ctx.drawImage(source, 0, 0, cw, ch);
+          ctx.drawImage(source, drawX, drawY, drawW, drawH);
           ctx.restore();
+
+          // ─── Stima posa locale (MediaPipe browser, ~10fps) ───────────────────────
+          // Aggiorna livePoseAngles nel browser, senza attendere il server.
+          // Elimina 200-400ms di latenza round-trip per overlay e guida vocale.
+          if (video && video.videoWidth > 0
+            && typeof faceLandmarker !== 'undefined' && faceLandmarker
+            && typeof isMediaPipeLoaded !== 'undefined' && isMediaPipeLoaded
+            && ts - _localPoseTs >= 100) {
+            _localPoseTs = ts;
+            try {
+              const _r = faceLandmarker.detect(video);
+              if (_r.faceLandmarks && _r.faceLandmarks.length > 0) {
+                const _lm = _r.faceLandmarks[0];
+                // faceRatio: altezza faccia normalizzata (range 0–1)
+                let _minY = 1, _maxY = 0;
+                for (const _p of _lm) {
+                  if (_p.y < _minY) _minY = _p.y;
+                  if (_p.y > _maxY) _maxY = _p.y;
+                }
+                // Yaw/pitch/roll dalla matrice di trasformazione 3D MediaPipe
+                let _yaw = 0, _pitch = 0, _roll = 0;
+                if (_r.facialTransformationMatrixes && _r.facialTransformationMatrixes.length > 0) {
+                  const _m = _r.facialTransformationMatrixes[0].data;
+                  // Column-major 4×4: estrazione angoli di Eulero (ZYX)
+                  const _cy = Math.sqrt(_m[0] * _m[0] + _m[1] * _m[1]);
+                  if (_cy > 1e-6) {
+                    _yaw = Math.atan2(-_m[2], _cy) * 180 / Math.PI;
+                    _pitch = Math.atan2(_m[6], _m[10]) * 180 / Math.PI;
+                    _roll = Math.atan2(_m[1], _m[0]) * 180 / Math.PI;
+                  }
+                }
+                // Preserva score e landmark dal server; aggiorna solo la posa locale
+                window.livePoseAngles = {
+                  yaw: _yaw, pitch: _pitch, roll: _roll,
+                  faceRatio: _maxY - _minY,
+                  score: window.livePoseAngles.score || 0,
+                  sizeScore: window.livePoseAngles.sizeScore || 0,
+                  poseScore: window.livePoseAngles.poseScore || 0,
+                  positionScore: window.livePoseAngles.positionScore || 0,
+                  landmarks: window.livePoseAngles.landmarks || null,
+                };
+              } else {
+                // Viso non rilevato → faceRatio=0 → guida "Posizionati davanti"
+                if (window.livePoseAngles) window.livePoseAngles.faceRatio = 0;
+              }
+            } catch (_) { /* MediaPipe occupato o frame non pronto: riprova al prossimo tick */ }
+          }
+          // ───────────────────────────────────────────────────────────────────
           drawFaceGuideOverlay(ctx, cw, ch);
         }
       }
@@ -3385,6 +3548,7 @@ function requestBestFramesUpdate(force = false) {
   const requestMessage = {
     action: 'get_results',
     request_id: requestId,
+    session_token: window._iphoneSessionToken || '',
     timestamp: now
   };
 
@@ -4031,6 +4195,16 @@ function rotateImageClockwise() {
       drawSymmetryAxis();
     }
 
+    // Ridisegna overlay rotazione occhi se presente
+    if (window.eyeRotationOverlayActive && typeof window.redrawEyeRotationOverlay === 'function') {
+      window.redrawEyeRotationOverlay();
+    }
+
+    // Ridisegna overlay aree sopracciglia se presente
+    if (typeof window.redrawEyebrowAreasOverlay === 'function') {
+      window.redrawEyebrowAreasOverlay();
+    }
+
     // Ridisegna linee perpendicolari
     if (typeof redrawPerpendicularLines === 'function') {
       redrawPerpendicularLines();
@@ -4039,6 +4213,12 @@ function rotateImageClockwise() {
     // Ridisegna coppie di linee verticali
     if (typeof redrawCoupleLines === 'function') {
       redrawCoupleLines();
+    }
+
+    // Ridisegna highlight coppia punti se attivo
+    if (window.highlightedPair && typeof clearPointPairHighlight === 'function' && typeof drawPointPairHighlight === 'function') {
+      clearPointPairHighlight();
+      drawPointPairHighlight(window.highlightedPair);
     }
   }, 50);
 
@@ -4082,6 +4262,16 @@ function rotateImageCounterClockwise() {
       drawSymmetryAxis();
     }
 
+    // Ridisegna overlay rotazione occhi se presente
+    if (window.eyeRotationOverlayActive && typeof window.redrawEyeRotationOverlay === 'function') {
+      window.redrawEyeRotationOverlay();
+    }
+
+    // Ridisegna overlay aree sopracciglia se presente
+    if (typeof window.redrawEyebrowAreasOverlay === 'function') {
+      window.redrawEyebrowAreasOverlay();
+    }
+
     // Ridisegna linee perpendicolari
     if (typeof redrawPerpendicularLines === 'function') {
       redrawPerpendicularLines();
@@ -4090,6 +4280,12 @@ function rotateImageCounterClockwise() {
     // Ridisegna coppie di linee verticali
     if (typeof redrawCoupleLines === 'function') {
       redrawCoupleLines();
+    }
+
+    // Ridisegna highlight coppia punti se attivo
+    if (window.highlightedPair && typeof clearPointPairHighlight === 'function' && typeof drawPointPairHighlight === 'function') {
+      clearPointPairHighlight();
+      drawPointPairHighlight(window.highlightedPair);
     }
   }, 50);
 
@@ -4125,11 +4321,23 @@ function rotateImage90Clockwise() {
     if (window.symmetryAxisVisible && typeof drawSymmetryAxis === 'function') {
       drawSymmetryAxis();
     }
+    if (window.eyeRotationOverlayActive && typeof window.redrawEyeRotationOverlay === 'function') {
+      window.redrawEyeRotationOverlay();
+    }
+    if (typeof window.redrawEyebrowAreasOverlay === 'function') {
+      window.redrawEyebrowAreasOverlay();
+    }
     if (typeof redrawPerpendicularLines === 'function') {
       redrawPerpendicularLines();
     }
     if (typeof redrawCoupleLines === 'function') {
       redrawCoupleLines();
+    }
+
+    // Ridisegna highlight coppia punti se attivo
+    if (window.highlightedPair && typeof clearPointPairHighlight === 'function' && typeof drawPointPairHighlight === 'function') {
+      clearPointPairHighlight();
+      drawPointPairHighlight(window.highlightedPair);
     }
   }, 50);
 
@@ -4165,11 +4373,23 @@ function rotateImage90CounterClockwise() {
     if (window.symmetryAxisVisible && typeof drawSymmetryAxis === 'function') {
       drawSymmetryAxis();
     }
+    if (window.eyeRotationOverlayActive && typeof window.redrawEyeRotationOverlay === 'function') {
+      window.redrawEyeRotationOverlay();
+    }
+    if (typeof window.redrawEyebrowAreasOverlay === 'function') {
+      window.redrawEyebrowAreasOverlay();
+    }
     if (typeof redrawPerpendicularLines === 'function') {
       redrawPerpendicularLines();
     }
     if (typeof redrawCoupleLines === 'function') {
       redrawCoupleLines();
+    }
+
+    // Ridisegna highlight coppia punti se attivo
+    if (window.highlightedPair && typeof clearPointPairHighlight === 'function' && typeof drawPointPairHighlight === 'function') {
+      clearPointPairHighlight();
+      drawPointPairHighlight(window.highlightedPair);
     }
   }, 50);
 
@@ -4269,6 +4489,12 @@ async function autoRotateToVerticalAxis() {
   setTimeout(() => {
     if (window.symmetryAxisVisible && typeof drawSymmetryAxis === 'function') {
       drawSymmetryAxis({ autoDetect: false });
+    }
+    if (window.eyeRotationOverlayActive && typeof window.redrawEyeRotationOverlay === 'function') {
+      window.redrawEyeRotationOverlay();
+    }
+    if (typeof window.redrawEyebrowAreasOverlay === 'function') {
+      window.redrawEyebrowAreasOverlay();
     }
     if (window.originalLandmarks && window.originalLandmarks.length > 0 && typeof window.redrawLandmarks === 'function') {
       window.redrawLandmarks();
@@ -4799,6 +5025,59 @@ function recalculateImageTransformation() {
 
 // Rendi la funzione globalmente accessibile
 window.transformLandmarkCoordinate = transformLandmarkCoordinate;
+
+/**
+ * Trasforma coordinate restituite dall'API green-dots in coordinate canvas.
+ * A differenza di transformLandmarkCoordinate, gestisce correttamente il caso
+ * in cui il rilevamento sia stato eseguito su un'immagine già ruotata:
+ * le coordinate API sono nello spazio dell'immagine ruotata-al-detection-angle,
+ * non nello spazio dell'immagine originale.
+ *
+ * @param {number} apiX  - Coordinata X nell'immagine inviata all'API (ruotata+resized)
+ * @param {number} apiY  - Coordinata Y nell'immagine inviata all'API (ruotata+resized)
+ * @returns {{x, y}}     - Coordinate nel canvas Fabric.js
+ */
+function transformGreenDotCoordinate(apiX, apiY) {
+  if (!currentImage || !fabricCanvas) return { x: apiX, y: apiY };
+
+  const natW = window.currentGreenDotsOverlayNaturalW;
+  const natH = window.currentGreenDotsOverlayNaturalH;
+  const scaleX = window.greenDotsOverlayScaleXAtDetection;
+  const scaleY = window.greenDotsOverlayScaleYAtDetection;
+
+  if (!natW || !natH || !scaleX || !scaleY) {
+    // Fallback: usa trasformazione standard (valida solo se detection a angolo=0)
+    return transformLandmarkCoordinate({ x: apiX, y: apiY });
+  }
+
+  // Converti da spazio API (0..natW × 0..natH) a spazio centrato sull'overlay
+  const cx = apiX - natW / 2;
+  const cy = apiY - natH / 2;
+
+  // Applica la scala dell'overlay
+  let relX = cx * scaleX;
+  let relY = cy * scaleY;
+
+  // Applica la rotazione aggiuntiva avvenuta DOPO il detection
+  const detectionAngle = window.greenDotsDetectionAngle || 0;
+  const additionalAngle = (currentImage.angle || 0) - detectionAngle;
+  if (additionalAngle !== 0) {
+    const rad = additionalAngle * Math.PI / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const rx = relX * cos - relY * sin;
+    const ry = relX * sin + relY * cos;
+    relX = rx;
+    relY = ry;
+  }
+
+  const center = currentImage.getCenterPoint();
+  return {
+    x: center.x + relX,
+    y: center.y + relY
+  };
+}
+window.transformGreenDotCoordinate = transformGreenDotCoordinate;
 
 function clearAllOverlays() {
   /**
@@ -5654,7 +5933,13 @@ function drawGreenDotsLandmarksFallback() {
 function drawGreenDotsOverlay(overlayBase64) {
   /**
    * Disegna l'overlay trasparente generato dal processore green dots.
-   * Scala l'overlay alle dimensioni originali se è stato ridimensionato nel frontend.
+   *
+   * POSIZIONAMENTO ROBUSTO: usa currentImage.getBoundingRect(true) per ricavare
+   * il rettangolo visivo reale dell'immagine sul canvas indipendentemente dall'angolo
+   * di rotazione Fabric.js.
+   * L'overlay ha i pixel già nella corretta orientazione (inviati ruotati all'API)
+   * quindi viene posizionato con angle=0 e stretchato sul bounding rect.
+   * Questo funziona correttamente per 0°, 90°, 180°, 270° e qualsiasi altro angolo.
    */
   try {
     fabric.Image.fromURL(overlayBase64, function (overlayImg) {
@@ -5663,77 +5948,60 @@ function drawGreenDotsOverlay(overlayBase64) {
         return;
       }
 
-      // Ricalcola le informazioni di trasformazione se necessario
-      if (!window.imageScale || !window.imageOffset) {
-        console.warn('⚠️ Informazioni trasformazione non disponibili, ricalcolo...');
-        recalculateImageTransformation();
-
-        if (!window.imageScale || !window.imageOffset) {
-          console.error('❌ Impossibile calcolare trasformazione per overlay');
-          return;
-        }
-      }
-
-      // Dimensioni dell'overlay ricevuto dal backend (potrebbe essere ridimensionato)
-      const overlayWidth = overlayImg.width;
-      const overlayHeight = overlayImg.height;
-
-      // Dimensioni originali dell'immagine nel canvas
-      const imageElement = currentImage.getElement ? currentImage.getElement() : currentImage;
-      const originalImageWidth = imageElement.naturalWidth || imageElement.width;
-      const originalImageHeight = imageElement.naturalHeight || imageElement.height;
-
-      // Calcola il fattore di scala per adattare l'overlay alle dimensioni originali
-      const scaleFactorX = originalImageWidth / overlayWidth;
-      const scaleFactorY = originalImageHeight / overlayHeight;
-
-      console.log(`🎨 Overlay dal backend: ${overlayWidth}x${overlayHeight}`);
-      console.log(`🎨 Immagine originale canvas: ${originalImageWidth}x${originalImageHeight}`);
-      console.log(`🎨 Fattore scala overlay: X=${scaleFactorX.toFixed(2)}, Y=${scaleFactorY.toFixed(2)}`);
-      console.log(`🎨 Scala canvas: ${window.imageScale}, Offset: (${window.imageOffset.x}, ${window.imageOffset.y})`);
-
       // Rimuovi overlay precedente se esiste
       const existingOverlay = fabricCanvas.getObjects().find(obj => obj.isGreenDotsOverlay);
       if (existingOverlay) {
         fabricCanvas.remove(existingOverlay);
       }
 
+      // Bounding rect assoluto dell'immagine nel canvas (asse-allineato, comprende rotazione)
+      const bbox = currentImage.getBoundingRect(true);
+      const normalizedAngle = ((currentImage.angle || 0) % 360 + 360) % 360;
+
+      console.log(`🎨 Overlay: ${overlayImg.width}x${overlayImg.height} → bbox ${bbox.width.toFixed(0)}x${bbox.height.toFixed(0)} @ (${bbox.left.toFixed(1)}, ${bbox.top.toFixed(1)}) angle=${normalizedAngle}°`);
+
       overlayImg.set({
-        // USA ESATTAMENTE LE STESSE COORDINATE DELL'IMMAGINE PRINCIPALE
-        left: currentImage.left,
-        top: currentImage.top,
-        // Scala l'overlay per adattarlo alle dimensioni originali + scala del canvas
-        scaleX: currentImage.scaleX * scaleFactorX,
-        scaleY: currentImage.scaleY * scaleFactorY,
+        left: bbox.left,
+        top: bbox.top,
+        // Stretch dell'overlay sull'intero bounding rect visivo dell'immagine
+        scaleX: bbox.width / overlayImg.width,
+        scaleY: bbox.height / overlayImg.height,
+        angle: 0,        // pixel già nella corretta orientazione finale (ruotati da getCanvasImageAsBase64)
+        originX: 'left',
+        originY: 'top',
         selectable: false,
         evented: false,
         isGreenDotsOverlay: true,
-        opacity: 0.8,
-        originX: 'left',
-        originY: 'top'
+        opacity: 0.8
       });
 
-      // Salva riferimento all'overlay per poterlo aggiornare
+      // Salva riferimento all'overlay e i metadati di detection per sync futura
       window.currentGreenDotsOverlay = overlayImg;
+      window.currentGreenDotsOverlayNaturalW = overlayImg.width;
+      window.currentGreenDotsOverlayNaturalH = overlayImg.height;
+      // Metadati detection: angolo immagine e scala al momento del rilevamento
+      window.greenDotsDetectionAngle = currentImage.angle || 0;
+      window.greenDotsOverlayScaleXAtDetection = (bbox.width / overlayImg.width);
+      window.greenDotsOverlayScaleYAtDetection = (bbox.height / overlayImg.height);
+      const _ctr = currentImage.getCenterPoint();
+      window.greenDotsDetectionCenterX = _ctr.x;
+      window.greenDotsDetectionCenterY = _ctr.y;
 
       fabricCanvas.add(overlayImg);
 
       // Posiziona l'overlay sopra l'immagine di sfondo ma sotto altri elementi
       const backgroundImage = fabricCanvas.getObjects().find(obj => obj.isBackgroundImage);
       if (backgroundImage) {
-        // Prima manda l'immagine di sfondo in fondo
         fabricCanvas.sendToBack(backgroundImage);
-        // Poi porta l'overlay sopra l'immagine ma non al top (per lasciare spazio ai punti)
         const allObjects = fabricCanvas.getObjects();
         const backgroundIndex = allObjects.indexOf(backgroundImage);
         fabricCanvas.moveTo(overlayImg, backgroundIndex + 1);
       } else {
-        // Se non c'è immagine di sfondo, l'overlay rimane dove è
         console.log('🎨 Nessuna immagine di sfondo trovata');
       }
 
       fabricCanvas.renderAll();
-      console.log('🎨 Overlay green dots aggiunto e posizionato correttamente con coordinate dinamiche');
+      console.log('🎨 Overlay green dots aggiunto con bounding-rect positioning');
 
       // Abilita l'immagine per essere spostata e configura sincronizzazione
       enableImageMovement();
@@ -5874,13 +6142,20 @@ function drawGreenDotsGroups(groups) {
 
 function scaleImageCoordinates(x, y) {
   /**
-   * Converte coordinate dell'immagine originale in coordinate del canvas scalato.
-   * Usa la stessa logica di transformLandmarkCoordinate per coerenza.
+   * Converte coordinate dell'immagine INVIATA ALL'API in coordinate del canvas scalato.
+   *
+   * L'API restituisce x/y nel sistema di pixel dell'immagine inviata (ANALYSIS_MAX_PX),
+   * che può essere ridotta rispetto all'originale. window.greenDotsImageScale contiene
+   * il fattore di riduzione (sent_px / original_px). Per ottenere le coordinate
+   * nel sistema dell'immagine originale (usato da window.imageScale / imageOffset)
+   * dividiamo prima per greenDotsImageScale.
+   *
+   * Formula:
+   *   x_canvas = (x_sent / greenDotsImageScale) * imageScale + imageOffset.x
    */
   if (!window.imageScale || !window.imageOffset) {
     console.warn('⚠️ Informazioni scala green dots non disponibili, ricalcolo...');
 
-    // Prova a ricalcolare come per i landmarks
     if (currentImage && fabricCanvas) {
       recalculateImageTransformation();
     }
@@ -5891,12 +6166,17 @@ function scaleImageCoordinates(x, y) {
     }
   }
 
+  // Converti da spazio immagine inviata a spazio immagine originale
+  const sentToOrigScale = window.greenDotsImageScale || 1.0;
+  const xOrig = x / sentToOrigScale;
+  const yOrig = y / sentToOrigScale;
+
   const scaled = {
-    x: x * window.imageScale + window.imageOffset.x,
-    y: y * window.imageScale + window.imageOffset.y
+    x: xOrig * window.imageScale + window.imageOffset.x,
+    y: yOrig * window.imageScale + window.imageOffset.y
   };
 
-  console.log(`🟢 Scala green dots: (${x}, ${y}) → (${scaled.x.toFixed(1)}, ${scaled.y.toFixed(1)}) | Scala: ${window.imageScale?.toFixed(4)} Offset: (${window.imageOffset?.x?.toFixed(1)}, ${window.imageOffset?.y?.toFixed(1)})`);
+  console.log(`🟢 Scala green dots: sent(${x}, ${y}) → orig(${xOrig.toFixed(0)}, ${yOrig.toFixed(0)}) → canvas(${scaled.x.toFixed(1)}, ${scaled.y.toFixed(1)}) | sentScale:${sentToOrigScale.toFixed(3)} imgScale:${window.imageScale?.toFixed(4)}`);
 
   return scaled;
 }
@@ -6103,42 +6383,55 @@ function generateGreenDotsTableRows(result) {
     }
   }
 
-  // === PARAMETRI CONFIGURAZIONE ===
-  if (result.config_parameters) {
-    const config = result.config_parameters;
+  // === METODO DI RILEVAMENTO ===
+  const detParams = result.detection_results && result.detection_results.parameters;
+  const isDlibV3 = detParams && detParams.method === 'dlib_perimeter_v3';
 
-    rows += `<tr data-type="green-dots" style="background: #f0f0f0; font-weight: bold;">
-      <td colspan="4">⚙️ PARAMETRI RILEVAMENTO (da config)</td>
+  rows += `<tr data-type="green-dots" style="background: #f0f0f0; font-weight: bold;">
+    <td colspan="4">⚙️ METODO RILEVAMENTO</td>
+  </tr>`;
+
+  if (isDlibV3) {
+    // Nuovo metodo semplificato
+    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
+      <td>Algoritmo</td>
+      <td>Dlib perimetro sopracciglio</td>
+      <td>v3</td>
+      <td>✅</td>
     </tr>`;
-
+    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
+      <td>Maschera base</td>
+      <td>Sim. Sopracciglia (dlib)</td>
+      <td>Striscia 50px (±25px perimetro)</td>
+      <td>✅</td>
+    </tr>`;
+    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
+      <td>Zona ricerca</td>
+      <td>Perimetro bordo sopracciglio</td>
+      <td>top-5/lato</td>
+      <td>✅</td>
+    </tr>`;
+  } else if (result.config_parameters) {
+    // Metodo legacy (parametri HSV)
+    const config = result.config_parameters;
+    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
+      <td>Algoritmo</td>
+      <td>MediaPipe 2-pass adattivo</td>
+      <td>legacy</td>
+      <td>✅</td>
+    </tr>`;
     rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
       <td>Saturazione Max</td>
       <td>${config.saturation_max}%</td>
       <td>HSV</td>
       <td>✅</td>
     </tr>`;
-
-    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
-      <td>Luminosità Min-Max</td>
-      <td>${config.value_min}% - ${config.value_max}%</td>
-      <td>HSV</td>
-      <td>✅</td>
-    </tr>`;
-
     rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
       <td>Range Cluster Size</td>
       <td>${config.cluster_size_min} - ${config.cluster_size_max} px</td>
       <td>pixels</td>
       <td>✅</td>
     </tr>`;
-
-    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
-      <td>Clustering Radius</td>
-      <td>${config.clustering_radius} px</td>
-      <td>pixels</td>
-      <td>✅</td>
-    </tr>`;
-
     rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
       <td>Min Distance</td>
       <td>${config.min_distance} px</td>
@@ -7449,9 +7742,9 @@ async function detectGreenDots() {
     updateStatus('🔄 Rilevamento green dots in corso...');
     showToast('⏳ Elaborazione in corso... Può richiedere 10-60 secondi', 'info');
 
-    // Ottieni l'immagine del canvas come base64 con resize a max 2400px per preservare dettagli
-    // ✅ CORREZIONE: aumentato da 1600px a 2400px per migliorare rilevamento punti bianchi
-    const canvasImageData = getCanvasImageAsBase64(2400);
+    // Ottieni l'immagine del canvas come base64 — usa ANALYSIS_MAX_PX (1280px)
+    // per garantire la stessa scala di input del flusso webcam (coerenza rilevamenti).
+    const canvasImageData = getCanvasImageAsBase64(ANALYSIS_MAX_PX);
     if (!canvasImageData) {
       throw new Error('Impossibile ottenere dati immagine dal canvas');
     }
@@ -7585,824 +7878,178 @@ async function detectGreenDots() {
   }
 }
 
+/**
+ * Mostra il modal con le due immagini di debug del rilevamento punti bianchi v3.
+ * Chiama /api/white-dots/debug-images con l'immagine corrente del canvas.
+ */
+async function showWhiteDotsDebugImages() {
+  const modal = document.getElementById('wdots-debug-modal');
+  const status = document.getElementById('wdots-debug-status');
+  const imgZ = document.getElementById('wdots-debug-zone');
+  const imgD = document.getElementById('wdots-debug-detect');
+  const imgM = document.getElementById('wdots-debug-masked');
+  const paramsEl = document.getElementById('wdots-debug-params');
+  const paramsTxt = document.getElementById('wdots-params-text');
+
+  if (!modal) return;
+  modal.style.display = 'block';
+
+  // Leggi parametri dai controlli (usa default se modal non ancora renderizzato)
+  const percSlider = document.getElementById('wdots-perc');
+  const satSlider = document.getElementById('wdots-sat');
+  const topPct = percSlider ? parseInt(percSlider.value, 10) : 15;
+  const satMax = satSlider ? parseInt(satSlider.value, 10) : 30;
+  // thresh_percentile = 100 - topPct  (top 15% = percentile 85)
+  const thresh_percentile = 100 - topPct;
+
+  status.textContent = `⏳ Ricalcolo... (lum top ${topPct}%, sat ≤ ${satMax}%)`;
+  [imgZ, imgD, imgM].forEach(el => el && (el.style.display = 'none'));
+  if (paramsEl) paramsEl.style.display = 'none';
+
+  if (!currentImage) {
+    status.textContent = '⚠️ Nessuna immagine caricata sul canvas.';
+    return;
+  }
+
+  try {
+    const canvasImageData = getCanvasImageAsBase64(ANALYSIS_MAX_PX);  // ← stessa risoluzione di detectGreenDots
+    if (!canvasImageData) throw new Error('Impossibile ottenere dati immagine dal canvas');
+
+    const baseUrl = (typeof API_CONFIG !== 'undefined' && API_CONFIG?.baseURL)
+      ? API_CONFIG.baseURL
+      : window.location.origin;
+
+    const resp = await fetch(`${baseUrl}/api/white-dots/debug-images`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: canvasImageData, thresh_percentile, sat_max_pct: satMax }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    if (!data.success) throw new Error('Risposta non valida dal server');
+
+    imgZ.src = data.zone_b64;
+    imgD.src = data.detect_b64;
+    [imgZ, imgD].forEach(el => el.style.display = 'block');
+
+    if (data.masked_b64 && imgM) {
+      imgM.src = data.masked_b64;
+      imgM.style.display = 'block';
+    }
+
+    if (data.params && paramsEl && paramsTxt) {
+      const p = data.params;
+      paramsTxt.textContent =
+        `striscia ${p.outer_px}px fuori + ${p.inner_px}px dentro  |  ` +
+        `merge blob: ${p.merge_px}px  |  ` +
+        `luminosità: top ${100 - p.thresh_percentile}% (percentile ${p.thresh_percentile})  |  ` +
+        `saturazione max: ${p.sat_max_pct}%  |  ` +
+        `area blob: ${p.min_blob_area}–${p.max_blob_area}px²  |  ` +
+        `top ${p.top_n_per_side} per lato`;
+      paramsEl.style.display = 'block';
+    }
+
+    status.textContent = `✅ ${data.total_selected}/10 punti selezionati  (lum top ${topPct}%, sat ≤ ${satMax}%)`;
+    console.log('🔬 Debug punti bianchi:', data.total_selected, 'punti | params:', data.params);
+
+  } catch (err) {
+    console.error('❌ Errore debug immagini:', err);
+    status.textContent = `❌ Errore: ${err.message}`;
+  }
+}
+
+// Debounce per il ricalcolo automatico al cambio slider (400ms)
+let _wdotsRecalcTimer = null;
+function wdotsScheduleRecalc() {
+  clearTimeout(_wdotsRecalcTimer);
+  _wdotsRecalcTimer = setTimeout(() => showWhiteDotsDebugImages(), 400);
+}
+window.wdotsScheduleRecalc = wdotsScheduleRecalc;
+
+window.showWhiteDotsDebugImages = showWhiteDotsDebugImages;
+
 // ==================== WHITE DOTS PARAMETER SLIDERS ====================
 
-/**
- * Parametri correnti per il rilevamento white dots.
- * Il sistema usa 2-pass adattivi automatici (nessun tuning HSV manuale).
- * I parametri pass1_X/pass2_X sono modificabili solo per immagini statiche.
- */
-window.whiteDotsParams = {
-  cluster_size_min: 6,
-  cluster_size_max: 300,
-  min_distance: 10,
-  // Parametri adattivi 2-pass (valori di default)
+// ── Parametri panel legacy rimossi: il backend usa _detect_white_dots_v3 con params fissi ──
+// (WHITE_DOTS_FACTORY, slider panel, eyedropper tool eliminati)
+
+// Slim helper: resetta highResCanvasForAnalysis per sorgenti non-immagine
+function setWhiteDotsParamsForSource(sourceType) {
+  if (sourceType !== 'image') {
+    window.highResCanvasForAnalysis = null;
+    console.log(`🚫 highResCanvasForAnalysis azzerato (sorgente: ${sourceType})`);
+  }
+}
+
+async function resetAndRedetect() {
+  window.greenDotsDetected = false;
+  window.greenDotsData = null;
+  window.isDetectingGreenDots = false;
+  updateCanvasDisplay();
+  showToast('🔄 Nuovo rilevamento avviato...', 'info');
+  await detectGreenDots();
+}
+
+// PLACEHOLDER — non più usato, mantenuto per compatibilità backref
+window.WHITE_DOTS_FACTORY = Object.freeze({
+  cluster_size_min: 3,
+  cluster_size_max: 600,
+  min_distance: 30,
   pass1_percentile: 50,
-  pass1_sat_cap: 30,
+  pass1_sat_cap: 28,
   pass2_percentile: 80,
   pass2_sat_cap: 25,
-};
-
-/**
- * Valori base degli slider (a zoom 1.0) per dimensioni e distanze.
- * Questi vengono scalati proporzionalmente allo zoom.
- */
-window.whiteDotsBaseParams = {
-  cluster_size_min: { base: 9, min: 1, max: 50 },
-  cluster_size_max: { base: 66, min: 20, max: 200 },
-  min_distance: { base: 9, min: 5, max: 30 }
-};
-
-/**
- * Ultimo zoom registrato per ottimizzare gli aggiornamenti.
- */
+});
+// (factory params non più usati dal backend)
+window.whiteDotsParams = {};  // mantenuto per compatibilità backref
+window.whiteDotsBaseParams = {};
 window.lastZoomLevel = 1.0;
-
-/**
- * Parametri dell'ultimo rilevamento con successo.
- * Vengono salvati automaticamente e ripristinati all'apertura del pannello.
- */
 window.lastSuccessfulParams = null;
 
-/**
- * Aggiorna un parametro white dots quando viene mosso uno slider.
- * @param {string} paramName - Nome del parametro
- * @param {number|string} value - Nuovo valore
- */
+// no-op stubs per evitare errori da eventuali chiamate residue
 function updateWhiteDotsParam(paramName, value) {
-  const numValue = parseInt(value, 10);
-  window.whiteDotsParams[paramName] = numValue;
-
-  // Aggiorna il display del valore
-  const valueSpan = document.getElementById(`${paramName.replace('_', '-').replace('_', '-')}-value`);
-  if (valueSpan) {
-    valueSpan.textContent = numValue;
-  }
-
-  // Mappa i nomi dei parametri agli ID degli span
-  const paramToSpanId = {
-    'saturation_max': 'saturation-max-value',
-    'saturation_min': 'saturation-min-value',
-    'value_min': 'value-min-value',
-    'value_max': 'value-max-value',
-    'cluster_size_min': 'cluster-min-value',
-    'cluster_size_max': 'cluster-max-value',
-    'min_distance': 'min-distance-value'
-  };
-
-  const spanId = paramToSpanId[paramName];
-  if (spanId) {
-    const span = document.getElementById(spanId);
-    if (span) {
-      span.textContent = numValue;
-    }
-  }
-
-  console.log(`⚙️ Parametro ${paramName} aggiornato: ${numValue}`);
+  // no-op: parametri gestiti lato backend
 }
 
-/**
- * Aggiorna dinamicamente i limiti degli slider per dimensioni e distanze
- * in base al livello di zoom corrente del canvas.
- * @param {number} zoomLevel - Livello di zoom corrente (1.0 = 100%)
- */
 function updateSliderRangesForZoom(zoomLevel) {
-  // Evita aggiornamenti troppo frequenti
-  if (Math.abs(zoomLevel - window.lastZoomLevel) < 0.1) {
-    return;
-  }
-
-  window.lastZoomLevel = zoomLevel;
-
-  const baseParams = window.whiteDotsBaseParams;
-
-  // Aggiorna cluster_size_min
-  const clusterMinSlider = document.getElementById('cluster-min-slider');
-  if (clusterMinSlider) {
-    const newMin = Math.max(1, Math.round(baseParams.cluster_size_min.min * zoomLevel));
-    const newMax = Math.round(baseParams.cluster_size_min.max * zoomLevel);
-    clusterMinSlider.min = newMin;
-    clusterMinSlider.max = newMax;
-
-    // Adatta anche il valore corrente se fuori range
-    const currentValue = parseInt(clusterMinSlider.value);
-    if (currentValue < newMin) {
-      clusterMinSlider.value = newMin;
-      updateWhiteDotsParam('cluster_size_min', newMin);
-    } else if (currentValue > newMax) {
-      clusterMinSlider.value = newMax;
-      updateWhiteDotsParam('cluster_size_min', newMax);
-    }
-  }
-
-  // Aggiorna cluster_size_max
-  const clusterMaxSlider = document.getElementById('cluster-max-slider');
-  if (clusterMaxSlider) {
-    const newMin = Math.round(baseParams.cluster_size_max.min * zoomLevel);
-    const newMax = Math.round(baseParams.cluster_size_max.max * zoomLevel);
-    clusterMaxSlider.min = newMin;
-    clusterMaxSlider.max = newMax;
-
-    // Adatta anche il valore corrente se fuori range
-    const currentValue = parseInt(clusterMaxSlider.value);
-    if (currentValue < newMin) {
-      clusterMaxSlider.value = newMin;
-      updateWhiteDotsParam('cluster_size_max', newMin);
-    } else if (currentValue > newMax) {
-      clusterMaxSlider.value = newMax;
-      updateWhiteDotsParam('cluster_size_max', newMax);
-    }
-  }
-
-  // Aggiorna min_distance
-  const minDistanceSlider = document.getElementById('min-distance-slider');
-  if (minDistanceSlider) {
-    const newMin = Math.max(1, Math.round(baseParams.min_distance.min * zoomLevel));
-    const newMax = Math.round(baseParams.min_distance.max * zoomLevel);
-    minDistanceSlider.min = newMin;
-    minDistanceSlider.max = newMax;
-
-    // Adatta anche il valore corrente se fuori range
-    const currentValue = parseInt(minDistanceSlider.value);
-    if (currentValue < newMin) {
-      minDistanceSlider.value = newMin;
-      updateWhiteDotsParam('min_distance', newMin);
-    } else if (currentValue > newMax) {
-      minDistanceSlider.value = newMax;
-      updateWhiteDotsParam('min_distance', newMax);
-    }
-  }
-
-  console.log(`🔍 Slider ranges aggiornati per zoom ${(zoomLevel * 100).toFixed(0)}%`);
+  // no-op
 }
 
-/**
- * Resetta i parametri ai valori di default.
- */
-function resetWhiteDotsParams() {
-  const defaults = {
-    cluster_size_min: 6,
-    cluster_size_max: 300,
-    min_distance: 10,
-    pass1_percentile: 50,
-    pass1_sat_cap: 30,
-    pass2_percentile: 80,
-    pass2_sat_cap: 25,
-  };
-
-  window.whiteDotsParams = { ...defaults };
-
-  const _s = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
-  const _t = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-
-  _s('cluster-min-slider', defaults.cluster_size_min); _t('cluster-min-value', defaults.cluster_size_min);
-  _s('cluster-max-slider', defaults.cluster_size_max); _t('cluster-max-value', defaults.cluster_size_max);
-  _s('min-distance-slider', defaults.min_distance); _t('min-distance-value', defaults.min_distance);
-
-  // Slider avanzati pass1/pass2
-  _s('p1-percentile-slider', defaults.pass1_percentile); _t('p1-percentile-value', defaults.pass1_percentile); _t('badge-p1-perc', defaults.pass1_percentile);
-  _s('p1-sat-cap-slider', defaults.pass1_sat_cap); _t('p1-sat-cap-value', defaults.pass1_sat_cap); _t('badge-p1-sat', defaults.pass1_sat_cap);
-  _s('p2-percentile-slider', defaults.pass2_percentile); _t('p2-percentile-value', defaults.pass2_percentile); _t('badge-p2-perc', defaults.pass2_percentile);
-  _s('p2-sat-cap-slider', defaults.pass2_sat_cap); _t('p2-sat-cap-value', defaults.pass2_sat_cap); _t('badge-p2-sat', defaults.pass2_sat_cap);
-
-  showToast('Parametri resettati ai valori di default', 'info');
-  console.log('🔄 Parametri white dots resettati:', defaults);
-}
+function resetWhiteDotsParams() { /* no-op */ }
 
 /**
- * Aggiorna un parametro adattivo (pass1/pass2) e i relativi badge nel pannello info.
- * @param {string} paramName   - Nome del parametro in whiteDotsParams
- * @param {string|number} value - Nuovo valore
- * @param {string} spanId      - ID span del valore slider
- * @param {string} badgeId     - ID span del badge nel riepilogo
+ * Mostra i parametri fissi di fabbrica attualmente in uso.
+ * I parametri non vengono persistiti: al reload si riparte sempre dai valori fissi.
  */
-function updateAdaptiveParam(paramName, value, spanId, badgeId) {
-  const v = parseInt(value, 10);
-  window.whiteDotsParams[paramName] = v;
-  const spanEl = document.getElementById(spanId); if (spanEl) spanEl.textContent = v;
-  const badgeEl = document.getElementById(badgeId); if (badgeEl) badgeEl.textContent = v;
-}
-// ───────────────────────────────────────────────────────────────────────────
+function saveAsDefaultWhiteDotsParams() { /* no-op */ }
+function updateAdaptiveParam(paramName, value, spanId, badgeId) { /* no-op */ }
 
-/**
- * Imposta i parametri white-dots in base alla sorgente (image | video | webcam).
- * Per video e webcam usa valori ottimizzati per flussi in movimento;
- * per immagini statiche ripristina i default originali.
- */
-function setWhiteDotsParamsForSource(sourceType) {
-  const isVideoOrWebcam = (sourceType === 'video' || sourceType === 'webcam');
-
-  const params = isVideoOrWebcam ? {
-    cluster_size_min: 3,
-    cluster_size_max: 360,
-    min_distance: 30,
-    pass1_percentile: 50,
-    pass1_sat_cap: 28,
-    pass2_percentile: 80,
-    pass2_sat_cap: 25,
-  } : {
-    cluster_size_min: 6,
-    cluster_size_max: 300,
-    min_distance: 10,
-    pass1_percentile: 60,
-    pass1_sat_cap: 25,
-    pass2_percentile: 80,
-    pass2_sat_cap: 20,
-  };
-
-  window.whiteDotsParams = { ...params };
-
-  const s = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-  const t = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-
-  s('cluster-min-slider', params.cluster_size_min); t('cluster-min-value', params.cluster_size_min);
-  s('cluster-max-slider', params.cluster_size_max); t('cluster-max-value', params.cluster_size_max);
-  s('min-distance-slider', params.min_distance); t('min-distance-value', params.min_distance);
-
-  // Slider avanzati: aggiornali sempre, ma mostrali SOLO per immagini statiche
-  s('p1-percentile-slider', params.pass1_percentile); t('p1-percentile-value', params.pass1_percentile); t('badge-p1-perc', params.pass1_percentile);
-  s('p1-sat-cap-slider', params.pass1_sat_cap); t('p1-sat-cap-value', params.pass1_sat_cap); t('badge-p1-sat', params.pass1_sat_cap);
-  s('p2-percentile-slider', params.pass2_percentile); t('p2-percentile-value', params.pass2_percentile); t('badge-p2-perc', params.pass2_percentile);
-  s('p2-sat-cap-slider', params.pass2_sat_cap); t('p2-sat-cap-value', params.pass2_sat_cap); t('badge-p2-sat', params.pass2_sat_cap);
-
-  const advPanel = document.getElementById('adaptive-advanced-params');
-  if (advPanel) advPanel.style.display = isVideoOrWebcam ? 'none' : '';
-
-  console.log(`🎛️ Parametri white-dots impostati per [${sourceType}]:`, params);
-}
-
-/**
- * Rileva i white dots con i parametri correnti impostati dagli sliders.
- */
 async function detectWithCurrentParams() {
-  if (!currentImage) {
-    showToast('Nessuna immagine caricata', 'warning');
-    return;
-  }
-
-  // Guard: evita richieste parallele
-  if (window.isDetectingGreenDots) {
-    console.log('⚠️ Rilevamento già in corso, skip');
-    return;
-  }
-  window.isDetectingGreenDots = true;
-
-  const detectBtn = document.getElementById('detect-with-params-btn');
-  if (detectBtn) detectBtn.disabled = true;
-
-  const params = window.whiteDotsParams;
-  console.log('🔍 Rilevamento con parametri custom:', params);
-
-  // Aggiorna info panel
-  const infoPanel = document.getElementById('current-params-info');
-  if (infoPanel) {
-    infoPanel.innerHTML = `<strong>Rilevamento in corso...</strong><br>` +
-      `Sat ${params.saturation_min}-${params.saturation_max}% | Val ${params.value_min}-${params.value_max}% | ` +
-      `Cluster ${params.cluster_size_min}-${params.cluster_size_max}px | Dist≥${params.min_distance}px`;
-  }
-
-  try {
-    updateStatus('🔄 Rilevamento white dots con parametri custom...');
-    showToast('⏳ Elaborazione in corso...', 'info');
-
-    // Ottieni l'immagine come base64
-    const imageBase64 = getCanvasImageAsBase64(2400);
-    if (!imageBase64) {
-      throw new Error('Impossibile ottenere immagine dal canvas');
-    }
-
-    // Chiama l'API con i parametri custom
-    const result = await analyzeGreenDotsViaAPI(imageBase64, params);
-
-    if (result && result.success) {
-      // Salva i risultati
-      window.greenDotsData = result;
-      window.greenDotsDetected = true;
-
-      // Salva i parametri dell'ultimo rilevamento con successo
-      window.lastSuccessfulParams = { ...params };
-      localStorage.setItem('whiteDotsLastSuccessParams', JSON.stringify(params));
-      console.log('💾 Parametri salvati per rilevamento futuro:', params);
-
-      // Aggiorna il pannello info con i risultati
-      if (infoPanel) {
-        const dotsCount = result.detection_results?.total_dots || 0;
-        const leftCount = result.groups?.Sx?.length || 0;
-        const rightCount = result.groups?.Dx?.length || 0;
-
-        infoPanel.innerHTML = `<strong style="color: #00ff88;">✅ Rilevati ${dotsCount} punti</strong><br>` +
-          `Sx: ${leftCount} | Dx: ${rightCount}<br>` +
-          `<span style="color: #888;">Sat ${params.saturation_min}-${params.saturation_max}% | Val ${params.value_min}-${params.value_max}%</span>`;
-      }
-
-      // Aggiorna tabella e canvas
-      if (typeof updateMeasurementsFromGreenDots === 'function') {
-        updateMeasurementsFromGreenDots(result);
-      }
-
-      updateCanvasDisplay();
-      updateStatus(`✅ Rilevati ${result.detection_results.total_dots} white dots`);
-      showToast(`Rilevamento completato: ${result.detection_results.total_dots} punti`, 'success');
-
-    } else {
-      throw new Error(result?.error || 'Errore sconosciuto');
-    }
-
-  } catch (error) {
-    console.error('❌ Errore rilevamento:', error);
-    updateStatus('❌ Errore rilevamento');
-    showToast(`Errore: ${error.message}`, 'error');
-
-    if (infoPanel) {
-      infoPanel.innerHTML = `<span style="color: #ff6b6b;">❌ Errore: ${error.message}</span>`;
-    }
-  } finally {
-    // Rilascia il lock e riabilita il pulsante in ogni caso
-    window.isDetectingGreenDots = false;
-    if (detectBtn) detectBtn.disabled = false;
-  }
+  await detectGreenDots();
 }
 
-/**
- * Mostra/nasconde il pannello parametri quando si clicca su Trova Differenze.
- * Carica automaticamente i parametri dell'ultimo rilevamento con successo.
- */
-function showWhiteDotsParamsPanel() {
-  const panel = document.getElementById('white-dots-params-panel');
-  if (panel) {
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'block';
+function showWhiteDotsParamsPanel() { /* no-op: pannello rimosso */ }
 
-    // Carica parametri salvati dall'ultimo rilevamento con successo
-    if (panel.style.display === 'block') {
-      loadLastSuccessfulParams();
-    }
-  }
-}
+function syncSlidersToCurrentParams() { /* no-op: slider panel rimosso */ }
 
-/**
- * Carica i parametri dell'ultimo rilevamento con successo.
- */
-function loadLastSuccessfulParams() {
-  try {
-    const savedParams = localStorage.getItem('whiteDotsLastSuccessParams');
-    if (savedParams) {
-      const params = JSON.parse(savedParams);
+function loadLastSuccessfulParams() { /* no-op */ }
 
-      // Aggiorna i parametri globali
-      window.whiteDotsParams = { ...params };
-
-      // Aggiorna gli slider e i display
-      Object.keys(params).forEach(paramName => {
-        const value = params[paramName];
-        const sliderMap = {
-          'saturation_max': 'saturation-max-slider',
-          'saturation_min': 'saturation-min-slider',
-          'value_min': 'value-min-slider',
-          'value_max': 'value-max-slider',
-          'cluster_size_min': 'cluster-min-slider',
-          'cluster_size_max': 'cluster-max-slider',
-          'min_distance': 'min-distance-slider'
-        };
-
-        const sliderId = sliderMap[paramName];
-        if (sliderId) {
-          const slider = document.getElementById(sliderId);
-          if (slider) {
-            slider.value = value;
-            updateWhiteDotsParam(paramName, value);
-          }
-        }
-      });
-
-      console.log('✅ Parametri ripristinati dall\'ultimo rilevamento con successo:', params);
-      showToast('Parametri ripristinati dall\'ultima analisi', 'info');
-    }
-  } catch (error) {
-    console.error('Errore caricamento parametri salvati:', error);
-  }
-}
-
-// ==================== EYEDROPPER TOOL ====================
-
-/**
- * Stato del contagocce
- */
+// ==================== EYEDROPPER TOOL (rimosso) ====================
 window.eyedropperActive = false;
 window.eyedropperSuggestion = null;
-
-/**
- * Attiva/disattiva lo strumento contagocce
- * Usa il sistema canvas-modes per gestire i click
- */
-function toggleEyedropper() {
-  window.eyedropperActive = !window.eyedropperActive;
-
-  const btn = document.getElementById('eyedropper-btn');
-  const resultsPanel = document.getElementById('eyedropper-results');
-  const canvasContainer = document.querySelector('.canvas-container') || document.getElementById('main-canvas');
-
-  if (window.eyedropperActive) {
-    // Attiva contagocce tramite sistema canvas-modes
-    btn.classList.add('active');
-    btn.innerHTML = '💧 Clicca sul punto';
-    resultsPanel.style.display = 'block';
-
-    // Cambia cursore
-    if (canvasContainer) {
-      canvasContainer.classList.add('eyedropper-active');
-    }
-
-    // Imposta la modalità eyedropper nel sistema canvas-modes
-    if (typeof window.setCanvasMode === 'function') {
-      window.setCanvasMode('eyedropper');
-    }
-
-    showToast('💧 Contagocce attivo: clicca su un puntino bianco', 'info');
-    console.log('💧 Contagocce ATTIVATO (via canvas-modes)');
-
-  } else {
-    // Disattiva contagocce
-    btn.classList.remove('active');
-    btn.innerHTML = '💧 Contagocce';
-
-    // Ripristina cursore
-    if (canvasContainer) {
-      canvasContainer.classList.remove('eyedropper-active');
-    }
-
-    // Disattiva la modalità nel sistema canvas-modes
-    if (typeof window.setCanvasMode === 'function') {
-      window.setCanvasMode(null);
-    }
-
-    console.log('💧 Contagocce DISATTIVATO');
-  }
-}
-
-/**
- * Gestisce il click sul canvas quando il contagocce è attivo
- */
-function handleEyedropperClick(event) {
-  if (!window.eyedropperActive) return;
-
-  event.preventDefault();
-  event.stopPropagation();
-
-  const canvas = document.getElementById('main-canvas');
-  if (!canvas || !currentImage) {
-    showToast('Nessuna immagine caricata', 'warning');
-    return;
-  }
-
-  // Calcola le coordinate del click relative all'immagine originale
-  const rect = canvas.getBoundingClientRect();
-  const clickX = event.clientX - rect.left;
-  const clickY = event.clientY - rect.top;
-
-  // Converti in coordinate dell'immagine originale usando imageScale e imageOffset
-  const scale = window.imageScale || 1;
-  const offset = window.imageOffset || { x: 0, y: 0 };
-
-  // Le coordinate sull'immagine originale
-  const imgX = Math.round((clickX - offset.x) / scale);
-  const imgY = Math.round((clickY - offset.y) / scale);
-
-  console.log(`💧 Click: canvas(${clickX.toFixed(0)}, ${clickY.toFixed(0)}) → img(${imgX}, ${imgY})`);
-  console.log(`   Scale: ${scale}, Offset: (${offset.x}, ${offset.y})`);
-
-  // Analizza il pixel e l'area circostante
-  analyzePixelArea(imgX, imgY);
-}
-
-/**
- * Analizza il pixel e l'area circostante per determinare le caratteristiche del cluster
- */
-function analyzePixelArea(x, y) {
-  if (!currentImage) return;
-
-  try {
-    // Crea un canvas temporaneo per leggere i pixel dell'immagine originale
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d');
-
-    // Ottiene l'elemento immagine
-    let imageElement;
-    if (currentImage.getElement) {
-      imageElement = currentImage.getElement();
-    } else if (currentImage.src) {
-      imageElement = currentImage;
-    } else {
-      console.error('❌ currentImage non valido');
-      return;
-    }
-
-    const imgWidth = imageElement.naturalWidth || imageElement.width;
-    const imgHeight = imageElement.naturalHeight || imageElement.height;
-
-    // Verifica che le coordinate siano valide
-    if (x < 0 || x >= imgWidth || y < 0 || y >= imgHeight) {
-      showToast('Punto fuori dall\'immagine', 'warning');
-      return;
-    }
-
-    tempCanvas.width = imgWidth;
-    tempCanvas.height = imgHeight;
-    tempCtx.drawImage(imageElement, 0, 0);
-
-    // Leggi il pixel cliccato
-    const pixelData = tempCtx.getImageData(x, y, 1, 1).data;
-    const r = pixelData[0];
-    const g = pixelData[1];
-    const b = pixelData[2];
-
-    // Converti in HSV
-    const hsv = rgbToHsv(r, g, b);
-
-    // Analizza l'area circostante per stimare la dimensione del cluster
-    const clusterInfo = analyzeClusterAtPoint(tempCtx, x, y, imgWidth, imgHeight, hsv);
-
-    // Aggiorna UI
-    updateEyedropperUI(x, y, r, g, b, hsv, clusterInfo);
-
-    console.log(`💧 Pixel (${x}, ${y}): RGB(${r},${g},${b}) HSV(${hsv.h}°, ${hsv.s}%, ${hsv.v}%)`);
-    console.log(`   Cluster stimato: ${clusterInfo.size}px, simili trovati: ${clusterInfo.similarCount}`);
-
-  } catch (error) {
-    console.error('❌ Errore analisi pixel:', error);
-    showToast('Errore durante l\'analisi', 'error');
-  }
-}
-
-/**
- * Converte RGB in HSV
- */
-function rgbToHsv(r, g, b) {
-  r /= 255;
-  g /= 255;
-  b /= 255;
-
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const diff = max - min;
-
-  let h = 0;
-  if (diff !== 0) {
-    if (max === r) {
-      h = ((g - b) / diff) % 6;
-    } else if (max === g) {
-      h = (b - r) / diff + 2;
-    } else {
-      h = (r - g) / diff + 4;
-    }
-    h = Math.round(h * 60);
-    if (h < 0) h += 360;
-  }
-
-  const s = max === 0 ? 0 : Math.round((diff / max) * 100);
-  const v = Math.round(max * 100);
-
-  return { h, s, v };
-}
-
-/**
- * Analizza l'area attorno a un punto per stimare la dimensione del cluster
- */
-function analyzeClusterAtPoint(ctx, centerX, centerY, imgWidth, imgHeight, targetHsv) {
-  const searchRadius = 20; // Raggio di ricerca in pixel
-  const satTolerance = 15;  // Tolleranza saturazione
-  const valTolerance = 15;  // Tolleranza luminosità
-
-  let similarCount = 0;
-  let minX = centerX, maxX = centerX;
-  let minY = centerY, maxY = centerY;
-
-  // Scansiona l'area circostante
-  for (let dy = -searchRadius; dy <= searchRadius; dy++) {
-    for (let dx = -searchRadius; dx <= searchRadius; dx++) {
-      const px = centerX + dx;
-      const py = centerY + dy;
-
-      if (px < 0 || px >= imgWidth || py < 0 || py >= imgHeight) continue;
-
-      const pixelData = ctx.getImageData(px, py, 1, 1).data;
-      const hsv = rgbToHsv(pixelData[0], pixelData[1], pixelData[2]);
-
-      // Verifica se il pixel è simile al target (stesso range di bianco)
-      const satMatch = Math.abs(hsv.s - targetHsv.s) <= satTolerance;
-      const valMatch = Math.abs(hsv.v - targetHsv.v) <= valTolerance;
-
-      if (satMatch && valMatch && hsv.s <= 40 && hsv.v >= 40) {
-        similarCount++;
-        minX = Math.min(minX, px);
-        maxX = Math.max(maxX, px);
-        minY = Math.min(minY, py);
-        maxY = Math.max(maxY, py);
-      }
-    }
-  }
-
-  // Stima dimensione cluster
-  const width = maxX - minX + 1;
-  const height = maxY - minY + 1;
-  const estimatedSize = Math.round(width * height * 0.6); // Approssimazione area ellittica
-
-  return {
-    size: Math.max(similarCount, estimatedSize),
-    similarCount,
-    width,
-    height
-  };
-}
-
-/**
- * Aggiorna l'interfaccia con i risultati del contagocce
- */
-function updateEyedropperUI(x, y, r, g, b, hsv, clusterInfo) {
-  // Aggiorna preview colore
-  const colorPreview = document.getElementById('eyedropper-color-preview');
-  if (colorPreview) {
-    colorPreview.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
-  }
-
-  // Aggiorna valori
-  document.getElementById('eyedropper-rgb').textContent = `${r}, ${g}, ${b}`;
-  document.getElementById('eyedropper-pos').textContent = `${x}, ${y}`;
-  document.getElementById('eyedropper-hue').textContent = hsv.h;
-  document.getElementById('eyedropper-sat').textContent = hsv.s;
-  document.getElementById('eyedropper-val').textContent = hsv.v;
-  document.getElementById('eyedropper-cluster').textContent = clusterInfo.size;
-
-  // Genera suggerimento per i parametri
-  // NOTA: generateParameterSuggestion() salva già i parametri in window.eyedropperSuggestion
-  const suggestion = generateParameterSuggestion(hsv, clusterInfo);
-
-  const suggestionEl = document.getElementById('eyedropper-suggestion');
-  const applyBtn = document.getElementById('apply-suggestion-btn');
-
-  if (suggestionEl) {
-    suggestionEl.innerHTML = suggestion.text;
-  }
-
-  if (applyBtn) {
-    applyBtn.style.display = suggestion.canApply ? 'block' : 'none';
-  }
-}
-
-/**
- * Genera un suggerimento per i parametri basato sul pixel analizzato
- */
-function generateParameterSuggestion(hsv, clusterInfo) {
-  const isWhite = hsv.s <= 30 && hsv.v >= 50;
-
-  if (!isWhite) {
-    return {
-      text: `<span style="color: #ff6b6b;">⚠️ Questo pixel non sembra bianco (Sat ${hsv.s}% > 30% o Val ${hsv.v}% < 50%)</span>`,
-      canApply: false
-    };
-  }
-
-  // Calcola parametri suggeriti con margine
-  const suggestedSatMax = Math.min(60, hsv.s + 10);
-  const suggestedValMin = Math.max(40, hsv.v - 15);
-  const suggestedValMax = 100;
-
-  // IMPORTANTE: Il cluster size dal contagocce è già in pixel dell'immagine originale
-  // Non serve scalare per lo zoom qui, verrà fatto in applyEyedropperSuggestion()
-  const suggestedClusterMin = Math.max(10, Math.floor(clusterInfo.size * 0.5));
-  const suggestedClusterMax = Math.min(200, Math.ceil(clusterInfo.size * 2));
-  const suggestedMinDistance = 30;  // Distanza minima tra punti
-
-  window.eyedropperSuggestion = {
-    saturation_max: suggestedSatMax,
-    value_min: suggestedValMin,
-    value_max: suggestedValMax,
-    cluster_size_min: suggestedClusterMin,
-    cluster_size_max: suggestedClusterMax,
-    min_distance: suggestedMinDistance
-  };
-
-  return {
-    text: `<span style="color: #00ff88;">✓ Puntino bianco rilevato!</span><br>` +
-      `Sat Max: <b>${suggestedSatMax}%</b> (attuale: ${hsv.s}%)<br>` +
-      `Val Min: <b>${suggestedValMin}%</b> (attuale: ${hsv.v}%)<br>` +
-      `Cluster: <b>${suggestedClusterMin}-${suggestedClusterMax}px</b> (stimato: ~${clusterInfo.size}px)<br>` +
-      `Distanza Min: <b>${suggestedMinDistance}px</b>`,
-    canApply: true
-  };
-}
-
-/**
- * Applica i parametri suggeriti dal contagocce agli sliders
- */
-function applyEyedropperSuggestion() {
-  const suggestion = window.eyedropperSuggestion;
-  if (!suggestion || !suggestion.saturation_max) {
-    showToast('Nessun suggerimento disponibile', 'warning');
-    console.log('⚠️ applyEyedropperSuggestion: nessun suggerimento disponibile');
-    return;
-  }
-
-  console.log('💧 Applicazione suggerimenti contagocce:', suggestion);
-
-  // Aggiorna parametri HSV (non dipendono dallo zoom)
-  if (suggestion.saturation_max !== undefined) {
-    const slider = document.getElementById('saturation-max-slider');
-    if (slider) {
-      slider.value = suggestion.saturation_max;
-      updateWhiteDotsParam('saturation_max', suggestion.saturation_max);
-      console.log(`  ✓ Saturation Max: ${suggestion.saturation_max}%`);
-    }
-  }
-
-  if (suggestion.value_min !== undefined) {
-    const slider = document.getElementById('value-min-slider');
-    if (slider) {
-      slider.value = suggestion.value_min;
-      updateWhiteDotsParam('value_min', suggestion.value_min);
-      console.log(`  ✓ Value Min: ${suggestion.value_min}%`);
-    }
-  }
-
-  if (suggestion.value_max !== undefined) {
-    const slider = document.getElementById('value-max-slider');
-    if (slider) {
-      slider.value = suggestion.value_max;
-      updateWhiteDotsParam('value_max', suggestion.value_max);
-      console.log(`  ✓ Value Max: ${suggestion.value_max}%`);
-    }
-  }
-
-  // Parametri dimensionali: verifica i limiti degli slider (che sono adattati allo zoom)
-  if (suggestion.cluster_size_min !== undefined) {
-    const slider = document.getElementById('cluster-min-slider');
-    if (slider) {
-      const sliderMin = parseInt(slider.min);
-      const sliderMax = parseInt(slider.max);
-      const suggestedValue = suggestion.cluster_size_min;
-      const clampedValue = Math.max(sliderMin, Math.min(sliderMax, suggestedValue));
-
-      slider.value = clampedValue;
-      updateWhiteDotsParam('cluster_size_min', clampedValue);
-
-      if (clampedValue !== suggestedValue) {
-        console.log(`  ⚠️ Cluster Min: ${suggestedValue}px limitato a ${clampedValue}px (range: ${sliderMin}-${sliderMax}px)`);
-      } else {
-        console.log(`  ✓ Cluster Min: ${clampedValue}px`);
-      }
-    }
-  }
-
-  if (suggestion.cluster_size_max !== undefined) {
-    const slider = document.getElementById('cluster-max-slider');
-    if (slider) {
-      const sliderMin = parseInt(slider.min);
-      const sliderMax = parseInt(slider.max);
-      const suggestedValue = suggestion.cluster_size_max;
-      const clampedValue = Math.max(sliderMin, Math.min(sliderMax, suggestedValue));
-
-      slider.value = clampedValue;
-      updateWhiteDotsParam('cluster_size_max', clampedValue);
-
-      if (clampedValue !== suggestedValue) {
-        console.log(`  ⚠️ Cluster Max: ${suggestedValue}px limitato a ${clampedValue}px (range: ${sliderMin}-${sliderMax}px)`);
-      } else {
-        console.log(`  ✓ Cluster Max: ${clampedValue}px`);
-      }
-    }
-  }
-
-  if (suggestion.min_distance !== undefined) {
-    const slider = document.getElementById('min-distance-slider');
-    if (slider) {
-      const sliderMin = parseInt(slider.min);
-      const sliderMax = parseInt(slider.max);
-      const suggestedValue = suggestion.min_distance;
-      const clampedValue = Math.max(sliderMin, Math.min(sliderMax, suggestedValue));
-
-      slider.value = clampedValue;
-      updateWhiteDotsParam('min_distance', clampedValue);
-
-      if (clampedValue !== suggestedValue) {
-        console.log(`  ⚠️ Min Distance: ${suggestedValue}px limitato a ${clampedValue}px (range: ${sliderMin}-${sliderMax}px)`);
-      } else {
-        console.log(`  ✓ Min Distance: ${clampedValue}px`);
-      }
-    }
-  }
-
-  showToast('✓ Parametri suggeriti applicati - avvio rilevamento...', 'success');
-  console.log('✅ Parametri applicati con successo');
-
-  // Disattiva contagocce
-  toggleEyedropper();
-
-  // Avvia automaticamente il rilevamento con i nuovi parametri
-  setTimeout(() => {
-    detectWithCurrentParams();
-  }, 300);
-}
-
-// ==================== END EYEDROPPER TOOL ====================
+function toggleEyedropper() { /* no-op: contagocce rimosso */ }
+function handleEyedropperClick(event) { /* no-op */ }
+function analyzePixelArea(x, y) { /* no-op */ }
+function analyzeClusterAtPoint() { /* no-op */ }
+function rgbToHsv(r, g, b) { return { h: 0, s: 0, v: 0 }; }
+function updateEyedropperUI() { /* no-op */ }
+function generateParameterSuggestion(hsv, clusterInfo) { return { text: '', canApply: false }; }
+function applyEyedropperSuggestion() { /* no-op */ }
 
 // ==================== POINT PAIR HIGHLIGHT TOOL ====================
 
@@ -8468,199 +8115,145 @@ function clearPointPairHighlight() {
 }
 
 /**
- * Disegna l'evidenziazione della coppia di punti con frecce direzionali
+ * Disegna l'evidenziazione visiva di una coppia di punti (click su riga tabella).
+ *
+ * Layout:
+ *   • Cerchio ciano (sinistro) e arancione (destro), etichetta nome al centro.
+ *   • Linea tratteggiata di connessione.
+ *   • Frecce ORIZZONTALI: entrambe puntano nella direzione del punto più esterno
+ *     (frecce convergenti verso il lato dominante), NON frecce speculari.
+ *     Il punto esterno ha la freccia sul suo lato esterno, il punto interno
+ *     ha la freccia sullo stesso lato (verso il dominante).
+ *   • Frecce VERTICALI: ↑ sopra il cerchio più alto, ↓ sotto quello più basso.
+ *   • Badge info centrato che mostra ↔ Δpx laterale e ↕ Δpx altezza.
+ *
+ * Tutte le frecce: stessa opacità e stesso peso → no disparità visiva.
+ * Frecce attaccate alla circonferenza (gap 0px).
  */
 function drawPointPairHighlight(pairData) {
   if (!fabricCanvas || !currentImage) return;
 
-  // Usa transformLandmarkCoordinate per trasformare correttamente le coordinate
-  // come fanno i landmarks, tenendo conto di scala, rotazione e posizione dell'immagine
-  const leftTransformed = transformLandmarkCoordinate({
-    x: pairData.leftPoint[0],
-    y: pairData.leftPoint[1]
-  });
-  const rightTransformed = transformLandmarkCoordinate({
-    x: pairData.rightPoint[0],
-    y: pairData.rightPoint[1]
-  });
+  const lt = transformGreenDotCoordinate(pairData.leftPoint[0], pairData.leftPoint[1]);
+  const rt = transformGreenDotCoordinate(pairData.rightPoint[0], pairData.rightPoint[1]);
+  const lx = lt.x, ly = lt.y;
+  const rx = rt.x, ry = rt.y;
 
-  const leftX = leftTransformed.x;
-  const leftY = leftTransformed.y;
-  const rightX = rightTransformed.x;
-  const rightY = rightTransformed.y;
+  console.log(`🎯 Highlight: L(${lx.toFixed(0)},${ly.toFixed(0)}) R(${rx.toFixed(0)},${ry.toFixed(0)})`);
 
-  console.log(`🎯 Point pair highlight: L(${pairData.leftPoint[0]}, ${pairData.leftPoint[1]}) → (${leftX.toFixed(1)}, ${leftY.toFixed(1)}), R(${pairData.rightPoint[0]}, ${pairData.rightPoint[1]}) → (${rightX.toFixed(1)}, ${rightY.toFixed(1)})`);
+  // ── Costanti ─────────────────────────────────────────────────────────
+  const R = 22;          // raggio cerchi
+  const AW = 26;          // lunghezza freccia (dal bordo del cerchio)
+  const AHW = 9;           // larghezza testa freccia
+  const AHH = 12;          // altezza testa freccia
+  const SW_CIRC = 2.8;         // border cerchio
+  const SW_ARR = 2.2;         // stroke freccia
 
-  // Colori
-  const LEFT_COLOR = '#00bcd4';  // Ciano per sinistra
-  const RIGHT_COLOR = '#ff9800'; // Arancione per destra
-  const ARROW_COLOR = '#ff4444'; // Rosso per frecce
+  const C_LEFT = '#00c8e0';   // ciano
+  const C_RIGHT = '#ffa020';   // arancio
+  const C_HORIZ = '#ff3355';   // rosso-coral per differenza laterale
+  const C_VERT = '#44ee88';   // verde per differenza verticale
+  const C_LINE = 'rgba(255,255,255,0.45)';
 
-  // ===== CERCHI DI EVIDENZIAZIONE =====
-  // Cerchio grande pulsante attorno al punto sinistro
-  const leftCircle = new fabric.Circle({
-    left: leftX,
-    top: leftY,
-    radius: 25,
-    fill: 'transparent',
-    stroke: LEFT_COLOR,
-    strokeWidth: 4,
-    originX: 'center',
-    originY: 'center',
-    selectable: false,
-    evented: false,
-    opacity: 0.9
-  });
-
-  // Cerchio grande pulsante attorno al punto destro
-  const rightCircle = new fabric.Circle({
-    left: rightX,
-    top: rightY,
-    radius: 25,
-    fill: 'transparent',
-    stroke: RIGHT_COLOR,
-    strokeWidth: 4,
-    originX: 'center',
-    originY: 'center',
-    selectable: false,
-    evented: false,
-    opacity: 0.9
-  });
-
-  // ===== LINEA DI CONNESSIONE =====
-  const connectionLine = new fabric.Line([leftX, leftY, rightX, rightY], {
-    stroke: '#ffffff',
-    strokeWidth: 2,
-    strokeDashArray: [8, 4],
-    selectable: false,
-    evented: false,
-    opacity: 0.7
-  });
-
-  // ===== FRECCE DIREZIONALI =====
-
-  // Freccia verticale (alto/basso) - posizionata sopra il punto più BASSO
-  const higherY = Math.min(leftY, rightY);
-  const lowerY = Math.max(leftY, rightY);
-  const verticalArrowX = (leftX + rightX) / 2;
-
-  // Determina quale punto è più alto (Y minore = più alto)
-  const leftIsHigher = leftY < rightY;
-  const arrowPointsUp = true; // La freccia punta sempre verso l'alto per indicare il più alto
-
-  // Freccia verticale vicino al punto PIÙ ALTO
-  const vertArrowY = leftIsHigher ? leftY : rightY;
-  const vertArrowX2 = leftIsHigher ? leftX : rightX;
-
-  const verticalArrow = createArrow(
-    vertArrowX2 + 35, vertArrowY + 15,
-    vertArrowX2 + 35, vertArrowY - 15,
-    '#00ff00', // Verde per "più alto"
-    3
-  );
-
-  // Label "↑ PIÙ ALTO"
-  const higherLabel = new fabric.Text('↑', {
-    left: vertArrowX2 + 35,
-    top: vertArrowY - 25,
-    fontSize: 20,
-    fill: '#00ff00',
-    fontWeight: 'bold',
-    originX: 'center',
-    originY: 'center',
-    selectable: false,
-    evented: false
-  });
-
-  // Freccia orizzontale (interno/esterno) - vicino al punto PIÙ ESTERNO
   const leftIsOuter = pairData.fartherPoint === pairData.leftLabel;
-  const outerX = leftIsOuter ? leftX : rightX;
-  const outerY = leftIsOuter ? leftY : rightY;
+  const leftIsHigher = ly < ry;
 
-  // Freccia che punta verso l'esterno
-  const arrowDirection = leftIsOuter ? -1 : 1; // -1 = verso sinistra, 1 = verso destra
-  const horizontalArrow = createArrow(
-    outerX + (arrowDirection * 15), outerY + 35,
-    outerX + (arrowDirection * 40), outerY + 35,
-    '#ff4444', // Rosso per "più esterno"
-    3
-  );
+  const objs = [];
 
-  // Label "← PIÙ ESTERNO" o "PIÙ ESTERNO →"
-  const outerLabel = new fabric.Text(leftIsOuter ? '←' : '→', {
-    left: outerX + (arrowDirection * 50),
-    top: outerY + 35,
-    fontSize: 20,
-    fill: '#ff4444',
-    fontWeight: 'bold',
-    originX: 'center',
-    originY: 'center',
-    selectable: false,
-    evented: false
-  });
+  // ── helper ── disegna freccia (linea + triangolo) senza fabric.Group
+  function arrow(x1, y1, x2, y2, color) {
+    const ang = Math.atan2(y2 - y1, x2 - x1);
+    objs.push(new fabric.Line([x1, y1, x2, y2], {
+      stroke: color, strokeWidth: SW_ARR,
+      strokeLineCap: 'round',
+      selectable: false, evented: false
+    }));
+    objs.push(new fabric.Triangle({
+      left: x2, top: y2,
+      width: AHW, height: AHH,
+      fill: color,
+      angle: ang * 180 / Math.PI + 90,
+      originX: 'center', originY: 'center',
+      selectable: false, evented: false
+    }));
+  }
 
-  // ===== ETICHETTE PUNTI =====
-  const leftLabel = new fabric.Text(pairData.leftLabel, {
-    left: leftX,
-    top: leftY - 40,
-    fontSize: 16,
-    fill: LEFT_COLOR,
-    fontWeight: 'bold',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    originX: 'center',
-    originY: 'center',
-    selectable: false,
-    evented: false,
-    padding: 4
-  });
+  // ── Linea di connessione ────────────────────────────────────────────
+  objs.push(new fabric.Line([lx, ly, rx, ry], {
+    stroke: C_LINE, strokeWidth: 1.5,
+    strokeDashArray: [7, 5], selectable: false, evented: false
+  }));
 
-  const rightLabel = new fabric.Text(pairData.rightLabel, {
-    left: rightX,
-    top: rightY - 40,
-    fontSize: 16,
-    fill: RIGHT_COLOR,
-    fontWeight: 'bold',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    originX: 'center',
-    originY: 'center',
-    selectable: false,
-    evented: false,
-    padding: 4
-  });
+  // ── Cerchi con fill semi-trasparente ────────────────────────────────
+  objs.push(new fabric.Circle({
+    left: lx, top: ly, radius: R,
+    fill: 'rgba(0,200,224,0.12)', stroke: C_LEFT, strokeWidth: SW_CIRC,
+    originX: 'center', originY: 'center', selectable: false, evented: false
+  }));
+  objs.push(new fabric.Circle({
+    left: rx, top: ry, radius: R,
+    fill: 'rgba(255,160,32,0.12)', stroke: C_RIGHT, strokeWidth: SW_CIRC,
+    originX: 'center', originY: 'center', selectable: false, evented: false
+  }));
 
-  // ===== INFO BOX =====
-  const infoText = `${pairData.fartherPoint} +${pairData.distanceDiff.toFixed(0)}px esterno\n${pairData.higherPoint} +${pairData.heightDiff.toFixed(0)}px alto`;
-  const infoBox = new fabric.Text(infoText, {
-    left: (leftX + rightX) / 2,
-    top: Math.min(leftY, rightY) - 60,
-    fontSize: 12,
-    fill: '#ffffff',
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    originX: 'center',
-    originY: 'center',
-    selectable: false,
-    evented: false,
-    padding: 6,
-    textAlign: 'center'
-  });
+  // ── Etichette dentro i cerchi ───────────────────────────────────────
+  objs.push(new fabric.Text(pairData.leftLabel, {
+    left: lx, top: ly, fontSize: 10,
+    fill: C_LEFT, fontWeight: 'bold', fontFamily: 'monospace',
+    originX: 'center', originY: 'center', selectable: false, evented: false
+  }));
+  objs.push(new fabric.Text(pairData.rightLabel, {
+    left: rx, top: ry, fontSize: 10,
+    fill: C_RIGHT, fontWeight: 'bold', fontFamily: 'monospace',
+    originX: 'center', originY: 'center', selectable: false, evented: false
+  }));
 
-  // Aggiungi tutti gli oggetti al canvas
-  const objects = [
-    connectionLine,
-    leftCircle, rightCircle,
-    verticalArrow, higherLabel,
-    horizontalArrow, outerLabel,
-    leftLabel, rightLabel,
-    infoBox
-  ];
+  // ── Frecce ORIZZONTALI ─────────────────────────────────────────────
+  // Entrambe puntano vers il lato del punto più ESTERNO (frecce convergenti).
+  // Il punto esterno riceve la freccia sul proprio lato esterno (outward).
+  // Il punto interno riceve la freccia sul lato opposto (verso il dominante).
+  if (leftIsOuter) {
+    // Punto sinistro più esterno → entrambe verso sinistra (←)
+    arrow(lx - R, ly, lx - R - AW, ly, C_HORIZ); // LC: outward ←
+    arrow(rx - R, ry, rx - R - AW, ry, C_HORIZ); // RC: anche ← (verso il lato dominante sinistro)
+  } else {
+    // Punto destro più esterno → entrambe verso destra (→)
+    arrow(lx + R, ly, lx + R + AW, ly, C_HORIZ); // LC: → verso il lato dominante destro
+    arrow(rx + R, ry, rx + R + AW, ry, C_HORIZ); // RC: outward →
+  }
 
-  objects.forEach(obj => {
-    if (obj) {
-      fabricCanvas.add(obj);
-      window.highlightOverlayObjects.push(obj);
-    }
-  });
+  // ── Frecce VERTICALI ──────────────────────────────────────────────
+  // Punto più alto: ↑ sopra il cerchio | Punto più basso: ↓ sotto
+  const hx = leftIsHigher ? lx : rx, hy = leftIsHigher ? ly : ry;
+  const ox = leftIsHigher ? rx : lx, oy = leftIsHigher ? ry : ly;
+  arrow(hx, hy - R, hx, hy - R - AW, C_VERT); // ↑ più alto
+  arrow(ox, oy + R, ox, oy + R + AW, C_VERT); // ↓ più basso
 
+  // ── Badge info centrale ────────────────────────────────────────────
+  // Rettangolo arrotondato + testo con entrambi i delta
+  const midX = (lx + rx) / 2;
+  const topY = Math.min(ly - R, ry - R) - 38;
+  const dH = pairData.heightDiff.toFixed(0);
+  const dD = pairData.distanceDiff.toFixed(0);
+  const badge = `↔ ${dD}px    ↕ ${dH}px`;
+  const bW = badge.length * 7 + 22;
+  const bH = 24;
+
+  objs.push(new fabric.Rect({
+    left: midX, top: topY, width: bW, height: bH, rx: 7, ry: 7,
+    fill: 'rgba(8,8,18,0.86)',
+    stroke: 'rgba(255,255,255,0.20)', strokeWidth: 1,
+    originX: 'center', originY: 'center',
+    selectable: false, evented: false
+  }));
+  objs.push(new fabric.Text(badge, {
+    left: midX, top: topY, fontSize: 11.5,
+    fill: '#f0f0f0', fontWeight: 'bold', fontFamily: 'monospace',
+    originX: 'center', originY: 'center',
+    selectable: false, evented: false
+  }));
+
+  // ── Aggiunge al canvas ─────────────────────────────────────────────
+  objs.forEach(o => { fabricCanvas.add(o); window.highlightOverlayObjects.push(o); });
   fabricCanvas.renderAll();
 }
 
@@ -8725,6 +8318,9 @@ function resetPointPairHighlightOnUpdate() {
 // Esponi le funzioni globalmente
 window.updateWhiteDotsParam = updateWhiteDotsParam;
 window.resetWhiteDotsParams = resetWhiteDotsParams;
+window.resetAndRedetect = resetAndRedetect;
+window.saveAsDefaultWhiteDotsParams = saveAsDefaultWhiteDotsParams;
+window.syncSlidersToCurrentParams = syncSlidersToCurrentParams;
 window.setWhiteDotsParamsForSource = setWhiteDotsParamsForSource;
 window.detectWithCurrentParams = detectWithCurrentParams;
 window.showWhiteDotsParamsPanel = showWhiteDotsParamsPanel;
@@ -8733,6 +8329,7 @@ window.clearPointPairHighlight = clearPointPairHighlight;
 window.toggleEyedropper = toggleEyedropper;
 window.applyEyedropperSuggestion = applyEyedropperSuggestion;
 window.analyzePixelArea = analyzePixelArea;
+window.updateAdaptiveParam = updateAdaptiveParam;
 
 // ==================== END WHITE DOTS PARAMETER SLIDERS ====================
 
@@ -8773,9 +8370,18 @@ function getCanvasImageAsBase64(maxDimension = null) {
     const outputFormat = isPNG ? 'image/png' : 'image/jpeg';
     const quality = isPNG ? undefined : 0.95; // Quality solo per JPEG
 
-    // Ottiene dimensioni originali
-    const origWidth = imageElement.naturalWidth || imageElement.width || 800;
-    const origHeight = imageElement.naturalHeight || imageElement.height || 600;
+    // Se disponibile, usa il canvas full-res salvato al caricamento dell'immagine statica.
+    // Questo evita che l'analisi lavori sulla versione ridimensionata (1800px) caricata
+    // in Fabric.js per performance, invece della risoluzione originale del file.
+    // Per i frame video questo valore è null, quindi si usa imageElement come sempre.
+    const sourceElement = window.highResCanvasForAnalysis || imageElement;
+
+    // Ottiene dimensioni originali dalla sorgente (full-res se disponibile)
+    const origWidth = sourceElement.naturalWidth || sourceElement.width || 800;
+    const origHeight = sourceElement.naturalHeight || sourceElement.height || 600;
+    if (window.highResCanvasForAnalysis) {
+      console.log(`🔬 Analisi su canvas full-res: ${origWidth}x${origHeight} (display Fabric.js: ${imageElement.naturalWidth || imageElement.width}x${imageElement.naturalHeight || imageElement.height})`);
+    }
 
     // Calcola dimensioni finali con resize se necessario
     let finalWidth = origWidth;
@@ -8800,23 +8406,56 @@ function getCanvasImageAsBase64(maxDimension = null) {
     // Salva la scala applicata per uso esterno (es. eyebrow processor)
     window.lastImageResizeScale = resizeScale;
 
-    // Imposta le dimensioni del canvas temporaneo
-    tempCanvas.width = finalWidth;
-    tempCanvas.height = finalHeight;
+    // === GESTIONE ROTAZIONE FABRIC.JS ===
+    // currentImage.angle contiene la rotazione applicata dall'utente (es. "ruota 90°")
+    // L'imageElement grezzo NON ha questa rotazione: dobbiamo applicarla noi.
+    const fabricAngle = (currentImage.angle || 0);
+    const normalizedAngle = ((fabricAngle % 360) + 360) % 360;
+    const angleRad = normalizedAngle * Math.PI / 180;
+    const flipX = currentImage.flipX || false;
+    const flipY = currentImage.flipY || false;
+    const hasTransform = (normalizedAngle !== 0 || flipX || flipY);
 
-    // Disegna l'immagine (con resize se necessario)
-    tempCtx.drawImage(imageElement, 0, 0, finalWidth, finalHeight);
+    // Calcola le dimensioni del canvas di output DOPO la rotazione.
+    // Per 90°/270° le dimensioni si invertono; per 0°/180° rimangono uguali.
+    const cosA = Math.abs(Math.cos(angleRad));
+    const sinA = Math.abs(Math.sin(angleRad));
+    const rotatedCanvasW = Math.round(finalWidth * cosA + finalHeight * sinA);
+    const rotatedCanvasH = Math.round(finalWidth * sinA + finalHeight * cosA);
+
+    // Imposta le dimensioni del canvas temporaneo (ruotato)
+    tempCanvas.width = rotatedCanvasW;
+    tempCanvas.height = rotatedCanvasH;
+
+    // Disegna l'immagine applicando rotazione e flip se necessario
+    // Usa sourceElement (full-res per immagini statiche, element Fabric.js per video)
+    if (hasTransform) {
+      tempCtx.save();
+      tempCtx.translate(rotatedCanvasW / 2, rotatedCanvasH / 2);
+      tempCtx.rotate(angleRad);
+      if (flipX) tempCtx.scale(-1, 1);
+      if (flipY) tempCtx.scale(1, -1);
+      tempCtx.drawImage(sourceElement, -finalWidth / 2, -finalHeight / 2, finalWidth, finalHeight);
+      tempCtx.restore();
+      console.log(`🔄 Rotazione applicata: ${normalizedAngle}°, flipX=${flipX}, flipY=${flipY} → canvas: ${rotatedCanvasW}x${rotatedCanvasH}`);
+    } else {
+      // Nessuna trasformazione: disegno diretto
+      tempCtx.drawImage(sourceElement, 0, 0, finalWidth, finalHeight);
+    }
 
     // Converti direttamente in base64 senza ulteriori elaborazioni
     // Quality massima (0.98) per preservare tutti i dettagli
     const base64Data = tempCanvas.toDataURL('image/jpeg', 0.98);
     console.log('✅ Immagine convertita in base64:', {
+      source: window.highResCanvasForAnalysis ? 'full-res canvas' : 'fabric element',
       original: `${origWidth}x${origHeight}`,
-      final: `${finalWidth}x${finalHeight}`,
+      final: `${rotatedCanvasW}x${rotatedCanvasH}`,
+      drawSize: `${finalWidth}x${finalHeight}`,
       resized: needsResize,
+      angle: `${normalizedAngle}°`,
+      flipX, flipY,
       format: `${outputFormat.toUpperCase()} ${isPNG ? '(lossless)' : '(quality 95)'}`,
       originalMimeType: originalMimeType,
-      imageType: imageElement.constructor.name
     });
 
     return base64Data;
@@ -9184,6 +8823,9 @@ function clearAllMeasurementOverlays() {
   if (typeof window.activeMeasurements !== 'undefined' && window.activeMeasurements) {
     window.activeMeasurements.clear();
   }
+
+  // Invalida cache overlay sopracciglia (immagine cambiata → vecchio PNG non più valido)
+  window._eyebrowSymmetryCache = null;
 
   // Rimuovi la classe 'active' da tutti gli altri pulsanti .btn-analysis rimasti
   document.querySelectorAll('.btn-analysis.active').forEach(btn => {
@@ -10344,40 +9986,62 @@ function syncGreenDotsOverlayWithImage() {
 
 function syncGreenDotsOverlayWithViewport() {
   /**
-   * Sincronizza l'overlay green dots quando il viewport del canvas cambia (pan)
-   * Durante il pan, entrambi immagine e overlay si spostano, ma potrebbero desincronizzarsi
+   * Sincronizza l'overlay green dots quando l'immagine viene ruotata/spostata.
+   * Usa il centro dell'immagine + rotazione delta rispetto all'angolo di detection
+   * per mantenere l'overlay allineato anche dopo ulteriori rotazioni.
    */
   if (!window.currentGreenDotsOverlay) {
     console.log('⚠️ Nessun overlay green dots da sincronizzare con viewport');
     return;
   }
 
-  if (!currentImage || !currentImage.isBackgroundImage) {
-    console.log('⚠️ Nessuna immagine di sfondo per sincronizzazione viewport');
+  if (!currentImage) {
+    console.log('⚠️ Nessuna immagine per sincronizzazione viewport');
     return;
   }
 
-  // Forza l'overlay ad avere esattamente le stesse coordinate dell'immagine
-  window.currentGreenDotsOverlay.set({
-    left: currentImage.left,
-    top: currentImage.top,
-    scaleX: currentImage.scaleX,
-    scaleY: currentImage.scaleY
+  const detectionAngle = window.greenDotsDetectionAngle || 0;
+  const currentAngle = currentImage.angle || 0;
+  // Rotazione aggiuntiva rispetto al momento del rilevamento
+  const additionalAngle = currentAngle - detectionAngle;
+
+  const center = currentImage.getCenterPoint();
+
+  // Usa le scale salvate al momento della detection (basate sul bbox di allora)
+  const scaleX = window.greenDotsOverlayScaleXAtDetection;
+  const scaleY = window.greenDotsOverlayScaleYAtDetection;
+
+  if (!scaleX || !scaleY) {
+    // Fallback: vecchio metodo con bbox
+    const bbox = currentImage.getBoundingRect(true);
+    const natW = window.currentGreenDotsOverlayNaturalW || window.currentGreenDotsOverlay.width;
+    const natH = window.currentGreenDotsOverlayNaturalH || window.currentGreenDotsOverlay.height;
+    window.currentGreenDotsOverlay.set({
+      left: bbox.left,
+      top: bbox.top,
+      scaleX: bbox.width / natW,
+      scaleY: bbox.height / natH,
+      angle: 0
+    });
+  } else {
+    window.currentGreenDotsOverlay.set({
+      left: center.x,
+      top: center.y,
+      originX: 'center',
+      originY: 'center',
+      scaleX: scaleX,
+      scaleY: scaleY,
+      angle: additionalAngle
+    });
+  }
+
+  console.log('🔄 SINCRONIZZAZIONE VIEWPORT:', {
+    currentAngle,
+    detectionAngle,
+    additionalAngle,
+    center: `(${center.x.toFixed(1)}, ${center.y.toFixed(1)})`
   });
 
-  console.log('🔄 SINCRONIZZAZIONE VIEWPORT PAN:', {
-    viewportTransform: fabricCanvas.viewportTransform,
-    immagine: {
-      pos: `(${currentImage.left.toFixed(1)}, ${currentImage.top.toFixed(1)})`,
-      scale: currentImage.scaleX.toFixed(3)
-    },
-    overlay: {
-      pos: `(${window.currentGreenDotsOverlay.left.toFixed(1)}, ${window.currentGreenDotsOverlay.top.toFixed(1)})`,
-      scale: window.currentGreenDotsOverlay.scaleX.toFixed(3)
-    }
-  });
-
-  // Forza il re-rendering per assicurarsi che tutto sia sincronizzato
   fabricCanvas.renderAll();
 }
 
@@ -10389,34 +10053,32 @@ window.addEventListener('DOMContentLoaded', async () => {
   // STEP 0: Controlla se c'è un'azione pendente da hard refresh.
   // Leggi il flag PRIMA di checkPendingAction (che lo cancella).
   const _hasPendingAction = !!sessionStorage.getItem('pendingAction');
+  window._hasPendingAction = _hasPendingAction; // esposto per updateUserUI
   checkPendingAction();
 
-  // STEP 1: Verifica autenticazione
+  // STEP 0.5: Benvenuto speculativo — PRIMA di qualsiasi await.
+  // Usa il nome cachato dall'ultima sessione autenticata (localStorage).
+  // Se il token non c'è o l'auth fallisce verrà eseguita la redirect;
+  // se l'auth ha successo, _welcomeStarted evita la doppia chiamata in updateUserUI.
+  const _cachedWelcomeName = localStorage.getItem('_kimerika_welcome_name');
+  const _hasToken = !!(localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token'));
+  if (_hasToken && _cachedWelcomeName && !_hasPendingAction && typeof voiceAssistant !== 'undefined') {
+    window.currentUserName = _cachedWelcomeName;
+    window._welcomeStarted = true;
+    voiceAssistant.speakWelcome(_cachedWelcomeName);
+  }
+
+  // STEP 1: Verifica autenticazione (in parallelo con il download TTS benvenuto)
   const isAuthenticated = await checkAuthentication();
 
   if (!isAuthenticated) {
     return;
   }
 
-  // STEP 2: Messaggio di benvenuto personalizzato.
-  // Salta se si tratta di un reload dovuto a pendingAction (AVVIA WEBCAM, CARICA VIDEO, ecc.)
-  // per evitare il benvenuto duplicato.
-  if (!_hasPendingAction && window.currentUserName && typeof voiceAssistant !== 'undefined') {
-    // Pre-carica frasi di sistema e coaching in background (non blocca)
-    const _prefetchTexts = [
-      'Gìrati leggermente a sinistra.',
-      'Gìrati leggermente a destra.',
-      'Abbassa leggermente il mento.',
-      'Alza leggermente il mento.',
-      'Raddrizza la testa.',
-      'Avvicinati alla fotocamera.',
-      'Allontanati un po\' dalla fotocamera.',
-      'Ottimo! Mantieni questa posizione.',
-      'Nessun viso rilevato. Posizionati davanti alla fotocamera.',
-    ];
-    voiceAssistant.prefetchAudio(_prefetchTexts); // fire-and-forget
-    voiceAssistant.speakWelcome(window.currentUserName);
-  }
+  // STEP 2: speakWelcome è già partito (speculativo o da updateUserUI).
+  // Nessun prefetch aggiuntivo qui: le frasi di coaching vengono pre-caricate
+  // da startWebcamDirect() appena prima di avviarsi, con i testi corretti.
+  // (Prefetch anticipato a DOMContentLoaded causa fetch concorrenti con il benvenuto.)
 });
 
 // ===================================

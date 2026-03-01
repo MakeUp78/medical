@@ -35,7 +35,7 @@ Procedura per riavviare i 3 server necessari per la webapp kimerika.cloud.
 Copia e incolla questo comando per riavviare tutto in un colpo:
 
 ```bash
-pkill -f "uvicorn.*main:app"; pkill -f "start_webapp.py"; pkill -f "websocket_frame_api.py"; sleep 2 && cd /var/www/html/kimerika.cloud && nohup python3 -m uvicorn webapp.api.main:app --host 0.0.0.0 --port 8001 --reload > api_server.log 2>&1 & nohup python3 start_webapp.py > webapp_server.log 2>&1 & cd face-landmark-localization-master && nohup python3 websocket_frame_api.py > ../websocket_server.log 2>&1 & sleep 2 && echo "✅ Server riavviati!" && ps aux | grep -E "uvicorn|start_webapp|websocket_frame" | grep -v grep
+pkill -f "uvicorn.*main:app"; pkill -f "start_webapp.py"; pkill -f "websocket_frame_api.py"; fuser -k 8001/tcp 5000/tcp 8765/tcp 2>/dev/null; sleep 2 && cd /var/www/html/kimerika.cloud && nohup python3 -m uvicorn webapp.api.main:app --host 0.0.0.0 --port 8001 --reload > api_server.log 2>&1 & nohup python3 start_webapp.py > webapp_server.log 2>&1 & cd face-landmark-localization-master && nohup python3 websocket_frame_api.py > ../websocket_server.log 2>&1 & sleep 3 && echo "✅ Server riavviati!" && ps aux | grep -E "uvicorn|start_webapp|websocket_frame" | grep -v grep
 ```
 
 ---
@@ -93,13 +93,13 @@ curl -s https://kimerika.cloud/api/health | jq
 
 ```bash
 # Solo API
-pkill -f "uvicorn.*main:app" && cd /var/www/html/kimerika.cloud && nohup python3 -m uvicorn webapp.api.main:app --host 0.0.0.0 --port 8001 --reload > api_server.log 2>&1 &
+pkill -f "uvicorn.*main:app"; fuser -k 8001/tcp 2>/dev/null; sleep 2 && cd /var/www/html/kimerika.cloud && nohup python3 -m uvicorn webapp.api.main:app --host 0.0.0.0 --port 8001 --reload > api_server.log 2>&1 &
 
 # Solo WebApp
-pkill -f "start_webapp.py" && cd /var/www/html/kimerika.cloud && nohup python3 start_webapp.py > webapp_server.log 2>&1 &
+pkill -f "start_webapp.py"; fuser -k 5000/tcp 2>/dev/null; sleep 2 && cd /var/www/html/kimerika.cloud && nohup python3 start_webapp.py > webapp_server.log 2>&1 &
 
 # Solo WebSocket
-pkill -f "websocket_frame_api.py" && cd /var/www/html/kimerika.cloud/face-landmark-localization-master && nohup python3 websocket_frame_api.py > ../websocket_server.log 2>&1 &
+pkill -f "websocket_frame_api.py"; fuser -k 8765/tcp 2>/dev/null; sleep 2 && cd /var/www/html/kimerika.cloud/face-landmark-localization-master && nohup python3 websocket_frame_api.py > ../websocket_server.log 2>&1 &
 ```
 
 ### Visualizza log in real-time

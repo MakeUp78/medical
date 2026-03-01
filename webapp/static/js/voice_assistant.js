@@ -42,11 +42,27 @@ class VoiceAssistant {
   /**
    * Registra listener per sbloccare autoplay al primo gesto utente
    */
+  _isDesktop() {
+    // Desktop = nessun touch primario e nessun User-Agent mobile
+    return !('ontouchstart' in window) &&
+      navigator.maxTouchPoints === 0 &&
+      !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  }
+
   _registerUnlockListeners() {
     const unlock = () => this._unlockAudio();
     document.addEventListener('click', unlock, { once: true, capture: true });
     document.addEventListener('keydown', unlock, { once: true, capture: true });
     document.addEventListener('touchend', unlock, { once: true, capture: true });
+
+    // Desktop: tenta sblocco automatico senza aspettare gesture utente.
+    // Chrome/Firefox desktop consentono l'autoplay audio quando il sito ha
+    // media engagement score (visite precedenti) oppure per file audio brevi.
+    // Se play() fallisce con NotAllowedError, _unlockAudio ripristina il flag
+    // a false e il listener 'click' resta come fallback.
+    if (this._isDesktop()) {
+      setTimeout(() => this._unlockAudio(), 0);
+    }
   }
 
   /**
@@ -70,11 +86,9 @@ class VoiceAssistant {
     // così iOS Safari non lo blocca come NotAllowedError.
     if (this.pendingQueue.length > 0) {
       const item = this.pendingQueue.shift();
-      if (item.text) console.log(`🔊 (unlock diretto) ${item.text}`);
       this.audioPlayer.src = item.src;
       this.audioPlayer.load(); // Obbligatorio su iOS dopo cambio src
       this.audioPlayer.play().then(() => {
-        console.log('🔊 Audio sbloccato + primo elemento riprodotto');
         // Aspetta la fine e poi svuota la coda rimanente
         this.audioPlayer.onended = () => {
           this.audioPlayer.onended = null;
@@ -92,6 +106,9 @@ class VoiceAssistant {
           this.pendingQueue.unshift(item);
           this.audioUnlocked = false;
           this._registerUnlockListeners();
+        } else if (e.name === 'AbortError') {
+          // Audio interrotto volontariamente (stop/reset sessione): ignora silenziosamente.
+          // Non è un errore reale: stopPoseVoiceGuidance ha chiamato pause() durante play().
         } else {
           console.warn('Errore unlock diretto:', e);
           this._flushQueue();
@@ -153,7 +170,6 @@ class VoiceAssistant {
     // Accoda sempre: evita race condition con _flushQueue in corso
     this.pendingQueue.push({ src, text: label || '' });
     if (!this.audioUnlocked) {
-      console.log(`🕐 Audio messo in coda (unlock pendente): ${label || src.substring(0, 40)}...`);
       return;
     }
     // Avvia il flush solo se non è già in esecuzione
@@ -203,32 +219,41 @@ class VoiceAssistant {
   }
 
   /**
-   * Coaching di posa: svuota coaching obsoleto in coda, poi riproduce (usa cache)
+   * Coaching di posa: fire-and-forget — se l'audio è in cache riproduce subito,
+   * altrimenti avvia il download in background e salta questa istanza
+   * (la prossima call, dopo il cooldown 12s, troverà la cache pronta).
    */
   async speakCoach(text) {
     if (this.isMuted) return;
     // Rimuovi eventuali coaching precedenti ancora in coda (stale)
     this.pendingQueue = this.pendingQueue.filter(item => !item.isCoach);
     // Controlla cache
-    let src = this._audioCache.get(text);
+    const src = this._audioCache.get(text);
     if (!src) {
-      try {
-        const r = await fetch(`${this.apiUrl}/api/voice/speak`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text })
-        });
-        const d = await r.json();
-        if (d.success && d.audio) {
-          src = d.audio;
-          this._audioCache.set(text, src);
-        }
-      } catch (_) { return; }
+      // Cache miss: avvia download in background, NON bloccare.
+      // La guida vocale salterà questa istanza ma la prossima avrà l'audio pronto.
+      this._prefetchSingle(text);
+      return;
     }
-    if (!src) return;
     this.pendingQueue.push({ src, text: `coach: ${text.substring(0, 50)}`, isCoach: true });
     if (!this.audioUnlocked) return;
     if (!this._flushRunning) this._flushQueue();
+  }
+
+  /**
+   * Scarica un singolo audio in cache (fire-and-forget, nessuna riproduzione)
+   */
+  async _prefetchSingle(text) {
+    if (this._audioCache.has(text)) return;
+    try {
+      const r = await fetch(`${this.apiUrl}/api/voice/speak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      const d = await r.json();
+      if (d.success && d.audio) this._audioCache.set(text, d.audio);
+    } catch (_) { /* silent fail */ }
   }
 
   initSpeechRecognition() {

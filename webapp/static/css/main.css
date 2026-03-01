@@ -1763,11 +1763,12 @@ body {
 }
 
 #webcam-fullscreen-overlay canvas {
-  width: 100% !important;
-  height: 100% !important;
+  /* NON sovrascrivere width/height inline impostati dal JS con aspect ratio.
+     Su desktop il canvas è più piccolo della viewport (70px riservati al pulsante
+     Stop); su mobile viene sovrascritto da mobile-responsive.css con 100vw/100vh. */
+  display: block;
   max-width: 100vw;
-  max-height: 100vh;
-  object-fit: contain;
+  max-height: calc(100vh - 70px);
 }
 
 #webcam-fullscreen-overlay #wfs-stop-btn {
@@ -1792,12 +1793,19 @@ body {
 
 @media (max-width: 768px) {
   #webcam-fullscreen-overlay #wfs-stop-btn {
+    /* Centrato in basso — lontano dagli HUD del canvas */
+    top: unset !important;
+    right: unset !important;
+    bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
     min-height: 52px;
-    min-width: 140px;
+    min-width: 160px;
     font-size: 16px;
-    padding: 14px 24px;
+    padding: 14px 28px;
     border-radius: 12px;
     -webkit-tap-highlight-color: transparent;
+    white-space: nowrap;
   }
 }
 
@@ -1819,11 +1827,33 @@ body {
 
 @media (max-width: 768px) {
   #webcam-fullscreen-overlay #wfs-hint {
-    font-size: 13px;
-    white-space: normal;
+    display: none !important;
+  }
+}
+
+/* Testo guida posa DOM (mobile fullscreen) — nascosto di default, mostrato da JS */
+#webcam-fullscreen-overlay #wfs-guidance-text {
+  display: none;
+  pointer-events: none;
+  z-index: 10001;
+}
+
+@media (max-width: 768px) {
+  #webcam-fullscreen-overlay #wfs-guidance-text {
+    position: absolute;
+    /* ~70px sopra al pulsante TERMINA (52px min-height + 18px gap) */
+    bottom: calc(28px + env(safe-area-inset-bottom, 0px) + 70px);
+    left: 50%;
+    transform: translateX(-50%);
+    color: #fff;
+    font-size: 20px;
+    font-weight: bold;
+    background: rgba(0, 0, 0, 0.68);
+    padding: 10px 22px;
+    border-radius: 10px;
     text-align: center;
-    left: 16px;
-    right: 16px;
-    transform: none;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 10001;
   }
 }

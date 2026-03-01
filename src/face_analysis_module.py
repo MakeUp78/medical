@@ -318,14 +318,50 @@ class FaceVisagismAnalyzer:
         visagistic_rec = self._generate_visagistic_recommendations(face_shape, features, metrics)
         
         # Analisi espressioni e comunicazione non verbale
-        expression_analysis = self._analyze_expression_patterns(features, landmarks_coords, metrics)
+        expression_analysis = self._analyze_expression_patterns(features, landmarks_coords, metrics, face_shape)
         
-        # Genera immagini di debug
+        # Calcola analisi simmetria bilaterale
+        x_center = landmarks_coords['naso_punta'][0]
+        picco_sx_y = landmarks_coords['sopracciglio_sx_picco'][1]
+        picco_dx_y = landmarks_coords['sopracciglio_dx_picco'][1]
+        zigomo_sx_dist = abs(landmarks_coords['zigomo_sx'][0] - x_center)
+        zigomo_dx_dist = abs(landmarks_coords['zigomo_dx'][0] - x_center)
+        ap_sx = abs(landmarks_coords.get('occhio_sx_top', (0,0))[1] - landmarks_coords.get('occhio_sx_bottom', (0,0))[1])
+        ap_dx = abs(landmarks_coords.get('occhio_dx_top', (0,0))[1] - landmarks_coords.get('occhio_dx_bottom', (0,0))[1])
+        delta_sopracciglia = abs(picco_sx_y - picco_dx_y)
+        delta_zigomi = abs(zigomo_sx_dist - zigomo_dx_dist)
+        delta_occhi = abs(ap_sx - ap_dx)
+        # Indice simmetria complessivo (0-100%): media pesata delle asimmetrie normalizzate
+        norm_sopr = min(delta_sopracciglia / max(h * 0.05, 1), 1.0)
+        norm_zig = min(delta_zigomi / max(w * 0.05, 1), 1.0)
+        norm_occ = min(delta_occhi / max(h * 0.03, 1), 1.0)
+        symmetry_index = round((1.0 - (norm_sopr * 0.4 + norm_zig * 0.35 + norm_occ * 0.25)) * 100, 1)
+
+        def _sym_label(delta_px, thresholds):
+            if delta_px < thresholds[0]:
+                return "OTTIMA"
+            elif delta_px < thresholds[1]:
+                return "BUONA"
+            else:
+                return "DA MIGLIORARE"
+
+        symmetry_data = {
+            'delta_sopracciglia_px': round(delta_sopracciglia, 1),
+            'simmetria_sopracciglia': _sym_label(delta_sopracciglia, (5, 10)),
+            'delta_zigomi_px': round(delta_zigomi, 1),
+            'simmetria_zigomi': _sym_label(delta_zigomi, (8, 15)),
+            'delta_occhi_apertura_px': round(delta_occhi, 1),
+            'simmetria_occhi': _sym_label(delta_occhi, (3, 6)),
+            'indice_simmetria_complessivo': symmetry_index,
+            'x_center': x_center,
+        }
+
+        # Genera immagini di debug (migliorate + 3 nuove)
         debug_images = self._generate_debug_images(
-            image, landmarks, landmarks_coords, metrics, 
-            face_shape, visagistic_rec, output_path
+            image, landmarks, landmarks_coords, metrics,
+            face_shape, visagistic_rec, output_path, symmetry_data, features
         )
-        
+
         # Compila risultato completo
         result = {
             'forma_viso': face_shape.value,
@@ -333,6 +369,7 @@ class FaceVisagismAnalyzer:
             'caratteristiche_facciali': asdict(features),
             'analisi_visagistica': asdict(visagistic_rec),
             'analisi_espressiva': asdict(expression_analysis),
+            'simmetria_facciale': symmetry_data,
             'immagini_debug': debug_images,
             'timestamp': self._get_timestamp()
         }
@@ -373,14 +410,30 @@ class FaceVisagismAnalyzer:
             'occhio_sx_esterno': get_point(33),
             'occhio_dx_interno': get_point(362),
             'occhio_dx_esterno': get_point(263),
+            # Apertura verticale occhi (per calcolo dimensione reale)
+            'occhio_sx_top': get_point(159),
+            'occhio_sx_bottom': get_point(145),
+            'occhio_dx_top': get_point(386),
+            'occhio_dx_bottom': get_point(374),
+            # Iride (per linee guida makeup)
+            'iride_sx_esterno': get_point(33),
+            'iride_dx_esterno': get_point(263),
             
-            # Sopracciglia
-            'sopracciglio_sx_interno': get_point(70),
-            'sopracciglio_sx_picco': get_point(105),
-            'sopracciglio_sx_esterno': get_point(66),
-            'sopracciglio_dx_interno': get_point(300),
-            'sopracciglio_dx_picco': get_point(334),
-            'sopracciglio_dx_esterno': get_point(296),
+            # Sopracciglia — estremi reali del sopracciglio
+            # sx soggetto (lato sinistro immagine):
+            #   tempia: lm70 (upper extremity, più a sx)
+            #   naso:   lm107 (upper, più vicino al naso) / lm55 (lower)
+            #   picco:  lm105 (apice arco, y minima)
+            'sopracciglio_sx_interno': get_point(107),  # naso-side sx
+            'sopracciglio_sx_picco': get_point(105),    # apice arco sx
+            'sopracciglio_sx_esterno': get_point(70),   # tempia-side sx
+            # dx soggetto (lato destro immagine):
+            #   naso:   lm336 (upper, più vicino al naso) / lm285 (lower)
+            #   tempia: lm300 (upper extremity, più a dx)
+            #   picco:  lm334 (apice arco, y minima)
+            'sopracciglio_dx_interno': get_point(336),  # naso-side dx
+            'sopracciglio_dx_picco': get_point(334),    # apice arco dx
+            'sopracciglio_dx_esterno': get_point(300),  # tempia-side dx
             
             # Naso
             'naso_ponte': get_point(6),
@@ -534,9 +587,21 @@ class FaceVisagismAnalyzer:
         else:
             mento_prominenza = "normale"
         
+        # Dimensione occhi: calcolo reale da apertura verticale
+        apertura_sx = abs(lm.get('occhio_sx_top', (0, 0))[1] - lm.get('occhio_sx_bottom', (0, 0))[1])
+        apertura_dx = abs(lm.get('occhio_dx_top', (0, 0))[1] - lm.get('occhio_dx_bottom', (0, 0))[1])
+        apertura_media = (apertura_sx + apertura_dx) / 2 if (apertura_sx + apertura_dx) > 0 else 0
+        eye_open_ratio = apertura_media / metrics.lunghezza_viso if metrics.lunghezza_viso > 0 else 0
+        if eye_open_ratio > 0.055:
+            occhi_dimensione = "grandi"
+        elif eye_open_ratio < 0.030:
+            occhi_dimensione = "piccoli"
+        else:
+            occhi_dimensione = "medi"
+
         return FacialFeatures(
             occhi_distanza=occhi_distanza,
-            occhi_dimensione="medi",
+            occhi_dimensione=occhi_dimensione,
             zigomi_prominenza=zigomi_prominenza,
             naso_larghezza=naso_larghezza,
             naso_lunghezza=naso_lunghezza,
@@ -628,10 +693,11 @@ class FaceVisagismAnalyzer:
         )
     
     def _analyze_expression_patterns(
-        self, 
-        features: FacialFeatures, 
+        self,
+        features: FacialFeatures,
         lm: Dict,
-        metrics: FacialMetrics
+        metrics: FacialMetrics,
+        face_shape: 'FaceShape' = None
     ) -> ExpressionAnalysis:
         """Analizza pattern espressivi e comunicazione non verbale"""
         
@@ -766,15 +832,76 @@ class FaceVisagismAnalyzer:
                                        'aumenta percezione di apertura emotiva'
             })
         
-        # Obiettivi comunicativi
-        obiettivi = [
+        # Obiettivi comunicativi personalizzati per forma del viso
+        obiettivi_per_forma = {
+            FaceShape.OVALE: [
+                "Valorizzare la naturale versatilità del viso ovale, spaziando tra stili formali e creativi",
+                "Proiettare equilibrio e armonia percepita, punto di forza della forma ovale",
+                "Comunicare accessibilità e apertura grazie alle proporzioni bilanciate",
+                "Sfruttare la duttilità estetica per adattarsi a contesti professionali e sociali diversi",
+                "Trasmettere fiducia nelle proporzioni senza necessità di correzioni visive",
+                "Esprimere versatilità espressiva facilitata dall'armonia strutturale del viso",
+            ],
+            FaceShape.ROTONDO: [
+                "Creare percezione di struttura e definizione per bilanciare la morbidezza naturale",
+                "Comunicare determinazione e competenza valorizzando la simpatia innata del viso rotondo",
+                "Trasmettere calore e approccio collaborativo, punti di forza di questa forma",
+                "Bilanciare percettività di giovialità con elementi di autorevolezza professionale",
+                "Proiettare energia positiva e accessibilità, caratteristiche percepite nelle forme rotonde",
+                "Creare contrasto visivo viso/acconciatura per aggiungere definizione verticale",
+            ],
+            FaceShape.QUADRATO: [
+                "Valorizzare la struttura forte e decisa comunicando determinazione e affidabilità",
+                "Ammorbidire visivamente la forza strutturale per aumentare la percezione di calore",
+                "Trasmettere leadership e solidità, tratti percepiti nelle strutture quadrate",
+                "Bilanciare la forte presenza fisica con sopracciglia morbide che segnalano apertura",
+                "Comunicare autorevolezza professionale sfruttando la struttura ossea definita",
+                "Creare contrasto tra la forza strutturale e l'espressione aperta degli occhi",
+            ],
+            FaceShape.RETTANGOLARE: [
+                "Sfruttare l'eleganza naturale del viso rettangolare per comunicare raffinatezza",
+                "Creare elementi di larghezza visiva per bilanciare le proporzioni verticali",
+                "Trasmettere sofisticazione e distinzione, percepiti nelle forme allungate",
+                "Comunicare serietà professionale valorizzata dall'altezza facciale prominente",
+                "Bilanciare la struttura verticale con acconciature e styling orizzontali",
+                "Proiettare presenza e autorevolezza naturalmente associate alle proporzioni lunghe",
+            ],
+            FaceShape.TRIANGOLARE: [
+                "Valorizzare la base solida e la mascella forte come segnale di determinazione",
+                "Creare volume nella parte superiore del viso per bilanciare otticamente la base ampia",
+                "Comunicare solidità e affidabilità, percepite nelle strutture a base larga",
+                "Ammorbidire visivamente la struttura inferiore con sopracciglia curvate e morbide",
+                "Trasmettere forza pur mantenendo espressioni aperte e collaborative",
+                "Bilanciare la prominenza della mascella con attenzione alla zona fronte/occhi",
+            ],
+            FaceShape.TRIANGOLARE_INVERSO: [
+                "Valorizzare la fronte ampia come segnale naturale di intelligenza e apertura mentale",
+                "Creare volume nella parte inferiore del viso per bilanciare la fronte dominante",
+                "Comunicare intellettualità e creatività, percepite nelle fronti ampie",
+                "Sfruttare la naturale prominenza della fronte per proiettare autorevolezza cognitiva",
+                "Bilanciare la struttura superiore con sopracciglia ben definite che incorniciano gli occhi",
+                "Trasmettere apertura e ricettività grazie alla fronte spaziosa visivamente percepita",
+            ],
+            FaceShape.DIAMANTE: [
+                "Valorizzare i zigomi prominenti come punto focale estetico di rara distinzione",
+                "Comunicare unicità e carattere attraverso la struttura facciale rara a forma di diamante",
+                "Trasmettere forza espressiva grazie alla proiezione zigomatica naturale",
+                "Bilanciare la prominenza centrale del viso con elementi morbidi all'inizio dei capelli",
+                "Proiettare personalità forte e memorabile, associata alle strutture angolari marcate",
+                "Sfruttare la rara armonia angolare del diamante per uno stile visivo distintivo e riconoscibile",
+            ],
+        }
+
+        obiettivi_default = [
             "Comunicare apertura e disponibilità alla connessione sociale",
             "Esprimere positività e approccio ottimistico alla vita",
             "Trasmettere fiducia in se stessi senza arroganza",
             "Bilanciare competenza professionale con calore umano",
             "Apparire accessibile e non giudicante nelle interazioni",
-            "Proiettare energia positiva e vitalità"
+            "Proiettare energia positiva e vitalità",
         ]
+
+        obiettivi = obiettivi_per_forma.get(face_shape, obiettivi_default) if face_shape else obiettivi_default
         
         return ExpressionAnalysis(
             espressione_percepita=espressione,
@@ -785,20 +912,69 @@ class FaceVisagismAnalyzer:
         )
     
     def _generate_debug_images(
-        self, 
-        image: np.ndarray, 
+        self,
+        image: np.ndarray,
         landmarks,
         lm_coords: Dict,
         metrics: FacialMetrics,
         face_shape: FaceShape,
         visagistic_rec: VisagisticRecommendation,
-        output_path: Path
+        output_path: Path,
+        symmetry_data: Dict = None,
+        features: 'FacialFeatures' = None
     ) -> Dict[str, str]:
-        """Genera immagini di debug professionali con annotazioni"""
-        
+        """Genera immagini di debug professionali con annotazioni scientifiche avanzate"""
+
         debug_paths = {}
-        
-        # 1. Immagine con landmarks e mesh completo
+        h_img, w_img = image.shape[:2]
+        mm_per_px = 140.0 / metrics.larghezza_viso if metrics.larghezza_viso > 0 else 0
+
+        # ----------------------------------------------------------------
+        # Helper: disegna linea di misura professionale con label su sfondo
+        # ----------------------------------------------------------------
+        def draw_measurement_line(img, pt1, pt2, color, label, above=True):
+            cv2.line(img, pt1, pt2, color, 3)
+            cv2.circle(img, pt1, 6, (255, 255, 255), 2)
+            cv2.circle(img, pt1, 4, color, -1)
+            cv2.circle(img, pt2, 6, (255, 255, 255), 2)
+            cv2.circle(img, pt2, 4, color, -1)
+            text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)[0]
+            mid_x = (pt1[0] + pt2[0]) // 2
+            mid_y = (pt1[1] + pt2[1]) // 2
+            offset_y = -22 if above else 32
+            bg_pt1 = (mid_x - text_size[0]//2 - 5, mid_y + offset_y - text_size[1] - 4)
+            bg_pt2 = (mid_x + text_size[0]//2 + 5, mid_y + offset_y + 4)
+            cv2.rectangle(img, bg_pt1, bg_pt2, (10, 10, 10), -1)
+            cv2.rectangle(img, bg_pt1, bg_pt2, color, 2)
+            cv2.putText(img, label, (mid_x - text_size[0]//2, mid_y + offset_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+
+        # Helper: disegna linea tratteggiata orizzontale
+        def draw_dashed_hline(img, y, x1, x2, color, thickness=1, dash=12, gap=7):
+            x = x1
+            while x < x2:
+                x_end = min(x + dash, x2)
+                cv2.line(img, (x, y), (x_end, y), color, thickness)
+                x += dash + gap
+
+        # Helper: pannello info con sfondo scuro
+        def draw_info_panel(img, x, y, w, h, title, lines_data):
+            # Sfondo semi-trasparente
+            overlay = img.copy()
+            cv2.rectangle(overlay, (x, y), (x + w, y + h), (15, 15, 25), -1)
+            cv2.addWeighted(overlay, 0.82, img, 0.18, 0, img)
+            cv2.rectangle(img, (x, y), (x + w, y + h), (100, 180, 255), 2)
+            cv2.putText(img, title, (x + 10, y + 22),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            yl = y + 45
+            for (label, value, col) in lines_data:
+                cv2.putText(img, f"{label}: {value}", (x + 10, yl),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1)
+                yl += 22
+
+        # ----------------------------------------------------------------
+        # IMMAGINE 1 — Face Mesh con zone anatomiche colorate
+        # ----------------------------------------------------------------
         img_landmarks = image.copy()
         self.mp_drawing.draw_landmarks(
             image=img_landmarks,
@@ -814,305 +990,668 @@ class FaceVisagismAnalyzer:
             landmark_drawing_spec=None,
             connection_drawing_spec=self.mp_drawing_styles.get_default_face_mesh_contours_style()
         )
+
+        # Overlay punti chiave per zona anatomica
+        ZONE_CONFIG = {
+            'OCCHI':       ([33, 133, 362, 263, 159, 145, 386, 374], (50, 150, 255)),
+            'NASO':        ([4, 6, 98, 327, 168], (50, 210, 50)),
+            'BOCCA':       ([61, 291, 0, 17, 78, 308], (50, 50, 255)),
+            'SOPRACC.':    ([70, 105, 66, 300, 334, 296], (0, 220, 220)),
+            'CONTORNO':    ([10, 234, 454, 152, 172, 397], (0, 200, 255)),
+        }
+        for zone_name, (indices, col) in ZONE_CONFIG.items():
+            for idx in indices:
+                lm = landmarks.landmark[idx]
+                px = int(lm.x * w_img)
+                py = int(lm.y * h_img)
+                cv2.circle(img_landmarks, (px, py), 6, (255, 255, 255), 2)
+                cv2.circle(img_landmarks, (px, py), 4, col, -1)
+
+        # Legenda zone in basso a sinistra
+        leg_x, leg_y = 10, h_img - 160
+        leg_w = 145
+        leg_h = len(ZONE_CONFIG) * 22 + 28
+        overlay_leg = img_landmarks.copy()
+        cv2.rectangle(overlay_leg, (leg_x - 4, leg_y - 20), (leg_x + leg_w, leg_y + leg_h), (10, 10, 20), -1)
+        cv2.addWeighted(overlay_leg, 0.8, img_landmarks, 0.2, 0, img_landmarks)
+        cv2.rectangle(img_landmarks, (leg_x - 4, leg_y - 20), (leg_x + leg_w, leg_y + leg_h), (100, 200, 255), 1)
+        cv2.putText(img_landmarks, "ZONE ANATOMICHE", (leg_x, leg_y - 4),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (200, 200, 200), 1)
+        for i, (zone_name, (_, col)) in enumerate(ZONE_CONFIG.items()):
+            ly = leg_y + 16 + i * 22
+            cv2.circle(img_landmarks, (leg_x + 8, ly), 5, col, -1)
+            cv2.putText(img_landmarks, zone_name, (leg_x + 18, ly + 5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, col, 1)
+
+        # Pannello info in alto a destra
+        n_lm = len(landmarks.landmark)
+        info_lines = [
+            ('FORMA VISO', face_shape.value.upper(), (0, 255, 200)),
+            ('LANDMARKS', str(n_lm), (200, 200, 200)),
+            ('DIST. OCCHI', f"{metrics.distanza_occhi:.1f}px", (50, 150, 255)),
+            ('LARGH. VISO', f"{metrics.larghezza_viso:.1f}px", (200, 200, 200)),
+        ]
+        draw_info_panel(img_landmarks, w_img - 240, 10, 230, 120, "FACE MESH ANALYSIS", info_lines)
+
         path = output_path / "01_face_mesh_completo.jpg"
         cv2.imwrite(str(path), img_landmarks)
         debug_paths['face_mesh'] = str(path)
         
-        # 2. Analisi geometrica forma del viso MIGLIORATA
+        # ----------------------------------------------------------------
+        # IMMAGINE 2 — Analisi geometrica con terzi facciali e sezione aurea
+        # ----------------------------------------------------------------
         img_geometry = image.copy()
-        h_img, w_img = img_geometry.shape[:2]
-
-        # Crea overlay semi-trasparente
         overlay_geo = img_geometry.copy()
 
-        # Funzione helper per disegnare linee di misura professionali
-        def draw_measurement_line(img, pt1, pt2, color, label, above=True):
-            # Linea principale
-            cv2.line(img, pt1, pt2, color, 3)
-            # Marcatori alle estremità
-            cv2.circle(img, pt1, 6, (255, 255, 255), 2)
-            cv2.circle(img, pt1, 4, color, -1)
-            cv2.circle(img, pt2, 6, (255, 255, 255), 2)
-            cv2.circle(img, pt2, 4, color, -1)
+        y_top = lm_coords['fronte_top'][1]
+        y_bot = lm_coords['mento'][1]
+        face_h_px = max(y_bot - y_top, 1)
+        x_l = max(lm_coords['zigomo_sx'][0] - 20, 0)
+        x_r = min(lm_coords['zigomo_dx'][0] + 20, w_img)
 
-            # Etichetta con sfondo
-            text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-            mid_x = (pt1[0] + pt2[0]) // 2
-            mid_y = (pt1[1] + pt2[1]) // 2
-            offset_y = -20 if above else 30
+        # Linee dei terzi facciali (ciano tratteggiato)
+        third1_y = y_top + face_h_px // 3
+        third2_y = y_top + (face_h_px * 2) // 3
+        draw_dashed_hline(overlay_geo, third1_y, x_l, x_r, (0, 220, 220), 2)
+        draw_dashed_hline(overlay_geo, third2_y, x_l, x_r, (0, 220, 220), 2)
+        cv2.putText(overlay_geo, "1/3", (x_r + 5, third1_y + 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 220, 220), 1)
+        cv2.putText(overlay_geo, "2/3", (x_r + 5, third2_y + 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 220, 220), 1)
 
-            bg_pt1 = (mid_x - text_size[0]//2 - 5, mid_y + offset_y - text_size[1] - 5)
-            bg_pt2 = (mid_x + text_size[0]//2 + 5, mid_y + offset_y + 5)
-            cv2.rectangle(img, bg_pt1, bg_pt2, (0, 0, 0), -1)
-            cv2.rectangle(img, bg_pt1, bg_pt2, color, 2)
-            cv2.putText(img, label, (mid_x - text_size[0]//2, mid_y + offset_y),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+        # Linea sezione aurea (blu)
+        phi = 1.618
+        golden_y = int(y_top + face_h_px / phi)
+        cv2.line(overlay_geo, (x_l, golden_y), (x_r, golden_y), (255, 100, 0), 2)
+        cv2.putText(overlay_geo, "Ph", (x_r + 5, golden_y + 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 120, 0), 1)
 
-        # Linee di misura fronte
+        # Linee di misura
+        mm_fr = f"{metrics.larghezza_fronte:.0f}px ({metrics.larghezza_fronte * mm_per_px:.0f}mm~)"
+        mm_zig = f"{metrics.larghezza_zigomi:.0f}px ({metrics.larghezza_zigomi * mm_per_px:.0f}mm~)"
+        mm_mas = f"{metrics.larghezza_mascella:.0f}px ({metrics.larghezza_mascella * mm_per_px:.0f}mm~)"
         draw_measurement_line(overlay_geo, lm_coords['fronte_sx'], lm_coords['fronte_dx'],
-                             (255, 100, 100), f"Fronte: {metrics.larghezza_fronte:.0f}px")
-
-        # Linee di misura zigomi
+                              (120, 120, 255), mm_fr)
         draw_measurement_line(overlay_geo, lm_coords['zigomo_sx'], lm_coords['zigomo_dx'],
-                             (100, 255, 100), f"Zigomi: {metrics.larghezza_zigomi:.0f}px")
-
-        # Linee di misura mascella
+                              (80, 220, 80), mm_zig)
         draw_measurement_line(overlay_geo, lm_coords['mascella_sx'], lm_coords['mascella_dx'],
-                             (100, 100, 255), f"Mascella: {metrics.larghezza_mascella:.0f}px", False)
+                              (255, 120, 80), mm_mas, above=False)
 
-        # Lunghezza viso con frecce
-        pt_top = lm_coords['fronte_top']
-        pt_bottom = lm_coords['mento']
-        cv2.arrowedLine(overlay_geo, pt_top, pt_bottom, (255, 255, 100), 3, tipLength=0.02)
-        cv2.arrowedLine(overlay_geo, pt_bottom, pt_top, (255, 255, 100), 3, tipLength=0.02)
+        # Freccia lunghezza viso
+        cv2.arrowedLine(overlay_geo, lm_coords['fronte_top'], lm_coords['mento'],
+                        (255, 240, 80), 3, tipLength=0.02)
+        cv2.arrowedLine(overlay_geo, lm_coords['mento'], lm_coords['fronte_top'],
+                        (255, 240, 80), 3, tipLength=0.02)
 
-        # Pannello informativo professionale
-        panel_width = 450
-        panel_height = 140
-        panel_x = 10
-        panel_y = 10
-        cv2.rectangle(overlay_geo, (panel_x, panel_y), (panel_x + panel_width, panel_y + panel_height),
-                     (20, 20, 20), -1)
-        cv2.rectangle(overlay_geo, (panel_x, panel_y), (panel_x + panel_width, panel_y + panel_height),
-                     (100, 200, 255), 3)
+        # Pannello ampliato (220px altezza)
+        info_lines_geo = [
+            ('Forma viso', face_shape.value.upper(), (80, 220, 255)),
+            ('Rapporto L/W', f"{metrics.rapporto_lunghezza_larghezza:.3f}  (ideale 1.30-1.40)", (200, 200, 200)),
+            ('Rapporto M/F', f"{metrics.rapporto_mascella_fronte:.3f}  (ideale 0.94-1.06)", (200, 200, 200)),
+            ('Prom. zigomi', f"{metrics.prominenza_zigomi:.3f}  (ideale 0.95-1.05)", (200, 200, 200)),
+            ('Lunghezza', f"{metrics.lunghezza_viso:.0f}px  ({metrics.lunghezza_viso * mm_per_px:.0f}mm~)", (200, 200, 200)),
+            ('Dist. occhi', f"{metrics.distanza_occhi:.1f}px  ({metrics.distanza_occhi * mm_per_px:.1f}mm~)", (200, 200, 200)),
+            ('Larg. naso', f"{metrics.larghezza_naso:.1f}px  ({metrics.larghezza_naso * mm_per_px:.1f}mm~)", (180, 180, 180)),
+            ('Larg. bocca', f"{metrics.larghezza_bocca:.1f}px  ({metrics.larghezza_bocca * mm_per_px:.1f}mm~)", (180, 180, 180)),
+        ]
+        draw_info_panel(overlay_geo, 8, 8, 460, 225, "ANALISI GEOMETRICA", info_lines_geo)
 
-        # Titolo pannello
-        cv2.putText(overlay_geo, "ANALISI GEOMETRICA VISO",
-                   (panel_x + 15, panel_y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-
-        # Informazioni geometriche
-        y_info = panel_y + 60
-        cv2.putText(overlay_geo, f"Forma: {face_shape.value.upper()}",
-                   (panel_x + 15, y_info), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 200, 255), 2)
-        y_info += 25
-        cv2.putText(overlay_geo, f"Rapporto L/W: {metrics.rapporto_lunghezza_larghezza:.3f}",
-                   (panel_x + 15, y_info), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-        y_info += 22
-        cv2.putText(overlay_geo, f"Rapporto M/F: {metrics.rapporto_mascella_fronte:.3f}",
-                   (panel_x + 15, y_info), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-        y_info += 22
-        cv2.putText(overlay_geo, f"Prominenza Zigomi: {metrics.prominenza_zigomi:.3f}",
-                   (panel_x + 15, y_info), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-
-        # Blend overlay
         cv2.addWeighted(overlay_geo, 0.9, img_geometry, 0.1, 0, img_geometry)
-        
+
         path = output_path / "02_analisi_geometrica.jpg"
         cv2.imwrite(str(path), img_geometry)
         debug_paths['geometria'] = str(path)
-        
-        # 3. Analisi zona sopracciglia e occhi
+
+        # ----------------------------------------------------------------
+        # IMMAGINE 3 — Sopracciglia con 3 zone colorate + misure
+        # ----------------------------------------------------------------
         img_eyebrow = image.copy()
-        
-        # Evidenzia zona sopracciglia
-        pts_eyebrow_left = np.array([
-            lm_coords['sopracciglio_sx_interno'],
-            lm_coords['sopracciglio_sx_picco'],
-            lm_coords['sopracciglio_sx_esterno']
-        ])
-        cv2.polylines(img_eyebrow, [pts_eyebrow_left], False, (255, 0, 255), 3)
-        
-        pts_eyebrow_right = np.array([
-            lm_coords['sopracciglio_dx_interno'],
-            lm_coords['sopracciglio_dx_picco'],
-            lm_coords['sopracciglio_dx_esterno']
-        ])
-        cv2.polylines(img_eyebrow, [pts_eyebrow_right], False, (255, 0, 255), 3)
-        
-        # Distanza occhio-sopracciglio
-        cv2.line(img_eyebrow, lm_coords['occhio_sx_interno'], 
-                lm_coords['sopracciglio_sx_interno'], (0, 255, 255), 2)
-        mid_y = (lm_coords['occhio_sx_interno'][1] + lm_coords['sopracciglio_sx_interno'][1]) // 2
-        cv2.putText(img_eyebrow, f"{metrics.distanza_occhio_sopracciglio:.1f}px", 
-                    (lm_coords['occhio_sx_interno'][0] + 10, mid_y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
-        
-        # Distanza tra occhi
-        cv2.line(img_eyebrow, lm_coords['occhio_sx_interno'], 
-                lm_coords['occhio_dx_interno'], (255, 255, 0), 2)
-        
-        # Annotazioni
-        y_offset = 30
-        cv2.putText(img_eyebrow, "ANALISI ZONA SOPRACCIGLIA", 
-                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        y_offset += 30
-        cv2.putText(img_eyebrow, f"Forma consigliata: {visagistic_rec.forma_sopracciglio.value}", 
-                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-        y_offset += 25
-        cv2.putText(img_eyebrow, f"Dist. occhi: {metrics.distanza_occhi:.1f}px", 
-                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        
+
+        def draw_eyebrow_zones(img, p_a, picco, p_b):
+            """Disegna le 3 zone del sopracciglio con colori distinti.
+            INIZIO = punto naso-side (più vicino al naso in X), CODA = tempia-side.
+            Determina quale punto è verso il naso usando la distanza da naso_x.
+            """
+            naso_x = lm_coords['naso_punta'][0]
+            # pt_naso = il punto tra p_a e p_b più vicino al centro naso
+            if abs(p_a[0] - naso_x) < abs(p_b[0] - naso_x):
+                pt_naso, pt_tempia = p_a, p_b
+            else:
+                pt_naso, pt_tempia = p_b, p_a
+
+            mid_body = ((pt_naso[0] + picco[0]) // 2, (pt_naso[1] + picco[1]) // 2)
+
+            # INIZIO: naso-side → metà-picco (verde)
+            cv2.line(img, pt_naso, mid_body, (50, 200, 50), 5)
+            lbl_inizio_x = pt_naso[0] - 28 if pt_naso[0] > picco[0] else pt_naso[0] + 4
+            cv2.putText(img, 'INIZIO', (lbl_inizio_x, pt_naso[1] - 14),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (80, 230, 80), 1)
+
+            # ARCO: metà-picco → picco (giallo-ciano)
+            cv2.line(img, mid_body, picco, (0, 220, 220), 5)
+            cv2.putText(img, 'ARCO', (picco[0] - 20, picco[1] - 18),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 220, 220), 1)
+
+            # CODA: picco → tempia-side (rosso-arancio)
+            cv2.line(img, picco, pt_tempia, (50, 80, 255), 5)
+            lbl_coda_x = pt_tempia[0] + 4 if pt_tempia[0] > picco[0] else pt_tempia[0] - 32
+            cv2.putText(img, 'CODA', (lbl_coda_x, pt_tempia[1] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (80, 100, 255), 1)
+
+            # Lunghezza sopracciglio (sotto, centrata)
+            lsopr = int(math.sqrt((pt_tempia[0] - pt_naso[0])**2 + (pt_tempia[1] - pt_naso[1])**2))
+            mid = ((pt_naso[0] + pt_tempia[0]) // 2, max(pt_naso[1], pt_tempia[1]) + 22)
+            cv2.putText(img, f"L={lsopr}px ({lsopr * mm_per_px:.0f}mm~)",
+                        (mid[0] - 30, mid[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (220, 220, 220), 1)
+
+        draw_eyebrow_zones(img_eyebrow,
+                           lm_coords['sopracciglio_sx_interno'],
+                           lm_coords['sopracciglio_sx_picco'],
+                           lm_coords['sopracciglio_sx_esterno'])
+        draw_eyebrow_zones(img_eyebrow,
+                           lm_coords['sopracciglio_dx_interno'],
+                           lm_coords['sopracciglio_dx_picco'],
+                           lm_coords['sopracciglio_dx_esterno'])
+
+        # Linea distanza occhio-sopracciglio
+        cv2.line(img_eyebrow, lm_coords['occhio_sx_interno'],
+                 lm_coords['sopracciglio_sx_interno'], (0, 255, 255), 2)
+        mid_y_s = (lm_coords['occhio_sx_interno'][1] + lm_coords['sopracciglio_sx_interno'][1]) // 2
+        cv2.putText(img_eyebrow, f"{metrics.distanza_occhio_sopracciglio:.1f}px",
+                    (lm_coords['occhio_sx_interno'][0] + 8, mid_y_s),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 2)
+
+        # Linea distanza inter-oculare
+        cv2.line(img_eyebrow, lm_coords['occhio_sx_interno'],
+                 lm_coords['occhio_dx_interno'], (255, 220, 0), 2)
+
+        # Pannello info
+        eye_info = [
+            ('Forma consigliata', visagistic_rec.forma_sopracciglio.value.upper(), (80, 255, 80)),
+            ('Dist. occhi', f"{metrics.distanza_occhi:.1f}px ({metrics.distanza_occhi * mm_per_px:.1f}mm~)", (80, 220, 255)),
+            ('Dist. occ-sopr.', f"{metrics.distanza_occhio_sopracciglio:.1f}px ({metrics.distanza_occhio_sopracciglio * mm_per_px:.1f}mm~)", (200, 200, 200)),
+            ('Occhi distanza', features.occhi_distanza if hasattr(features, 'occhi_distanza') else 'N/D', (200, 200, 200)),
+            ('Occhi dimensione', features.occhi_dimensione if hasattr(features, 'occhi_dimensione') else 'N/D', (200, 200, 200)),
+        ]
+        draw_info_panel(img_eyebrow, 8, 8, 430, 150, "ZONA SOPRACCIGLIARE", eye_info)
+
         path = output_path / "03_analisi_sopracciglia.jpg"
         cv2.imwrite(str(path), img_eyebrow)
         debug_paths['sopracciglia'] = str(path)
-        
-        # 4. Visualizzazione forma sopracciglio ideale
+
+        # ----------------------------------------------------------------
+        # IMMAGINE 4 — Forma ideale sopracciglio con doppia curva e fill
+        # ----------------------------------------------------------------
         img_ideal = image.copy()
-        
-        # Disegna guida forma ideale sopracciglio sinistro
-        self._draw_ideal_eyebrow_guide(
-            img_ideal, 
-            lm_coords['sopracciglio_sx_interno'],
-            lm_coords['sopracciglio_sx_esterno'],
-            visagistic_rec.forma_sopracciglio,
-            'left'
-        )
-        
-        # Disegna guida forma ideale sopracciglio destro
-        self._draw_ideal_eyebrow_guide(
-            img_ideal, 
-            lm_coords['sopracciglio_dx_interno'],
-            lm_coords['sopracciglio_dx_esterno'],
-            visagistic_rec.forma_sopracciglio,
-            'right'
-        )
-        
-        # Legenda
-        y_offset = 30
-        cv2.putText(img_ideal, "FORMA IDEALE SOPRACCIGLIO", 
-                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        y_offset += 30
-        cv2.putText(img_ideal, f"Tipo: {visagistic_rec.forma_sopracciglio.value.upper()}", 
-                    (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        
+
+        def draw_ideal_eyebrow_filled(img, p_a, picco_reale, p_b, eyebrow_shape):
+            """Disegna guida sopracciglio con doppia curva, fill e marcatori.
+            Usa il picco reale da MediaPipe come controllo Bezier.
+            INIZIO = naso-side (più vicino al naso), CODA = tempia-side.
+            """
+            naso_x = lm_coords['naso_punta'][0]
+            # Determina naso-side con distanza dal naso
+            if abs(p_a[0] - naso_x) < abs(p_b[0] - naso_x):
+                pt_naso, pt_tempia = p_a, p_b
+            else:
+                pt_naso, pt_tempia = p_b, p_a
+            # Normalizza left→right per la curva Bezier
+            if pt_naso[0] < pt_tempia[0]:
+                pt_left, pt_right = pt_naso, pt_tempia
+            else:
+                pt_left, pt_right = pt_tempia, pt_naso
+
+            x_left, y_left = pt_left
+            x_right, y_right = pt_right
+
+            # Usa il picco reale (landmark MediaPipe) come punto di controllo
+            peak_x, peak_y = picco_reale
+            # Abbassa ulteriormente il picco in base alla forma
+            lift_extra = {
+                EyebrowShape.ARCUATA: 5, EyebrowShape.ANGOLARE: 8,
+                EyebrowShape.DRITTA: 0, EyebrowShape.ARCO_TONDO: 7,
+                EyebrowShape.S_SHAPE: 4,
+            }.get(eyebrow_shape, 5)
+            peak_y_adj = peak_y - lift_extra
+
+            num_points = 60
+            upper_pts = []
+            if eyebrow_shape == EyebrowShape.ANGOLARE:
+                for i in range(num_points // 2):
+                    t = i / (num_points // 2)
+                    upper_pts.append([int(x_left + (peak_x - x_left) * t),
+                                      int(y_left + (peak_y_adj - y_left) * t)])
+                for i in range(num_points // 2):
+                    t = i / (num_points // 2)
+                    upper_pts.append([int(peak_x + (x_right - peak_x) * t),
+                                      int(peak_y_adj + (y_right - peak_y_adj) * t)])
+            else:
+                for i in range(num_points):
+                    t = i / (num_points - 1)
+                    upper_pts.append([
+                        int((1-t)**2 * x_left + 2*(1-t)*t * peak_x + t**2 * x_right),
+                        int((1-t)**2 * y_left + 2*(1-t)*t * peak_y_adj + t**2 * y_right)
+                    ])
+
+            # Curva inferiore con tapering: più spessa vicino al naso, sottile in coda
+            # Determina se pt_naso è left o right
+            naso_is_left = (pt_naso[0] == pt_left[0])
+            thickness_max = 14
+            thickness_min = 4
+            lower_pts = []
+            for i, pt in enumerate(upper_pts):
+                # progress 0→1 da naso a tempia
+                progress = i / (len(upper_pts) - 1) if naso_is_left else 1.0 - i / (len(upper_pts) - 1)
+                taper = 1.0 - progress * ((thickness_max - thickness_min) / thickness_max)
+                offset = int(thickness_max * taper)
+                lower_pts.append([pt[0], pt[1] + offset])
+
+            # Fill zona sopracciglio (verde semi-trasparente)
+            all_contour = np.array(upper_pts + lower_pts[::-1], np.int32)
+            overlay_fill = img.copy()
+            cv2.fillPoly(overlay_fill, [all_contour], (50, 180, 50))
+            cv2.addWeighted(overlay_fill, 0.38, img, 0.62, 0, img)
+
+            # Curva superiore e inferiore
+            cv2.polylines(img, [np.array(upper_pts, np.int32)], False, (50, 230, 50), 3)
+            cv2.polylines(img, [np.array(lower_pts, np.int32)], False, (120, 255, 120), 2)
+
+            # Marcatori: INIZIO=naso-side, ARCO=picco, CODA=tempia-side
+            pt_inizio = tuple(pt_naso)
+            pt_coda = tuple(pt_tempia)
+            cv2.circle(img, pt_inizio, 6, (0, 230, 230), -1)
+            lbl_ini_x = pt_inizio[0] - 35 if pt_inizio[0] > peak_x else pt_inizio[0] + 4
+            cv2.putText(img, 'INIZIO', (lbl_ini_x, pt_inizio[1] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 230, 230), 1)
+            cv2.circle(img, (peak_x, peak_y_adj), 6, (255, 60, 255), -1)
+            cv2.putText(img, 'ARCO', (peak_x - 20, peak_y_adj - 12),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 60, 255), 1)
+            cv2.circle(img, pt_coda, 6, (50, 130, 255), -1)
+            lbl_cod_x = pt_coda[0] + 5 if pt_coda[0] > peak_x else pt_coda[0] - 32
+            cv2.putText(img, 'CODA', (lbl_cod_x, pt_coda[1] - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (50, 130, 255), 1)
+
+            # Freccia spessore nel punto centrale
+            mid_idx = len(upper_pts) // 2
+            mid_u = tuple(upper_pts[mid_idx])
+            mid_l = tuple(lower_pts[mid_idx])
+            cv2.arrowedLine(img, mid_u, mid_l, (255, 230, 0), 1, tipLength=0.4)
+            cv2.arrowedLine(img, mid_l, mid_u, (255, 230, 0), 1, tipLength=0.4)
+            spess_px = abs(mid_l[1] - mid_u[1])
+            cv2.putText(img, f"sp.{spess_px}px",
+                        (mid_u[0] + 5, (mid_u[1] + mid_l[1]) // 2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, (255, 230, 0), 1)
+
+        draw_ideal_eyebrow_filled(img_ideal,
+                                  lm_coords['sopracciglio_sx_interno'],
+                                  lm_coords['sopracciglio_sx_picco'],
+                                  lm_coords['sopracciglio_sx_esterno'],
+                                  visagistic_rec.forma_sopracciglio)
+        draw_ideal_eyebrow_filled(img_ideal,
+                                  lm_coords['sopracciglio_dx_interno'],
+                                  lm_coords['sopracciglio_dx_picco'],
+                                  lm_coords['sopracciglio_dx_esterno'],
+                                  visagistic_rec.forma_sopracciglio)
+
+        ideal_info = [
+            ('Tipo forma', visagistic_rec.forma_sopracciglio.value.upper(), (80, 255, 80)),
+            ('Forma viso', face_shape.value.upper(), (80, 220, 255)),
+            ('INIZIO', 'allineato ala naso', (0, 230, 230)),
+            ('ARCO', 'sopra bordo esterno iride', (255, 60, 255)),
+            ('CODA', 'angolo lat. occhio', (50, 130, 255)),
+        ]
+        draw_info_panel(img_ideal, 8, 8, 390, 148, "GUIDA FORMA IDEALE", ideal_info)
+
         path = output_path / "04_forma_ideale_sopracciglio.jpg"
         cv2.imwrite(str(path), img_ideal)
         debug_paths['forma_ideale'] = str(path)
-        
-        # 5. Mappa completa con tutte le annotazioni
+
+        # ----------------------------------------------------------------
+        # IMMAGINE 5 — Mappa completa con sezione aurea e asse simmetria
+        # ----------------------------------------------------------------
         img_complete = image.copy()
-        
-        # Overlay semi-trasparente per annotazioni
-        overlay = img_complete.copy()
-        
-        # Riquadri informativi
-        cv2.rectangle(overlay, (10, 10), (400, 250), (0, 0, 0), -1)
-        cv2.addWeighted(overlay, 0.7, img_complete, 0.3, 0, img_complete)
-        
-        y = 35
-        cv2.putText(img_complete, "ANALISI VISAGISTICA COMPLETA", 
-                    (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        y += 35
-        cv2.putText(img_complete, f"Forma viso: {face_shape.value}", 
-                    (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-        y += 25
-        cv2.putText(img_complete, f"Sopracciglio consigliato: {visagistic_rec.forma_sopracciglio.value}", 
-                    (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-        y += 25
-        cv2.putText(img_complete, f"Rapporto L/W: {metrics.rapporto_lunghezza_larghezza:.2f}", 
-                    (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        y += 25
-        cv2.putText(img_complete, f"Rapporto M/F: {metrics.rapporto_mascella_fronte:.2f}", 
-                    (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        y += 25
-        cv2.putText(img_complete, f"Prominenza zigomi: {metrics.prominenza_zigomi:.2f}", 
-                    (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        y += 35
-        cv2.putText(img_complete, "Punti chiave evidenziati:", 
-                    (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-        y += 20
-        cv2.putText(img_complete, "- Rosso: Fronte", 
-                    (30, y), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
-        y += 20
-        cv2.putText(img_complete, "- Verde: Zigomi", 
-                    (30, y), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
-        y += 20
-        cv2.putText(img_complete, "- Blu: Mascella", 
-                    (30, y), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
-        
-        # Punti chiave
-        cv2.circle(img_complete, lm_coords['fronte_sx'], 5, (255, 0, 0), -1)
-        cv2.circle(img_complete, lm_coords['fronte_dx'], 5, (255, 0, 0), -1)
-        cv2.circle(img_complete, lm_coords['zigomo_sx'], 5, (0, 255, 0), -1)
-        cv2.circle(img_complete, lm_coords['zigomo_dx'], 5, (0, 255, 0), -1)
-        cv2.circle(img_complete, lm_coords['mascella_sx'], 5, (0, 0, 255), -1)
-        cv2.circle(img_complete, lm_coords['mascella_dx'], 5, (0, 0, 255), -1)
-        
+        overlay_c = img_complete.copy()
+
+        # Punti chiave per zona
+        KEYPOINTS = [
+            (lm_coords['fronte_sx'], (120, 120, 255), 'Fronte sx'),
+            (lm_coords['fronte_dx'], (120, 120, 255), 'Fronte dx'),
+            (lm_coords['zigomo_sx'], (80, 220, 80), 'Zigomo sx'),
+            (lm_coords['zigomo_dx'], (80, 220, 80), 'Zigomo dx'),
+            (lm_coords['mascella_sx'], (255, 120, 80), 'Mascella sx'),
+            (lm_coords['mascella_dx'], (255, 120, 80), 'Mascella dx'),
+            (lm_coords['naso_punta'], (220, 220, 80), 'Naso'),
+            (lm_coords['mento'], (180, 100, 255), 'Mento'),
+        ]
+        for (pt, col, lbl) in KEYPOINTS:
+            cv2.circle(overlay_c, pt, 7, (255, 255, 255), 2)
+            cv2.circle(overlay_c, pt, 5, col, -1)
+
+        # Asse simmetria (ciano tratteggiato)
+        x_cen = lm_coords['naso_punta'][0]
+        draw_dashed_hline = draw_dashed_hline  # già definito
+        for yy in range(max(y_top - 20, 0), min(y_bot + 20, h_img), 14):
+            cv2.line(overlay_c, (x_cen, yy), (x_cen, yy + 9), (0, 240, 240), 1)
+
+        # Linee dei terzi facciali
+        y3a = y_top + face_h_px // 3
+        y3b = y_top + (face_h_px * 2) // 3
+        for yline, col in [(y3a, (0, 200, 200)), (y3b, (0, 200, 200))]:
+            draw_dashed_hline(overlay_c, yline, x_l, x_r, col, 1)
+
+        # Linea sezione aurea
+        phi_y = int(y_top + face_h_px / phi)
+        cv2.line(overlay_c, (x_l, phi_y), (x_r, phi_y), (255, 130, 0), 2)
+        cv2.putText(overlay_c, "Phi", (x_r + 5, phi_y + 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 130, 0), 1)
+
+        cv2.addWeighted(overlay_c, 0.88, img_complete, 0.12, 0, img_complete)
+
+        # Pannello info ampliato
+        sym_idx = symmetry_data.get('indice_simmetria_complessivo', 0) if symmetry_data else 0
+        complete_info = [
+            ('Forma viso', face_shape.value.upper(), (80, 220, 255)),
+            ('Sopracciglio cons.', visagistic_rec.forma_sopracciglio.value.upper(), (80, 255, 80)),
+            ('Rapporto L/W', f"{metrics.rapporto_lunghezza_larghezza:.3f}", (200, 200, 200)),
+            ('Rapporto M/F', f"{metrics.rapporto_mascella_fronte:.3f}", (200, 200, 200)),
+            ('Prom. zigomi', f"{metrics.prominenza_zigomi:.3f}", (200, 200, 200)),
+            ('Simmetria complessiva', f"{sym_idx:.1f}%", (255, 220, 80)),
+        ]
+        draw_info_panel(img_complete, 8, 8, 420, 180, "ANALISI VISAGISTICA COMPLETA", complete_info)
+
+        # Legenda linee in basso a sinistra
+        leg_items = [
+            ('ciano tratteg.', 'Asse simmetria', (0, 240, 240)),
+            ('azzurro tratteg.', 'Terzi facciali', (0, 200, 200)),
+            ('arancio', 'Sezione aurea Phi', (255, 130, 0)),
+        ]
+        leg2_y = h_img - 90
+        ov_leg = img_complete.copy()
+        cv2.rectangle(ov_leg, (6, leg2_y - 18), (280, leg2_y + len(leg_items) * 22 + 5), (10, 10, 20), -1)
+        cv2.addWeighted(ov_leg, 0.75, img_complete, 0.25, 0, img_complete)
+        for i, (col_lbl, desc, col) in enumerate(leg_items):
+            cv2.line(img_complete, (10, leg2_y + i * 22), (30, leg2_y + i * 22), col, 2)
+            cv2.putText(img_complete, f"{desc} ({col_lbl})",
+                        (35, leg2_y + 5 + i * 22), cv2.FONT_HERSHEY_SIMPLEX, 0.38, col, 1)
+
         path = output_path / "05_mappa_completa.jpg"
         cv2.imwrite(str(path), img_complete)
         debug_paths['mappa_completa'] = str(path)
-        
+
+        # ----------------------------------------------------------------
+        # IMMAGINE 6 — Proporzione aurea (rettangolo aureo + spirale)
+        # ----------------------------------------------------------------
+        img_golden = image.copy()
+        ov_g = img_golden.copy()
+
+        # Rettangolo aureo calcolato sui zigomi
+        zig_w = int(metrics.larghezza_zigomi)
+        zig_h = int(zig_w * phi)
+        zig_cx = (lm_coords['zigomo_sx'][0] + lm_coords['zigomo_dx'][0]) // 2
+        zig_top_y = max(y_top - 10, 0)
+
+        rect_x1 = max(zig_cx - zig_w // 2, 0)
+        rect_y1 = zig_top_y
+        rect_x2 = min(zig_cx + zig_w // 2, w_img)
+        rect_y2 = min(zig_top_y + zig_h, h_img)
+
+        cv2.rectangle(ov_g, (rect_x1, rect_y1), (rect_x2, rect_y2), (0, 200, 255), 2)
+        cv2.putText(ov_g, "Rettangolo aureo", (rect_x1 + 5, rect_y1 + 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 255), 1)
+
+        # Spirale di Fibonacci approssimata con archi di cerchio
+        # Usiamo il naso come centro approssimativo
+        cx = lm_coords['naso_punta'][0]
+        cy = lm_coords['naso_punta'][1]
+        fib_seq = [8, 13, 21, 34, 55, 89, 144]
+        for fib_r in fib_seq:
+            scaled_r = int(fib_r * (metrics.larghezza_viso / 200.0))
+            cv2.ellipse(ov_g, (cx, cy), (scaled_r, int(scaled_r * 0.9)), 0, 0, 270,
+                        (0, 170, 255), 1)
+
+        # Linea sezione aurea orizzontale sul viso
+        aurea_y = int(y_top + face_h_px / phi)
+        cv2.line(ov_g, (rect_x1, aurea_y), (rect_x2, aurea_y), (255, 180, 0), 2)
+
+        # Linee tratteggiate fronte-sopracciglio-naso-bocca-mento
+        key_y_pts = [
+            (y_top, 'Linea capelli', (200, 200, 80)),
+            (lm_coords['sopracciglio_sx_picco'][1], 'Sopracciglia', (0, 230, 230)),
+            (lm_coords['naso_punta'][1], 'Naso', (80, 220, 80)),
+            (lm_coords['bocca_centro_bottom'][1], 'Bocca', (100, 100, 255)),
+            (y_bot, 'Mento', (200, 100, 255)),
+        ]
+        for (ky, klbl, kcol) in key_y_pts:
+            draw_dashed_hline(ov_g, ky, rect_x1, rect_x2, kcol, 1)
+            cv2.putText(ov_g, klbl, (rect_x2 + 4, ky + 4),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, kcol, 1)
+
+        cv2.addWeighted(ov_g, 0.88, img_golden, 0.12, 0, img_golden)
+
+        # Pannello armonia
+        lw_actual = metrics.rapporto_lunghezza_larghezza
+        phi_score = max(0, 100 - abs(lw_actual - phi) * 80)
+        golden_info = [
+            ('Rapporto L/W misurato', f"{lw_actual:.3f}", (80, 220, 255)),
+            ('Rapporto aureo ideale', "1.618 (Phi)", (255, 200, 0)),
+            ('Armonia aurea stimata', f"{phi_score:.0f}%", (80, 255, 120)),
+            ('Larghezza zigomi', f"{metrics.larghezza_zigomi:.0f}px ({metrics.larghezza_zigomi * mm_per_px:.0f}mm~)", (200, 200, 200)),
+            ('Spirale centro', 'Naso (punto focale)', (180, 180, 180)),
+        ]
+        draw_info_panel(img_golden, 8, 8, 440, 155, "PROPORZIONI AUREE (Phi=1.618)", golden_info)
+
+        path = output_path / "06_proporzione_aurea.jpg"
+        cv2.imwrite(str(path), img_golden)
+        debug_paths['proporzione_aurea'] = str(path)
+
+        # ----------------------------------------------------------------
+        # IMMAGINE 7 — Analisi simmetria visiva (3 colonne)
+        # ----------------------------------------------------------------
+        x_axis = lm_coords['naso_punta'][0]
+        # Calcola bounding box del viso
+        face_pad = 30
+        fx1 = max(min(lm_coords['zigomo_sx'][0], lm_coords['fronte_sx'][0]) - face_pad, 0)
+        fx2 = min(max(lm_coords['zigomo_dx'][0], lm_coords['fronte_dx'][0]) + face_pad, w_img)
+        fy1 = max(y_top - face_pad, 0)
+        fy2 = min(y_bot + face_pad, h_img)
+
+        face_crop = image[fy1:fy2, fx1:fx2].copy()
+        fh, fw = face_crop.shape[:2]
+
+        # Centro nell'immagine crop
+        x_center_crop = x_axis - fx1
+
+        # Lato sinistro (x < center) → usa solo metà sinistra
+        half_left = face_crop[:, :x_center_crop].copy()
+        half_left_mirror = cv2.flip(half_left, 1)  # specchia orizzontalmente
+
+        # Costruisci immagine simmetrica: lato_sx + specchio_sx
+        sym_face = np.zeros_like(face_crop)
+        w_left = x_center_crop
+        w_right_available = fw - x_center_crop
+        w_right_use = min(w_left, w_right_available)
+        sym_face[:, :w_left] = half_left
+        sym_face[:, x_center_crop:x_center_crop + w_right_use] = half_left_mirror[:, :w_right_use]
+
+        # Target size per ogni colonna
+        col_h = min(fh, 500)
+        col_w = min(fw, 350)
+        face_resize = cv2.resize(face_crop, (col_w, col_h))
+        sym_resize = cv2.resize(sym_face, (col_w, col_h))
+
+        # Crea canvas 3 colonne
+        total_w = col_w * 3 + 40
+        canvas_sym = np.zeros((col_h + 60, total_w, 3), dtype=np.uint8)
+        canvas_sym[:] = (20, 20, 30)
+
+        # Colonna 1: originale
+        canvas_sym[30:30 + col_h, 5:5 + col_w] = face_resize
+        cv2.putText(canvas_sym, "ORIGINALE", (5 + col_w // 2 - 40, 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+
+        # Colonna 2: originale con asse
+        face_axis = face_resize.copy()
+        x_ax_col = x_center_crop * col_w // fw
+        for yy in range(0, col_h, 12):
+            cv2.line(face_axis, (x_ax_col, yy), (x_ax_col, min(yy + 7, col_h)), (0, 240, 240), 1)
+        canvas_sym[30:30 + col_h, col_w + 15:col_w * 2 + 15] = face_axis
+        cv2.putText(canvas_sym, "ASSE SIMMETRIA", (col_w + 15 + col_w // 2 - 55, 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 240, 240), 1)
+
+        # Colonna 3: simmetria sx proiettata
+        canvas_sym[30:30 + col_h, col_w * 2 + 25:col_w * 3 + 25] = sym_resize
+        cv2.putText(canvas_sym, "SPECCHIO SX", (col_w * 2 + 25 + col_w // 2 - 45, 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 255, 120), 1)
+
+        # Pannello in basso con dati simmetria
+        if symmetry_data:
+            sy_text = (f"Simm. sopracciglia: {symmetry_data.get('simmetria_sopracciglia','N/D')} "
+                       f"(d={symmetry_data.get('delta_sopracciglia_px',0):.1f}px)  |  "
+                       f"Simm. zigomi: {symmetry_data.get('simmetria_zigomi','N/D')} "
+                       f"(d={symmetry_data.get('delta_zigomi_px',0):.1f}px)  |  "
+                       f"Indice globale: {symmetry_data.get('indice_simmetria_complessivo',0):.1f}%")
+            cv2.putText(canvas_sym, sy_text[:90], (5, col_h + 48),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, (220, 220, 160), 1)
+
+        path = output_path / "07_analisi_simmetria.jpg"
+        cv2.imwrite(str(path), canvas_sym)
+        debug_paths['analisi_simmetria'] = str(path)
+
+        # ----------------------------------------------------------------
+        # IMMAGINE 8 — Guida makeup sopracciglia
+        # ----------------------------------------------------------------
+        img_makeup = image.copy()
+        ov_mk = img_makeup.copy()
+
+        def draw_makeup_guide(img, ov, p_a, picco_reale, p_b, eyebrow_shape, iride_ext, occhio_ext):
+            """Disegna guida pratica trucco.
+            INIZIO = naso-side (più vicino al naso), CODA = tempia-side.
+            Linee guida inclinate seguendo l'asse del sopracciglio.
+            """
+            naso_x = lm_coords['naso_punta'][0]
+            # Determina naso-side con distanza dal naso
+            if abs(p_a[0] - naso_x) < abs(p_b[0] - naso_x):
+                pt_naso, pt_tempia = p_a, p_b
+            else:
+                pt_naso, pt_tempia = p_b, p_a
+            # Normalizza left→right per la curva
+            if pt_naso[0] < pt_tempia[0]:
+                pt_left, pt_right = pt_naso, pt_tempia
+            else:
+                pt_left, pt_right = pt_tempia, pt_naso
+
+            x_left, y_left = pt_left
+            x_right, y_right = pt_right
+            peak_x, peak_y = picco_reale
+
+            lift_extra = {
+                EyebrowShape.ARCUATA: 5, EyebrowShape.ANGOLARE: 8,
+                EyebrowShape.DRITTA: 0, EyebrowShape.ARCO_TONDO: 7,
+                EyebrowShape.S_SHAPE: 4,
+            }.get(eyebrow_shape, 5)
+            peak_y_adj = peak_y - lift_extra
+
+            # Calcola inclinazione asse sopracciglio (angolo left→right)
+            dx_ax = x_right - x_left
+            dy_ax = y_right - y_left
+            ax_len = math.sqrt(dx_ax**2 + dy_ax**2) if (dx_ax**2 + dy_ax**2) > 0 else 1
+            # Vettore perpendicolare all'asse (inclinato con il sopracciglio)
+            perp_x = -dy_ax / ax_len
+            perp_y = dx_ax / ax_len
+
+            guide_half = 40  # lunghezza semi-linea guida in pixel
+
+            def draw_guide_line(x_anchor, y_anchor, color, label, lbl_side='above'):
+                """Disegna linea guida perpendicolare all'asse del sopracciglio"""
+                pt1 = (int(x_anchor - perp_x * guide_half), int(y_anchor - perp_y * guide_half))
+                pt2 = (int(x_anchor + perp_x * guide_half), int(y_anchor + perp_y * guide_half))
+                cv2.line(img, pt1, pt2, color, 1)
+                lbl_x = int(x_anchor - perp_x * (guide_half + 5)) - 20
+                lbl_y = int(y_anchor - perp_y * (guide_half + 5)) - 5
+                cv2.putText(img, label, (lbl_x, lbl_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.38, color, 1)
+
+            # Curva superiore Bezier (left→right normalizzata)
+            n_pts = 50
+            upper_pts = []
+            if eyebrow_shape == EyebrowShape.ANGOLARE:
+                for i in range(n_pts // 2):
+                    t = i / (n_pts // 2)
+                    upper_pts.append([int(x_left + (peak_x - x_left) * t),
+                                      int(y_left + (peak_y_adj - y_left) * t)])
+                for i in range(n_pts // 2):
+                    t = i / (n_pts // 2)
+                    upper_pts.append([int(peak_x + (x_right - peak_x) * t),
+                                      int(peak_y_adj + (y_right - peak_y_adj) * t)])
+            else:
+                for i in range(n_pts):
+                    t = i / (n_pts - 1)
+                    upper_pts.append([
+                        int((1-t)**2 * x_left + 2*(1-t)*t * peak_x + t**2 * x_right),
+                        int((1-t)**2 * y_left + 2*(1-t)*t * peak_y_adj + t**2 * y_right)
+                    ])
+
+            # Tapering: più spesso lato naso, sottile in coda
+            naso_is_left = (pt_naso[0] == pt_left[0])
+            lower_pts = []
+            for i, pt in enumerate(upper_pts):
+                progress = i / (len(upper_pts) - 1) if naso_is_left else 1.0 - i / (len(upper_pts) - 1)
+                taper = 1.0 - progress * 0.65
+                lower_pts.append([pt[0], pt[1] + int(14 * taper)])
+
+            # Fill semi-trasparente verde chiaro sull'overlay
+            all_cnt = np.array(upper_pts + lower_pts[::-1], np.int32)
+            cv2.fillPoly(ov, [all_cnt], (80, 200, 80))
+
+            # Linee guida perpendicolari all'asse: INIZIO (naso), ARCO (picco), FINE (tempia)
+            draw_guide_line(pt_naso[0], pt_naso[1], (0, 220, 220), 'INIZIO')
+            draw_guide_line(peak_x, peak_y_adj, (50, 140, 255), 'ARCO')
+            draw_guide_line(pt_tempia[0], pt_tempia[1], (50, 50, 255), 'FINE')
+
+            # Misure orizzontali tra le linee guida (in pixel)
+            d_inizio_arco = int(math.sqrt((peak_x - pt_naso[0])**2 + (peak_y_adj - pt_naso[1])**2))
+            d_arco_fine = int(math.sqrt((pt_tempia[0] - peak_x)**2 + (pt_tempia[1] - peak_y_adj)**2))
+            mid_ia_x = (pt_naso[0] + peak_x) // 2
+            mid_ia_y = max(pt_naso[1], peak_y_adj) + 28
+            mid_af_x = (peak_x + pt_tempia[0]) // 2
+            mid_af_y = max(peak_y_adj, pt_tempia[1]) + 28
+            cv2.putText(img, f"{d_inizio_arco}px", (mid_ia_x - 15, mid_ia_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, (220, 220, 180), 1)
+            cv2.putText(img, f"{d_arco_fine}px", (mid_af_x - 15, mid_af_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.38, (220, 220, 180), 1)
+
+        draw_makeup_guide(img_makeup, ov_mk,
+                          lm_coords['sopracciglio_sx_interno'],
+                          lm_coords['sopracciglio_sx_picco'],
+                          lm_coords['sopracciglio_sx_esterno'],
+                          visagistic_rec.forma_sopracciglio,
+                          lm_coords.get('iride_sx_esterno', lm_coords['occhio_sx_esterno']),
+                          lm_coords['occhio_sx_esterno'])
+        draw_makeup_guide(img_makeup, ov_mk,
+                          lm_coords['sopracciglio_dx_interno'],
+                          lm_coords['sopracciglio_dx_picco'],
+                          lm_coords['sopracciglio_dx_esterno'],
+                          visagistic_rec.forma_sopracciglio,
+                          lm_coords.get('iride_dx_esterno', lm_coords['occhio_dx_esterno']),
+                          lm_coords['occhio_dx_esterno'])
+
+        cv2.addWeighted(ov_mk, 0.35, img_makeup, 0.65, 0, img_makeup)
+
+        mk_info = [
+            ('Tipo sopracciglio', visagistic_rec.forma_sopracciglio.value.upper(), (80, 255, 80)),
+            ('Forma viso', face_shape.value.upper(), (80, 220, 255)),
+            ('Linea gialla', 'Inizio (ala naso)', (0, 220, 220)),
+            ('Linea arancione', 'Picco arco', (50, 140, 255)),
+            ('Linea rossa', 'Fine coda', (50, 50, 255)),
+            ('Zona verde', 'Area target fill', (80, 200, 80)),
+        ]
+        draw_info_panel(img_makeup, 8, 8, 380, 175, "GUIDA APPLICAZIONE MAKEUP", mk_info)
+
+        path = output_path / "08_guida_makeup.jpg"
+        cv2.imwrite(str(path), img_makeup)
+        debug_paths['guida_makeup'] = str(path)
+
         return debug_paths
-    
-    def _draw_ideal_eyebrow_guide(
-        self, 
-        image: np.ndarray, 
-        start_point: Tuple[int, int],
-        end_point: Tuple[int, int],
-        eyebrow_shape: EyebrowShape,
-        side: str
-    ):
-        """Disegna guida della forma ideale del sopracciglio"""
-        
-        # Calcola punti per la curva
-        x_start, y_start = start_point
-        x_end, y_end = end_point
-        
-        # Determina parametri in base alla forma
-        if eyebrow_shape == EyebrowShape.ARCUATA:
-            # Arco morbido
-            peak_x = x_start + int((x_end - x_start) * 0.65)
-            peak_y = y_start - 15
-            
-        elif eyebrow_shape == EyebrowShape.ANGOLARE:
-            # Arco angolare
-            peak_x = x_start + int((x_end - x_start) * 0.70)
-            peak_y = y_start - 20
-            
-        elif eyebrow_shape == EyebrowShape.DRITTA:
-            # Quasi piatto
-            peak_x = x_start + int((x_end - x_start) * 0.55)
-            peak_y = y_start - 5
-            
-        elif eyebrow_shape == EyebrowShape.ARCO_TONDO:
-            # Arco molto rotondo
-            peak_x = x_start + int((x_end - x_start) * 0.60)
-            peak_y = y_start - 18
-            
-        elif eyebrow_shape == EyebrowShape.S_SHAPE:
-            # Curva a S
-            peak_x = x_start + int((x_end - x_start) * 0.55)
-            peak_y = y_start - 12
-        else:
-            peak_x = x_start + int((x_end - x_start) * 0.65)
-            peak_y = y_start - 15
-        
-        # Crea curva con spline
-        points = []
-        num_points = 50
-        
-        if eyebrow_shape == EyebrowShape.ANGOLARE:
-            # Per forma angolare, due segmenti
-            for i in range(num_points // 2):
-                t = i / (num_points // 2)
-                x = int(x_start + (peak_x - x_start) * t)
-                y = int(y_start + (peak_y - y_start) * t)
-                points.append([x, y])
-            for i in range(num_points // 2):
-                t = i / (num_points // 2)
-                x = int(peak_x + (x_end - peak_x) * t)
-                y = int(peak_y + (y_end - peak_y) * t)
-                points.append([x, y])
-        else:
-            # Curva quadratica di Bezier
-            for i in range(num_points):
-                t = i / (num_points - 1)
-                # Bezier quadratica
-                x = int((1-t)**2 * x_start + 2*(1-t)*t * peak_x + t**2 * x_end)
-                y = int((1-t)**2 * y_start + 2*(1-t)*t * peak_y + t**2 * y_end)
-                points.append([x, y])
-        
-        # Disegna la curva
-        pts = np.array(points, np.int32)
-        cv2.polylines(image, [pts], False, (0, 255, 0), 3)
-        
-        # Evidenzia punto massimo dell'arco
-        cv2.circle(image, (peak_x, peak_y), 4, (255, 0, 255), -1)
-        
-        # Annotazione punto picco
-        label = f"Picco {eyebrow_shape.value}"
-        cv2.putText(image, label, (peak_x - 30, peak_y - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 255), 1)
     
     def _distance(self, p1: Tuple[int, int], p2: Tuple[int, int]) -> float:
         """Calcola distanza euclidea tra due punti"""
@@ -1406,6 +1945,72 @@ class FaceVisagismAnalyzer:
         report.append("=" * 80 + "\n")
 
         report.append(self._get_golden_ratio_analysis(metrics))
+
+        # Simmetria bilaterale con dati misurati reali
+        sym = result.get('simmetria_facciale')
+        if sym:
+            report.append("\n\n" + "-" * 60)
+            report.append("ANALISI SIMMETRIA BILATERALE (DATI MISURATI)\n")
+            indice = sym.get('indice_simmetria_complessivo', 0)
+            if indice >= 85:
+                giudizio_globale = "OTTIMA"
+                giudizio_desc = (
+                    "Il tuo viso presenta una simmetria facciale eccellente. "
+                    "Studi di neuroestetica (Perrett et al., 1999) dimostrano che una simmetria "
+                    "superiore all'85% è percepita come indicatore di salute genetica e bellezza. "
+                    "Questa caratteristica contribuisce significativamente all'attrattività facciale "
+                    "percepita e alla facilità di lettura delle espressioni emotive."
+                )
+            elif indice >= 70:
+                giudizio_globale = "BUONA"
+                giudizio_desc = (
+                    "Il tuo viso mostra una buona simmetria facciale, nella norma per la popolazione "
+                    "adulta. La maggior parte dei volti umani presenta asimmetrie lievi del 10-20%, "
+                    "considerate normali e talvolta percepite come 'caratteristiche' distintive. "
+                    "Queste micro-asimmetrie non influenzano negativamente la percezione estetica generale."
+                )
+            else:
+                giudizio_globale = "CON ASIMMETRIE RILEVABILI"
+                giudizio_desc = (
+                    "L'analisi rileva asimmetrie facciali superiori alla media. Asimmetrie del 20-30% "
+                    "possono essere originate da fattori posturali, muscolari o strutturali. "
+                    "Le raccomandazioni di styling e trucco tengono conto di queste caratteristiche "
+                    "per compensare visivamente le differenze bilaterali."
+                )
+
+            report.append(f"Indice di simmetria complessivo: {indice:.1f}% — {giudizio_globale}\n")
+            report.append(self._wrap_text(giudizio_desc))
+            report.append("\nMisurazioni bilaterali dettagliate:\n")
+
+            # Sopracciglia
+            d_sopr = sym.get('delta_sopracciglia_px', 0)
+            s_sopr = sym.get('simmetria_sopracciglia', 'N/D')
+            report.append(
+                f"  SOPRACCIGLIA — delta altezza: {d_sopr:.1f}px — {s_sopr}\n"
+                f"    {'Asimmetria entro soglia fisiologica (< 5px).' if d_sopr < 5 else 'Differenza percettibile nella forma delle arcate sopracciliari.' if d_sopr < 10 else 'Asimmetria marcata: raccomandato allineamento in sede di trattamento.'}"
+            )
+
+            # Zigomi
+            d_zig = sym.get('delta_zigomi_px', 0)
+            s_zig = sym.get('simmetria_zigomi', 'N/D')
+            report.append(
+                f"\n  ZIGOMI — delta laterale: {d_zig:.1f}px — {s_zig}\n"
+                f"    {'Prominenza zigomatica sostanzialmente simmetrica.' if d_zig < 8 else 'Leggera asimmetria strutturale a livello zigomatico.' if d_zig < 15 else 'Differenza marcata nella proiezione zigomatica sx/dx.'}"
+            )
+
+            # Occhi
+            d_occ = sym.get('delta_occhi_apertura_px', 0)
+            s_occ = sym.get('simmetria_occhi', 'N/D')
+            report.append(
+                f"\n  APERTURA OCCHI — delta: {d_occ:.1f}px — {s_occ}\n"
+                f"    {'Apertura palpebrale bilanciata e simmetrica.' if d_occ < 3 else 'Lieve differenza di apertura palpebrale tra i due lati.' if d_occ < 6 else 'Apertura palpebrale asimmetrica: considerare consulto specialistico.'}"
+            )
+
+            report.append(
+                "\nNota metodologica: le misurazioni in pixel sono calcolate sui landmark MediaPipe FaceMesh "
+                "(468 punti) rilevati sull'immagine analizzata. La conversione in mm usa la stima "
+                "140mm / larghezza_viso_px, valida per viso adulto frontale a distanza standard."
+            )
 
         # SEZIONE 8: Bibliografia e Fonti Scientifiche
         report.append("\n\n" + "=" * 80)

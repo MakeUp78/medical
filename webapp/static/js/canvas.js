@@ -34,8 +34,11 @@ function initializeFabricCanvas() {
   // Inizializza Fabric.js canvas con dimensioni dinamiche
   const container = document.querySelector('.canvas-wrapper');
   const containerRect = container.getBoundingClientRect();
-  const initialWidth = Math.max(400, containerRect.width - 10);
-  const initialHeight = Math.max(300, containerRect.height - 10);
+  // Su mobile non imporre un minimo di 400px: causerebbe overflow laterale
+  // (gap visibile a destra) su schermi < 400px (es. iPhone 375px).
+  const _isMobile = window.innerWidth <= 768;
+  const initialWidth = _isMobile ? Math.max(100, containerRect.width) : Math.max(400, containerRect.width - 10);
+  const initialHeight = _isMobile ? Math.max(100, containerRect.height) : Math.max(300, containerRect.height - 10);
 
   fabricCanvas = new fabric.Canvas('main-canvas', {
     width: initialWidth,
@@ -105,11 +108,15 @@ function initializeFabricCanvas() {
   setupCanvasEventListeners();
 
   // Aggiorna dimensioni responsive
-  // Aspetta che il DOM sia completamente renderizzato
+  // Aspetta che il DOM sia completamente renderizzato: 100ms per layout base,
+  // 600ms per assicurarsi che --vh e le variabili CSS mobile siano state calcolate.
   setTimeout(() => {
     resizeCanvas();
-    console.log('🎨 Canvas dimensioni aggiornate');
+    console.log('🎨 Canvas dimensioni aggiornate (100ms)');
   }, 100);
+  setTimeout(() => {
+    resizeCanvas(); // 600ms: attende stabilizzazione variabili CSS mobile (--vh)
+  }, 600);
 
   // Aggiungi griglia di default
   drawGrid();
@@ -870,8 +877,10 @@ function resizeCanvas() {
 
   const containerRect = container.getBoundingClientRect();
   // Riduci il padding a 10px per utilizzare più spazio
-  const newWidth = Math.max(400, containerRect.width - 10);
-  const newHeight = Math.max(300, containerRect.height - 10);
+  // Su mobile non imporre 400px: causerebbe overflow su schermi < 400px.
+  const _isMobileResize = window.innerWidth <= 768;
+  const newWidth = _isMobileResize ? Math.max(100, containerRect.width) : Math.max(400, containerRect.width - 10);
+  const newHeight = _isMobileResize ? Math.max(100, containerRect.height) : Math.max(300, containerRect.height - 10);
 
   console.log('🔧 Ridimensionamento canvas:', {
     containerWidth: containerRect.width,

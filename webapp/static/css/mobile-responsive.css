@@ -97,6 +97,93 @@
     padding: 0;
   }
 
+  /* === DATI ANALISI - BOTTOM SHEET (30% schermo, canvas visibile sopra) === */
+  .right-sidebar.mobile-dati-bottomsheet {
+    top: auto !important;
+    bottom: calc(var(--mobile-nav-height) + var(--safe-area-bottom)) !important;
+    height: 30vh !important;
+    max-height: 30vh !important;
+    border-radius: 18px 18px 0 0 !important;
+    box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.6) !important;
+    overflow-y: hidden !important;
+    overflow-x: hidden !important;
+    padding-bottom: 0 !important;
+    /* Flex colonna per gestire drag-handle + header + contenuto */
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  /* Drag handle decorativo in cima al bottomsheet */
+  .right-sidebar.mobile-dati-bottomsheet::before {
+    content: '';
+    display: block;
+    width: 44px;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 3px;
+    margin: 8px auto 4px;
+    flex-shrink: 0;
+  }
+
+  /* Header compatto nel bottomsheet */
+  .right-sidebar.mobile-dati-bottomsheet .mobile-panel-header {
+    min-height: 40px !important;
+    padding: 6px 16px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .right-sidebar.mobile-dati-bottomsheet .mobile-panel-header h2 {
+    font-size: 13px !important;
+  }
+
+  /* Nascondi sezione ANTEPRIMA nel bottomsheet */
+  .right-sidebar.mobile-dati-bottomsheet .section:has(.webcam-preview-content) {
+    display: none !important;
+  }
+
+  /* Nascondi l'intestazione toggle della sezione DATI ANALISI */
+  .right-sidebar.mobile-dati-bottomsheet .section:has(.unified-tabs) > .section-header {
+    display: none !important;
+  }
+
+  /* Forza visibilità del contenuto DATI ANALISI e rimonta overflow */
+  .right-sidebar.mobile-dati-bottomsheet .section:has(.unified-tabs) {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    margin: 0 8px 4px !important;
+    border-radius: 12px 12px 0 0 !important;
+    border-color: #555 !important;
+  }
+
+  .right-sidebar.mobile-dati-bottomsheet .section:has(.unified-tabs) > .section-content {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 !important;
+    overflow: hidden !important;
+    padding: 8px !important;
+  }
+
+  /* La tabella prende tutto lo spazio residuo (30vh - handle 17px - header 40px - tabs 38px - padding 24px) */
+  .right-sidebar.mobile-dati-bottomsheet .table-container {
+    flex: 1 !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+  }
+
+  /* Tabs compatti nel bottomsheet */
+  .right-sidebar.mobile-dati-bottomsheet .unified-tab {
+    padding: 7px 6px !important;
+    font-size: 11px !important;
+  }
+
+  .right-sidebar.mobile-dati-bottomsheet .unified-tabs {
+    flex-shrink: 0 !important;
+    margin-bottom: 6px !important;
+  }
+
   /* === HEADER PANNELLO MOBILE === */
   .mobile-panel-header {
     display: flex;
@@ -163,7 +250,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #1a1a1a;
+    /* Sfondo identico al backgroundColor di Fabric.js (#f0f0f0) per evitare
+       il "doppio fondo" (bordo scuro visibile attorno al canvas grigio chiaro). */
+    background: #f0f0f0;
     overflow: hidden;
   }
 
@@ -171,6 +260,25 @@
     max-width: 100%;
     max-height: 100%;
     touch-action: none;
+  }
+
+  /* === WEBCAM FULLSCREEN MOBILE ===
+     Su mobile il tasto Stop è position:absolute quindi il canvas può occupare
+     l'intera overlay. Il JS usa modalità cover: cw=vw, ch=vh → canvas a tutto
+     schermo senza barre nere. Qui allineiamo all'angolo in alto a sinistra. */
+  #webcam-fullscreen-overlay {
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+  }
+
+  #webcam-fullscreen-canvas {
+    /* Le dimensioni fisiche (backing store + style) sono gestite dal JS;
+       !important su max-height sovrascrive il max-height di main.css che
+       riserva 70px per il tasto Stop (non necessario su mobile: il tastoè position:absolute sopra il canvas). */
+    display: block;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
   }
 
   /* === TOOLBAR CANVAS MOBILE - stile strip Strumenti === */

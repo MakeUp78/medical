@@ -19,6 +19,17 @@ except ImportError:
     MEDIAPIPE_AVAILABLE = False
 
 
+# ── Costanti formula di scoring calibrata da dot_selector ─────────────────
+_MULTI_CONFIGS = [
+    {"brightness_percentile": 41, "sat_cap": 37},  # Config A – permissiva
+    {"brightness_percentile": 73, "sat_cap": 25},  # Config B – restrittiva
+]
+_SCORE_NORM_RAW    = 120.1  # media score dei punti corretti
+_SCORE_NORM_SIZE   = 138.6  # media size  dei punti corretti
+_SCORE_NORM_SOURCE =   2.1  # media source_count dei punti corretti
+_MERGE_RADIUS_PX   =  12    # px: raggio entro cui due dot sono lo stesso
+
+
 class WhiteDotsProcessorV2:
     """
     Processore ottimizzato per il rilevamento di puntini bianchi nelle sopracciglia.
@@ -397,77 +408,116 @@ class WhiteDotsProcessorV2:
     # ─────────────────────────────────────────────────────────────────────────
     # MODALITÀ ADATTIVA (default)
     # ─────────────────────────────────────────────────────────────────────────
-    def _detect_adaptive(
+    def _single_pass_raw(
         self,
-        img_array: np.ndarray,
+        v_ch: np.ndarray,
+        s_ch: np.ndarray,
         combined_mask: np.ndarray,
+        brightness_percentile: int,
+        sat_cap: float,
     ) -> Tuple[List[Dict], int]:
         """
-        Rilevamento adattivo: threshold = percentile della luminosità nella maschera.
-
-        Non richiede tuning HSV assoluto. I punti bianchi sono per definizione
-        i più luminosi dentro la zona scura del sopracciglio.
-
-        Returns:
-            (dots_list, total_bright_pixels)
+        Singolo pass di detection con parametri espliciti.
+        Ritorna lista dot grezzi (score = area × mean_v/255) e totale pixel luminosi.
         """
-        # Canale V (luminosità) in HSV BGR→HSV
-        hsv = cv2.cvtColor(img_array, cv2.COLOR_BGR2HSV)
-        v_ch = hsv[:, :, 2].astype(np.float32)  # 0-255
-        s_ch = hsv[:, :, 1].astype(np.float32)  # 0-255
-
-        # ── 1. Soglia adattiva sul V dentro la maschera ───────────────────
         ys, xs = np.where(combined_mask > 0)
         if len(ys) < 10:
             return [], 0
 
         v_in_mask = v_ch[ys, xs]
-        thresh_v = np.percentile(v_in_mask, self.brightness_percentile)
+        thresh_v = float(np.percentile(v_in_mask, brightness_percentile))
+        thresh_s = sat_cap / 100.0 * 255.0
 
-        # Cap saturazione: converti self.sat_cap (0-100) in scala 0-255
-        thresh_s = self.sat_cap / 100.0 * 255.0
-
-        # ── 2. Maschera binaria: luminoso E bassa saturazione ─────────────
-        bright = np.zeros(img_array.shape[:2], dtype=np.uint8)
+        bright = np.zeros(v_ch.shape, dtype=np.uint8)
         bright[(v_ch > thresh_v) & (s_ch <= thresh_s) & (combined_mask > 0)] = 255
 
-        # ── 3. Connected components (cv2 è molto più veloce di BFS Python) ─
         n_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
             bright, connectivity=8
         )
-        # stats cols: LEFT, TOP, WIDTH, HEIGHT, AREA
         total_bright = int(np.sum(bright > 0))
 
         dots = []
-        for lbl in range(1, n_labels):            # 0 = background
+        for lbl in range(1, n_labels):
             area = int(stats[lbl, cv2.CC_STAT_AREA])
             if area < self.cluster_min or area > self.cluster_max:
                 continue
-
             cx = float(centroids[lbl, 0])
             cy = float(centroids[lbl, 1])
-
-            # Calcola V medio e S medio del cluster
             clust_mask = (labels == lbl)
             mean_v = float(np.mean(v_ch[clust_mask]))
             mean_s = float(np.mean(s_ch[clust_mask]))
-
-            # Score: area × luminosità media (premia cluster grandi e brillanti)
             score = area * (mean_v / 255.0)
-
             dots.append({
                 'x': int(round(cx)),
                 'y': int(round(cy)),
                 'size': area,
                 'score': round(score, 2),
                 'compactness': 0.0,
-                # HSV in scala 0-100 per compatibilità con il resto del codice
                 'v': int(round(mean_v / 255.0 * 100)),
                 's': int(round(mean_s / 255.0 * 100)),
                 'h': 0,
             })
 
         return dots, total_bright
+
+    def _detect_adaptive(
+        self,
+        img_array: np.ndarray,
+        combined_mask: np.ndarray,
+    ) -> Tuple[List[Dict], int]:
+        """
+        Rilevamento adattivo multi-config con scoring calibrato.
+
+        Esegue la detection con i parametri utente + 2 config aggiuntive per
+        calcolare il source_count (quante config rilevano lo stesso punto).
+        Formula finale: (raw_score/NORM_RAW) × (size/NORM_SIZE) × (source_count/NORM_SOURCE)
+
+        Returns:
+            (dots_list, total_bright_pixels)
+        """
+        # Canale V e S in HSV (calcolati una volta sola per tutti i pass)
+        hsv  = cv2.cvtColor(img_array, cv2.COLOR_BGR2HSV)
+        v_ch = hsv[:, :, 2].astype(np.float32)  # 0-255
+        s_ch = hsv[:, :, 1].astype(np.float32)  # 0-255
+
+        # ── Pass primario con parametri utente ────────────────────────────
+        primary_dots, total_bright = self._single_pass_raw(
+            v_ch, s_ch, combined_mask,
+            self.brightness_percentile, self.sat_cap
+        )
+
+        # ── Pass aggiuntivi per calcolare source_count ────────────────────
+        extra_runs: List[List[Dict]] = []
+        for cfg in _MULTI_CONFIGS:
+            extra, _ = self._single_pass_raw(
+                v_ch, s_ch, combined_mask,
+                cfg["brightness_percentile"], cfg["sat_cap"]
+            )
+            extra_runs.append(extra)
+
+        # ── Calcola source_count e applica nuova formula ──────────────────
+        for dot in primary_dots:
+            sc = 1  # trovato almeno nel pass primario
+            for run in extra_runs:
+                for od in run:
+                    dx = dot['x'] - od['x']
+                    dy = dot['y'] - od['y']
+                    if math.sqrt(dx * dx + dy * dy) < _MERGE_RADIUS_PX:
+                        sc += 1
+                        break
+
+            raw_score = dot['score']   # area × mean_v/255
+            sz        = dot['size']    # area
+            # Formula calibrata da dot_selector
+            dot['score'] = round(
+                (raw_score / _SCORE_NORM_RAW)
+                * (sz       / _SCORE_NORM_SIZE)
+                * (sc       / _SCORE_NORM_SOURCE),
+                4
+            )
+            dot['source_count'] = sc
+
+        return primary_dots, total_bright
 
     # ─────────────────────────────────────────────────────────────────────────
 

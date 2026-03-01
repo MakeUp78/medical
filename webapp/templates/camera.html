@@ -247,7 +247,7 @@
         }
 
         #device-info {
-            position: fixed;
+            display: none;
             bottom: calc(env(safe-area-inset-bottom, 20px) + 80px);
             left: 50%;
             transform: translateX(-50%);
@@ -268,46 +268,49 @@
             transform: scaleX(-1);
         }
 
-        /* Guida ovale viso */
+        /* Guida immagine viso */
         #face-guide {
             position: fixed;
             inset: 0;
             display: flex;
-            align-items: center;
+            align-items: flex-end;
             justify-content: center;
             pointer-events: none;
             z-index: 50;
+            /* Vignette radiale: scurisce i bordi senza creare un riquadro visibile */
+            background: radial-gradient(ellipse 72% 60% at 50% 40%,
+                    transparent 52%,
+                    rgba(0, 0, 0, 0.32) 100%);
         }
 
         #face-oval {
-            width: min(74vw, 295px);
-            height: min(106vw, 420px);
-            border: 2.5px solid rgba(255, 255, 255, 0.85);
-            border-radius: 50%;
-            box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.30);
-            transition: border-color 0.4s;
-            overflow: hidden;
+            /* pngwing.com.png 1158x2188: viso (top ~65%) + collo (bottom ~35%) */
+            width: min(81vw, 351px);
+            aspect-ratio: 1158 / 2188;
+            height: auto;
+            background: transparent;
+            transition: filter 0.4s;
             position: relative;
-            /* Sposta leggermente verso l'alto rispetto al centro */
-            margin-bottom: 10vh;
+            margin-bottom: env(safe-area-inset-bottom, 0px);
+        }
+
+        #face-oval img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain;
+            -webkit-user-drag: none;
+            user-select: none;
         }
 
         #face-oval.good {
-            border-color: rgba(0, 255, 120, 0.90);
-            box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.22), 0 0 20px rgba(0, 255, 120, 0.55);
-        }
-
-        #face-markers {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
+            filter: drop-shadow(0 0 18px rgba(0, 255, 120, 0.90));
         }
 
         /* Score su iPhone */
         #score-display {
             position: fixed;
-            bottom: calc(env(safe-area-inset-bottom, 20px) + 85px);
+            bottom: calc(env(safe-area-inset-bottom, 20px) + 130px);
             left: 50%;
             transform: translateX(-50%);
             background: rgba(0, 0, 0, 0.65);
@@ -384,35 +387,7 @@
 
     <div id="face-guide">
         <div id="face-oval">
-            <!-- Marcatori anatomici di riferimento per posizionamento viso -->
-            <svg id="face-markers" viewBox="0 0 100 143" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-                <!-- Asse di simmetria verticale -->
-                <line x1="50" y1="4" x2="50" y2="136" stroke="rgba(255,255,255,0.22)" stroke-width="0.7"
-                    stroke-dasharray="3,3" />
-                <!-- Linea orizzontale occhi -->
-                <line x1="16" y1="46" x2="84" y2="46" stroke="rgba(255,255,255,0.18)" stroke-width="0.7" />
-                <!-- Sopracciglio sinistro -->
-                <path d="M 18,40 Q 29,34 43,39" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="1.6"
-                    stroke-linecap="round" />
-                <!-- Sopracciglio destro -->
-                <path d="M 57,39 Q 71,34 82,40" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="1.6"
-                    stroke-linecap="round" />
-                <!-- Occhio sinistro -->
-                <ellipse cx="30" cy="46" rx="11" ry="4.5" fill="none" stroke="rgba(255,255,255,0.58)"
-                    stroke-width="1.6" />
-                <!-- Occhio destro -->
-                <ellipse cx="70" cy="46" rx="11" ry="4.5" fill="none" stroke="rgba(255,255,255,0.58)"
-                    stroke-width="1.6" />
-                <!-- Ali del naso -->
-                <path d="M 37,82 Q 44,88 50,85 Q 56,88 63,82" fill="none" stroke="rgba(255,255,255,0.35)"
-                    stroke-width="1.3" stroke-linecap="round" />
-                <!-- Bocca - labbro inefiore -->
-                <path d="M 31,103 Q 50,116 69,103" fill="none" stroke="rgba(255,255,255,0.52)" stroke-width="1.8"
-                    stroke-linecap="round" />
-                <!-- Bocca - arco di Cupido -->
-                <path d="M 31,103 Q 40,98 50,100 Q 60,98 69,103" fill="none" stroke="rgba(255,255,255,0.32)"
-                    stroke-width="1.2" stroke-linecap="round" />
-            </svg>
+            <img src="/static/face_guide.png" alt="Guida posizionamento viso" draggable="false">
         </div>
     </div>
 
@@ -477,6 +452,10 @@
 
         // === CONFIGURAZIONE ===
         function loadConfig() {
+            // Leggi session_token dall'URL (?st=...) — obbligatorio per l'isolamento sessione
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlSessionToken = urlParams.get('st') || '';
+
             const saved = localStorage.getItem(CONFIG_KEY);
             if (saved) {
                 config = JSON.parse(saved);
@@ -509,6 +488,16 @@
             // ✅ Usa il proxy NGINX /ws invece della porta diretta
             const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             config.wsUrl = `${wsProtocol}//${host}/ws`;
+
+            // ✅ Salva sempre il session_token dell'URL corrente (sovrascrive quello salvato)
+            // Il token arriva dal QR code e identifica il desktop abbinato.
+            if (urlSessionToken) {
+                config.sessionToken = urlSessionToken;
+                saveConfig();
+            } else if (!config.sessionToken) {
+                // Nessun token: mostra avviso ma permetti connessione legacy
+                console.warn('⚠️ Nessun session_token nell\'URL. Usa il QR code aggiornato.');
+            }
 
             console.log('📡 WebSocket URL:', config.wsUrl);
 
@@ -569,10 +558,11 @@
                     console.log('WebSocket connesso');
                     reconnectAttempts = 0;
 
-                    // Invia handshake con deviceId
+                    // Invia handshake con deviceId e session_token
                     socket.send(JSON.stringify({
                         action: 'iphone_connect',
                         deviceId: config.deviceId,
+                        session_token: config.sessionToken || '',
                         userAgent: navigator.userAgent,
                         timestamp: Date.now()
                     }));
@@ -750,6 +740,7 @@
                 const msg = JSON.stringify({
                     action: 'iphone_frame',
                     deviceId: config.deviceId,
+                    session_token: config.sessionToken || '',
                     frame: base64data,
                     timestamp: Date.now(),
                     width: canvas.width,
@@ -884,7 +875,7 @@
 
             // Nessun viso rilevato
             if (faces === 0) {
-                showCoaching('Inquadra il viso nell\'ovale');
+                showCoaching('Inquadra il viso nella guida');
                 return;
             }
 

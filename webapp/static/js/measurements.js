@@ -30,6 +30,7 @@ let measurementPoints = [];
 // Sistema toggle per misurazioni predefinite
 let activeMeasurements = new Map(); // Traccia quali misurazioni sono attive
 let measurementOverlays = new Map(); // Traccia gli overlay delle misurazioni
+window._eyebrowSymmetryCache = null; // Cache ultimo overlay sopracciglia {b64, natW, natH}
 
 // === DEBUG MODE PER ELABORAZIONE SOPRACCIGLIA ===
 let eyebrowDebugMode = true; // Attiva/disattiva visualizzazioni debug
@@ -224,7 +225,7 @@ function toggleMeasurementButton(buttonElement, measurementType) {
   }
 }
 
-function showMeasurementOverlay(measurementType) {
+function showMeasurementOverlay(measurementType, silent = false) {
   /**
    * Mostra l'overlay di una misurazione specifica
    */
@@ -247,9 +248,9 @@ function showMeasurementOverlay(measurementType) {
     case 'mouthWidth':
       performMouthWidthMeasurement();
       break;
-    case 'eyebrowAreas':
-      performEyebrowAreasMeasurement();
-      break;
+    // case 'eyebrowAreas': // DISABILITATO - Aree Sopracciglia nascosto
+    //   performEyebrowAreasMeasurement(silent);
+    //   break;
     case 'eyeAreas':
       performEyeAreasMeasurement();
       break;
@@ -280,6 +281,12 @@ function showMeasurementOverlay(measurementType) {
     case 'facialSymmetry':
       performFacialSymmetryMeasurement();
       break;
+    case 'eyebrowSymmetry':
+      _repositionEyebrowSymmetryOverlay();
+      break;
+    case 'eyeRotation':
+      performEyeRotationMeasurement();
+      break;
     default:
       console.warn(`Tipo misurazione non riconosciuto: ${measurementType}`);
   }
@@ -303,6 +310,24 @@ function hideMeasurementOverlay(measurementType) {
 
     if (fabricCanvas) {
       fabricCanvas.renderAll();
+    }
+  }
+
+  // Pulizia specifica per eyeRotation
+  if (measurementType === 'eyeRotation') {
+    window.eyeRotationOverlayActive = false;
+    window._eyeRotationCachedAngles = null;
+    // Fallback: rimuovi per tag qualsiasi oggetto residuo
+    if (fabricCanvas) {
+      fabricCanvas.getObjects()
+        .filter(o => o.isEyeRotationOverlay)
+        .forEach(o => fabricCanvas.remove(o));
+      fabricCanvas.renderAll();
+    }
+    // Rimuovi righe tabella eye-rotation
+    const tableBody = document.getElementById('unified-table-body');
+    if (tableBody) {
+      tableBody.querySelectorAll('[data-measurement="eye-rotation"]').forEach(r => r.remove());
     }
   }
 }
@@ -1749,17 +1774,19 @@ function performCheekWidthMeasurement() {
   }
 }
 
+/* DISABILITATO - Aree Sopracciglia nascosto */
 function measureEyebrowAreas(event) {
-  const button = event ? event.target : document.querySelector('[onclick*="measureEyebrowAreas"]');
-  toggleMeasurementButton(button, 'eyebrowAreas');
+  // DISABILITATO: funzione nascosta su richiesta
+  console.log('measureEyebrowAreas disabilitato');
 }
 
-function performEyebrowAreasMeasurement() {
-  if (!currentLandmarks || currentLandmarks.length === 0) {
-    showToast('Rilevamento landmarks per misurazione...', 'info');
+function performEyebrowAreasMeasurement(silent = false) {
+  return; // DISABILITATO - Aree Sopracciglia nascosto
+  if (!currentLandmarks || currentLandmarks.length === 0) { // eslint-disable-line no-unreachable
+    if (!silent) showToast('Rilevamento landmarks per misurazione...', 'info');
     autoDetectLandmarksOnImageChange().then(success => {
       if (success) {
-        performEyebrowAreasMeasurement();
+        performEyebrowAreasMeasurement(silent);
       } else {
         showToast('Impossibile rilevare landmarks per la misurazione', 'error');
       }
@@ -1778,6 +1805,12 @@ function performEyebrowAreasMeasurement() {
     if (!window.transformLandmarkCoordinate || typeof window.transformLandmarkCoordinate !== 'function') {
       showToast('Funzione di trasformazione coordinate non disponibile', 'error');
       return;
+    }
+
+    // Rimuovi overlay sopracciglia precedenti prima di ridisegnare
+    if (measurementOverlays.has('eyebrowAreas')) {
+      measurementOverlays.get('eyebrowAreas').forEach(obj => fabricCanvas && fabricCanvas.remove(obj));
+      measurementOverlays.delete('eyebrowAreas');
     }
 
     // === LANDMARK CORRETTI MediaPipe Face Mesh per SOPRACCIGLIA ===
@@ -1929,7 +1962,7 @@ function performEyebrowAreasMeasurement() {
           };
 
           // Aggiungi riga per la tolleranza Magic Wand con slider interattivo
-          if (leftRegionData.tolerance !== undefined) {
+          if (!silent && leftRegionData.tolerance !== undefined) {
             // Aggiungi anche info seed color
             if (leftRegionData.seedColor) {
               const rgb = leftRegionData.seedColor;
@@ -2067,16 +2100,18 @@ function performEyebrowAreasMeasurement() {
         voiceMessage = `Il sopracciglio destro è più grande, con un'area di ${rightBrowArea.toFixed(0)} pixel quadrati, rispetto ai ${leftBrowArea.toFixed(0)} del sopracciglio sinistro.`;
       }
 
-      // Aggiungi alla tabella - ESPANDI LA SEZIONE
-      ensureMeasurementsSectionOpen();
-      addMeasurementToTable('Area Sopracciglio Sinistro', leftBrowArea, 'px²');
-      addMeasurementToTable('Area Sopracciglio Destro', rightBrowArea, 'px²');
-      addMeasurementToTable('Differenza Aree', areaDifference, 'px²');
-      addMeasurementToTable('Valutazione Dimensioni', comparisonText, '');
+      // Aggiungi alla tabella - ESPANDI LA SEZIONE (solo se non è un ridisegno silenzioso)
+      if (!silent) {
+        ensureMeasurementsSectionOpen();
+        addMeasurementToTable('Area Sopracciglio Sinistro', leftBrowArea, 'px²');
+        addMeasurementToTable('Area Sopracciglio Destro', rightBrowArea, 'px²');
+        addMeasurementToTable('Differenza Aree', areaDifference, 'px²');
+        addMeasurementToTable('Valutazione Dimensioni', comparisonText, '');
 
-      // Feedback vocale
-      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
-        voiceAssistant.speak(voiceMessage);
+        // Feedback vocale
+        if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+          voiceAssistant.speak(voiceMessage);
+        }
       }
     } else {
       showToast('Landmark insufficienti per calcolare le aree delle sopracciglia', 'warning');
@@ -2722,8 +2757,21 @@ function extractAndBinarizeImageRegionWithTolerance(maskPolygon, canvasImage, la
     tempCanvas.height = fabricCanvas.height;
     const tempCtx = tempCanvas.getContext('2d');
 
-    tempCtx.drawImage(imgElement, canvasImage.left || 0, canvasImage.top || 0,
-      imgElement.width * scaleX, imgElement.height * scaleY);
+    // Renderizza l'immagine tenendo conto di posizione, scala E rotazione
+    // (come fa transformLandmarkCoordinate) per allineamento corretto dei landmark
+    const drawW = imgElement.width * scaleX;
+    const drawH = imgElement.height * scaleY;
+    const imgAngle = canvasImage.angle || 0;
+    if (imgAngle !== 0) {
+      const center = canvasImage.getCenterPoint();
+      tempCtx.save();
+      tempCtx.translate(center.x, center.y);
+      tempCtx.rotate(imgAngle * Math.PI / 180);
+      tempCtx.drawImage(imgElement, -drawW / 2, -drawH / 2, drawW, drawH);
+      tempCtx.restore();
+    } else {
+      tempCtx.drawImage(imgElement, canvasImage.left || 0, canvasImage.top || 0, drawW, drawH);
+    }
 
     const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
     const pixels = imageData.data;
@@ -4345,66 +4393,61 @@ async function estimateAge(event) {
 
     if (result.success && result.age) {
       const confidence = result.confidence || 'unknown';
-      const method = result.method || 'unknown';
       const ratios = result.ratios || {};
 
       console.log('✅ Età stimata:', result.age, 'anni', result);
 
-      // Interpreta i ratios in modo user-friendly
-      let faceShapeDescription = '';
-      let ageRangeDescription = '';
-
-      if (ratios.face_ratio) {
-        if (ratios.face_ratio > 2.6) {
-          faceShapeDescription = 'Viso allungato (tipico di visi giovani)';
-        } else if (ratios.face_ratio > 2.3) {
-          faceShapeDescription = 'Viso proporzionato';
-        } else if (ratios.face_ratio > 2.0) {
-          faceShapeDescription = 'Viso equilibrato (tipico di età matura)';
-        } else {
-          faceShapeDescription = 'Viso squadrato (tipico di età avanzata)';
-        }
-      }
-
       // Determina range età
-      if (result.age < 25) {
-        ageRangeDescription = 'Giovane adulto';
-      } else if (result.age < 35) {
-        ageRangeDescription = 'Adulto giovane';
+      let ageRangeDescription;
+      if (result.age < 20) {
+        ageRangeDescription = 'Under 20';
+      } else if (result.age < 25) {
+        ageRangeDescription = 'Giovane adulto (20-24)';
+      } else if (result.age < 30) {
+        ageRangeDescription = 'Adulto giovane (25-29)';
+      } else if (result.age < 40) {
+        ageRangeDescription = 'Adulto (30-39)';
       } else if (result.age < 50) {
-        ageRangeDescription = 'Adulto';
-      } else if (result.age < 65) {
-        ageRangeDescription = 'Adulto maturo';
+        ageRangeDescription = 'Adulto maturo (40-49)';
+      } else if (result.age < 60) {
+        ageRangeDescription = 'Senior (50-59)';
+      } else if (result.age < 70) {
+        ageRangeDescription = 'Senior avanzato (60-69)';
       } else {
-        ageRangeDescription = 'Senior';
+        ageRangeDescription = 'Over 70';
       }
 
-      // Aggiungi i dati alla tabella unificata usando addMeasurementToTable
-      // Rimuovi eventuali righe precedenti di stima età
+      // Confidenza in italiano
+      const confidenceIT = { high: 'Alta', medium: 'Media', low: 'Bassa' }[confidence] || confidence;
+
+      // Rimuovi righe precedenti stima età
       const tableBody = document.getElementById('unified-table-body');
       if (tableBody) {
-        const existingRows = tableBody.querySelectorAll('[data-measurement="age-estimate"]');
-        existingRows.forEach(row => row.remove());
+        tableBody.querySelectorAll('[data-measurement="age-estimate"]').forEach(r => r.remove());
       }
 
-      // Aggiungi dati età usando la funzione standard
+      // Aggiungi dati alla tabella
       addMeasurementToTable('🎂 Età Stimata', result.age, 'anni', 'age-estimate');
-      addMeasurementToTable('👤 Categoria', ageRangeDescription, '-', 'age-estimate');
+      addMeasurementToTable('👤 Fascia', ageRangeDescription, '', 'age-estimate');
+      addMeasurementToTable('📊 Confidenza', confidenceIT, '', 'age-estimate');
 
-      if (faceShapeDescription) {
-        addMeasurementToTable('👁️ Forma Viso', faceShapeDescription, '-', 'age-estimate');
+      // Dettagli opzionali (solo se presenti)
+      if (ratios.eye_openness !== undefined) {
+        const eyeDesc = ratios.eye_openness > 0.30 ? 'Ampia' : ratios.eye_openness > 0.24 ? 'Normale' : 'Ridotta';
+        addMeasurementToTable('👁️ Apertura occhi', eyeDesc, '', 'age-estimate');
+      }
+      if (ratios.brow_drop !== undefined) {
+        const browDesc = ratios.brow_drop > 0.055 ? 'Alte' : ratios.brow_drop > 0.035 ? 'Normali' : 'Abbassate';
+        addMeasurementToTable('🔼 Sopracciglia', browDesc, '', 'age-estimate');
       }
 
-      // Espandi sezione DATI ANALISI se chiusa
       ensureMeasurementsSectionOpen();
 
-      // Lettura vocale del risultato (solo età, senza confidenza)
       const voiceMessage = `Età stimata: ${result.age} anni. ${ageRangeDescription}.`;
       if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
         voiceAssistant.speak(voiceMessage);
       }
 
-      // Toast breve di conferma
       showToast('✅ Stima età completata', 'success', 2000);
     } else {
       throw new Error('Risposta non valida dal server');
@@ -4423,6 +4466,250 @@ async function estimateAge(event) {
 // Esporta funzioni globali necessarie per altri moduli
 window.ensureMeasurementsSectionOpen = ensureMeasurementsSectionOpen;
 window.addMeasurementToTable = addMeasurementToTable;
+
+// === DIFFERENZA ROTAZIONE OCCHI ===
+
+/**
+ * Calcola la differenza di rotazione (tilt) tra occhio sinistro e occhio destro.
+ *
+ * Landmark MediaPipe (confermati da face_analysis_module.py):
+ *   Occhio SINISTRO: esterno=33, interno=133, sup=159, inf=145
+ *   Occhio DESTRO:   interno=362, esterno=263, sup=386, inf=374
+ *
+ * L'angolo è calcolato come inclinazione del vettore
+ * canto-interno → canto-esterno rispetto all'orizzontale.
+ * Positivo = canto esterno più alto = "cat eye up".
+ * Negativo = canto esterno più basso = "downturned eye".
+ *
+ * Auto-rileva landmarks silenziosamente se non già presenti.
+ */
+async function measureEyeRotationDiff(event) {
+  /**
+   * Entry-point del pulsante: gestisce il toggle ON/OFF come tutti gli altri
+   * pulsanti di misurazione (verde = attivo, arancione = disattivo).
+   */
+  const button = event
+    ? (event.currentTarget || event.target)
+    : document.querySelector('[onclick*="measureEyeRotationDiff"]');
+  toggleMeasurementButton(button, 'eyeRotation');
+}
+
+async function performEyeRotationMeasurement() {
+  /**
+   * Calcola l'angolo di rotazione di ciascun occhio rispetto all'asse orizzontale.
+   *
+   * CONVENZIONE ANGOLI (richiesta dall'utente):
+   *   Occhio DX (destra nell'immagine, outer = lm 263):
+   *     angolo positivo = senso ANTIORARIO → cat-eye (canto esterno rialzato)
+   *     Formula: atan2(dxInt.y − dxExt.y,  dxExt.x − dxInt.x)
+   *              numeratore > 0 quando outer è più in alto (canvas Y↓)
+   *              denominatore > 0 perché outer è a destra di inner
+   *
+   *   Occhio SX (sinistra nell'immagine, outer = lm 33):
+   *     angolo positivo = senso ORARIO → cat-eye
+   *     Formula: atan2(sxInt.y − sxExt.y,  sxInt.x − sxExt.x)
+   *              numeratore > 0 quando outer è più in alto
+   *              denominatore > 0 perché inner è a destra di outer (eye on left)
+   */
+  try {
+    // Auto-detect landmarks se non presenti
+    if (!currentLandmarks || currentLandmarks.length === 0) {
+      const ok = await autoDetectLandmarksOnImageChange();
+      if (!ok || !currentLandmarks || currentLandmarks.length === 0) {
+        showToast('⚠️ Impossibile rilevare il viso nell\'immagine', 'warning');
+        // Rimuovi classe attiva perché non siamo riusciti ad attivarci
+        const btn = document.querySelector('[onclick*="measureEyeRotationDiff"]');
+        if (btn) btn.classList.remove('btn-active');
+        return;
+      }
+    }
+
+    const required = [33, 133, 159, 145, 263, 362, 386, 374];
+    for (const idx of required) {
+      if (!currentLandmarks[idx]) {
+        showToast(`⚠️ Landmark ${idx} non disponibile`, 'warning');
+        const btn = document.querySelector('[onclick*="measureEyeRotationDiff"]');
+        if (btn) btn.classList.remove('btn-active');
+        return;
+      }
+    }
+
+    function tpt(idx) {
+      const lm = currentLandmarks[idx];
+      return (window.transformLandmarkCoordinate) ? window.transformLandmarkCoordinate(lm) : lm;
+    }
+
+    // ── Occhio SX nell'immagine (outer = lm 33, inner = lm 133) ─────────────
+    const sxExt = tpt(33);   // canto esterno, lato tempia SX
+    const sxInt = tpt(133);  // canto interno, lato naso
+    const sxTop = tpt(159);
+    const sxBot = tpt(145);
+
+    // ── Occhio DX nell'immagine (inner = lm 362, outer = lm 263) ────────────
+    const dxInt = tpt(362);  // canto interno, lato naso
+    const dxExt = tpt(263);  // canto esterno, lato tempia DX
+    const dxTop = tpt(386);
+    const dxBot = tpt(374);
+
+    // ── Calcolo angoli ───────────────────────────────────────────────────────
+    // Occhio DX: outer è a DESTRA di inner  → dxExt.x > dxInt.x → denominatore > 0
+    // angolo positivo = antiorario (cat-eye: outer più alto → numeratore > 0)
+    const angleDx = Math.atan2(dxInt.y - dxExt.y, dxExt.x - dxInt.x) * 180 / Math.PI;
+
+    // Occhio SX: outer è a SINISTRA di inner → sxInt.x > sxExt.x → denominatore > 0
+    // angolo positivo = orario (cat-eye: outer più alto → numeratore > 0)
+    const angleSx = Math.atan2(sxInt.y - sxExt.y, sxInt.x - sxExt.x) * 180 / Math.PI;
+
+    // ── Metriche derivate ────────────────────────────────────────────────────
+    const openSx = Math.sqrt(Math.pow(sxTop.x - sxBot.x, 2) + Math.pow(sxTop.y - sxBot.y, 2));
+    const openDx = Math.sqrt(Math.pow(dxTop.x - dxBot.x, 2) + Math.pow(dxTop.y - dxBot.y, 2));
+
+    const absDiff = Math.abs(angleDx - angleSx);
+
+    let symDesc;
+    if (absDiff < 1.5) symDesc = 'Simmetrica (< 1.5°)';
+    else if (absDiff < 4) symDesc = 'Lieve asimmetria (1.5–4°)';
+    else if (absDiff < 8) symDesc = 'Asimmetria moderata (4–8°)';
+    else symDesc = 'Asimmetria marcata (> 8°)';
+
+    function eyeShape(angle) {
+      if (angle > 3) return 'Cat eye ↗';
+      if (angle > 0) return 'Liev. rialzato';
+      if (angle > -3) return 'Neutro';
+      return 'Downturned ↘';
+    }
+
+    let higherEye = '';
+    if (absDiff >= 1.5) {
+      higherEye = angleDx > angleSx
+        ? 'Occhio Dx più inclinato verso l\'alto'
+        : 'Occhio Sx più inclinato verso l\'alto';
+    }
+
+    // ── Tabella misurazioni ──────────────────────────────────────────────────
+    const tableBody = document.getElementById('unified-table-body');
+    if (tableBody) {
+      tableBody.querySelectorAll('[data-measurement="eye-rotation"]').forEach(r => r.remove());
+    }
+
+    addMeasurementToTable('👁️ Angolo Occhio Sx', angleSx.toFixed(1), '°', 'eye-rotation');
+    addMeasurementToTable('👁️ Forma Sx', eyeShape(angleSx), '', 'eye-rotation');
+    addMeasurementToTable('👁️ Angolo Occhio Dx', angleDx.toFixed(1), '°', 'eye-rotation');
+    addMeasurementToTable('👁️ Forma Dx', eyeShape(angleDx), '', 'eye-rotation');
+    addMeasurementToTable('↔️ Diff. Rotazione', absDiff.toFixed(1), '°', 'eye-rotation');
+    addMeasurementToTable('⚖️ Simmetria', symDesc, '', 'eye-rotation');
+    if (higherEye) addMeasurementToTable('📐 Predominanza', higherEye, '', 'eye-rotation');
+    addMeasurementToTable('📏 Apertura Sx', openSx.toFixed(1), 'px', 'eye-rotation');
+    addMeasurementToTable('📏 Apertura Dx', openDx.toFixed(1), 'px', 'eye-rotation');
+
+    ensureMeasurementsSectionOpen();
+
+    // ── Overlay visivo ───────────────────────────────────────────────────────
+    const overlayObjs = _drawEyeRotationOverlay(sxExt, sxInt, dxInt, dxExt, angleSx, angleDx);
+    measurementOverlays.set('eyeRotation', overlayObjs);
+
+    window.eyeRotationOverlayActive = true;
+    window._eyeRotationCachedAngles = { angleSx, angleDx };
+
+    const voiceMsg = `Rotazione occhi: sinistro ${angleSx.toFixed(1)} gradi, destro ${angleDx.toFixed(1)} gradi. Differenza: ${absDiff.toFixed(1)} gradi. ${symDesc}.`;
+    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+      voiceAssistant.speak(voiceMsg);
+    }
+
+    showToast(`✅ Rotazione occhi: diff ${absDiff.toFixed(1)}°`, 'success', 2500);
+
+  } catch (err) {
+    console.error('❌ Errore rotazione occhi:', err);
+    showToast(`❌ Errore: ${err.message}`, 'error');
+    const btn = document.querySelector('[onclick*="measureEyeRotationDiff"]');
+    if (btn) btn.classList.remove('btn-active');
+  }
+}
+
+/**
+ * Disegna sul canvas le linee degli assi oculari con etichette angolo.
+ * sxExt/sxInt = canto esterno/interno occhio SINISTRO nell'immagine (canvas coords)
+ * dxInt/dxExt = canto interno/esterno occhio DESTRO nell'immagine (canvas coords)
+ * Restituisce l'array di oggetti Fabric creati (per measurementOverlays).
+ */
+function _drawEyeRotationOverlay(sxExt, sxInt, dxInt, dxExt, angleSx, angleDx) {
+  if (!fabricCanvas) return [];
+
+  // Rimuovi overlay precedenti
+  fabricCanvas.getObjects().filter(o => o.isEyeRotationOverlay).forEach(o => fabricCanvas.remove(o));
+
+  const COL_SX = '#00E5FF';  // ciano = occhio sinistro (sinistra immagine)
+  const COL_DX = '#FF6B35';  // arancione = occhio destro (destra immagine)
+  const objs = [];
+
+  function mkLine(p1, p2, color) {
+    const o = new fabric.Line([p1.x, p1.y, p2.x, p2.y], {
+      stroke: color, strokeWidth: 2.5, selectable: false, evented: false,
+      isEyeRotationOverlay: true
+    });
+    fabricCanvas.add(o); objs.push(o); return o;
+  }
+
+  function mkDot(p, color) {
+    const o = new fabric.Circle({
+      left: p.x - 4, top: p.y - 4, radius: 4,
+      fill: color, stroke: '#fff', strokeWidth: 1,
+      selectable: false, evented: false, isEyeRotationOverlay: true
+    });
+    fabricCanvas.add(o); objs.push(o); return o;
+  }
+
+  function mkLabel(text, x, y, color) {
+    const o = new fabric.Text(text, {
+      left: x, top: y, fontSize: 13, fill: color, fontFamily: 'monospace',
+      fontWeight: 'bold', selectable: false, evented: false,
+      isEyeRotationOverlay: true,
+      shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.85)', blur: 4, offsetX: 1, offsetY: 1 })
+    });
+    fabricCanvas.add(o); objs.push(o); return o;
+  }
+
+  // Linee asse oculare (inner → outer)
+  mkLine(sxInt, sxExt, COL_SX);
+  mkLine(dxInt, dxExt, COL_DX);
+
+  // Pallini sui canti
+  mkDot(sxExt, COL_SX); mkDot(sxInt, COL_SX);
+  mkDot(dxInt, COL_DX); mkDot(dxExt, COL_DX);
+
+  // Etichette angolo centrate sopra ogni asse
+  const sxMidX = (sxInt.x + sxExt.x) / 2;
+  const sxMidY = (sxInt.y + sxExt.y) / 2;
+  const dxMidX = (dxInt.x + dxExt.x) / 2;
+  const dxMidY = (dxInt.y + dxExt.y) / 2;
+
+  mkLabel(`Sx ${angleSx.toFixed(1)}°`, sxMidX - 24, sxMidY - 20, COL_SX);
+  mkLabel(`Dx ${angleDx.toFixed(1)}°`, dxMidX - 24, dxMidY - 20, COL_DX);
+
+  fabricCanvas.renderAll();
+  return objs;
+}
+
+// Registra globalmente
+window.measureEyeRotationDiff = measureEyeRotationDiff;
+
+/**
+ * Ridisegna l'overlay rotazione occhi con le coordinate aggiornate dell'immagine.
+ * Chiamato da main.js ad ogni trasformazione (rotazione, spostamento, zoom).
+ */
+window.redrawEyeRotationOverlay = function () {
+  if (!window.eyeRotationOverlayActive) return;
+  if (!currentLandmarks || currentLandmarks.length === 0) return;
+  if (typeof window.transformLandmarkCoordinate !== 'function') return;
+  const needed = [33, 133, 362, 263];
+  if (needed.some(i => !currentLandmarks[i])) return;
+  const tpt = idx => window.transformLandmarkCoordinate(currentLandmarks[idx]);
+  const { angleSx = 0, angleDx = 0 } = window._eyeRotationCachedAngles || {};
+  // sxExt=33, sxInt=133, dxInt=362, dxExt=263
+  const objs = _drawEyeRotationOverlay(tpt(33), tpt(133), tpt(362), tpt(263), angleSx, angleDx);
+  // Aggiorna il registro overlay così hideMeasurementOverlay può rimuoverli
+  measurementOverlays.set('eyeRotation', objs);
+};
 
 /**
  * Aggiorna la tolleranza Magic Wand e ricalcola i contorni sopracciglia in tempo reale
@@ -4565,7 +4852,7 @@ function redrawAllMeasurementOverlays() {
   // Ricrea ogni misurazione attiva
   activeTypes.forEach(measurementType => {
     console.log(`🔄 Ridisegno: ${measurementType}`);
-    showMeasurementOverlay(measurementType);
+    showMeasurementOverlay(measurementType, true); // silent: no tabella, no voce
   });
 
   if (fabricCanvas) {
@@ -4576,5 +4863,403 @@ function redrawAllMeasurementOverlays() {
 }
 
 window.redrawAllMeasurementOverlays = redrawAllMeasurementOverlays;
+
+/**
+ * Ridisegna l'overlay aree sopracciglia con debounce per limitare le elaborazioni
+ * pixel costose durante rotazioni rapide successive.
+ * Chiamato da main.js sulle stesse trasformazioni che ridisegnano l'asse di simmetria.
+ */
+(function () {
+  let _eyebrowRedrawTimer = null;
+  window.redrawEyebrowAreasOverlay = function () {
+    return; // DISABILITATO - Aree Sopracciglia nascosto
+  };
+}());
+
+// =============================================================================
+// === SIMMETRIA ALI NASALI ===
+// =============================================================================
+
+/**
+ * Calcola la simmetria delle ale nasali misurando la distanza
+ * dal Nose Bridge Top (lm 1) verso Bridge Nose Left (lm 2) e Bridge Nose Right (lm 98).
+ * Disegna overlay colorato sul canvas e annuncia vocalmente il risultato.
+ *
+ * Landmark MediaPipe:
+ *   Nose Bridge Top  : 1
+ *   Bridge Nose Left : 2   (lato sinistro immagine)
+ *   Bridge Nose Right: 98  (lato destro immagine)
+ */
+async function measureNosalWingSymmetry(event) {
+  const button = event ? event.currentTarget || event.target : null;
+  if (button) {
+    button.disabled = true;
+    button._origText = button.textContent;
+    button.textContent = '⏳...';
+  }
+
+  try {
+    if (!currentLandmarks || currentLandmarks.length === 0) {
+      const ok = await autoDetectLandmarksOnImageChange();
+      if (!ok || !currentLandmarks || currentLandmarks.length === 0) {
+        showToast('⚠️ Impossibile rilevare il viso', 'warning');
+        return;
+      }
+    }
+
+    // Landmark: 1 = Nose Bridge Top, 2 = Bridge Nose Left, 98 = Bridge Nose Right
+    const required = [1, 2, 98];
+    for (const idx of required) {
+      if (!currentLandmarks[idx]) {
+        showToast(`⚠️ Landmark ${idx} non disponibile`, 'warning');
+        return;
+      }
+    }
+
+    function tpt(idx) {
+      const lm = currentLandmarks[idx];
+      return (window.transformLandmarkCoordinate) ? window.transformLandmarkCoordinate(lm) : lm;
+    }
+
+    const top = tpt(1);   // Nose Bridge Top
+    const wingL = tpt(2);  // Bridge Nose Left
+    const wingR = tpt(98); // Bridge Nose Right
+
+    function dist2D(a, b) {
+      return Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.y - a.y, 2));
+    }
+
+    const distL = dist2D(top, wingL);
+    const distR = dist2D(top, wingR);
+
+    // Disegna overlay
+    _drawNosalWingOverlay(top, wingL, wingR, distL, distR);
+
+    // Calcola differenza %
+    const maxDist = Math.max(distL, distR);
+    const asymPercent = maxDist > 0 ? (Math.abs(distL - distR) / maxDist) * 100 : 0;
+    const largerSide = distL > distR ? 'sinistra' : distL < distR ? 'destra' : null;
+
+    // Aggiorna tabella
+    const tableBody = document.getElementById('unified-table-body');
+    if (tableBody) {
+      tableBody.querySelectorAll('[data-measurement="nasal-wing"]').forEach(r => r.remove());
+    }
+    ensureMeasurementsSectionOpen();
+    addMeasurementToTable('👃 Ala Nasale SX', distL.toFixed(1), 'px', 'nasal-wing');
+    addMeasurementToTable('👃 Ala Nasale DX', distR.toFixed(1), 'px', 'nasal-wing');
+    addMeasurementToTable('⚖️ Asimmetria Naso', asymPercent.toFixed(1), '%', 'nasal-wing');
+
+    // Stato globale per ridisegno su trasformazioni
+    window.nosalWingOverlayActive = true;
+
+    // Voce
+    let voiceMsg;
+    if (largerSide) {
+      voiceMsg = `L'ala nasale ${largerSide} è più larga di circa ${asymPercent.toFixed(0)} percento.`;
+    } else {
+      voiceMsg = 'Le due ali nasali sono perfettamente simmetriche.';
+    }
+    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+      voiceAssistant.speak(voiceMsg);
+    }
+
+    const toastMsg = largerSide
+      ? `Ala ${largerSide} più larga (${asymPercent.toFixed(1)}%)`
+      : 'Ali nasali simmetriche';
+    showToast(`👃 ${toastMsg}`, asymPercent < 5 ? 'success' : 'warning', 3000);
+
+  } catch (error) {
+    console.error('❌ Errore simmetria ali nasali:', error);
+    showToast(`❌ Errore: ${error.message}`, 'error');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = button._origText || '👃 Sim. Naso';
+    }
+  }
+}
+
+/**
+ * Disegna le linee e i punti dell'overlay simmetria ali nasali.
+ * Separato dalla funzione principale per essere richiamato al ridisegno.
+ */
+function _drawNosalWingOverlay(top, wingL, wingR, distL, distR) {
+  if (!fabricCanvas) return;
+
+  fabricCanvas.getObjects().filter(o => o.isNosalWingOverlay).forEach(o => fabricCanvas.remove(o));
+
+  const COL_L = '#00E5FF';  // ciano = lato sinistro
+  const COL_R = '#FF6B35';  // arancione = lato destro
+  const COL_T = '#FFFFFF';  // bianco = punto apicale
+
+  function addLine(p1, p2, color) {
+    fabricCanvas.add(new fabric.Line([p1.x, p1.y, p2.x, p2.y], {
+      stroke: color, strokeWidth: 2.5, selectable: false, evented: false,
+      isNosalWingOverlay: true
+    }));
+  }
+
+  function addDot(p, color) {
+    fabricCanvas.add(new fabric.Circle({
+      left: p.x - 4, top: p.y - 4, radius: 4,
+      fill: color, stroke: '#000', strokeWidth: 1,
+      selectable: false, evented: false, isNosalWingOverlay: true
+    }));
+  }
+
+  function addLabel(text, x, y, color) {
+    fabricCanvas.add(new fabric.Text(text, {
+      left: x, top: y, fontSize: 13, fill: color, fontFamily: 'monospace',
+      fontWeight: 'bold', selectable: false, evented: false,
+      isNosalWingOverlay: true,
+      shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.85)', blur: 4, offsetX: 1, offsetY: 1 })
+    }));
+  }
+
+  addLine(top, wingL, COL_L);
+  addLine(top, wingR, COL_R);
+
+  addDot(top, COL_T);
+  addDot(wingL, COL_L);
+  addDot(wingR, COL_R);
+
+  addLabel(`SX ${distL.toFixed(1)}`, (top.x + wingL.x) / 2 - 28, (top.y + wingL.y) / 2 - 18, COL_L);
+  addLabel(`DX ${distR.toFixed(1)}`, (top.x + wingR.x) / 2 + 4, (top.y + wingR.y) / 2 - 18, COL_R);
+
+  fabricCanvas.renderAll();
+}
+
+window.measureNosalWingSymmetry = measureNosalWingSymmetry;
+
+/**
+ * Ridisegna l'overlay simmetria ali nasali con coordinate aggiornate.
+ * Chiamato da main.js ad ogni trasformazione canvas.
+ */
+window.redrawNosalWingOverlay = function () {
+  if (!window.nosalWingOverlayActive) return;
+  if (!currentLandmarks || currentLandmarks.length === 0) return;
+  if (typeof window.transformLandmarkCoordinate !== 'function') return;
+  if (!currentLandmarks[1] || !currentLandmarks[2] || !currentLandmarks[98]) return;
+
+  const tpt = idx => window.transformLandmarkCoordinate(currentLandmarks[idx]);
+  const top = tpt(1);
+  const wingL = tpt(2);
+  const wingR = tpt(98);
+
+  function dist2D(a, b) {
+    return Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.y - a.y, 2));
+  }
+
+  _drawNosalWingOverlay(top, wingL, wingR, dist2D(top, wingL), dist2D(top, wingR));
+};
+
+
+// =============================================================================
+// === SIMMETRIA SOPRACCIGLIA ===
+// Stesso pattern di measureEyeAreas: usa currentLandmarks + createAreaPolygon.
+// I poligoni Fabric.js seguono automaticamente scala, posizione e rotazione
+// dell'immagine sul canvas → nessun problema di proporzionalita'.
+// =============================================================================
+
+function measureEyebrowSymmetry(event) {
+  const button = event
+    ? (event.currentTarget || event.target)
+    : document.querySelector('[onclick*="measureEyebrowSymmetry"]');
+
+  // Toggle OFF
+  if (button && button.classList.contains('btn-active')) {
+    button.classList.remove('btn-active');
+    activeMeasurements.delete('eyebrowSymmetry');
+    window._eyebrowSymmetryCache = null;
+    if (measurementOverlays.has('eyebrowSymmetry')) {
+      measurementOverlays.get('eyebrowSymmetry').forEach(o => fabricCanvas && fabricCanvas.remove(o));
+      measurementOverlays.delete('eyebrowSymmetry');
+      fabricCanvas && fabricCanvas.renderAll();
+    }
+    return;
+  }
+
+  // Toggle ON
+  if (button) button.classList.add('btn-active');
+  activeMeasurements.set('eyebrowSymmetry', true);
+  _performEyebrowSymmetryAPI(button).catch(err => {
+    console.error('❌ Simmetria sopracciglia:', err);
+    showToast(`Errore: ${err.message}`, 'error');
+    activeMeasurements.delete('eyebrowSymmetry');
+    if (button) button.classList.remove('btn-active');
+  });
+}
+
+/**
+ * Riposiziona (o ricostruisce dalla cache) il fabric.Image dell'overlay sopracciglia
+ * dopo rotazione/allineamento. NON richiama l'API.
+ */
+function _repositionEyebrowSymmetryOverlay() {
+  if (!fabricCanvas || !currentImage) return;
+
+  const existing = measurementOverlays.get('eyebrowSymmetry');
+  if (existing && existing.length > 0) {
+    // Overlay ancora in canvas: aggiorna solo la trasformata
+    const img = existing[0];
+    const natW = img._eyebrowNatW || img.width;
+    const natH = img._eyebrowNatH || img.height;
+    img.set({
+      left: currentImage.left,
+      top: currentImage.top,
+      scaleX: currentImage.scaleX * (natW / img.width),
+      scaleY: currentImage.scaleY * (natH / img.height),
+      angle: currentImage.angle,
+      originX: currentImage.originX || 'left',
+      originY: currentImage.originY || 'top',
+    });
+    img.setCoords();
+    fabricCanvas.renderAll();
+    return;
+  }
+
+  // Overlay rimosso dalla mappa (es. da redrawAllMeasurementOverlays): ricostruisci dalla cache
+  if (!window._eyebrowSymmetryCache) return;
+  const { b64, natW, natH } = window._eyebrowSymmetryCache;
+  fabric.Image.fromURL(b64, (img) => {
+    if (!img || !fabricCanvas || !currentImage) return;
+    img._eyebrowNatW = natW;
+    img._eyebrowNatH = natH;
+    img.set({
+      left: currentImage.left,
+      top: currentImage.top,
+      scaleX: currentImage.scaleX * (natW / img.width),
+      scaleY: currentImage.scaleY * (natH / img.height),
+      angle: currentImage.angle,
+      originX: currentImage.originX || 'left',
+      originY: currentImage.originY || 'top',
+      selectable: false, evented: false, hasControls: false, hasBorders: false, opacity: 1,
+    });
+    img.setCoords();
+    fabricCanvas.add(img);
+    fabricCanvas.renderAll();
+    measurementOverlays.set('eyebrowSymmetry', [img]);
+  });
+}
+
+async function _performEyebrowSymmetryAPI(button) {
+  if (!fabricCanvas || !currentImage) {
+    showToast('Carica prima un\'immagine', 'error');
+    if (button) button.classList.remove('btn-active');
+    return;
+  }
+
+  showToast('Analisi sopracciglia in corso...', 'info', 0);
+
+  // 1. Ottieni l'elemento immagine originale e creane una copia alla risoluzione nativa
+  const imgEl = currentImage.getElement();
+  const natW = imgEl.naturalWidth || imgEl.width;
+  const natH = imgEl.naturalHeight || imgEl.height;
+
+  const offscreen = document.createElement('canvas');
+  offscreen.width = natW;
+  offscreen.height = natH;
+  const ctx = offscreen.getContext('2d');
+  ctx.drawImage(imgEl, 0, 0, natW, natH);
+  const imageB64 = offscreen.toDataURL('image/jpeg', 0.92);
+
+  // 2. Chiamata API
+  const resp = await fetch('/api/eyebrow-symmetry', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: imageB64 }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || 'Errore API');
+  }
+  const data = await resp.json();
+
+  if (!data.face_detected) {
+    showToast('Nessun volto rilevato', 'warning', 3000);
+    if (button) button.classList.remove('btn-active');
+    return;
+  }
+
+  // 3. Rimuovi overlay precedente se esiste
+  if (measurementOverlays.has('eyebrowSymmetry')) {
+    measurementOverlays.get('eyebrowSymmetry').forEach(o => fabricCanvas.remove(o));
+    measurementOverlays.delete('eyebrowSymmetry');
+  }
+
+  // 4. Crea fabric.Image dall'overlay PNG trasparente
+  await new Promise((resolve, reject) => {
+    fabric.Image.fromURL(data.overlay_b64, (img) => {
+      if (!img) { reject(new Error('Impossibile creare overlay')); return; }
+
+      // Posiziona esattamente sopra currentImage (stessa scala, rotazione, posizione)
+      img.set({
+        left: currentImage.left,
+        top: currentImage.top,
+        scaleX: currentImage.scaleX * (natW / img.width),
+        scaleY: currentImage.scaleY * (natH / img.height),
+        angle: currentImage.angle,
+        originX: currentImage.originX || 'left',
+        originY: currentImage.originY || 'top',
+        selectable: false,
+        evented: false,
+        hasControls: false,
+        hasBorders: false,
+        opacity: 1,
+      });
+
+      // Salva dimensioni native sull'oggetto e nella cache per riposizionamenti futuri senza API
+      img._eyebrowNatW = natW;
+      img._eyebrowNatH = natH;
+      window._eyebrowSymmetryCache = { b64: data.overlay_b64, natW, natH };
+      fabricCanvas.add(img);
+      fabricCanvas.renderAll();
+      measurementOverlays.set('eyebrowSymmetry', [img]);
+      resolve();
+    });
+  });
+
+  // 5. Aggiorna tabella misurazioni
+  const leftArea = data.left_area;
+  const rightArea = data.right_area;
+  const maxArea = Math.max(leftArea, rightArea);
+  const asymPercent = maxArea > 0 ? (Math.abs(leftArea - rightArea) / maxArea) * 100 : 0;
+
+  let comparisonText, voiceMsg;
+  if (asymPercent < 5) {
+    comparisonText = 'Sopracciglia simmetriche';
+    voiceMsg = 'Le due sopracciglia risultano simmetriche.';
+  } else if (leftArea > rightArea) {
+    comparisonText = `Sopracciglia sinistra più ampia (+${asymPercent.toFixed(1)}%)`;
+    voiceMsg = `La sopracciglia sinistra è più ampia di circa ${asymPercent.toFixed(0)} percento.`;
+  } else {
+    comparisonText = `Sopracciglia destra più ampia (+${asymPercent.toFixed(1)}%)`;
+    voiceMsg = `La sopracciglia destra è più ampia di circa ${asymPercent.toFixed(0)} percento.`;
+  }
+
+  ensureMeasurementsSectionOpen();
+  addMeasurementToTable('✂️ Sopracciglio SX', leftArea.toFixed(0), 'px²');
+  addMeasurementToTable('✂️ Sopracciglio DX', rightArea.toFixed(0), 'px²');
+  addMeasurementToTable('⚖️ Asimmetria Sopr.', asymPercent.toFixed(1), '%');
+  addMeasurementToTable('Valutazione', comparisonText, '');
+
+  if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+    voiceAssistant.speak(voiceMsg);
+  }
+
+  showToast(`✂️ ${comparisonText}`, asymPercent < 5 ? 'success' : 'warning', 3000);
+}
+
+window.measureEyebrowSymmetry = measureEyebrowSymmetry;
+
+// Versione debounced per rotazioni/allineamenti rapidi (no API, solo reposizionamento)
+(function () {
+  let _ebSymTimer = null;
+  window.redrawEyebrowSymmetryOverlay = function () {
+    if (!window.activeMeasurements || !window.activeMeasurements.has('eyebrowSymmetry')) return;
+    clearTimeout(_ebSymTimer);
+    _ebSymTimer = setTimeout(_repositionEyebrowSymmetryOverlay, 50);
+  };
+}());
 
 // === FINE DEL FILE ===

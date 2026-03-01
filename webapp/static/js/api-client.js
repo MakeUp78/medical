@@ -19,10 +19,6 @@ const API_CONFIG = {
   timeout: 120000 // 120 secondi (2 minuti) - aumentato per elaborazione green dots
 };
 
-// Debug log per verificare la configurazione
-console.log('🔧 API_CONFIG caricata:', API_CONFIG.baseURL);
-console.log('🔧 Timestamp caricamento:', new Date().toISOString());
-
 // === FUNZIONI API ===
 
 /**
@@ -36,8 +32,6 @@ async function checkAPIHealth() {
     // Aggiungi timestamp per evitare cache
     const timestamp = new Date().getTime();
     const healthURL = `${baseURL}${API_CONFIG.endpoints.health}?t=${timestamp}`;
-    console.log('🔍 Checking API Health at:', healthURL);
-    console.log('🔍 API_CONFIG.baseURL:', API_CONFIG.baseURL);
 
     const response = await fetch(healthURL, {
       method: 'GET',
@@ -49,7 +43,7 @@ async function checkAPIHealth() {
 
     if (response.ok) {
       const data = await response.json();
-      console.log('✅ API Backend connesso:', data);
+      console.debug('✅ API Backend connesso:', data.status, data.timestamp);
       updateAPIStatus(true, data);
       return data;
     } else {
@@ -381,15 +375,16 @@ async function analyzeGreenDotsViaAPI(imageBase64, parameters = {}) {
     console.log('⚪ API White Dots URL (via green-dots endpoint):', url);
 
     const defaultParams = {
-      cluster_size_min: 9,
-      cluster_size_max: 331,
+      // Valori factory — allineati a WHITE_DOTS_FACTORY in main.js
+      cluster_size_min: 3,
+      cluster_size_max: 600,
       clustering_radius: 2,
-      min_distance: 22,
-      // Parametri adattivi 2-pass (sovrascrivono i valori fissi del backend)
-      pass1_percentile: 60,
-      pass1_sat_cap: 25,
+      min_distance: 30,
+      // Parametri adattivi 2-pass
+      pass1_percentile: 50,
+      pass1_sat_cap: 28,
       pass2_percentile: 80,
-      pass2_sat_cap: 20,
+      pass2_sat_cap: 25,
     };
 
     // Merge parametri con precedenza a quelli passati
@@ -405,11 +400,11 @@ async function analyzeGreenDotsViaAPI(imageBase64, parameters = {}) {
       ...mergedParams
     };
 
-    console.log('⚙️ Parametri rilevamento (2-pass adattivo):', {
+    // Nota: i parametri pass1/pass2 sono inviati per retrocompat. ma il backend
+    // usa _detect_white_dots_v3 (dlib perimetro sopracciglio) → ignora questi valori.
+    console.log('⚙️ [v3-dlib-perimeter] Parametri inviati (ignorati dal backend v3):', {
       cluster_size_range: mergedParams.cluster_size_range,
       min_distance: mergedParams.min_distance,
-      pass1: { percentile: mergedParams.pass1_percentile, sat_cap: mergedParams.pass1_sat_cap },
-      pass2: { percentile: mergedParams.pass2_percentile, sat_cap: mergedParams.pass2_sat_cap },
     });
 
     const response = await fetch(url, {

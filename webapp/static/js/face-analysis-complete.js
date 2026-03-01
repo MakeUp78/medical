@@ -318,7 +318,130 @@ async function loadKimerikaLogo() {
 }
 
 /**
- * Genera PDF del report con bibliografia, formattazione scientifica e immagini incorporate
+ * Genera didascalia scientifica personalizzata per ogni immagine di debug
+ */
+function getImageCaption(key, reportData) {
+    const data = reportData && reportData.data ? reportData.data : {};
+    const metrics = data.metriche_facciali || {};
+    const features = data.caratteristiche_facciali || {};
+    const faceShape = data.forma_viso || 'N/D';
+    const vis = data.analisi_visagistica || {};
+
+    const formaLabel = faceShape.charAt(0).toUpperCase() + faceShape.slice(1);
+    const sopraLabel = vis.forma_sopracciglio ? vis.forma_sopracciglio.value || vis.forma_sopracciglio : 'N/D';
+
+    const captions = {
+        'face_mesh': `Visualizzazione della mesh facciale MediaPipe con 468 landmark rilevati in tempo reale ` +
+            `sull'immagine analizzata. I punti colorati evidenziano le zone anatomiche chiave: arancione = occhi, ` +
+            `verde = naso, rosso = bocca, giallo = sopracciglia, ciano = contorno viso. ` +
+            `Forma viso classificata: ${formaLabel.toUpperCase()}. ` +
+            `Distanza inter-oculare misurata: ${metrics.distanza_occhi ? metrics.distanza_occhi.toFixed(1) : 'N/D'} px.`,
+
+        'geometria': `Analisi geometrica con misure estratte dai landmark reali del viso. ` +
+            `Larghezza fronte: ${metrics.larghezza_fronte ? metrics.larghezza_fronte.toFixed(0) : 'N/D'} px, ` +
+            `zigomi: ${metrics.larghezza_zigomi ? metrics.larghezza_zigomi.toFixed(0) : 'N/D'} px, ` +
+            `mascella: ${metrics.larghezza_mascella ? metrics.larghezza_mascella.toFixed(0) : 'N/D'} px. ` +
+            `Le linee orizzontali ciano indicano i terzi facciali rinascimentali. ` +
+            `La linea blu indica il punto della sezione aurea (Phi = 1.618). ` +
+            `Rapporto L/W misurato: ${metrics.rapporto_lunghezza_larghezza ? metrics.rapporto_lunghezza_larghezza.toFixed(3) : 'N/D'} (ideale: 1.30-1.40).`,
+
+        'sopracciglia': `Mappa della zona sopraccigliare con le tre zone funzionali colorate: ` +
+            `verde = INIZIO (ancoraggio nasale), giallo = ARCO/CORPO (zona di curvatura), ` +
+            `rosso-arancio = CODA (terminazione laterale). ` +
+            `Distanza occhio-sopracciglio misurata: ${metrics.distanza_occhio_sopracciglio ? metrics.distanza_occhio_sopracciglio.toFixed(1) : 'N/D'} px ` +
+            `(media bilaterale). Distanza inter-oculare: ${metrics.distanza_occhi ? metrics.distanza_occhi.toFixed(1) : 'N/D'} px. ` +
+            `Caratteristiche: occhi ${features.occhi_distanza || 'N/D'}, dimensione ${features.occhi_dimensione || 'N/D'}.`,
+
+        'forma_ideale': `Guida professionale per la forma sopracciglio consigliata: ${sopraLabel.toUpperCase()}. ` +
+            `La zona verde semi-trasparente indica l'area target di densita' del sopracciglio (bordo superiore e inferiore). ` +
+            `Marcatori di riferimento: INIZIO (punto ciano) allineato all'ala nasale, ` +
+            `punto massimo ARCO (punto magenta), CODA (punto arancione) allineata all'angolo laterale occhio. ` +
+            `La freccia con misura indica lo spessore massimo consigliato nel punto centrale. ` +
+            `Forma viso: ${formaLabel.toUpperCase()} — la scelta della forma sopracciglio e' calibrata su questa struttura.`,
+
+        'mappa_completa': `Mappa di sintesi completa dell'analisi visagistica. ` +
+            `La linea ciano verticale indica l'asse di simmetria (allineato alla punta del naso). ` +
+            `Le linee gialle mostrano i terzi facciali, la linea blu la sezione aurea Phi. ` +
+            `Forma viso: ${formaLabel.toUpperCase()}, rapporto L/W: ${metrics.rapporto_lunghezza_larghezza ? metrics.rapporto_lunghezza_larghezza.toFixed(3) : 'N/D'}, ` +
+            `rapporto M/F: ${metrics.rapporto_mascella_fronte ? metrics.rapporto_mascella_fronte.toFixed(3) : 'N/D'}, ` +
+            `prominenza zigomi: ${metrics.prominenza_zigomi ? metrics.prominenza_zigomi.toFixed(3) : 'N/D'}.`,
+
+        'proporzione_aurea': `Analisi delle proporzioni auree (Phi = 1.618) sovrapposte al viso reale. ` +
+            `Il rettangolo aureo (linee dorate) e' calcolato sulla larghezza degli zigomi e sull'altezza facciale misurata. ` +
+            `La spirale di Fibonacci e' ancorata al naso come punto focale naturale del viso. ` +
+            `Rapporto L/W misurato: ${metrics.rapporto_lunghezza_larghezza ? metrics.rapporto_lunghezza_larghezza.toFixed(3) : 'N/D'} ` +
+            `(rapporto aureo ideale: 1.618). Le linee tratteggiate indicano dove le proporzioni del viso si avvicinano ` +
+            `o si discostano dall'armonia aurea classica (basata su Marquardt Beauty Mask, 2002).`,
+
+        'analisi_simmetria': `Analisi visiva della simmetria bilaterale. ` +
+            `Colonna sinistra: viso originale. Colonna centrale: sovrapposizione con asse di simmetria. ` +
+            `Colonna destra: proiezione simmetrica del lato sinistro — mostra come apparirebbe il viso ` +
+            `con simmetria perfetta. Le differenze visibili tra colonna centrale e destra riflettono ` +
+            `l'asimmetria naturale presente in ogni viso umano. ` +
+            `L'asimmetria facciale moderata (< 5% di variazione) e' considerata fisiologicamente normale ` +
+            `(Ferrario et al., 1993, Journal of Craniofacial Surgery).`,
+
+        'guida_makeup': `Guida pratica per l'applicazione professionale del sopracciglio tipo ${sopraLabel.toUpperCase()}. ` +
+            `La zona verde semi-trasparente indica l'area da riempire con matita o pomade. ` +
+            `Le tre linee guida verticali calcolate sui landmark facciali reali indicano: ` +
+            `INIZIO (linea gialla, allineato all'ala del naso), ARCO (linea arancione, allineato al bordo esterno ` +
+            `dell'iride in posizione frontale), FINE/CODA (linea rossa, allineata all'angolo laterale dell'occhio). ` +
+            `Tutte le misure sono personalizzate sui landmark del viso analizzato.`
+    };
+
+    return captions[key] || `Immagine di analisi facciale: ${key.replace(/_/g, ' ').toUpperCase()}.`;
+}
+
+/**
+ * Disegna una barra orizzontale con marker nel PDF (helper per dashboard dati)
+ */
+function drawMetricBar(doc, x, y, barWidth, barHeight, value, minVal, maxVal, idealMin, idealMax, label, unit) {
+    const barBg = barWidth;
+
+    // Sfondo barra grigio chiaro
+    doc.setFillColor(230, 225, 232);
+    doc.setDrawColor(180, 170, 185);
+    doc.setLineWidth(0.2);
+    doc.roundedRect(x, y, barBg, barHeight, 1, 1, 'FD');
+
+    // Zona ideale in verde chiaro
+    const idealX = x + ((idealMin - minVal) / (maxVal - minVal)) * barBg;
+    const idealW = ((idealMax - idealMin) / (maxVal - minVal)) * barBg;
+    doc.setFillColor(180, 230, 180);
+    doc.setDrawColor(120, 190, 120);
+    doc.setLineWidth(0.1);
+    doc.roundedRect(idealX, y, Math.max(idealW, 1), barHeight, 0.5, 0.5, 'FD');
+
+    // Barra valore misurato
+    const clampedVal = Math.min(Math.max(value, minVal), maxVal);
+    const valW = ((clampedVal - minVal) / (maxVal - minVal)) * barBg;
+    doc.setFillColor(129, 29, 123);
+    doc.roundedRect(x, y, Math.max(valW, 1.5), barHeight, 1, 1, 'F');
+
+    // Marker valore (linea verticale gialla + punto)
+    const valX = x + valW;
+    doc.setDrawColor(200, 160, 0);
+    doc.setLineWidth(0.7);
+    doc.line(valX, y - 1, valX, y + barHeight + 1);
+    doc.setFillColor(253, 210, 0);
+    doc.circle(valX, y + barHeight / 2, 1.2, 'F');
+
+    // Label a sinistra
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(60, 40, 70);
+    doc.text(label, x - 1, y + barHeight - 0.5, { align: 'right' });
+
+    // Valore a destra
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(50, 50, 50);
+    doc.text(`${value.toFixed(3)} ${unit}`, x + barBg + 1.5, y + barHeight - 0.5);
+}
+
+/**
+ * Genera PDF del report con formattazione scientifica professionale,
+ * dashboard dati, grafici a barre, pagina indice e immagini con didascalie
  */
 async function generateAnalysisPDF() {
     if (!currentAnalysisReport) {
@@ -330,472 +453,676 @@ async function generateAnalysisPDF() {
         // Carica il logo Kimerika
         const logoImg = await loadKimerikaLogo();
 
-        // Usa jsPDF
         const { jsPDF } = window.jspdf;
-        const doc = new jsPDF({
-            orientation: 'portrait',
-            unit: 'mm',
-            format: 'a4'
-        });
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-        // Configurazione
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();
         const margin = 15;
-        const lineHeight = 6;
         const maxWidth = pageWidth - (margin * 2);
 
-        let currentY = margin;
-        let inSection4 = false; // Flag per rilevare la sezione 4 (immagini)
+        // LineHeight dinamico per tipo di elemento
+        const LH = { section: 10, subsection: 8.5, body: 6.5, biblio: 5.5, empty: 3 };
 
-        // === PAGINA DI COPERTINA PROFESSIONALE ===
-        // Palette: #811d7b (viola), #fdf200 (giallo), #5f5f5f (grigio)
+        // Helper: aggiungi nuova pagina con header minimale
+        const addContentPage = () => {
+            doc.addPage();
+            // Header viola sottile
+            doc.setFillColor(129, 29, 123);
+            doc.rect(0, 0, pageWidth, 12, 'F');
+            doc.setFontSize(7.5);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(255, 255, 255);
+            doc.text('KIMERIKA  |  Analisi Visagistica Professionale', margin, 8.5);
+            return 18; // currentY dopo header
+        };
 
-        // Sfondo decorativo leggerissimo (senza alpha - non supportato da jsPDF)
-        doc.setFillColor(255, 252, 230); // Giallo chiarissimo
-        doc.rect(0, 0, pageWidth, pageHeight / 3, 'F');
-        doc.setFillColor(248, 240, 247); // Viola chiarissimo
-        doc.rect(0, pageHeight / 3, pageWidth, pageHeight / 3, 'F');
+        // Helper: controlla spazio e aggiungi pagina se necessario
+        const checkPageSpace = (currentY, needed) => {
+            if (currentY + needed > pageHeight - margin - 18) {
+                return addContentPage();
+            }
+            return currentY;
+        };
 
-        // Bordo decorativo elegante
-        doc.setDrawColor(129, 29, 123); // #811d7b
-        doc.setLineWidth(1.5);
-        doc.rect(10, 10, pageWidth - 20, pageHeight - 20);
-        doc.setLineWidth(0.5);
+        // Helper: aggiunge logo in posizione
+        const addLogo = (x, y, maxW) => {
+            if (!logoImg) {
+                doc.setFontSize(11);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(129, 29, 123);
+                doc.text('KIMERIKA', x, y);
+                return;
+            }
+            try {
+                const props = doc.getImageProperties(logoImg);
+                const ratio = props.width / props.height;
+                const w = maxW;
+                const h = w / ratio;
+                doc.addImage(logoImg, 'PNG', x, y - h / 2, w, h);
+            } catch(e) {
+                doc.setFontSize(11);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(129, 29, 123);
+                doc.text('KIMERIKA', x, y);
+            }
+        };
+
+        // ============================================================
+        // PAGINA 1 — COPERTINA PROFESSIONALE
+        // ============================================================
+        // Sfondo a bande
+        doc.setFillColor(255, 252, 230);
+        doc.rect(0, 0, pageWidth, pageHeight * 0.38, 'F');
+        doc.setFillColor(250, 244, 250);
+        doc.rect(0, pageHeight * 0.38, pageWidth, pageHeight * 0.35, 'F');
+        doc.setFillColor(244, 238, 244);
+        doc.rect(0, pageHeight * 0.73, pageWidth, pageHeight * 0.27, 'F');
+
+        // Bordo doppio
+        doc.setDrawColor(129, 29, 123);
+        doc.setLineWidth(1.8);
+        doc.rect(9, 9, pageWidth - 18, pageHeight - 18);
+        doc.setLineWidth(0.4);
         doc.rect(12, 12, pageWidth - 24, pageHeight - 24);
 
-        // Logo KIMERIKA (immagine o testo come fallback)
-        const logoY = 50;
-        if (logoImg) {
-            try {
-                // Calcola dimensioni mantenendo le proporzioni ORIGINALI
-                const imgProps = doc.getImageProperties(logoImg);
-                const aspectRatio = imgProps.width / imgProps.height;
+        // Banda viola in alto
+        doc.setFillColor(129, 29, 123);
+        doc.rect(9, 9, pageWidth - 18, 22, 'F');
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(253, 242, 0);
+        doc.text('FACIAL ANALYSIS & VISAGISM  |  PROFESSIONAL SCIENTIFIC REPORT', pageWidth / 2, 22, { align: 'center' });
 
-                // Larghezza massima 70mm, altezza calcolata per mantenere proporzioni
-                const maxLogoWidth = 70;
-                const logoWidth = maxLogoWidth;
-                const logoHeight = logoWidth / aspectRatio;
-                const logoX = (pageWidth - logoWidth) / 2;
-
-                doc.addImage(logoImg, 'PNG', logoX, logoY - logoHeight/2, logoWidth, logoHeight);
-                console.log(`✅ Logo aggiunto con proporzioni originali: ${logoWidth}x${logoHeight}mm (ratio: ${aspectRatio.toFixed(2)})`);
-            } catch (error) {
-                console.error('Errore aggiunta logo:', error);
-                // Fallback a testo
-                doc.setFontSize(28);
-                doc.setFont('helvetica', 'bold');
-                doc.setTextColor(60, 100, 180);
-                doc.text('KIMERIKA', pageWidth / 2, logoY, { align: 'center' });
-            }
-        } else {
-            // Fallback: Logo testuale
-            doc.setDrawColor(100, 150, 200);
-            doc.setLineWidth(2);
-            doc.rect(pageWidth/2 - 40, logoY - 15, 80, 25);
-
-            doc.setFontSize(28);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(60, 100, 180);
-            doc.text('KIMERIKA', pageWidth / 2, logoY, { align: 'center' });
-        }
+        // Logo centrato
+        addLogo(pageWidth / 2 - 35, 58, 70);
 
         // Sottotitolo logo
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 100, 100);
-        doc.text('Facial Analysis & Visagism', pageWidth / 2, logoY + 20, { align: 'center' });
+        doc.setFontSize(8.5);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(110, 80, 120);
+        doc.text('Sistema di Analisi Facciale Avanzato', pageWidth / 2, 78, { align: 'center' });
 
-        // Linea divisoria decorativa
-        doc.setDrawColor(253, 242, 0); // #fdf200
-        doc.setLineWidth(0.8);
-        doc.line(pageWidth / 2 - 60, logoY + 30, pageWidth / 2 + 60, logoY + 30);
+        // Linea decorativa
+        doc.setDrawColor(253, 242, 0);
+        doc.setLineWidth(1.2);
+        doc.line(pageWidth / 2 - 50, 83, pageWidth / 2 + 50, 83);
 
         // Titolo principale
-        doc.setFontSize(28);
+        doc.setFontSize(30);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(95, 95, 95); // #5f5f5f
-        doc.text('ANALISI VISAGISTICA', pageWidth / 2, pageHeight / 2 - 10, { align: 'center' });
+        doc.setTextColor(80, 55, 85);
+        doc.text('ANALISI VISAGISTICA', pageWidth / 2, pageHeight / 2 - 8, { align: 'center' });
 
-        doc.setFontSize(24);
-        doc.setTextColor(129, 29, 123); // #811d7b
-        doc.text('COMPLETA', pageWidth / 2, pageHeight / 2 + 8, { align: 'center' });
+        doc.setFontSize(26);
+        doc.setTextColor(129, 29, 123);
+        doc.text('COMPLETA', pageWidth / 2, pageHeight / 2 + 10, { align: 'center' });
+
+        // Linea divisoria
+        doc.setDrawColor(253, 242, 0);
+        doc.setLineWidth(0.6);
+        doc.line(margin + 20, pageHeight / 2 + 18, pageWidth - margin - 20, pageHeight / 2 + 18);
 
         // Sottotitolo
-        doc.setFontSize(13);
+        doc.setFontSize(12);
         doc.setFont('helvetica', 'normal');
-        doc.setTextColor(80, 80, 80);
-        doc.text('Report Scientifico Professionale Personalizzato', pageWidth / 2, pageHeight / 2 + 25, { align: 'center' });
+        doc.setTextColor(90, 70, 95);
+        doc.text('Report Scientifico Professionale Personalizzato', pageWidth / 2, pageHeight / 2 + 28, { align: 'center' });
 
-        // Data con icona
-        doc.setFontSize(11);
-        doc.setTextColor(100, 100, 100);
-        const dataText = `📅 ${new Date().toLocaleDateString('it-IT', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        })}`;
-        doc.text(dataText, pageWidth / 2, pageHeight / 2 + 40, { align: 'center' });
+        // Data (senza emoji)
+        const dateStr = new Date().toLocaleDateString('it-IT', { year: 'numeric', month: 'long', day: 'numeric' });
+        doc.setFontSize(10);
+        doc.setTextColor(110, 90, 115);
+        doc.text(`Data: ${dateStr}`, pageWidth / 2, pageHeight / 2 + 42, { align: 'center' });
 
-        // Box informativo in basso
-        const boxY = pageHeight - 60;
-        doc.setFillColor(250, 245, 249); // Viola chiarissimo
-        doc.setDrawColor(253, 242, 0); // #fdf200
-        doc.roundedRect(30, boxY, pageWidth - 60, 35, 3, 3, 'FD');
+        // Box forma viso se disponibile
+        const dataObj = currentAnalysisReport.data || {};
+        const metrics = dataObj.metriche_facciali || {};
+        const features = dataObj.caratteristiche_facciali || {};
+        const faceShape = dataObj.forma_viso || '';
+        if (faceShape) {
+            doc.setFillColor(129, 29, 123);
+            doc.roundedRect(pageWidth / 2 - 30, pageHeight / 2 + 50, 60, 14, 3, 3, 'F');
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(255, 255, 255);
+            doc.text(`VISO ${faceShape.toUpperCase()}`, pageWidth / 2, pageHeight / 2 + 59, { align: 'center' });
+        }
 
-        doc.setFontSize(9);
+        // Box disclaimer in basso
+        const boxY = pageHeight - 58;
+        doc.setFillColor(252, 248, 255);
+        doc.setDrawColor(253, 242, 0);
+        doc.setLineWidth(0.8);
+        doc.roundedRect(margin + 10, boxY, maxWidth - 20, 32, 3, 3, 'FD');
+        doc.setFontSize(8.5);
         doc.setFont('helvetica', 'italic');
-        doc.setTextColor(95, 95, 95); // #5f5f5f
-        doc.text('Analisi basata su evidenze scientifiche peer-reviewed', pageWidth / 2, boxY + 12, { align: 'center' });
-        doc.text('Metodologie di visagismo professionale e neuroscienze', pageWidth / 2, boxY + 22, { align: 'center' });
+        doc.setTextColor(90, 70, 95);
+        doc.text('Analisi basata su evidenze scientifiche peer-reviewed', pageWidth / 2, boxY + 10, { align: 'center' });
+        doc.text('Metodologie di visagismo professionale, neuroscienze e proporzione aurea', pageWidth / 2, boxY + 20, { align: 'center' });
 
-        // Footer con copyright
+        // Copyright
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(130, 110, 135);
+        doc.text(`© ${new Date().getFullYear()} Kimerika - Facial Analysis System`, pageWidth / 2, pageHeight - 15, { align: 'center' });
+
+        // ============================================================
+        // PAGINA 2 — INDICE / SOMMARIO
+        // ============================================================
+        let currentY = addContentPage();
+
+        // Titolo pagina
+        doc.setFillColor(248, 242, 250);
+        doc.setDrawColor(253, 242, 0);
+        doc.setLineWidth(0.5);
+        doc.roundedRect(margin, currentY, maxWidth, 14, 2, 2, 'FD');
+        doc.setFontSize(13);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(129, 29, 123);
+        doc.text('INDICE DEL REPORT', pageWidth / 2, currentY + 10, { align: 'center' });
+        currentY += 20;
+
+        // Estrai titoli sezioni dal report
+        const reportLines = currentAnalysisReport.report.split('\n');
+        const sectionTitles = [];
+        for (const line of reportLines) {
+            const m = line.match(/^(SEZIONE \d+):\s*(.+)$/);
+            if (m) sectionTitles.push({ num: m[1], title: m[2].trim() });
+            if (line.match(/^CONCLUSIONE\s*$/)) sectionTitles.push({ num: 'CONCLUSIONE', title: '' });
+        }
+
+        // Voci indice con puntini leader
+        const tocItems = [
+            { label: 'Pagina 2', desc: 'Indice del Report' },
+            { label: 'Pagina 3', desc: 'Dashboard Dati e Grafici Metrici' },
+            { label: 'Pagina 4+', desc: 'Report Completo di Analisi Visagistica' },
+        ];
+        for (const s of sectionTitles) {
+            tocItems.push({ label: '  -', desc: `${s.num}${s.title ? ': ' + s.title : ''}` });
+        }
+
+        for (const item of tocItems) {
+            currentY = checkPageSpace(currentY, 10);
+            const isSection = item.label.startsWith('  -');
+
+            if (isSection) {
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8.5);
+                doc.setTextColor(70, 50, 80);
+                doc.text(item.desc, margin + 8, currentY);
+            } else {
+                // Sfondo evidenziato per voci principali
+                doc.setFillColor(252, 248, 255);
+                doc.setDrawColor(220, 200, 225);
+                doc.setLineWidth(0.2);
+                doc.roundedRect(margin, currentY - 4, maxWidth, 9, 1, 1, 'FD');
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(9);
+                doc.setTextColor(129, 29, 123);
+                doc.text(item.label, margin + 2, currentY + 1);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(50, 40, 55);
+                doc.text(item.desc, margin + 22, currentY + 1);
+                currentY += 2;
+            }
+            currentY += LH.body;
+        }
+
+        // Box info
+        currentY += 5;
+        currentY = checkPageSpace(currentY, 28);
+        doc.setFillColor(255, 254, 240);
+        doc.setDrawColor(253, 242, 0);
+        doc.setLineWidth(0.4);
+        doc.roundedRect(margin, currentY, maxWidth, 22, 2, 2, 'FD');
         doc.setFontSize(8);
-        doc.setTextColor(120, 120, 120);
-        doc.text('© 2025 Kimerika - Facial Analysis System', pageWidth / 2, pageHeight - 10, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(80, 60, 80);
+        doc.text(`Generato il: ${new Date().toLocaleString('it-IT')}`, margin + 4, currentY + 8);
+        doc.text('Modulo: face_analysis_module.py v1.2.0  |  Engine: MediaPipe FaceMesh 468 landmarks', margin + 4, currentY + 16);
 
-        // Nuova pagina per il contenuto
-        doc.addPage();
-        currentY = margin;
+        // ============================================================
+        // PAGINA 3 — DASHBOARD DATI E GRAFICI
+        // ============================================================
+        currentY = addContentPage();
 
-        // === INTESTAZIONE PROFESSIONALE ===
-        // Box header colorato
-        doc.setFillColor(129, 29, 123); // #811d7b
-        doc.rect(0, 0, pageWidth, 25, 'F');
+        // Titolo dashboard
+        doc.setFillColor(129, 29, 123);
+        doc.setDrawColor(129, 29, 123);
+        doc.roundedRect(margin, currentY, maxWidth, 14, 2, 2, 'F');
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(255, 255, 255);
+        doc.text('DASHBOARD DATI METRICI', pageWidth / 2, currentY + 10, { align: 'center' });
+        currentY += 18;
+
+        // --- BOX FORMA VISO ---
+        doc.setFillColor(248, 242, 252);
+        doc.setDrawColor(129, 29, 123);
+        doc.setLineWidth(0.6);
+        doc.roundedRect(margin, currentY, maxWidth * 0.42, 32, 3, 3, 'FD');
+
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(129, 29, 123);
+        doc.text('FORMA VISO CLASSIFICATA', margin + (maxWidth * 0.42) / 2, currentY + 7, { align: 'center' });
 
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(255, 255, 255);
-        doc.text('REPORT DI ANALISI VISAGISTICA', margin, 16);
+        doc.setTextColor(80, 55, 85);
+        doc.text(faceShape ? faceShape.toUpperCase() : 'N/D', margin + (maxWidth * 0.42) / 2, currentY + 22, { align: 'center' });
 
-        // Ripristina colore testo
-        doc.setTextColor(95, 95, 95); // #5f5f5f
-        currentY = 35;
+        // --- BOX CARATTERISTICHE QUALITATIVE ---
+        const qBoxX = margin + maxWidth * 0.44;
+        const qBoxW = maxWidth * 0.56;
+        doc.setFillColor(255, 254, 240);
+        doc.setDrawColor(200, 170, 0);
+        doc.setLineWidth(0.4);
+        doc.roundedRect(qBoxX, currentY, qBoxW, 32, 3, 3, 'FD');
 
-        // Box informazioni con bordo
-        doc.setDrawColor(253, 242, 0); // #fdf200
-        doc.setLineWidth(0.5);
-        doc.setFillColor(255, 254, 240); // Giallo chiarissimo
-        doc.roundedRect(margin, currentY, maxWidth, 22, 2, 2, 'FD');
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(150, 110, 0);
+        doc.text('CARATTERISTICHE QUALITATIVE', qBoxX + qBoxW / 2, currentY + 7, { align: 'center' });
 
-        doc.setFontSize(9);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(95, 95, 95); // #5f5f5f
-        doc.text(`📅 Generato il: ${new Date().toLocaleString('it-IT')}`, margin + 5, currentY + 8);
-        doc.text(`⚙️ Modulo: face_analysis_module.py v1.2.0`, margin + 5, currentY + 16);
+        const qualFeatures = [
+            ['Occhi distanza', features.occhi_distanza || 'N/D'],
+            ['Occhi dimensione', features.occhi_dimensione || 'N/D'],
+            ['Zigomi', features.zigomi_prominenza || 'N/D'],
+            ['Naso larghezza', features.naso_larghezza || 'N/D'],
+        ];
+        let qfy = currentY + 13;
+        for (const [k, v] of qualFeatures) {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7);
+            doc.setTextColor(60, 50, 60);
+            doc.text(k + ':', qBoxX + 4, qfy);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(129, 29, 123);
+            doc.text(v, qBoxX + qBoxW - 4, qfy, { align: 'right' });
+            qfy += 5;
+        }
+        currentY += 38;
 
-        currentY += 30;
-        doc.setTextColor(50, 50, 50); // Grigio scuro leggibile
-
-        // === CONTENUTO DEL REPORT ===
+        // --- TABELLA METRICHE FACCIALI ---
         doc.setFontSize(8.5);
-        doc.setFont('courier', 'normal');
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(60, 40, 70);
+        doc.text('MISURE GEOMETRICHE RILEVATE', margin, currentY + 4);
+        currentY += 8;
 
-        const reportLines = currentAnalysisReport.report.split('\n');
+        const metricRows = [
+            ['Larghezza Fronte', metrics.larghezza_fronte, 'px'],
+            ['Larghezza Zigomi', metrics.larghezza_zigomi, 'px'],
+            ['Larghezza Mascella', metrics.larghezza_mascella, 'px'],
+            ['Lunghezza Viso', metrics.lunghezza_viso, 'px'],
+            ['Larghezza Viso (max)', metrics.larghezza_viso, 'px'],
+            ['Distanza Occhi', metrics.distanza_occhi, 'px'],
+            ['Larghezza Naso', metrics.larghezza_naso, 'px'],
+            ['Larghezza Bocca', metrics.larghezza_bocca, 'px'],
+        ];
+        const colW = maxWidth / 3;
+        // Intestazione tabella
+        doc.setFillColor(129, 29, 123);
+        doc.rect(margin, currentY, maxWidth, 7, 'F');
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(255, 255, 255);
+        doc.text('METRICA', margin + 2, currentY + 5);
+        doc.text('VALORE', margin + colW * 1.5, currentY + 5, { align: 'center' });
+        doc.text('STIMA ~mm*', margin + colW * 2.6, currentY + 5, { align: 'center' });
+        currentY += 7;
+
+        const mmPerPx = metrics.larghezza_viso ? (140.0 / metrics.larghezza_viso) : 0;
+        for (let ri = 0; ri < metricRows.length; ri++) {
+            const [lbl, val, unit] = metricRows[ri];
+            const bg = ri % 2 === 0 ? [250, 246, 252] : [255, 255, 255];
+            doc.setFillColor(...bg);
+            doc.rect(margin, currentY, maxWidth, 6.5, 'F');
+            doc.setDrawColor(210, 195, 215);
+            doc.setLineWidth(0.1);
+            doc.line(margin, currentY + 6.5, margin + maxWidth, currentY + 6.5);
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.5);
+            doc.setTextColor(50, 40, 55);
+            doc.text(lbl, margin + 2, currentY + 4.5);
+
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(129, 29, 123);
+            const valStr = val !== undefined && val !== null ? val.toFixed(1) + ' ' + unit : 'N/D';
+            doc.text(valStr, margin + colW * 1.5, currentY + 4.5, { align: 'center' });
+
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(80, 70, 85);
+            const mmStr = (val && mmPerPx) ? (val * mmPerPx).toFixed(0) + ' mm~' : '—';
+            doc.text(mmStr, margin + colW * 2.6, currentY + 4.5, { align: 'center' });
+            currentY += 6.5;
+        }
+        // Bordo tabella
+        doc.setDrawColor(129, 29, 123);
+        doc.setLineWidth(0.4);
+        doc.rect(margin, currentY - metricRows.length * 6.5 - 7, maxWidth, metricRows.length * 6.5 + 7);
+        currentY += 4;
+
+        // Nota stima mm
+        doc.setFontSize(6.5);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(120, 100, 125);
+        doc.text('* Stima basata su viso adulto medio 140mm. Le misure in mm sono indicative, non calibrate.', margin, currentY);
+        currentY += 8;
+
+        // --- GRAFICI A BARRE RAPPORTI ---
+        currentY = checkPageSpace(currentY, 70);
+        doc.setFontSize(8.5);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(60, 40, 70);
+        doc.text('GRAFICI RAPPORTI FACCIALI', margin, currentY + 4);
+        currentY += 10;
+
+        // Legenda grafici
+        doc.setFillColor(180, 230, 180);
+        doc.rect(margin, currentY, 8, 4, 'F');
+        doc.setFontSize(6.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(60, 90, 60);
+        doc.text('= zona ideale', margin + 10, currentY + 3.5);
+        doc.setFillColor(129, 29, 123);
+        doc.rect(margin + 38, currentY, 8, 4, 'F');
+        doc.setTextColor(60, 40, 70);
+        doc.text('= valore misurato', margin + 48, currentY + 3.5);
+        doc.setFillColor(253, 210, 0);
+        doc.circle(margin + 80, currentY + 2, 2, 'F');
+        doc.text('= marker valore', margin + 85, currentY + 3.5);
+        currentY += 10;
+
+        // Larghezza label + barra
+        const labelColW = 32;
+        const barColW = maxWidth - labelColW - 18;
+
+        if (metrics.rapporto_lunghezza_larghezza !== undefined) {
+            currentY = checkPageSpace(currentY, 14);
+            drawMetricBar(doc, margin + labelColW, currentY, barColW, 6,
+                metrics.rapporto_lunghezza_larghezza, 0.9, 1.9, 1.3, 1.45,
+                'Rapporto L/W', '');
+            currentY += 12;
+        }
+        if (metrics.rapporto_mascella_fronte !== undefined) {
+            currentY = checkPageSpace(currentY, 14);
+            drawMetricBar(doc, margin + labelColW, currentY, barColW, 6,
+                metrics.rapporto_mascella_fronte, 0.7, 1.4, 0.94, 1.06,
+                'Rapporto M/F', '');
+            currentY += 12;
+        }
+        if (metrics.prominenza_zigomi !== undefined) {
+            currentY = checkPageSpace(currentY, 14);
+            drawMetricBar(doc, margin + labelColW, currentY, barColW, 6,
+                metrics.prominenza_zigomi, 0.7, 1.3, 0.95, 1.05,
+                'Prom. Zigomi', '');
+            currentY += 12;
+        }
+        if (metrics.distanza_occhi !== undefined && metrics.larghezza_viso) {
+            const eyeRatio = metrics.distanza_occhi / metrics.larghezza_viso;
+            currentY = checkPageSpace(currentY, 14);
+            drawMetricBar(doc, margin + labelColW, currentY, barColW, 6,
+                eyeRatio, 0.1, 0.55, 0.25, 0.36,
+                'Dist. Occhi/Viso', '');
+            currentY += 12;
+        }
+
+        // ============================================================
+        // PAGINA 4+ — CONTENUTO DEL REPORT TESTUALE
+        // ============================================================
+        currentY = addContentPage();
+
+        let inSection4 = false;
         let inBibliography = false;
 
-        for (let line of reportLines) {
-            // Rileva inizio/fine sezione 4 (immagini)
+        for (const [lineIdx, line] of reportLines.entries()) {
+            // Gestione flag sezione 4
             if (line.match(/^SEZIONE 4:/)) {
                 inSection4 = true;
-            } else if (line.match(/^SEZIONE [5-8]:/)) {
+            } else if (line.match(/^SEZIONE [5-9]:|^CONCLUSIONE/)) {
                 inSection4 = false;
             }
 
-            // Rileva inizio bibliografia
+            // Rileva sezione 8 (bibliografia)
             if (line.includes('BIBLIOGRAFIA E FONTI SCIENTIFICHE')) {
                 inBibliography = true;
             }
 
-            // Controlla se serve una nuova pagina
-            if (currentY > pageHeight - margin - 15) {
-                doc.addPage();
-                currentY = 20; // Margine per header
-            }
-
             // Linee vuote
             if (line.trim().length === 0) {
-                currentY += lineHeight / 2;
+                currentY += LH.empty;
                 continue;
             }
 
-            // Formattazione speciale per titoli sezioni (linee con ===)
-            if (line.includes('===')) {
-                // Linea divisoria decorativa invece di ===
-                doc.setDrawColor(253, 242, 0); // #fdf200
-                doc.setLineWidth(0.8);
-                doc.line(margin, currentY, pageWidth - margin, currentY);
-                currentY += lineHeight / 2;
-                continue;
-            }
-            // Titoli sezioni (SEZIONE N:) con box colorato
-            else if (line.match(/^SEZIONE \d+:/)) {
-                // Verifica spazio per box sezione
-                if (currentY > pageHeight - margin - 30) {
-                    doc.addPage();
-                    currentY = 20; // Margine per header
-                }
-
-                // Spazio prima della sezione
-                currentY += 3;
-
-                // Box colorato per sezione (colore molto chiaro)
-                doc.setFillColor(252, 248, 251); // Viola leggerissimo
-                doc.setDrawColor(253, 242, 0); // #fdf200
-                doc.setLineWidth(0.5);
-                doc.roundedRect(margin - 2, currentY - 2, maxWidth + 4, 13, 1, 1, 'FD');
-
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(11);
-                doc.setTextColor(129, 29, 123); // #811d7b
-                currentY += 5;
-
-                // Se è la sezione 4, aggiungi le immagini dopo il titolo
-                if (line.match(/^SEZIONE 4:/) && currentAnalysisReport.debug_images) {
-                    // Scrivi il titolo
-                    const wrappedTitle = doc.splitTextToSize(line, maxWidth);
-                    for (let wrappedLine of wrappedTitle) {
-                        if (currentY > pageHeight - margin - 15) {
-                            doc.addPage();
-                            currentY = 20; // Margine per header
-                        }
-                        doc.text(wrappedLine, margin, currentY);
-                        currentY += lineHeight;
-                    }
-
-                    // Aggiungi le immagini
-                    currentY += 8; // Spazio prima delle immagini
-                    const debugImages = currentAnalysisReport.debug_images;
-                    const imageKeys = Object.keys(debugImages);
-
-                    for (let i = 0; i < imageKeys.length; i++) {
-                        const key = imageKeys[i];
-                        const base64Data = debugImages[key];
-                        const imgSrc = `data:image/jpeg;base64,${base64Data}`;
-
-                        // Box per etichetta immagine
-                        const imageLabel = key.replace(/_/g, ' ').toUpperCase();
-
-                        // Verifica spazio per etichetta e immagine
-                        if (currentY + 20 > pageHeight - margin) {
-                            doc.addPage();
-                            currentY = 20; // Margine per header
-                        }
-
-                        // Box etichetta professionale
-                        doc.setFillColor(255, 253, 235); // Giallo chiarissimo
-                        doc.setDrawColor(129, 29, 123); // #811d7b
-                        doc.setLineWidth(0.3);
-                        const labelWidth = maxWidth;
-                        doc.roundedRect(margin, currentY, labelWidth, 10, 1, 1, 'FD');
-
-                        doc.setFont('helvetica', 'bold');
-                        doc.setFontSize(9);
-                        doc.setTextColor(129, 29, 123); // #811d7b
-
-                        // Aggiungi immagine con calcolo automatico aspect ratio
-                        try {
-                            // Ottieni dimensioni originali
-                            const imgProps = doc.getImageProperties(imgSrc);
-                            const imgWidth = imgProps.width;
-                            const imgHeight = imgProps.height;
-                            const aspectRatio = imgWidth / imgHeight;
-
-                            // Calcola dimensioni finali mantenendo aspect ratio
-                            const maxImgWidth = maxWidth;
-                            const maxImgHeight = 120; // mm - limite massimo altezza
-
-                            let finalWidth = maxImgWidth;
-                            let finalHeight = maxImgWidth / aspectRatio;
-
-                            // Se l'altezza supera il massimo, ridimensiona in base all'altezza
-                            if (finalHeight > maxImgHeight) {
-                                finalHeight = maxImgHeight;
-                                finalWidth = maxImgHeight * aspectRatio;
-                            }
-
-                            // Centra l'immagine se è più stretta della larghezza massima
-                            const imgX = margin + (maxImgWidth - finalWidth) / 2;
-
-                            // Verifica se c'è spazio per etichetta + immagine, altrimenti nuova pagina
-                            const totalHeight = 12 + finalHeight + 5; // etichetta + immagine + margine
-                            if (currentY + totalHeight > pageHeight - margin - 25) {
-                                doc.addPage();
-                                currentY = 22; // Margine per header + spazio
-
-                                // Ridisegna l'etichetta sulla nuova pagina
-                                doc.setFillColor(255, 253, 235);
-                                doc.setDrawColor(129, 29, 123);
-                                doc.setLineWidth(0.3);
-                                doc.roundedRect(margin, currentY, labelWidth, 10, 1, 1, 'FD');
-                            }
-
-                            // Scrivi label centrata
-                            doc.setFont('helvetica', 'bold');
-                            doc.setFontSize(9);
-                            doc.setTextColor(129, 29, 123);
-                            doc.text(imageLabel, margin + labelWidth / 2, currentY + 7, { align: 'center' });
-                            currentY += 12;
-
-                            // Aggiungi immagine con bordo decorativo
-                            doc.setDrawColor(95, 95, 95); // #5f5f5f
-                            doc.setLineWidth(0.5);
-                            doc.rect(imgX - 1, currentY - 1, finalWidth + 2, finalHeight + 2);
-
-                            doc.addImage(imgSrc, 'JPEG', imgX, currentY, finalWidth, finalHeight);
-                            currentY += finalHeight + 10;
-
-                            console.log(`✅ Immagine ${imageLabel} aggiunta: ${finalWidth.toFixed(1)}mm x ${finalHeight.toFixed(1)}mm (ratio: ${aspectRatio.toFixed(2)})`);
-
-                        } catch (error) {
-                            console.error(`Errore aggiunta immagine ${key}:`, error);
-
-                            // Verifica se c'è spazio per il messaggio di errore
-                            if (currentY + 20 > pageHeight - margin) {
-                                doc.addPage();
-                                currentY = 20; // Margine per header
-                            }
-
-                            doc.setFont('courier', 'normal');
-                            doc.setFontSize(8);
-                            doc.setTextColor(150, 50, 50);
-                            doc.text(`[Errore caricamento immagine: ${imageLabel}]`, margin, currentY);
-                            currentY += 12;
-                        }
-                    }
-
-                    // Salta al prossimo ciclo per non riscrivere il titolo
+            // Separatori === → linea decorativa (saltati se la riga successiva è un titolo SEZIONE)
+            if (line.match(/^={3,}$/)) {
+                // Guarda la prossima riga non vuota usando l'indice corretto
+                const nextMeaningful = reportLines.slice(lineIdx + 1).find(l => l.trim().length > 0) || '';
+                if (nextMeaningful.match(/^SEZIONE \d+:|^CONCLUSIONE/)) {
+                    // Il box sezione è già un separatore visivo — salta la linea gialla
                     continue;
                 }
-            }
-            // Sottotitoli
-            else if (line.match(/^\d+\./)) {
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(9.5);
-                doc.setTextColor(95, 95, 95);
-                currentY += 3; // Più spazio prima dei sottotitoli
-            }
-            // Bibliografia - font più piccolo
-            else if (inBibliography) {
-                doc.setFont('courier', 'normal');
-                doc.setFontSize(7.5);
-                doc.setTextColor(70, 70, 70);
-            }
-            // Testo normale
-            else {
-                doc.setFont('courier', 'normal');
-                doc.setFontSize(8.5);
-                doc.setTextColor(50, 50, 50);
-            }
-
-            // Salta il contenuto testuale della sezione 4 (già sostituito con immagini)
-            if (inSection4) {
+                currentY = checkPageSpace(currentY, 4);
+                doc.setDrawColor(253, 242, 0);
+                doc.setLineWidth(0.5);
+                doc.line(margin, currentY, pageWidth - margin, currentY);
+                currentY += 3;
                 continue;
             }
 
-            // Split linee lunghe
-            const wrappedLines = doc.splitTextToSize(line, maxWidth);
+            // Titoli SEZIONE N:
+            if (line.match(/^SEZIONE \d+:/)) {
+                currentY = checkPageSpace(currentY, 20);
+                currentY += 4; // spazio sopra il box
 
-            for (let wrappedLine of wrappedLines) {
-                // Controlla spazio disponibile
-                if (currentY > pageHeight - margin - 20) {
-                    doc.addPage();
-                    currentY = 20; // Margine superiore per evitare sovrapposizione con header
+                // Box viola/giallo
+                doc.setFillColor(248, 242, 254);
+                doc.setDrawColor(129, 29, 123);
+                doc.setLineWidth(0.6);
+                doc.roundedRect(margin - 2, currentY, maxWidth + 4, 12, 1.5, 1.5, 'FD');
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(10.5);
+                doc.setTextColor(129, 29, 123);
+
+                // Sezione 4: titolo + immagini
+                if (line.match(/^SEZIONE 4:/) && currentAnalysisReport.debug_images) {
+                    doc.text(line, margin, currentY + 8);
+                    currentY += 14;
+
+                    const debugImages = currentAnalysisReport.debug_images;
+                    for (const [key, base64Data] of Object.entries(debugImages)) {
+                        const imgSrc = `data:image/jpeg;base64,${base64Data}`;
+                        const imageLabel = key.replace(/_/g, ' ').toUpperCase();
+
+                        try {
+                            const imgProps = doc.getImageProperties(imgSrc);
+                            const aspectRatio = imgProps.width / imgProps.height;
+                            const maxImgH = 100;
+                            let finalW = maxWidth;
+                            let finalH = finalW / aspectRatio;
+                            if (finalH > maxImgH) { finalH = maxImgH; finalW = finalH * aspectRatio; }
+                            const imgX = margin + (maxWidth - finalW) / 2;
+
+                            // Controlla spazio per label + immagine + didascalia
+                            const caption = getImageCaption(key, currentAnalysisReport);
+                            const capLines = doc.splitTextToSize(caption, maxWidth - 6);
+                            const capH = capLines.length * 5 + 10;
+                            const totalBlockH = 12 + finalH + 4 + capH + 8;
+
+                            currentY = checkPageSpace(currentY, totalBlockH);
+
+                            // Label header
+                            doc.setFillColor(129, 29, 123);
+                            doc.roundedRect(margin, currentY, maxWidth, 10, 1, 1, 'F');
+                            doc.setFont('helvetica', 'bold');
+                            doc.setFontSize(8.5);
+                            doc.setTextColor(255, 255, 255);
+                            doc.text(imageLabel, pageWidth / 2, currentY + 7, { align: 'center' });
+                            currentY += 12;
+
+                            // Bordo immagine
+                            doc.setDrawColor(180, 160, 185);
+                            doc.setLineWidth(0.4);
+                            doc.rect(imgX - 0.5, currentY - 0.5, finalW + 1, finalH + 1);
+
+                            doc.addImage(imgSrc, 'JPEG', imgX, currentY, finalW, finalH);
+                            currentY += finalH + 4;
+
+                            // Didascalia
+                            doc.setFillColor(250, 247, 253);
+                            doc.setDrawColor(200, 185, 210);
+                            doc.setLineWidth(0.2);
+                            doc.roundedRect(margin, currentY, maxWidth, capH, 1, 1, 'FD');
+                            doc.setFont('helvetica', 'italic');
+                            doc.setFontSize(7.5);
+                            doc.setTextColor(75, 55, 85);
+                            let capY = currentY + 6;
+                            for (const capLine of capLines) {
+                                doc.text(capLine, margin + 3, capY);
+                                capY += 5;
+                            }
+                            currentY = capY + 4;
+
+                        } catch (err) {
+                            console.error(`Errore immagine ${key}:`, err);
+                            currentY = checkPageSpace(currentY, 10);
+                            doc.setFont('helvetica', 'normal');
+                            doc.setFontSize(8);
+                            doc.setTextColor(150, 50, 50);
+                            doc.text(`[Immagine non disponibile: ${imageLabel}]`, margin, currentY);
+                            currentY += 10;
+                        }
+                    }
+                    continue;
+                } else {
+                    // Titolo sezione normale
+                    doc.text(line, margin, currentY + 8);
+                    currentY += LH.section;
                 }
+                continue;
+            }
 
-                doc.text(wrappedLine, margin, currentY);
-                currentY += lineHeight;
+            // Salta testo sezione 4 (già sostituito con immagini)
+            if (inSection4) continue;
+
+            // Sottotitoli numerati (1. 2. ecc.)
+            if (line.match(/^\s*\d+\.\s/)) {
+                currentY = checkPageSpace(currentY, LH.subsection + 4);
+                currentY += 2;
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(9);
+                doc.setTextColor(80, 55, 85);
+                const wl = doc.splitTextToSize(line, maxWidth);
+                for (const wline of wl) {
+                    currentY = checkPageSpace(currentY, LH.subsection);
+                    doc.text(wline, margin, currentY);
+                    currentY += LH.subsection;
+                }
+                continue;
+            }
+
+            // Sottosezioni in MAIUSCOLO (ARCO, SPESSORE, LUNGHEZZA, ecc.)
+            if (line.match(/^\s{2,}[A-ZÀÈÌÒÙÉ]{4}/) && !line.match(/^SEZIONE/)) {
+                currentY = checkPageSpace(currentY, LH.subsection + 2);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(8.5);
+                doc.setTextColor(129, 29, 123);
+                const wl = doc.splitTextToSize(line, maxWidth);
+                for (const wline of wl) {
+                    currentY = checkPageSpace(currentY, LH.subsection);
+                    doc.text(wline, margin, currentY);
+                    currentY += LH.subsection;
+                }
+                continue;
+            }
+
+            // CONCLUSIONE (titolo speciale)
+            if (line.match(/^CONCLUSIONE\s*$/)) {
+                currentY = checkPageSpace(currentY, 20);
+                currentY += 3;
+                doc.setFillColor(129, 29, 123);
+                doc.roundedRect(margin - 2, currentY - 2, maxWidth + 4, 12, 1.5, 1.5, 'F');
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(11);
+                doc.setTextColor(255, 255, 255);
+                doc.text('CONCLUSIONE', margin, currentY + 8);
+                currentY += LH.section + 2;
+                continue;
+            }
+
+            // Fine report
+            if (line.match(/^FINE REPORT\s*$/)) continue;
+
+            // Testo bibliografia
+            if (inBibliography) {
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(7.5);
+                doc.setTextColor(70, 60, 75);
+                const wl = doc.splitTextToSize(line, maxWidth);
+                for (const wline of wl) {
+                    currentY = checkPageSpace(currentY, LH.biblio);
+                    doc.text(wline, margin, currentY);
+                    currentY += LH.biblio;
+                }
+                continue;
+            }
+
+            // Testo normale
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8.5);
+            doc.setTextColor(45, 35, 50);
+            const wrappedLines = doc.splitTextToSize(line, maxWidth);
+            for (const wline of wrappedLines) {
+                currentY = checkPageSpace(currentY, LH.body);
+                doc.text(wline, margin, currentY);
+                currentY += LH.body;
             }
         }
 
-        // === HEADER E FOOTER PROFESSIONALE SU OGNI PAGINA ===
+        // ============================================================
+        // FOOTER + WATERMARK SU OGNI PAGINA (eccetto copertina)
+        // ============================================================
         const pageCount = doc.internal.getNumberOfPages();
-        for (let i = 1; i <= pageCount; i++) {
+        for (let i = 2; i <= pageCount; i++) {
             doc.setPage(i);
 
-            if (i === 2) {
-                // Pagina 2 ha già il suo header custom, skippa
-            } else if (i > 2) {
-                // Header minimale sulle pagine successive alla seconda
-                doc.setDrawColor(253, 242, 0); // #fdf200
-                doc.setLineWidth(0.3);
-                doc.line(margin, 12, pageWidth - margin, 12);
+            // Watermark leggerissimo
+            doc.setFontSize(38);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(250, 247, 252);
+            doc.text('KIMERIKA', pageWidth / 2, pageHeight / 2, { align: 'center', angle: 45 });
 
-                doc.setFontSize(8);
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(129, 29, 123);
-                doc.text('KIMERIKA - Analisi Visagistica', margin, 9);
-            }
+            // Linea footer
+            doc.setDrawColor(253, 242, 0);
+            doc.setLineWidth(0.3);
+            doc.line(margin, pageHeight - 16, pageWidth - margin, pageHeight - 16);
 
-            if (i > 1) { // Non sulla copertina
-                // Linea divisoria footer
-                doc.setDrawColor(253, 242, 0); // #fdf200
-                doc.setLineWidth(0.3);
-                doc.line(margin, pageHeight - 18, pageWidth - margin, pageHeight - 18);
+            // Logo mini a sinistra
+            addLogo(margin, pageHeight - 10, 22);
 
-                // Logo piccolo a sinistra (immagine o testo)
-                if (logoImg) {
-                    try {
-                        // Calcola proporzioni originali per logo mini
-                        const imgProps = doc.getImageProperties(logoImg);
-                        const aspectRatio = imgProps.width / imgProps.height;
+            // Numero pagina al centro
+            doc.setFontSize(7);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(100, 80, 110);
+            doc.text(`Pagina ${i} di ${pageCount}`, pageWidth / 2, pageHeight - 9, { align: 'center' });
 
-                        const miniLogoWidth = 25;
-                        const miniLogoHeight = miniLogoWidth / aspectRatio;
-                        doc.addImage(logoImg, 'PNG', margin, pageHeight - 16, miniLogoWidth, miniLogoHeight);
-                    } catch (error) {
-                        // Fallback a testo
-                        doc.setFontSize(8);
-                        doc.setFont('helvetica', 'bold');
-                        doc.setTextColor(60, 100, 180);
-                        doc.text('KIMERIKA', margin, pageHeight - 10);
-                    }
-                } else {
-                    doc.setFontSize(8);
-                    doc.setFont('helvetica', 'bold');
-                    doc.setTextColor(60, 100, 180);
-                    doc.text('KIMERIKA', margin, pageHeight - 10);
-                }
-
-                // Numero pagina al centro
-                doc.setFontSize(7);
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(100, 100, 100);
-                doc.text(
-                    `Pagina ${i} di ${pageCount}`,
-                    pageWidth / 2,
-                    pageHeight - 10,
-                    { align: 'center' }
-                );
-
-                // Disclaimer a destra
-                doc.setFontSize(6);
-                doc.setFont('helvetica', 'italic');
-                doc.text(
-                    'Confidenziale',
-                    pageWidth - margin,
-                    pageHeight - 10,
-                    { align: 'right' }
-                );
-
-                // Watermark molto leggero al centro della pagina
-                doc.setFontSize(60);
-                doc.setTextColor(245, 240, 244); // Viola estremamente chiaro (quasi invisibile)
-                doc.setFont('helvetica', 'bold');
-                doc.text('KIMERIKA', pageWidth / 2, pageHeight / 2, {
-                    align: 'center',
-                    angle: 45,
-                    renderingMode: 'stroke',
-                    lineWidth: 0.1
-                });
-            }
+            // Confidenziale a destra
+            doc.setFontSize(6.5);
+            doc.setFont('helvetica', 'italic');
+            doc.setTextColor(130, 110, 135);
+            doc.text('Confidenziale', pageWidth - margin, pageHeight - 9, { align: 'right' });
         }
 
-        // Salva il PDF con nome descrittivo
-        const filename = `Analisi_Visagistica_Scientifica_${new Date().toISOString().slice(0, 10)}.pdf`;
+        // Salva
+        const filename = `Analisi_Visagistica_${new Date().toISOString().slice(0, 10)}.pdf`;
         doc.save(filename);
-
-        showToast('✅ PDF scientifico generato con successo', 'success');
+        showToast('PDF professionale generato con successo', 'success');
 
     } catch (error) {
         console.error('❌ Errore generazione PDF:', error);

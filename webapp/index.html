@@ -10,10 +10,10 @@
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>🏥 Facial Analysis Application v2.0 - Web Edition</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
-    <link rel="stylesheet" href="static/css/main.css?v=20260226-toolstrip">
+    <link rel="stylesheet" href="static/css/main.css?v=20260225-perf">
     <link rel="stylesheet" href="static/css/components.css?v=20260129b">
     <link rel="stylesheet" href="static/css/tables.css?v=20260129b">
-    <link rel="stylesheet" href="static/css/mobile-responsive.css?v=20260226c">
+    <link rel="stylesheet" href="static/css/mobile-responsive.css?v=20260225-cover-fix">
 </head>
 
 <body>
@@ -98,7 +98,7 @@
                                 style="text-align: center; padding: 1rem; background: #f7fafc; border-radius: 8px; margin-bottom: 0.75rem; border: 1px solid #e2e8f0;">
                                 <div id="qr-code-wrapper"
                                     style="background: white; display: inline-block; padding: 10px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);">
-                                    <img id="qr-code-img" src="/api/qrcode.png" alt="QR Code"
+                                    <img id="qr-code-img" src="" alt="QR Code"
                                         style="width: 160px; height: 160px; display: block;">
                                 </div>
                                 <p style="margin: 0.6rem 0 0.4rem; font-size: 0.82em; color: #4a5568;">Scansiona con la
@@ -174,8 +174,10 @@
                             <button class="btn btn-analysis" onclick="measureNoseHeight(event)">📏 Altezza Naso</button>
                             <button class="btn btn-analysis" onclick="measureMouthWidth(event)">👄 Larghezza
                                 Bocca</button>
+                            <!-- DISABILITATO: Aree Sopracciglia (sostituito da Simm Sopracciglia)
                             <button class="btn btn-analysis" onclick="measureEyebrowAreas(event)">✂️ Aree
                                 Sopracciglia</button>
+                            -->
                             <button class="btn btn-analysis" onclick="measureEyeAreas(event)">👁️ Aree Occhi</button>
                             <button class="btn btn-analysis" onclick="measureCheekWidth(event)"
                                 style="display: none;">😊 Larghezza
@@ -200,6 +202,12 @@
                             <button class="btn btn-analysis" onclick="measureFacialSymmetry(event)">⚖️
                                 Simmetria</button>
                             <button class="btn btn-analysis" onclick="estimateAge(event)">🎂 Stima Età</button>
+                            <button class="btn btn-analysis" onclick="measureEyeRotationDiff(event)">👁️ Rot.
+                                Occhi</button>
+                            <button class="btn btn-analysis" onclick="measureNosalWingSymmetry(event)">👃 Sim.
+                                Naso</button>
+                            <button class="btn btn-analysis" onclick="measureEyebrowSymmetry(event)">✂️ Sim.
+                                Sopracciglia</button>
 
                             <!-- Pulsante Analisi Completa - occupa tutta la larghezza -->
                             <button class="btn btn-analysis btn-analysis-complete"
@@ -274,17 +282,22 @@
                         </div>
 
                         <div class="eyebrow-buttons">
-                            <button class="btn btn-analysis" id="green-dots-btn" onclick="toggleGreenDots()">� Trova
+                            <button class="btn btn-analysis" id="green-dots-btn" onclick="toggleGreenDots()">🔍 Trova
                                 Differenze</button>
                             <button class="btn btn-eyebrow" onclick="show_left_eyebrow_with_voice()">✂️ Preferenza
                                 Destra</button>
                             <button class="btn btn-eyebrow" onclick="show_right_eyebrow_with_voice()">✂️ Preferenza
                                 Sinistra</button>
                         </div>
+                        <div style="margin-top: 4px;">
+                            <button onclick="showWhiteDotsDebugImages()" id="wdots-debug-btn"
+                                style="width: 100%; padding: 6px; background: linear-gradient(135deg, #1a3a1a, #2a4a2a); border: 1px solid #3a7a3a; border-radius: 6px; color: #7dff7d; font-size: 11px; cursor: pointer;">
+                                🔬 Debug Rilevamento (2 img)
+                            </button>
+                        </div>
 
-                        <!-- Pannello Parametri Rilevamento White Dots -->
-                        <div id="white-dots-params-panel"
-                            style="display: none; margin-top: 15px; padding: 12px; background: #1a1a2e; border-radius: 8px; border: 1px solid #4a4a6a;">
+                        <!-- pannello parametri rimosso: il backend usa _detect_white_dots_v3 con params fissi -->
+                        <div id="white-dots-params-panel" style="display:none;">
                             <div
                                 style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                                 <span style="font-weight: bold; color: #00d4ff;">⚙️ Parametri Rilevamento</span>
@@ -292,138 +305,159 @@
                                     style="padding: 4px 8px; font-size: 11px; background: #ff6b6b; border: none; border-radius: 4px; color: white; cursor: pointer;">Reset</button>
                             </div>
 
-                            <!-- Badge info 2-pass automatico -->
+                            <!-- Pulsanti principali azione -->
+                            <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+                                <button onclick="resetAndRedetect()"
+                                    style="flex: 1; padding: 10px 6px; background: linear-gradient(135deg, #e67e22, #d35400); border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer; font-size: 13px;">
+                                    🔄 Rerileva
+                                </button>
+                                <button onclick="saveAsDefaultWhiteDotsParams()"
+                                    style="flex: 2; padding: 10px 6px; background: linear-gradient(135deg, #555, #333); border: 1px solid #666; border-radius: 6px; color: #aaa; font-weight: bold; cursor: pointer; font-size: 13px;">
+                                    ℹ️ Info Parametri Fissi
+                                </button>
+                            </div>
+
+                            <!-- Area scrollabile con tutti gli slider -->
                             <div
-                                style="padding:10px 12px; background:#0d2818; border:1px solid #2ea043; border-radius:6px; margin-bottom:14px;">
-                                <div style="color:#3fb950; font-weight:bold; font-size:12px; margin-bottom:6px;">🎯
-                                    Rilevamento automatico 2-pass</div>
-                                <div style="color:#8b949e; font-size:11px; line-height:1.6;">
-                                    <span style="color:#58a6ff;">Pass 1</span> (selettività <span
-                                        id="badge-p1-perc">50</span>%, sat-cap <span id="badge-p1-sat">30</span>%) → <b
-                                        style="color:#fff;">LB</b> + <b style="color:#fff;">RB</b> — punti più esterni
-                                    (code)<br>
-                                    <span style="color:#f78166;">Pass 2</span> (selettività <span
-                                        id="badge-p2-perc">80</span>%, sat-cap <span id="badge-p2-sat">25</span>%) → <b
-                                        style="color:#fff;">4 punti sx</b> + <b style="color:#fff;">4 punti dx</b> —
-                                    punti centrali<br>
-                                    <span style="color:#3fb950;">Totale atteso: 10 punti</span>
-                                </div>
-                            </div>
+                                style="max-height: 55vh; overflow-y: auto; overflow-x: hidden; padding-right: 4px; scrollbar-width: thin; scrollbar-color: #4a4a8a #1a1a2e;">
 
-                            <!-- Slider avanzati pass1/pass2 — visibili SOLO per immagini statiche -->
-                            <div id="adaptive-advanced-params"
-                                style="display:none; margin-bottom:14px; padding:10px; background:#0d1117; border:1px solid #30363d; border-radius:6px;">
-                                <div style="color:#58a6ff; font-size:11px; font-weight:bold; margin-bottom:10px;">🔧
-                                    Regolazione fine (solo immagini statiche)</div>
-
+                                <!-- Badge info 2-pass automatico -->
                                 <div
-                                    style="color:#8b949e; font-size:10px; margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px;">
-                                    Pass 1 — code (LB / RB)</div>
-                                <div class="param-slider-group">
-                                    <label>Selettività: <span id="p1-percentile-value">60</span>%</label>
-                                    <input type="range" id="p1-percentile-slider" min="20" max="85" value="60"
-                                        oninput="updateAdaptiveParam('pass1_percentile', this.value, 'p1-percentile-value', 'badge-p1-perc')">
-                                    <small>⬅ include più candidati — più restrittivo ➡</small>
-                                </div>
-                                <div class="param-slider-group">
-                                    <label>Filtro colore: <span id="p1-sat-cap-value">25</span>%</label>
-                                    <input type="range" id="p1-sat-cap-slider" min="10" max="70" value="25"
-                                        oninput="updateAdaptiveParam('pass1_sat_cap', this.value, 'p1-sat-cap-value', 'badge-p1-sat')">
-                                    <small>Abbassa se la pelle genera falsi positivi nelle code</small>
-                                </div>
-
-                                <div
-                                    style="color:#f78166; font-size:10px; margin:10px 0 6px; text-transform:uppercase; letter-spacing:.5px;">
-                                    Pass 2 — punti centrali (4+4)</div>
-                                <div class="param-slider-group">
-                                    <label>Selettività: <span id="p2-percentile-value">80</span>%</label>
-                                    <input type="range" id="p2-percentile-slider" min="50" max="97" value="80"
-                                        oninput="updateAdaptiveParam('pass2_percentile', this.value, 'p2-percentile-value', 'badge-p2-perc')">
-                                    <small>⬅ più punti trovati — solo i più brillanti ➡</small>
-                                </div>
-                                <div class="param-slider-group">
-                                    <label>Filtro colore: <span id="p2-sat-cap-value">20</span>%</label>
-                                    <input type="range" id="p2-sat-cap-slider" min="10" max="70" value="20"
-                                        oninput="updateAdaptiveParam('pass2_sat_cap', this.value, 'p2-sat-cap-value', 'badge-p2-sat')">
-                                    <small>Abbassa se compaiono macchie colorate sui punti centrali</small>
-                                </div>
-                            </div>
-
-                            <!-- Cluster Size Min -->
-                            <div class="param-slider-group">
-                                <label>Dimensione Min Cluster: <span id="cluster-min-value">6</span>px</label>
-                                <input type="range" id="cluster-min-slider" min="1" max="50" value="6"
-                                    oninput="updateWhiteDotsParam('cluster_size_min', this.value)">
-                                <small>Più alto = ignora puntini piccoli (rumore)</small>
-                            </div>
-
-                            <!-- Cluster Size Max -->
-                            <div class="param-slider-group">
-                                <label>Dimensione Max Cluster: <span id="cluster-max-value">300</span>px</label>
-                                <input type="range" id="cluster-max-slider" min="20" max="400" value="300"
-                                    oninput="updateWhiteDotsParam('cluster_size_max', this.value)">
-                                <small>Più alto = include cluster più grandi (fino a 400px)</small>
-                            </div>
-
-                            <!-- Min Distance -->
-                            <div class="param-slider-group">
-                                <label>Distanza Min tra Punti: <span id="min-distance-value">10</span>px</label>
-                                <input type="range" id="min-distance-slider" min="5" max="50" value="10"
-                                    oninput="updateWhiteDotsParam('min_distance', this.value)">
-                                <small>Più alto = punti più distanziati</small>
-                            </div>
-
-                            <!-- Pulsanti azione -->
-                            <div style="display: flex; gap: 8px; margin-top: 12px;">
-                                <!-- Pulsante Contagocce -->
-                                <button id="eyedropper-btn" onclick="toggleEyedropper()"
-                                    style="flex: 1; padding: 10px; background: linear-gradient(135deg, #9b59b6, #8e44ad); border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer;">
-                                    💧 Contagocce
-                                </button>
-                                <!-- Pulsante Rileva -->
-                                <button id="detect-with-params-btn" onclick="detectWithCurrentParams()"
-                                    style="flex: 2; padding: 10px; background: linear-gradient(135deg, #00d4ff, #0099cc); border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer;">
-                                    🔍 Rileva
-                                </button>
-                            </div>
-
-                            <!-- Pannello risultati contagocce -->
-                            <div id="eyedropper-results"
-                                style="display: none; margin-top: 10px; padding: 10px; background: #0d0d1a; border-radius: 6px; border: 1px solid #9b59b6;">
-                                <div style="font-weight: bold; color: #9b59b6; margin-bottom: 8px;">💧 Analisi Punto
-                                    Selezionato</div>
-                                <div id="eyedropper-color-preview"
-                                    style="width: 100%; height: 30px; border-radius: 4px; margin-bottom: 8px; border: 1px solid #444;">
-                                </div>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px;">
-                                    <div>RGB: <span id="eyedropper-rgb" style="color: #00d4ff;">-</span></div>
-                                    <div>Pos: <span id="eyedropper-pos" style="color: #00d4ff;">-</span></div>
-                                    <div>Hue: <span id="eyedropper-hue" style="color: #00d4ff;">-</span>°</div>
-                                    <div>Sat: <span id="eyedropper-sat" style="color: #00d4ff;">-</span>%</div>
-                                    <div>Val: <span id="eyedropper-val" style="color: #00d4ff;">-</span>%</div>
-                                    <div>Cluster: <span id="eyedropper-cluster" style="color: #00d4ff;">-</span>px</div>
-                                </div>
-                                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;">
-                                    <div style="font-size: 10px; color: #888;">Suggerimento parametri:</div>
-                                    <div id="eyedropper-suggestion"
-                                        style="font-size: 11px; color: #00ff88; margin-top: 4px;">
-                                        Clicca su un puntino bianco nell'immagine
+                                    style="padding:10px 12px; background:#0d2818; border:1px solid #2ea043; border-radius:6px; margin-bottom:14px;">
+                                    <div style="color:#3fb950; font-weight:bold; font-size:12px; margin-bottom:6px;">🎯
+                                        Rilevamento automatico 2-pass</div>
+                                    <div style="color:#8b949e; font-size:11px; line-height:1.6;">
+                                        <span style="color:#58a6ff;">Pass 1</span> (selettività <span
+                                            id="badge-p1-perc">50</span>%, sat-cap <span id="badge-p1-sat">28</span>%) →
+                                        <b style="color:#fff;">LB</b> + <b style="color:#fff;">RB</b> — punti più
+                                        esterni
+                                        (code)<br>
+                                        <span style="color:#f78166;">Pass 2</span> (selettività <span
+                                            id="badge-p2-perc">80</span>%, sat-cap <span id="badge-p2-sat">25</span>%) →
+                                        <b style="color:#fff;">4 punti sx</b> + <b style="color:#fff;">4 punti dx</b> —
+                                        punti centrali<br>
+                                        <span style="color:#3fb950;">Totale atteso: 10 punti</span>
                                     </div>
                                 </div>
-                                <button onclick="applyEyedropperSuggestion()" id="apply-suggestion-btn"
-                                    style="display: none; width: 100%; margin-top: 8px; padding: 6px; background: #27ae60; border: none; border-radius: 4px; color: white; font-size: 11px; cursor: pointer;">
-                                    ✓ Applica suggerimento agli sliders
-                                </button>
-                            </div>
 
-                            <!-- Info parametri correnti -->
-                            <div id="current-params-info"
-                                style="margin-top: 10px; padding: 8px; background: #0d0d1a; border-radius: 4px; font-size: 11px; color: #888;">
-                                Modifica i parametri e clicca "Rileva" per testare
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                                <!-- Slider avanzati pass1/pass2 —visibili per immagini statiche -->
+                                <div id="adaptive-advanced-params"
+                                    style="display:none; margin-bottom:14px; padding:10px; background:#0d1117; border:1px solid #30363d; border-radius:6px;">
+                                    <div style="color:#58a6ff; font-size:11px; font-weight:bold; margin-bottom:10px;">🔧
+                                        Regolazione fine Pass 1 / Pass 2</div>
+
+                                    <div
+                                        style="color:#8b949e; font-size:10px; margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px;">
+                                        Pass 1 — code (LB / RB)</div>
+                                    <div class="param-slider-group">
+                                        <label>Selettività: <span id="p1-percentile-value">50</span>%</label>
+                                        <input type="range" id="p1-percentile-slider" min="20" max="85" value="50"
+                                            oninput="updateAdaptiveParam('pass1_percentile', this.value, 'p1-percentile-value', 'badge-p1-perc')">
+                                        <small>⬅ include più candidati — più restrittivo ➡</small>
+                                    </div>
+                                    <div class="param-slider-group">
+                                        <label>Filtro colore: <span id="p1-sat-cap-value">28</span>%</label>
+                                        <input type="range" id="p1-sat-cap-slider" min="10" max="70" value="28"
+                                            oninput="updateAdaptiveParam('pass1_sat_cap', this.value, 'p1-sat-cap-value', 'badge-p1-sat')">
+                                        <small>Abbassa se la pelle genera falsi positivi nelle code</small>
+                                    </div>
+
+                                    <div
+                                        style="color:#f78166; font-size:10px; margin:10px 0 6px; text-transform:uppercase; letter-spacing:.5px;">
+                                        Pass 2 — punti centrali (4+4)</div>
+                                    <div class="param-slider-group">
+                                        <label>Selettività: <span id="p2-percentile-value">80</span>%</label>
+                                        <input type="range" id="p2-percentile-slider" min="50" max="97" value="80"
+                                            oninput="updateAdaptiveParam('pass2_percentile', this.value, 'p2-percentile-value', 'badge-p2-perc')">
+                                        <small>⬅ più punti trovati — solo i più brillanti ➡</small>
+                                    </div>
+                                    <div class="param-slider-group">
+                                        <label>Filtro colore: <span id="p2-sat-cap-value">25</span>%</label>
+                                        <input type="range" id="p2-sat-cap-slider" min="10" max="70" value="25"
+                                            oninput="updateAdaptiveParam('pass2_sat_cap', this.value, 'p2-sat-cap-value', 'badge-p2-sat')">
+                                        <small>Abbassa se compaiono macchie colorate sui punti centrali</small>
+                                    </div>
+                                </div>
+
+                                <!-- Cluster Size Min -->
+                                <div class="param-slider-group">
+                                    <label>Dimensione Min Cluster: <span id="cluster-min-value">3</span>px</label>
+                                    <input type="range" id="cluster-min-slider" min="1" max="50" value="3"
+                                        oninput="updateWhiteDotsParam('cluster_size_min', this.value)">
+                                    <small>Più alto = ignora puntini piccoli (rumore)</small>
+                                </div>
+
+                                <!-- Cluster Size Max -->
+                                <div class="param-slider-group">
+                                    <label>Dimensione Max Cluster: <span id="cluster-max-value">600</span>px</label>
+                                    <input type="range" id="cluster-max-slider" min="20" max="700" value="600"
+                                        oninput="updateWhiteDotsParam('cluster_size_max', this.value)">
+                                    <small>Più alto = include cluster più grandi (fino a 700px)</small>
+                                </div>
+
+                                <!-- Min Distance -->
+                                <div class="param-slider-group">
+                                    <label>Distanza Min tra Punti: <span id="min-distance-value">30</span>px</label>
+                                    <input type="range" id="min-distance-slider" min="5" max="50" value="30"
+                                        oninput="updateWhiteDotsParam('min_distance', this.value)">
+                                    <small>Più alto = punti più distanziati</small>
+                                </div>
+
+                                <!-- Pulsanti azione -->
+                                <div style="display: flex; gap: 8px; margin-top: 12px;">
+                                    <!-- Pulsante Contagocce -->
+                                    <button id="eyedropper-btn" onclick="toggleEyedropper()"
+                                        style="flex: 1; padding: 10px; background: linear-gradient(135deg, #9b59b6, #8e44ad); border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer;">
+                                        💧 Contagocce
+                                    </button>
+                                    <!-- Pulsante Rileva -->
+                                    <button id="detect-with-params-btn" onclick="detectWithCurrentParams()"
+                                        style="flex: 2; padding: 10px; background: linear-gradient(135deg, #00d4ff, #0099cc); border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer;">
+                                        🔍 Rileva
+                                    </button>
+                                </div>
+
+                                <!-- Pannello risultati contagocce -->
+                                <div id="eyedropper-results"
+                                    style="display: none; margin-top: 10px; padding: 10px; background: #0d0d1a; border-radius: 6px; border: 1px solid #9b59b6;">
+                                    <div style="font-weight: bold; color: #9b59b6; margin-bottom: 8px;">💧 Analisi Punto
+                                        Selezionato</div>
+                                    <div id="eyedropper-color-preview"
+                                        style="width: 100%; height: 30px; border-radius: 4px; margin-bottom: 8px; border: 1px solid #444;">
+                                    </div>
+                                    <div
+                                        style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px;">
+                                        <div>RGB: <span id="eyedropper-rgb" style="color: #00d4ff;">-</span></div>
+                                        <div>Pos: <span id="eyedropper-pos" style="color: #00d4ff;">-</span></div>
+                                        <div>Hue: <span id="eyedropper-hue" style="color: #00d4ff;">-</span>°</div>
+                                        <div>Sat: <span id="eyedropper-sat" style="color: #00d4ff;">-</span>%</div>
+                                        <div>Val: <span id="eyedropper-val" style="color: #00d4ff;">-</span>%</div>
+                                        <div>Cluster: <span id="eyedropper-cluster" style="color: #00d4ff;">-</span>px
+                                        </div>
+                                    </div>
+                                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;">
+                                        <div style="font-size: 10px; color: #888;">Suggerimento parametri:</div>
+                                        <div id="eyedropper-suggestion"
+                                            style="font-size: 11px; color: #00ff88; margin-top: 4px;">
+                                            Clicca su un puntino bianco nell'immagine
+                                        </div>
+                                    </div>
+                                    <button onclick="applyEyedropperSuggestion()" id="apply-suggestion-btn"
+                                        style="display: none; width: 100%; margin-top: 8px; padding: 6px; background: #27ae60; border: none; border-radius: 4px; color: white; font-size: 11px; cursor: pointer;">
+                                        ✓ Applica suggerimento agli sliders
+                                    </button>
+                                </div>
+
+                                <!-- Info parametri correnti -->
+                                <div id="current-params-info"
+                                    style="margin-top: 10px; padding: 8px; background: #0d0d1a; border-radius: 4px; font-size: 11px; color: #888;">
+                                    Modifica i parametri e clicca "Rileva" per testare
+                                </div>
+
+                            </div><!-- fine area scrollabile -->
+                        </div><!-- fine white-dots-params-panel -->
+                    </div><!-- fine section-content -->
+                </div><!-- fine section -->
 
                 <!-- Sezione ASSISTENTE VOCALE -->
                 <div class="section" data-expanded="false" id="voice-assistant-section">
@@ -919,12 +953,15 @@
             <button class="btn-tool-strip" onclick="measureNoseWidth(event);">👃 L.Naso</button>
             <button class="btn-tool-strip" onclick="measureNoseHeight(event);">📏 H.Naso</button>
             <button class="btn-tool-strip" onclick="measureMouthWidth(event);">👄 L.Bocca</button>
-            <button class="btn-tool-strip" onclick="measureEyebrowAreas(event);">✂️ Sopracciglia</button>
+            <!-- DISABILITATO: <button class="btn-tool-strip" onclick="measureEyebrowAreas(event);">✂️ Sopracciglia</button> -->
             <button class="btn-tool-strip" onclick="measureEyeAreas(event);">👁️ Aree Occhi</button>
             <button class="btn-tool-strip" onclick="measureForeheadWidth(event);">🤔 L.Fronte</button>
             <button class="btn-tool-strip" onclick="measureFaceProportions(event);">📏 Proporzioni</button>
             <button class="btn-tool-strip" onclick="measureFacialSymmetry(event);">⚖️ Simmetria</button>
             <button class="btn-tool-strip" onclick="estimateAge(event);">🎂 Età</button>
+            <button class="btn-tool-strip" onclick="measureEyeRotationDiff(event);">👁️ Rot.Occhi</button>
+            <button class="btn-tool-strip" onclick="measureNosalWingSymmetry(event);">👃 Sim.Naso</button>
+            <button class="btn-tool-strip" onclick="measureEyebrowSymmetry(event);">✂️ Sim.Sopracci.</button>
             <button class="btn-tool-strip btn-tool-strip-complete" onclick="performCompleteAnalysis(event);">🧬 Analisi
                 Completa</button>
         </div>
@@ -952,7 +989,6 @@
             function setVH() {
                 const vh = window.innerHeight * 0.01;
                 document.documentElement.style.setProperty('--vh', `${vh}px`);
-                console.log(`📐 Viewport height aggiornato: ${window.innerHeight}px`);
             }
 
             setVH();
@@ -1006,6 +1042,10 @@
 
                 if (panel) {
                     panel.classList.remove('mobile-panel-open');
+                    panel.classList.remove('mobile-dati-bottomsheet');
+                    // Ripristina titolo header originale
+                    const headerTitle = panel.querySelector('.mobile-panel-header h2');
+                    if (headerTitle) headerTitle.textContent = 'Dati & Anteprima';
                 }
 
                 if (overlay && !currentOpenQuickPanel) {
@@ -1023,7 +1063,12 @@
                 const overlay = document.getElementById('mobile-overlay');
 
                 if (leftSidebar) leftSidebar.classList.remove('mobile-panel-open');
-                if (rightSidebar) rightSidebar.classList.remove('mobile-panel-open');
+                if (rightSidebar) {
+                    rightSidebar.classList.remove('mobile-panel-open');
+                    rightSidebar.classList.remove('mobile-dati-bottomsheet');
+                    const headerTitle = rightSidebar.querySelector('.mobile-panel-header h2');
+                    if (headerTitle) headerTitle.textContent = 'Dati & Anteprima';
+                }
 
                 closeMobileQuickPanel('camera');
                 closeMobileQuickPanel('tools');
@@ -1084,6 +1129,8 @@
 
             // ========================================
             // APRI PANNELLO DATI ANALISI (mobile)
+            // Usa il bottomsheet: occupa solo metà schermo inferiore,
+            // il canvas rimane visibile e interattivo sopra.
             // ========================================
             window.openMobileDatiPanel = function () {
                 if (!isMobile()) return;
@@ -1093,12 +1140,30 @@
                 if (toolsPanel) toolsPanel.classList.remove('open');
                 if (currentOpenQuickPanel === 'tools') currentOpenQuickPanel = null;
 
-                openMobilePanel('right');
+                // Chiudi il pannello sinistro se aperto
+                if (currentOpenPanel && currentOpenPanel !== 'right') {
+                    const sidePanel = document.getElementById(currentOpenPanel + '-sidebar');
+                    if (sidePanel) sidePanel.classList.remove('mobile-panel-open');
+                    currentOpenPanel = null;
+                }
 
-                // Auto-espandi DATI ANALISI, collassa le altre sezioni
+                const rightSidebar = document.getElementById('right-sidebar');
+                if (!rightSidebar) return;
+
+                // Applica modalità bottomsheet: metà schermo, senza overlay
+                rightSidebar.classList.add('mobile-dati-bottomsheet');
+                rightSidebar.classList.add('mobile-panel-open');
+                currentOpenPanel = 'right';
+
+                // NON bloccare scroll del body: il canvas deve restare interattivo
+                // NON attivare l'overlay scuro
+
+                // Aggiorna titolo header
+                const headerTitle = rightSidebar.querySelector('.mobile-panel-header h2');
+                if (headerTitle) headerTitle.textContent = '📊 Dati Analisi';
+
+                // Auto-espandi DATI ANALISI, collassa Anteprima
                 setTimeout(function () {
-                    const rightSidebar = document.getElementById('right-sidebar');
-                    if (!rightSidebar) return;
                     const sections = rightSidebar.querySelectorAll(':scope > .section');
                     sections.forEach(function (sec) {
                         const btn = sec.querySelector('.toggle-btn');
@@ -1405,11 +1470,11 @@
     <!-- jsPDF per generazione PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <script src="static/js/api-client.js"></script>
+    <script src="static/js/api-client.js?v=20260225-perf"></script>
     <script src="static/js/face-detection.js"></script>
     <script src="static/js/measurements.js?v=20260120-0612"></script>
     <script src="static/js/scoring.js"></script>
-    <script src="static/js/canvas.js?v=20260225-fix2"></script>
+    <script src="static/js/canvas.js?v=20260225-nomaxwidth"></script>
     <!-- Sistema modalità canvas (PAN, ZOOM, SELEZIONE) -->
     <script src="static/js/canvas-modes.js"></script>
     <!-- NUOVO FILE PULITO - Correzione sopracciglia -->
@@ -1418,7 +1483,7 @@
     <script src="static/js/face-analysis-complete.js"></script>
     <!-- Frame Processor Unificato -->
     <script src="static/js/frame-processor.js"></script>
-    <script src="static/js/main.js?v=20260225-fix5"></script>
+    <script src="static/js/main.js?v=20260225-accent"></script>
 
     <!-- MediaPipe per face detection -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -1431,7 +1496,7 @@
          ======================================== -->
 
     <!-- Voice Assistant Script -->
-    <script src="static/js/voice_assistant.js?v=20260225-mobilewelcome"></script>
+    <script src="static/js/voice_assistant.js?v=20260225-desktopunlock"></script>
 
     <!-- Voice Widget Container (NASCOSTO - ora è nella sidebar) -->
     <div id="voice-widget-container" style="display: none;"></div>
@@ -2049,12 +2114,36 @@
             // ✅ Variabile globale per tracciare stato iPhone reale
             window.isIPhoneStreamActive = false;
 
-            // Aggiorna il QR code (forza refresh)
+            // Genera token di sessione univoco per questo utente/tab
+            // Il token accoppia il desktop con il proprio iPhone escludendo altri utenti.
+            window._iphoneSessionToken = (function () {
+                const stored = sessionStorage.getItem('_iphoneSessionToken');
+                if (stored) return stored;
+                const t = crypto.randomUUID ? crypto.randomUUID() :
+                    ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g,
+                        c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+                sessionStorage.setItem('_iphoneSessionToken', t);
+                return t;
+            })();
+
+            // Inizializza src QR code con session token
+            (function () {
+                const qrImg = document.getElementById('qr-code-img');
+                if (qrImg) {
+                    qrImg.src = '/api/qrcode.png?st=' + encodeURIComponent(window._iphoneSessionToken);
+                }
+            })();
+
+            // Aggiorna il QR code (forza refresh, mantiene session token)
             window.refreshQRCode = function () {
                 const qrImg = document.getElementById('qr-code-img');
                 if (qrImg) {
-                    // Aggiungi timestamp per forzare refresh
-                    qrImg.src = '/api/qrcode.png?t=' + Date.now();
+                    // Rigenetra token per la nuova sessione
+                    window._iphoneSessionToken = crypto.randomUUID ? crypto.randomUUID() :
+                        ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g,
+                            c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+                    sessionStorage.setItem('_iphoneSessionToken', window._iphoneSessionToken);
+                    qrImg.src = '/api/qrcode.png?st=' + encodeURIComponent(window._iphoneSessionToken) + '&t=' + Date.now();
                 }
             };
 
@@ -2286,9 +2375,9 @@
                     const absRoll = Math.abs(roll);
 
                     if (faceRatio > 0 && faceRatio < 0.18) {
-                        msg = 'Avvicinati alla fotocamera.';
+                        msg = 'Avvicìnati alla fotocamera.';
                     } else if (faceRatio > 0.58) {
-                        msg = 'Allontanati un po\' dalla fotocamera.';
+                        msg = 'Allontànati un po\' dalla fotocamera.';
                     } else if (absYaw >= 14 && absYaw >= absPitch && absYaw >= absRoll) {
                         msg = yaw > 0 ? 'Gìrati leggermente a sinistra.' : 'Gìrati leggermente a destra.';
                     } else if (absPitch >= 12 && absPitch >= absRoll) {
@@ -2838,6 +2927,71 @@
             }
         }
     </script>
+
+    <!-- ── MODAL DEBUG RILEVAMENTO PUNTI BIANCHI ─────────────────────────── -->
+    <div id="wdots-debug-modal"
+        style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.82); z-index:9999; overflow:auto; padding:16px;">
+        <div
+            style="max-width:1100px; margin:auto; background:#111; border-radius:10px; padding:18px; border:1px solid #3a7a3a;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <span style="color:#7dff7d; font-weight:bold; font-size:15px;">🔬 Debug Rilevamento Punti Bianchi (v3
+                    dlib-perimeter)</span>
+                <button onclick="document.getElementById('wdots-debug-modal').style.display='none'"
+                    style="background:#c0392b; color:white; border:none; border-radius:6px; padding:6px 14px; cursor:pointer; font-size:13px;">✕
+                    Chiudi</button>
+            </div>
+            <div id="wdots-debug-status" style="color:#aaa; font-size:12px; margin-bottom:10px;">Premi il pulsante per
+                generare le immagini...</div>
+
+            <!-- Controlli parametri interattivi -->
+            <div
+                style="background:#1a1a2e; border:1px solid #3a3a6a; border-radius:6px; padding:10px 14px; margin-bottom:12px; display:flex; gap:24px; flex-wrap:wrap; align-items:center;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <label style="color:#00d4ff; font-size:12px; white-space:nowrap;">Luminosità – top
+                        <span id="wdots-perc-val" style="color:#fff; font-weight:bold;">25</span>%
+                    </label>
+                    <input type="range" id="wdots-perc" min="1" max="50" value="25"
+                        style="width:110px; accent-color:#00d4ff;"
+                        oninput="document.getElementById('wdots-perc-val').textContent=this.value; wdotsScheduleRecalc()">
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <label style="color:#ffaa00; font-size:12px; white-space:nowrap;">Saturazione max
+                        <span id="wdots-sat-val" style="color:#fff; font-weight:bold;">28</span>%
+                    </label>
+                    <input type="range" id="wdots-sat" min="5" max="80" value="28"
+                        style="width:110px; accent-color:#ffaa00;"
+                        oninput="document.getElementById('wdots-sat-val').textContent=this.value; wdotsScheduleRecalc()">
+                </div>
+                <div style="color:#888; font-size:11px;">← modifica e l'immagine si ricalcola automaticamente</div>
+            </div>
+
+            <div id="wdots-debug-params"
+                style="display:none; background:#111d11; border:1px solid #3a6a3a; border-radius:6px; padding:8px 12px; margin-bottom:10px; font-size:11px; color:#aaa;">
+                <span style="color:#7dff7d; font-weight:bold;">⚙️ Parametri attivi:</span>
+                <span id="wdots-params-text" style="margin-left:8px;"></span>
+            </div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <div style="flex:1; min-width:280px;">
+                    <div style="color:#00d4ff; font-size:12px; margin-bottom:6px;">① Zona di Ricerca (maschera dlib +
+                        striscia)</div>
+                    <img id="wdots-debug-zone" src="" alt="zone"
+                        style="width:100%; border-radius:6px; border:1px solid #333; display:none;">
+                </div>
+                <div style="flex:1; min-width:280px;">
+                    <div style="color:#ffaa00; font-size:12px; margin-bottom:6px;">② Rilevamento Blob + Top-5
+                        selezionati</div>
+                    <img id="wdots-debug-detect" src="" alt="detect"
+                        style="width:100%; border-radius:6px; border:1px solid #333; display:none;">
+                </div>
+                <div style="flex:1; min-width:280px;">
+                    <div style="color:#ff7dff; font-size:12px; margin-bottom:6px;">③ Pixel analizzati (solo strip, nero
+                        fuori)</div>
+                    <img id="wdots-debug-masked" src="" alt="masked"
+                        style="width:100%; border-radius:6px; border:1px solid #333; display:none;">
+                </div>
+            </div>
+        </div>
+    </div>
 
 </body>
 

@@ -892,8 +892,8 @@ class GreenDotsProcessor:
                 outline=(0, 0, 0, 255),
                 width=1,
             )
-            # Etichetta numerica semplice
-            draw.text((x + 6, y - 6), str(i + 1), fill=(0, 0, 0, 255))
+            # Etichetta numerica semplice (sopra il punto, leggermente più lontana)
+            draw.text((x + 10, y - 14), str(i + 1), fill=(0, 0, 0, 255))
 
         return overlay
 
@@ -962,7 +962,10 @@ class GreenDotsProcessor:
                 )
                 # Usa etichette personalizzate o fallback se ci sono più punti
                 label = left_labels[i] if i < len(left_labels) else f"L{i+1}"
-                draw.text((x + 6, y - 6), label, fill=(0, 0, 0, 255))
+                # LA, LC, LB → sotto il punto; LC1, LA0 → sopra
+                below_labels = {"LA", "LC", "LB"}
+                text_y = y + 12 if label in below_labels else y - 14
+                draw.text((x + 10, text_y), label, fill=(0, 0, 0, 255))
 
         # Disegna forma destra SOLO se ci sono esattamente 5 punti
         if right_points and len(right_points) == 5:
@@ -992,7 +995,10 @@ class GreenDotsProcessor:
                 )
                 # Usa etichette personalizzate o fallback se ci sono più punti
                 label = right_labels[i] if i < len(right_labels) else f"R{i+1}"
-                draw.text((x + 6, y - 6), label, fill=(0, 0, 0, 255))
+                # RA, RC, RB → sotto il punto; RC1, RA0 → sopra
+                below_labels = {"RA", "RC", "RB"}
+                text_y = y + 12 if label in below_labels else y - 14
+                draw.text((x + 10, text_y), label, fill=(0, 0, 0, 255))
 
         return overlay
 
