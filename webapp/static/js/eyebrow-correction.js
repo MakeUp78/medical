@@ -19,6 +19,28 @@
 console.log('🔄 Eyebrow Correction Module LOADED v1.0');
 
 // ============================================================================
+// HELPER FUNCTION - Interrompe sintesi vocale
+// ============================================================================
+
+function stopVoiceAssistant() {
+  if (typeof voiceAssistant !== 'undefined' && voiceAssistant.audioPlayer) {
+    console.log('🔇 Interruzione sintesi vocale...');
+    voiceAssistant.audioPlayer.pause();
+    voiceAssistant.audioPlayer.currentTime = 0;
+    voiceAssistant.audioPlayer.src = '';
+    voiceAssistant.audioPlayer.onended = null;
+
+    // Svuota anche la coda delle frasi
+    if (voiceAssistant.queue) {
+      voiceAssistant.queue = [];
+    }
+    if (voiceAssistant.isPlaying !== undefined) {
+      voiceAssistant.isPlaying = false;
+    }
+  }
+}
+
+// ============================================================================
 // ENTRY POINTS - Chiamati dai pulsanti HTML
 // ============================================================================
 
@@ -115,25 +137,32 @@ function showEyebrowCorrectionWindow(side) {
 // ============================================================================
 
 function calculateSymmetryAxis() {
-  // MediaPipe landmarks: 9 = glabella (centro fronte), 164 = philtrum (area naso-labbro)
-  // IMPORTANTE: Stessi landmarks usati in main.js drawSymmetryAxis() per coerenza
-  const glabella = window.currentLandmarks[9];
-  const philtrum = window.currentLandmarks[164];
+  // Usa getSymmetryAxisPosition() (main.js) come fonte autorevole — garantisce coerenza con l'asse visivo
+  if (typeof window.getSymmetryAxisPosition === 'function') {
+    const axisPos = window.getSymmetryAxisPosition();
+    if (axisPos && axisPos.line) {
+      const p1 = { x: axisPos.line.x1, y: axisPos.line.y1 };
+      const p2 = { x: axisPos.line.x2, y: axisPos.line.y2 };
+      console.log(`✅ Asse simmetria da getSymmetryAxisPosition()`);
+      console.log(`   📍 p1: (${p1.x.toFixed(1)}, ${p1.y.toFixed(1)})`);
+      console.log(`   📍 p2: (${p2.x.toFixed(1)}, ${p2.y.toFixed(1)})`);
+      return { p1, p2 };
+    }
+  }
+
+  // Fallback: trasforma coordinate raw → canvas
+  const glabella = window.currentLandmarks?.[9];
+  const philtrum = window.currentLandmarks?.[164];
 
   if (!glabella || !philtrum) {
     console.error('❌ Landmarks 9 o 164 non disponibili');
     return null;
   }
 
-  // Trasforma coordinate landmark → canvas (passa l'intero oggetto!)
   const p1 = window.transformLandmarkCoordinate(glabella);
   const p2 = window.transformLandmarkCoordinate(philtrum);
 
-  console.log(`✅ Asse simmetria calcolato con landmarks 9 (glabella) e 164 (philtrum)`);
-  console.log(`   📍 p1 (glabella): (${p1.x.toFixed(1)}, ${p1.y.toFixed(1)})`);
-  console.log(`   📍 p2 (philtrum): (${p2.x.toFixed(1)}, ${p2.y.toFixed(1)})`);
-  console.log(`   📐 Direzione asse: dx=${(p2.x - p1.x).toFixed(1)}, dy=${(p2.y - p1.y).toFixed(1)}`);
-
+  console.log(`✅ Asse simmetria via transformLandmarkCoordinate (fallback)`);
   return { p1, p2 };
 }
 
@@ -230,10 +259,19 @@ function createFullImageOverlay(sourceCanvas, side, axis) {
   // Array per salvare coppie di punti per le frecce
   const arrowPairs = [];
 
-  // Dimensione punti scalata in base al ridimensionamento
-  // Immagini piccole: punti piccoli originali (1px)
-  // Immagini grandi ridimensionate: punti più grandi e visibili
-  const pointRadius = wasResized ? Math.max(5, 12 / resizeRatio) : 1;
+  // Dimensione punti fissa a schermo: calcola la stessa scale usata dal popup
+  // così i cerchi appaiono sempre uguali indipendentemente dalla risoluzione dell'immagine
+  const _maxDisplayW = window.innerWidth * 0.9;
+  const _maxDisplayH = window.innerHeight * 0.75;
+  const _bbox = calculateInclusiveBbox(side, axis);  // stima bbox per la scala
+  const _cropW = _bbox ? _bbox.width : originalWidth;
+  const _cropH = _bbox ? _bbox.height : originalHeight;
+  const _scaleX = _maxDisplayW / _cropW;
+  const _scaleY = _maxDisplayH / _cropH;
+  const _displayScale = Math.min(_scaleX, _scaleY, 8);
+  // 18px fissi a schermo → raggio in pixel canvas originale
+  const FIXED_SCREEN_RADIUS = 18;
+  const pointRadius = Math.max(2, Math.round(FIXED_SCREEN_RADIUS / _displayScale));
   console.log(`  🎨 Dimensione punti: ${pointRadius.toFixed(1)}px (wasResized: ${wasResized}, ratio: ${resizeRatio.toFixed(2)})`);
 
   // Disegna punti VERDI (backend → originale per disegno)
@@ -695,7 +733,18 @@ function displayCorrectionWindow(croppedCanvas, side) {
   const closeBtn = document.createElement('button');
   closeBtn.textContent = '❌ Chiudi';
   closeBtn.className = 'btn btn-secondary';
-  closeBtn.onclick = () => modal.remove();
+  closeBtn.onclick = () => {
+    stopVoiceAssistant();
+    modal.remove();
+  };
+
+  // Chiudi modal cliccando sul background scuro
+  modal.onclick = (e) => {
+    if (e.target === modal) {
+      stopVoiceAssistant();
+      modal.remove();
+    }
+  };
 
   // Assembla tutto
   buttons.appendChild(saveBtn);

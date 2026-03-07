@@ -40,9 +40,6 @@ except ImportError:
 except Exception as e:
     print(f"⚠️ Errore caricamento .env: {e}")
 
-# Aggiunge il percorso src per importare green_dots_processor
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-
 # Aggiunge il percorso per importare eyebrow_overlay.py
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'face-landmark-localization-master'))
 
@@ -63,31 +60,97 @@ except ImportError as e:
     print(f"Warning: MediaPipe not available: {e}")
     MEDIAPIPE_AVAILABLE = False
 
-# Import del modulo WhiteDotsProcessorV2 (sostituisce GreenDotsProcessor)
-# Aggiunge src/ al path per trovare il modulo indipendentemente dalla cwd
+# Aggiunge src/ al path per trovare moduli Python locali
 _SRC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'src')
 if _SRC_PATH not in sys.path:
     sys.path.insert(0, _SRC_PATH)
-try:
-    from white_dots_processor_v2 import WhiteDotsProcessorV2
-    WHITE_DOTS_AVAILABLE = True
-    print("✅ WhiteDotsProcessorV2 importato con successo")
-except ImportError as e:
-    print(f"⚠️ WhiteDotsProcessorV2 non disponibile: {e}")
-    WHITE_DOTS_AVAILABLE = False
 
-# Retrocompatibilità: mantieni alias per codice esistente
-GREEN_DOTS_AVAILABLE = WHITE_DOTS_AVAILABLE
+# Disponibilità white dots: dipende solo da dlib/eyebrows
+WHITE_DOTS_AVAILABLE = True
 
-# ── Parametri fissi condivisi tra production e debug ─────────────────────────
-# Modificare QUI per cambiare i parametri: vengono usati da:
-#   • _detect_white_dots_v3()  (default degli argomenti)
-#   • process_green_dots_analysis()  (chiamata esplicita)
-#   • /api/white-dots/debug-images  (default del modello Pydantic)
-#   • finestra debug HTML: slider wdots-perc default=25 → 100-25=75, wdots-sat default=28
-WHITE_DOTS_THRESH_PERC   = 75    # percentile luminosità (top 25% = percentile 75)
-WHITE_DOTS_SAT_MAX_FRAC  = 0.28  # saturazione max (28% → sat_max_pct=28 nella finestra debug)
-WHITE_DOTS_MAX_BLOB      = 2500  # area max blob dopo dilatazione merge 8px (LA0/RA0 raggiungono ~1200–1500px²)
+# ── Parametri pipeline white-dots (condivisi tra production e debug) ──────────
+WHITE_DOTS_TARGET_WIDTH  = 1200  # larghezza normalizzazione immagine
+WHITE_DOTS_OUTER_PX      = 35    # espansione maschera dlib (zona intera, non striscia)
+WHITE_DOTS_LUMA_MIN      = 200   # soglia luma minima punti centrali (0-255)
+WHITE_DOTS_LUMA_MAX      = 255   # soglia luma massima punti centrali
+WHITE_DOTS_LUMA_LB       = 120   # soglia luma minima esclusiva LB/RB (estremi X)
+WHITE_DOTS_LUMA_MAX_LB   = 255   # soglia luma massima esclusiva LB/RB
+WHITE_DOTS_HIGHLIGHT_THRESH_INNER    = 160   # soglia luma boost — zona interna
+WHITE_DOTS_HIGHLIGHT_STRENGTH_INNER  = 0.8   # intensità boost zona interna (0.0–1.0)
+WHITE_DOTS_HIGHLIGHT_THRESH_OUTER    = 140   # soglia luma boost — strip esterna LB/RB
+WHITE_DOTS_HIGHLIGHT_STRENGTH_OUTER  = 0.6   # intensità boost strip esterna (0.0–1.0)
+WHITE_DOTS_MIN_CIRCULARITY_INNER = 0.5  # circolarità minima blob zona interna
+WHITE_DOTS_MAX_CIRCULARITY_INNER = 1.0  # circolarità massima blob zona interna
+WHITE_DOTS_MIN_PERIMETER_INNER   = 3    # perimetro minimo px blob zona interna
+WHITE_DOTS_MAX_PERIMETER_INNER   = 60   # perimetro massimo px blob zona interna
+WHITE_DOTS_MIN_CIRCULARITY_OUTER = 0.3  # circolarità minima blob strip esterna LB/RB
+WHITE_DOTS_MAX_CIRCULARITY_OUTER = 1.0  # circolarità massima blob strip esterna LB/RB
+WHITE_DOTS_MIN_PERIMETER_OUTER   = 2    # perimetro minimo px blob strip esterna LB/RB
+WHITE_DOTS_MAX_PERIMETER_OUTER   = 40   # perimetro massimo px blob strip esterna LB/RB
+WHITE_DOTS_MIN_DISTANCE          = 12   # distanza minima px tra blob (NMS deduplicazione)
+
+# ---------------------------------------------------------------------------
+# Persistenza parametri white-dots: file JSON sovrascrive le costanti al boot
+# ---------------------------------------------------------------------------
+_PARAMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'white_dots_params.json')
+
+def _load_white_dots_params() -> dict:
+    """Carica parametri da file JSON; fallback alle costanti hardcoded se non esiste."""
+    raw: dict = {}
+    try:
+        if os.path.exists(_PARAMS_FILE):
+            with open(_PARAMS_FILE) as _f:
+                raw = json.load(_f)
+    except Exception:
+        pass
+    return {
+        "target_width":           int(raw.get("target_width",           WHITE_DOTS_TARGET_WIDTH)),
+        "outer_px":               int(raw.get("outer_px",               WHITE_DOTS_OUTER_PX)),
+        "luma_min":               int(raw.get("luma_min",               WHITE_DOTS_LUMA_MIN)),
+        "luma_max":               int(raw.get("luma_max",               WHITE_DOTS_LUMA_MAX)),
+        "luma_lb":                int(raw.get("luma_lb",                WHITE_DOTS_LUMA_LB)),
+        "luma_max_lb":            int(raw.get("luma_max_lb",            WHITE_DOTS_LUMA_MAX_LB)),
+        "highlight_thresh_inner":       int(raw.get("highlight_thresh_inner",       WHITE_DOTS_HIGHLIGHT_THRESH_INNER)),
+        "highlight_strength_inner":     float(raw.get("highlight_strength_inner",   WHITE_DOTS_HIGHLIGHT_STRENGTH_INNER)),
+        "highlight_thresh_outer":       int(raw.get("highlight_thresh_outer",       WHITE_DOTS_HIGHLIGHT_THRESH_OUTER)),
+        "highlight_strength_outer":     float(raw.get("highlight_strength_outer",   WHITE_DOTS_HIGHLIGHT_STRENGTH_OUTER)),
+        "min_circularity_inner":  float(raw.get("min_circularity_inner", WHITE_DOTS_MIN_CIRCULARITY_INNER)),
+        "max_circularity_inner":  float(raw.get("max_circularity_inner", WHITE_DOTS_MAX_CIRCULARITY_INNER)),
+        "min_perimeter_inner":    int(raw.get("min_perimeter_inner",    WHITE_DOTS_MIN_PERIMETER_INNER)),
+        "max_perimeter_inner":    int(raw.get("max_perimeter_inner",    WHITE_DOTS_MAX_PERIMETER_INNER)),
+        "min_circularity_outer":  float(raw.get("min_circularity_outer", WHITE_DOTS_MIN_CIRCULARITY_OUTER)),
+        "max_circularity_outer":  float(raw.get("max_circularity_outer", WHITE_DOTS_MAX_CIRCULARITY_OUTER)),
+        "min_perimeter_outer":    int(raw.get("min_perimeter_outer",    WHITE_DOTS_MIN_PERIMETER_OUTER)),
+        "max_perimeter_outer":    int(raw.get("max_perimeter_outer",    WHITE_DOTS_MAX_PERIMETER_OUTER)),
+        "min_distance":           int(raw.get("min_distance",           WHITE_DOTS_MIN_DISTANCE)),
+    }
+
+def _save_white_dots_params(params: dict) -> None:
+    """Salva parametri su file JSON."""
+    with open(_PARAMS_FILE, 'w') as _f:
+        json.dump(params, _f, indent=2)
+
+# Carica override da file al boot (sovrascrive le costanti se il file esiste)
+_boot_params = _load_white_dots_params()
+WHITE_DOTS_TARGET_WIDTH          = int(_boot_params.get("target_width",          WHITE_DOTS_TARGET_WIDTH))
+WHITE_DOTS_OUTER_PX              = int(_boot_params.get("outer_px",              WHITE_DOTS_OUTER_PX))
+WHITE_DOTS_LUMA_MIN              = int(_boot_params.get("luma_min",              WHITE_DOTS_LUMA_MIN))
+WHITE_DOTS_LUMA_MAX              = int(_boot_params.get("luma_max",              WHITE_DOTS_LUMA_MAX))
+WHITE_DOTS_LUMA_LB               = int(_boot_params.get("luma_lb",               WHITE_DOTS_LUMA_LB))
+WHITE_DOTS_LUMA_MAX_LB           = int(_boot_params.get("luma_max_lb",           WHITE_DOTS_LUMA_MAX_LB))
+WHITE_DOTS_HIGHLIGHT_THRESH_INNER    = int(_boot_params.get("highlight_thresh_inner",    WHITE_DOTS_HIGHLIGHT_THRESH_INNER))
+WHITE_DOTS_HIGHLIGHT_STRENGTH_INNER  = float(_boot_params.get("highlight_strength_inner",  WHITE_DOTS_HIGHLIGHT_STRENGTH_INNER))
+WHITE_DOTS_HIGHLIGHT_THRESH_OUTER    = int(_boot_params.get("highlight_thresh_outer",    WHITE_DOTS_HIGHLIGHT_THRESH_OUTER))
+WHITE_DOTS_HIGHLIGHT_STRENGTH_OUTER  = float(_boot_params.get("highlight_strength_outer",  WHITE_DOTS_HIGHLIGHT_STRENGTH_OUTER))
+WHITE_DOTS_MIN_CIRCULARITY_INNER = float(_boot_params.get("min_circularity_inner", WHITE_DOTS_MIN_CIRCULARITY_INNER))
+WHITE_DOTS_MAX_CIRCULARITY_INNER = float(_boot_params.get("max_circularity_inner", WHITE_DOTS_MAX_CIRCULARITY_INNER))
+WHITE_DOTS_MIN_PERIMETER_INNER   = int(_boot_params.get("min_perimeter_inner",   WHITE_DOTS_MIN_PERIMETER_INNER))
+WHITE_DOTS_MAX_PERIMETER_INNER   = int(_boot_params.get("max_perimeter_inner",   WHITE_DOTS_MAX_PERIMETER_INNER))
+WHITE_DOTS_MIN_CIRCULARITY_OUTER = float(_boot_params.get("min_circularity_outer", WHITE_DOTS_MIN_CIRCULARITY_OUTER))
+WHITE_DOTS_MAX_CIRCULARITY_OUTER = float(_boot_params.get("max_circularity_outer", WHITE_DOTS_MAX_CIRCULARITY_OUTER))
+WHITE_DOTS_MIN_PERIMETER_OUTER   = int(_boot_params.get("min_perimeter_outer",   WHITE_DOTS_MIN_PERIMETER_OUTER))
+WHITE_DOTS_MAX_PERIMETER_OUTER   = int(_boot_params.get("max_perimeter_outer",   WHITE_DOTS_MAX_PERIMETER_OUTER))
+WHITE_DOTS_MIN_DISTANCE          = int(_boot_params.get("min_distance",          WHITE_DOTS_MIN_DISTANCE))
 
 # Import Voice Assistant
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -271,74 +334,12 @@ class AnalysisResult(BaseModel):
     image_info: Dict[str, Any]
     timestamp: str
 
-# === MODELLI PYDANTIC PER GREEN DOTS ===
+# === MODELLO PYDANTIC PER WHITE DOTS (trova differenze) ===
 
-class GreenDotPoint(BaseModel):
-    x: int
-    y: int
-    size: int
-    pixels: Optional[List[Dict]] = None
-    score: Optional[float] = None
-    eyebrow: Optional[str] = None
-    compactness: Optional[float] = None
-    h: Optional[int] = None
-    s: Optional[int] = None
-    v: Optional[int] = None
-    anatomical_name: Optional[str] = None
-
-class GreenDotsGroup(BaseModel):
-    label: str
-    vertices: int
-    area: float
-    perimeter: float
-    center: Dict[str, float]
-    points: List[GreenDotPoint]
-
-class GreenDotsDetectionResults(BaseModel):
-    dots: List[GreenDotPoint]
-    total_dots: int
-    total_green_pixels: int
-    image_size: Tuple[int, int]
-    parameters: Dict[str, Any]
-
-class GreenDotsAnalysisRequest(BaseModel):
+class WhiteDotsRequest(BaseModel):
     image: str  # Base64 encoded image
-    # Parametri legacy (mantenuti per retrocompatibilità, ignorati)
-    hue_range: Optional[Tuple[int, int]] = (60, 150)
-    value_range: Optional[Tuple[int, int]] = (15, 95)
-    cluster_size_range: Optional[Tuple[int, int]] = (9, 40)
-    clustering_radius: Optional[int] = 2
-    # Parametri per white dots (usati dal frontend sliders)
-    saturation_min: Optional[int] = None
-    saturation_max: Optional[int] = None
-    saturation_max_tail: Optional[int] = None   # dual-pass legacy
-    cluster_min_tail: Optional[int] = None       # dual-pass legacy
-    value_min: Optional[int] = None
-    value_max: Optional[int] = None
-    cluster_size_min: Optional[int] = None
-    cluster_size_max: Optional[int] = None
     min_distance: Optional[int] = None
-    # ── Modalità adattiva ───────────────────────────────────
-    adaptive: Optional[bool] = True
-    brightness_percentile: Optional[int] = None
-    sat_cap: Optional[int] = None
-    # Parametri 2-pass (se None usa i valori fissi del backend: 50/30 e 80/25)
-    pass1_percentile: Optional[int] = None
-    pass1_sat_cap: Optional[int] = None
-    pass2_percentile: Optional[int] = None
-    pass2_sat_cap: Optional[int] = None
-
-class GreenDotsAnalysisResult(BaseModel):
-    success: bool
-    session_id: str
-    error: Optional[str] = None
-    detection_results: Optional[GreenDotsDetectionResults] = None
-    groups: Optional[Dict[str, List[GreenDotPoint]]] = None
-    coordinates: Optional[Dict[str, List[Tuple[int, int]]]] = None
-    statistics: Optional[Dict[str, Any]] = None
-    overlay_base64: Optional[str] = None
-    image_size: Optional[Tuple[int, int]] = None
-    timestamp: str
+    outer_px: Optional[int] = None
 
 # === MODELLI PYDANTIC PER VOICE ASSISTANT ===
 
@@ -897,57 +898,6 @@ def convert_pil_image_to_base64(pil_image: Image.Image) -> str:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Errore conversione immagine: {str(e)}")
 
-def load_white_dots_config() -> Dict:
-    """Carica parametri di rilevamento dal file di configurazione.
-    
-    Returns:
-        Dict con parametri di detection, clustering e filtering
-    """
-    config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config_white_dots_detection.json')
-    
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-        
-        # Estrai valori dai parametri strutturati
-        detection = config.get('detection_parameters', {})
-        clustering = config.get('clustering_parameters', {})
-        filtering = config.get('filtering_parameters', {})
-        
-        params = {
-            'saturation_max': detection.get('saturation_max', {}).get('value', 21),
-            'saturation_min': detection.get('saturation_min', {}).get('value', 0),
-            'value_min': detection.get('value_min', {}).get('value', 62),
-            'value_max': detection.get('value_max', {}).get('value', 100),
-            'clustering_radius': clustering.get('clustering_radius', {}).get('value', 2),
-            'cluster_size_min': clustering.get('cluster_size_range', {}).get('value', [64, 616])[0],
-            'cluster_size_max': clustering.get('cluster_size_range', {}).get('value', [64, 616])[1],
-            'min_distance': filtering.get('min_distance', {}).get('value', 22),
-            'large_cluster_threshold': filtering.get('large_cluster_threshold', {}).get('value', 35)
-        }
-        
-        print(f"✅ Config caricato da {config_path}:")
-        print(f"   saturation_max={params['saturation_max']}%, value_min={params['value_min']}%, value_max={params['value_max']}%")
-        print(f"   cluster_size=[{params['cluster_size_min']}, {params['cluster_size_max']}]px, radius={params['clustering_radius']}px")
-        
-        return params
-        
-    except Exception as e:
-        print(f"⚠️ Errore caricamento config: {e}, uso valori ottimali di default")
-        # Fallback su valori calibrati con dot_selector su IMG_8116 (lato lungo 2112px)
-        # cluster_size_min=64 → scala a 45px @ 2112px  (res_scale=0.698)
-        # cluster_size_max=616 → scala a 430px @ 2112px
-        return {
-            'saturation_max': 21,
-            'saturation_min': 0,
-            'value_min': 62,
-            'value_max': 100,
-            'clustering_radius': 2,
-            'cluster_size_min': 64,
-            'cluster_size_max': 616,
-            'min_distance': 22,
-            'large_cluster_threshold': 35
-        }
 
 def decode_base64_to_pil_image(base64_string: str) -> Image.Image:
     """Decodifica stringa base64 in immagine PIL."""
@@ -974,7 +924,7 @@ def decode_base64_to_pil_image(base64_string: str) -> Image.Image:
 def sort_points_anatomical(points: List[Dict], is_left: bool) -> List[Dict]:
     """
     Ordina i punti in base a criteri anatomici fissi per garantire mappatura consistente.
-    Adattato da green_dots_processor.py per white dots.
+    Usata da process_green_dots_analysis() e _generate_debug_steps().
     
     Criteri di identificazione:
     1. Coppia B (LB/RB): Punti più esterni
@@ -1065,20 +1015,36 @@ def sort_points_anatomical(points: List[Dict], is_left: bool) -> List[Dict]:
         return [c1_point, b_point, c_point, a_point, a0_point]
 
 def _detect_white_dots_v3(img_bgr: np.ndarray,
-                         thresh_perc: int   = WHITE_DOTS_THRESH_PERC,
-                         sat_max_frac: float = WHITE_DOTS_SAT_MAX_FRAC) -> dict:
+                         target_width: int        = None,
+                         outer_px: int            = None,
+                         luma_min: int            = None,
+                         luma_max: int            = None,
+                         luma_lb: int             = None,
+                         luma_max_lb: int         = None,
+                         highlight_thresh_inner: int    = None,
+                         highlight_strength_inner: float = None,
+                         highlight_thresh_outer: int    = None,
+                         highlight_strength_outer: float = None,
+                         min_circularity_inner: float = None,
+                         max_circularity_inner: float = None,
+                         min_perimeter_inner: int = None,
+                         max_perimeter_inner: int = None,
+                         min_circularity_outer: float = None,
+                         max_circularity_outer: float = None,
+                         min_perimeter_outer: int = None,
+                         max_perimeter_outer: int = None,
+                         min_distance: int = None,
+                         **_kw) -> dict:
     """
-    Rileva i 10 puntini bianchi del tatuaggio sopracciglio.
+    Rileva i puntini bianchi del tatuaggio sopracciglio.
 
-    Flusso semplificato (3 passi):
-    1. eyebrows.py (dlib) → maschera binaria sopracciglio sx e dx.
-    2. Striscia di 50px centrata sul perimetro dlib:
-         expanded  = dilate(mask, 25px)   → 25px fuori
-         shrunk    = erode(mask,  25px)   → 25px dentro
-         strip     = expanded − shrunk
-    3. Blob bianchi brillanti nella striscia → top-5 per lato.
-
-    Non genera overlay né audio.
+    Flusso:
+    1. dlib → maschera binaria sopracciglio sx e dx
+    2. Maschera espansa outer_px (zona intera, NON striscia perimetrale)
+    3. Highlight boost: pixel sopra highlight_thresh vengono potenziati verso 255
+    4. Soglia assoluta: pixel con luma_min <= gray <= luma_max → candidati principali
+       Soglia separata luma_lb/luma_max_lb → ricerca LB/RB agli estremi X
+    5. Connected components → filtro circolarità+perimetro per zona interna e strip esterna
     """
     try:
         from eyebrows import extract_eyebrows_from_array
@@ -1090,39 +1056,104 @@ def _detect_white_dots_v3(img_bgr: np.ndarray,
         'face-landmark-localization-master', 'shape_predictor_68_face_landmarks.dat'
     ))
 
-    # Passo 1 – maschere dlib (identiche a "Sim. Sopracciglia")
+    # Parametri con fallback ai globali
+    TARGET_WIDTH           = target_width           if target_width           is not None else WHITE_DOTS_TARGET_WIDTH
+    OUTER_PX               = outer_px               if outer_px               is not None else WHITE_DOTS_OUTER_PX
+    LUMA_MIN               = luma_min               if luma_min               is not None else WHITE_DOTS_LUMA_MIN
+    LUMA_MAX               = luma_max               if luma_max               is not None else WHITE_DOTS_LUMA_MAX
+    LUMA_LB                = luma_lb                if luma_lb                is not None else WHITE_DOTS_LUMA_LB
+    LUMA_MAX_LB            = luma_max_lb            if luma_max_lb            is not None else WHITE_DOTS_LUMA_MAX_LB
+    HL_THRESH_INNER        = highlight_thresh_inner   if highlight_thresh_inner   is not None else WHITE_DOTS_HIGHLIGHT_THRESH_INNER
+    HL_STRENGTH_INNER      = highlight_strength_inner if highlight_strength_inner is not None else WHITE_DOTS_HIGHLIGHT_STRENGTH_INNER
+    HL_THRESH_OUTER        = highlight_thresh_outer   if highlight_thresh_outer   is not None else WHITE_DOTS_HIGHLIGHT_THRESH_OUTER
+    HL_STRENGTH_OUTER      = highlight_strength_outer if highlight_strength_outer is not None else WHITE_DOTS_HIGHLIGHT_STRENGTH_OUTER
+    MIN_CIRC_INNER         = min_circularity_inner  if min_circularity_inner  is not None else WHITE_DOTS_MIN_CIRCULARITY_INNER
+    MAX_CIRC_INNER         = max_circularity_inner  if max_circularity_inner  is not None else WHITE_DOTS_MAX_CIRCULARITY_INNER
+    MIN_PERI_INNER         = min_perimeter_inner    if min_perimeter_inner    is not None else WHITE_DOTS_MIN_PERIMETER_INNER
+    MAX_PERI_INNER         = max_perimeter_inner    if max_perimeter_inner    is not None else WHITE_DOTS_MAX_PERIMETER_INNER
+    MIN_CIRC_OUTER         = min_circularity_outer  if min_circularity_outer  is not None else WHITE_DOTS_MIN_CIRCULARITY_OUTER
+    MAX_CIRC_OUTER         = max_circularity_outer  if max_circularity_outer  is not None else WHITE_DOTS_MAX_CIRCULARITY_OUTER
+    MIN_PERI_OUTER         = min_perimeter_outer    if min_perimeter_outer    is not None else WHITE_DOTS_MIN_PERIMETER_OUTER
+    MAX_PERI_OUTER         = max_perimeter_outer    if max_perimeter_outer    is not None else WHITE_DOTS_MAX_PERIMETER_OUTER
+    MIN_DISTANCE           = min_distance           if min_distance           is not None else WHITE_DOTS_MIN_DISTANCE
+
+    # Normalizza risoluzione
+    _orig_h, _orig_w = img_bgr.shape[:2]
+    if _orig_w != TARGET_WIDTH:
+        _scale  = TARGET_WIDTH / _orig_w
+        img_bgr = cv2.resize(img_bgr, (TARGET_WIDTH, max(1, round(_orig_h * _scale))),
+                             interpolation=cv2.INTER_AREA if _orig_w > TARGET_WIDTH else cv2.INTER_LINEAR)
+        print(f"   📐 resize {_orig_w}×{_orig_h} → {img_bgr.shape[1]}×{img_bgr.shape[0]}")
+
+    # Maschere dlib
     res_dlib = extract_eyebrows_from_array(img_bgr, predictor_path=_dat)
     if not res_dlib["face_detected"]:
         return {'error': 'Volto non rilevato da dlib.', 'dots': [], 'total_white_pixels': 0}
 
     h, w = img_bgr.shape[:2]
-    hsv  = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-    v_ch = hsv[:, :, 2].astype(np.float32)
-    s_ch = hsv[:, :, 1].astype(np.float32)
 
-    # Striscia simmetrica: 25px fuori + 25px dentro al perimetro dlib.
-    OUTER_PX = 25
-    INNER_PX = 25
+    # Highlight boost separato: zona interna (inner) e strip esterna (outer)
+    gray_raw = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    # boost zona interna
+    gray_inner_f = gray_raw.copy()
+    mask_hi_inner = gray_raw >= HL_THRESH_INNER
+    gray_inner_f[mask_hi_inner] = np.clip(
+        gray_raw[mask_hi_inner] + HL_STRENGTH_INNER * (255.0 - gray_raw[mask_hi_inner]), 0, 255)
+    gray_inner = gray_inner_f.astype(np.uint8)
+    # boost strip esterna LB/RB
+    gray_outer_f = gray_raw.copy()
+    mask_hi_outer = gray_raw >= HL_THRESH_OUTER
+    gray_outer_f[mask_hi_outer] = np.clip(
+        gray_raw[mask_hi_outer] + HL_STRENGTH_OUTER * (255.0 - gray_raw[mask_hi_outer]), 0, 255)
+    gray_outer = gray_outer_f.astype(np.uint8)
+
     k_outer = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (OUTER_PX*2+1, OUTER_PX*2+1))
-    k_inner = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (INNER_PX*2+1, INNER_PX*2+1))
-    # Kernel di merge: fonde pixel adiacenti per evitare frammentazione
-    MERGE_PX = 8
-    k_merge  = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MERGE_PX*2+1, MERGE_PX*2+1))
 
     all_dots      = []
     left_polygon  = None
     right_polygon = None
+    total_white   = 0
+    col_idx = np.indices((h, w))[1]   # matrice degli indici di colonna (calcolata una sola volta)
+
+    def _filter_by_circularity(cc_mask, lbl_map, stats_cc, centroids, n_lbl, gray_img,
+                                min_circ, max_circ, min_peri, max_peri, forced=False):
+        """Filtra blob CC per circolarità e perimetro; restituisce lista di dict punto."""
+        result = []
+        for lbl in range(1, n_lbl):
+            area = int(stats_cc[lbl, cv2.CC_STAT_AREA])
+            blob_mask = (lbl_map == lbl).astype(np.uint8)
+            cnts, _ = cv2.findContours(blob_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            if not cnts:
+                continue
+            perimeter = cv2.arcLength(cnts[0], True)
+            if perimeter < min_peri or perimeter > max_peri:
+                continue
+            circularity = (4.0 * math.pi * area / (perimeter ** 2)) if perimeter > 0 else 0.0
+            if circularity < min_circ or circularity > max_circ:
+                continue
+            cx = float(centroids[lbl, 0])
+            cy = float(centroids[lbl, 1])
+            mean_luma = float(np.mean(gray_img[lbl_map == lbl]))
+            d = {
+                'x':     int(round(cx)),
+                'y':     int(round(cy)),
+                'size':  area,
+                'score': round(mean_luma / 255.0 * 100.0, 2),
+                'circ':  round(circularity, 4),
+            }
+            if forced:
+                d['forced'] = True
+            result.append(d)
+        return result
 
     for side, mask in [('left', res_dlib['left_mask']), ('right', res_dlib['right_mask'])]:
         if not np.any(mask):
             continue
 
-        # Passo 2 – striscia simmetrica: 25px fuori + 25px dentro
-        expanded   = cv2.dilate(mask, k_outer, iterations=1)
-        shrunk     = cv2.erode(mask,  k_inner, iterations=1)
-        strip_mask = cv2.subtract(expanded, shrunk)
+        # Zona di ricerca: maschera espansa (INTERA, non solo bordo)
+        expanded = cv2.dilate(mask, k_outer, iterations=1)
 
-        # Salva contorno espanso per l'overlay del frontend
+        # Salva contorno per overlay frontend
         cnts, _ = cv2.findContours(expanded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if cnts:
             polygon = max(cnts, key=cv2.contourArea).squeeze()
@@ -1131,277 +1162,201 @@ def _detect_white_dots_v3(img_bgr: np.ndarray,
             else:
                 right_polygon = polygon
 
-        # Passo 3 – pixel bianchi nella striscia
-        strip_v  = v_ch[strip_mask > 0]
-        if len(strip_v) < 10:
-            continue
+        # Candidati principali: range luminanza su gray_inner (boost zona interna)
+        white_mask = np.zeros((h, w), dtype=np.uint8)
+        white_mask[(gray_inner >= LUMA_MIN) & (gray_inner <= LUMA_MAX) & (expanded > 0)] = 255
 
-        # Soglia adattiva: configurabile (default top 25%, sat 28%)
-        thresh_v = float(np.percentile(strip_v, thresh_perc))
-        thresh_s = sat_max_frac * 255
+        # Candidati LB/RB: soglie dedicate su gray_outer (boost strip esterna)
+        ys_m, xs_m = np.where(mask > 0)
+        x_min_mask, x_max_mask = int(xs_m.min()), int(xs_m.max())
+        if side == 'left':
+            lb_zone = (expanded > 0) & (col_idx <= x_min_mask + OUTER_PX)
+        else:
+            lb_zone = (expanded > 0) & (col_idx >= x_max_mask - OUTER_PX)
+        lb_mask = np.zeros((h, w), dtype=np.uint8)
+        lb_mask[(gray_outer >= LUMA_LB) & (gray_outer <= LUMA_MAX_LB) & lb_zone] = 255
 
-        bright = np.zeros((h, w), dtype=np.uint8)
-        bright[(v_ch >= thresh_v) & (s_ch <= thresh_s) & (strip_mask > 0)] = 255
+        n_white = int(np.sum(white_mask > 0))
+        total_white += n_white
+        print(f"   [{side}] pixel bianchi (luma {LUMA_MIN}-{LUMA_MAX}): {n_white} | LB/RB strip (luma {LUMA_LB}-{LUMA_MAX_LB}): {int(np.sum(lb_mask > 0))}")
 
-        # Fondi pixel adiacenti per evitare che un singolo punto bianco
-        # venga spezzato in più blob separati (causa di selezione errata nel top-5)
-        bright_m = cv2.dilate(bright, k_merge, iterations=1)
+        # Connected components + filtro circolarità+perimetro (zona interna — parametri INNER)
+        n_lbl, lbl_map, stats_cc, centroids = cv2.connectedComponentsWithStats(white_mask, 8)
+        candidates = _filter_by_circularity(
+            white_mask, lbl_map, stats_cc, centroids, n_lbl, gray_inner,
+            MIN_CIRC_INNER, MAX_CIRC_INNER, MIN_PERI_INNER, MAX_PERI_INNER, forced=False
+        )
 
-        # Connected components sul merged → un blob = un punto bianco
-        MAX_BLOB = WHITE_DOTS_MAX_BLOB  # dilation merge 8px gonfia i blob: LA0/RA0 arrivano a ~1500px²
-        n_lbl, lbl_map, stats_cc, centroids = cv2.connectedComponentsWithStats(bright_m, 8)
-        candidates = []
-        for lbl in range(1, n_lbl):
-            area = int(stats_cc[lbl, cv2.CC_STAT_AREA])
-            if area < 3 or area > MAX_BLOB:
-                continue
-            cx     = float(centroids[lbl, 0])
-            cy     = float(centroids[lbl, 1])
-            b_mask = lbl_map == lbl
-            # Valuta luminosità e saturazione sui pixel del blob (sul merged)
-            mean_v = float(np.mean(v_ch[b_mask]))
-            mean_s = float(np.mean(s_ch[b_mask]))
-            # Score: luminosità media, penalizza blob troppo grandi (pelle)
-            score = round(mean_v * (1.0 - area / (MAX_BLOB * 2.0)), 2)
-            candidates.append({
-                'x':           int(round(cx)),
-                'y':           int(round(cy)),
-                'size':        area,
-                'score':       max(0.0, score),
-                'compactness': 0.0,
-                'h':           0,
-                's':           int(round(mean_s / 255.0 * 100)),
-                'v':           int(round(mean_v / 255.0 * 100)),
-            })
+        # Connected components + filtro circolarità+perimetro (strip esterna — parametri OUTER)
+        n_lb, lbl_lb, stats_lb, ctr_lb = cv2.connectedComponentsWithStats(lb_mask, 8)
+        lb_candidates = _filter_by_circularity(
+            lb_mask, lbl_lb, stats_lb, ctr_lb, n_lb, gray_outer,
+            MIN_CIRC_OUTER, MAX_CIRC_OUTER, MIN_PERI_OUTER, MAX_PERI_OUTER, forced=True
+        )
 
-        candidates.sort(key=lambda d: -d['score'])
-        all_dots.extend(candidates[:5])
-        print(f"🔍 v3-strip [{side}]: {len(candidates)} candidati (merged) → top-{min(5, len(candidates))} selezionati")
+        selected = candidates + lb_candidates
+        for d in selected:
+            d['eyebrow'] = side
+        all_dots.extend(selected)
+        print(f"🔍 white-dots [{side}]: {len(candidates)} inner + {len(lb_candidates)} outer candidati selezionati")
+
+    # Applica NMS per rimuovere blob duplicati troppo vicini
+    if len(all_dots) > 0:
+        before_nms = len(all_dots)
+        all_dots, _ = _nms_by_distance(all_dots, MIN_DISTANCE, debug=False)
+        print(f"🔍 NMS deduplicazione: {before_nms} → {len(all_dots)} blob (distanza minima {MIN_DISTANCE} px)")
+
+    # Rimappa coordinate a spazio originale
+    if _orig_w != TARGET_WIDTH:
+        _inv = _orig_w / TARGET_WIDTH
+        for d in all_dots:
+            d['x'] = int(round(d['x'] * _inv))
+            d['y'] = int(round(d['y'] * _inv))
 
     return {
         'dots':               all_dots,
-        'total_white_pixels': int(np.sum(v_ch > 153)),
+        'total_white_pixels': total_white,
         'left_polygon':       left_polygon,
         'right_polygon':      right_polygon,
     }
 
 
-def _select_best_5_for_eyebrow(dots: list, is_left: bool) -> list:
-    """
-    Seleziona i 5 dots migliori per un sopracciglio garantendo che il punto
-    più esterno (LB/RB) sia SEMPRE incluso, indipendentemente dal suo score.
-    LB/RB è spesso il puntino più piccolo e perciò ha score basso, ma è
-    fondamentale per l'ordinamento anatomico corretto.
-    """
-    if len(dots) <= 5:
-        return dots
-    if is_left:
-        extreme = min(dots, key=lambda p: p['x'])   # LB: x minima
-    else:
-        extreme = max(dots, key=lambda p: p['x'])   # RB: x massima
-    others = [d for d in dots if d is not extreme]
-    top4 = sorted(others, key=lambda d: d['score'], reverse=True)[:4]
-    return [extreme] + top4
+def _nms_by_distance(pts: list, min_dist: float, debug: bool = False) -> tuple:
+    """NMS per distanza: rimuove punti troppo vicini, tenendo quello con score più alto.
+    I punti forzati (flag 'forced'=True) vengono sempre mantenuti.
+    Criterio di selezione: score più alto, poi circolarità più alta.
+    Restituisce: (blob_kept, blob_rejected_by_nms)"""
+    if min_dist <= 0:
+        if debug:
+            print(f"   [NMS] Disabilitato (min_dist={min_dist})")
+        return pts, []
+    # Prima ordina: forzati prima, poi per score decrescente, poi circolarità decrescente
+    ordered = sorted(pts, key=lambda d: (0 if d.get('forced') else 1, -d.get('score', 0), -d.get('circ', 0)))
+    
+    if debug:
+        print(f"   [NMS] Ordine elaborazione (forzati prima, poi score/circ decrescente):")
+        for idx, p in enumerate(ordered):
+            forced_tag = " [FORCED]" if p.get('forced') else ""
+            print(f"      #{idx+1}: ({p['x']}, {p['y']}) score={p.get('score',0):.1f} circ={p.get('circ',0):.3f}{forced_tag}")
+    
+    kept = []
+    rejected = []
+    for p in ordered:
+        too_close = False
+        closest_dist = float('inf')
+        closest_blob = None
+        for k in kept:
+            dist = math.hypot(p['x'] - k['x'], p['y'] - k['y'])
+            if debug and dist <= min_dist:
+                print(f"      ⚠️  Blob ({p['x']}, {p['y']}) è vicino a ({k['x']}, {k['y']}): dist={dist:.1f}px <= {min_dist}px")
+            if dist <= min_dist:  # <= invece di < per includere anche distanza esatta
+                too_close = True
+                if dist < closest_dist:
+                    closest_dist = dist
+                    closest_blob = k
+        if not too_close:
+            kept.append(p)
+            if debug:
+                forced_tag = " [FORCED]" if p.get('forced') else ""
+                print(f"      ✅ KEPT: ({p['x']}, {p['y']}) score={p.get('score',0):.1f}{forced_tag}")
+        else:
+            # Aggiungi informazioni sul perché è stato eliminato
+            p['nms_rejected'] = True
+            p['nms_reason'] = f"troppo vicino a blob score={closest_blob.get('score',0):.0f} (dist={closest_dist:.1f}px <= {min_dist}px)"
+            rejected.append(p)
+            if debug:
+                print(f"      ❌ REJECTED: ({p['x']}, {p['y']}) score={p.get('score',0):.1f} - {p['nms_reason']}")
+    
+    if debug:
+        print(f"   [NMS] Risultato finale: {len(pts)} → {len(kept)} blob (eliminati {len(rejected)})")
+    
+    return kept, rejected
 
 
-def process_green_dots_analysis(
-    image_base64: str,
-    # Tutti i parametri legacy sotto sono ignorati: il backend usa _detect_white_dots_v3
-    # con parametri fissi (OUTER_PX=25, INNER_PX=25, thresh_perc=75, sat_max_frac=0.28).
-    # Mantenuti solo per retrocompatibilità con i caller esistenti.
-    **kwargs
-) -> Dict:
-    """
-    Rileva i puntini bianchi del tatuaggio sopracciglio via _detect_white_dots_v3 (dlib perimeter strip).
-    Tutti i parametri HSV/cluster/pass1/pass2 sono ignorati: usa valori fissi hardcoded.
-    """
-    if not WHITE_DOTS_AVAILABLE:
-        raise HTTPException(
-            status_code=500,
-            detail="Modulo WhiteDotsProcessorV2 non disponibile. Verificare l'installazione delle dipendenze."
-        )
 
+
+def process_green_dots_analysis(image_base64: str, **kwargs) -> Dict:
+    """
+    Rileva i puntini bianchi del tatuaggio sopracciglio via _detect_white_dots_v3.
+    Parametri letti dai globali WHITE_DOTS_* (configurabili via white_dots_params.json).
+    """
     try:
-
         pil_image = decode_base64_to_pil_image(image_base64)
 
-        # ── Rilevamento via dlib perimeter strip ──────────────────────────────
-        # Usa le stesse maschere del pulsante "Sim. Sopracciglia",
-        # le espande per includere i punti sul bordo, poi rileva blob bianchi.
         img_array = np.array(pil_image)
         if img_array.ndim == 3 and img_array.shape[2] == 4:
-            img_bgr_v3 = cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
+            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
         else:
-            img_bgr_v3 = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
 
-        det_v3 = _detect_white_dots_v3(img_bgr_v3,
-                                        thresh_perc=WHITE_DOTS_THRESH_PERC,
-                                        sat_max_frac=WHITE_DOTS_SAT_MAX_FRAC)
+        det = _detect_white_dots_v3(img_bgr, **kwargs)
 
-        if 'error' in det_v3:
+        if 'error' in det:
             return {
                 'success': False,
-                'error': det_v3['error'],
+                'error': det['error'],
                 'detection_results': {
                     'dots': [], 'total_dots': 0, 'total_green_pixels': 0,
                     'image_size': [pil_image.width, pil_image.height], 'parameters': {}
                 }
             }
 
-        results = {
-            'dots':               det_v3['dots'],
-            'total_white_pixels': det_v3['total_white_pixels'],
-            'total_clusters':     len(det_v3['dots']),
-            'image_size':         (pil_image.width, pil_image.height),
-            'parameters':         {'adaptive': True, 'method': 'dlib_perimeter_v3'},
-            'left_polygon':       det_v3.get('left_polygon'),
-            'right_polygon':      det_v3.get('right_polygon'),
-        }
-        print(f"✅ [v3] Totale punti rilevati: {len(results['dots'])}/10")
+        dots = det['dots']
+        print(f"✅ Punti rilevati: {len(dots)}")
 
-        # Adatta al formato atteso dal frontend
-        
-        if 'error' in results:
-            return {
-                'success': False,
-                'error': results['error'],
-                'detection_results': {'dots': [], 'total_dots': 0, 'total_green_pixels': 0,
-                                     'image_size': [0, 0], 'parameters': {}}
-            }
-        
-        # Converti formato dots per compatibilità (mantieni tutti i campi dal processore)
-        dots = results.get('dots', [])
-        print(f"🔍 DEBUG: Dots ricevuti dal processor: {len(dots)}")
-        if len(dots) > 0:
-            print(f"   Sample dot: {dots[0]}")
-        
-        # DIVISIONE SEMPLICE: usa centro verticale dell'immagine
-        image_width = pil_image.width
-        middle_x = image_width // 2
-        
-        formatted_dots = []
-        for dot in dots:
-            # Determina eyebrow in base alla posizione X rispetto al centro
-            if dot['x'] < middle_x:
-                eyebrow_side = 'left'
-            else:
-                eyebrow_side = 'right'
-            
-            formatted_dots.append({
-                'x': dot['x'],
-                'y': dot['y'],
-                'size': dot['size'],
-                'score': dot.get('score', dot['size'] * 1.5),
-                'eyebrow': eyebrow_side,
-                'compactness': dot.get('compactness', 0),
-                'h': dot.get('h', 0),
-                's': dot.get('s', 0),
-                'v': dot.get('v', 0)
-            })
-        
-        print(f"✅ Formatted dots: {len(formatted_dots)}")
-        print(f"   📍 Centro verticale immagine: x={middle_x} (width={image_width})")
-        if len(formatted_dots) > 0:
-            print(f"   📌 Sample formatted dot with eyebrow: {formatted_dots[0]}")
-        
-        # Dividi in Sx/Dx per compatibilità con frontend
-        left_dots = [d for d in formatted_dots if d.get('eyebrow') == 'left']
-        right_dots = [d for d in formatted_dots if d.get('eyebrow') == 'right']
-        unknown_dots = [d for d in formatted_dots if d.get('eyebrow') not in ['left', 'right']]
+        # I punti arrivano già taggati con eyebrow='left'/'right' da _detect_white_dots_v3
+        left_dots  = sort_points_anatomical(
+            [d for d in dots if d.get('eyebrow') == 'left'], is_left=True)
+        right_dots = sort_points_anatomical(
+            [d for d in dots if d.get('eyebrow') == 'right'], is_left=False)
 
-        left_dots  = _select_best_5_for_eyebrow(left_dots,  is_left=True)
-        right_dots = _select_best_5_for_eyebrow(right_dots, is_left=False)
+        print(f"📊 Sx: {len(left_dots)}, Dx: {len(right_dots)}")
 
-        # ORDINAMENTO ANATOMICO: usa criteri fissi LC1, LA0, LA, LC, LB (sinistra) e RC1, RB, RC, RA, RA0 (destra)
-        left_dots = sort_points_anatomical(left_dots, is_left=True)
-        right_dots = sort_points_anatomical(right_dots, is_left=False)
-        
-        print(f"📊 Left dots: {len(left_dots)}, Right dots: {len(right_dots)}, Unknown: {len(unknown_dots)}")
-        if len(left_dots) > 0:
-            print(f"   📍 Left ordinato: {[(d.get('anatomical_name', '?'), d['y']) for d in left_dots]}")
-        if len(right_dots) > 0:
-            print(f"   📍 Right ordinato: {[(d.get('anatomical_name', '?'), d['y']) for d in right_dots]}")
-        if len(unknown_dots) > 0:
-            print(f"   ⚠️ Unknown dots eyebrow values: {[d.get('eyebrow') for d in unknown_dots]}")
-        
-        # Calcola statistiche area (approssimativa da somma cluster sizes)
-        left_area = sum(d['size'] for d in left_dots) if left_dots else 0
+        left_area  = sum(d['size'] for d in left_dots)  if left_dots  else 0
         right_area = sum(d['size'] for d in right_dots) if right_dots else 0
-        total_area = left_area + right_area
-        
-        # Calcola perimetri approssimativi (convex hull semplificato)
-        left_perimeter = calculate_approximate_perimeter(left_dots) if len(left_dots) >= 3 else 0
-        right_perimeter = calculate_approximate_perimeter(right_dots) if len(right_dots) >= 3 else 0
-        
-        # Estrai poligoni maschere per disegnare contorni
-        left_polygon = results.get('left_polygon', None)
-        right_polygon = results.get('right_polygon', None)
-        
-        # Genera overlay con cerchi, labels E contorni maschere
-        overlay_img = generate_white_dots_overlay(
-            pil_image.size, 
-            formatted_dots, 
-            left_polygon=left_polygon, 
-            right_polygon=right_polygon
+        all_dots   = left_dots + right_dots
+
+        overlay_img    = generate_white_dots_overlay(
+            pil_image.size, all_dots,
+            left_polygon=det.get('left_polygon'),
+            right_polygon=det.get('right_polygon'),
         )
         overlay_base64 = convert_pil_image_to_base64(overlay_img)
-        
-        # Struttura risposta compatibile con frontend esistente
-        adapted_results = {
+
+        return {
             'success': True,
             'detection_results': {
-                'dots': formatted_dots,
-                'total_dots': len(formatted_dots),
-                'total_green_pixels': results.get('total_white_pixels', 0),  # Alias
+                'dots': all_dots,
+                'total_dots': len(all_dots),
+                'total_green_pixels': det.get('total_white_pixels', 0),
                 'image_size': list(pil_image.size),
-                'parameters': results.get('parameters', {})
+                'parameters': {'method': 'dlib_clahe_v3'},
             },
-            'config_parameters': {'method': 'dlib_perimeter_v3',
-                                  'thresh_perc': WHITE_DOTS_THRESH_PERC,
-                                  'sat_max_frac': WHITE_DOTS_SAT_MAX_FRAC},
-            'groups': {
-                'Sx': left_dots,
-                'Dx': right_dots
+            'config_parameters': {
+                'method': 'dlib_clahe_v3',
+                'luma_min': WHITE_DOTS_LUMA_MIN,
+                'luma_max': WHITE_DOTS_LUMA_MAX,
             },
+            'groups':      {'Sx': left_dots, 'Dx': right_dots},
             'coordinates': {
                 'Sx': [(d['x'], d['y']) for d in left_dots],
-                'Dx': [(d['x'], d['y']) for d in right_dots]
+                'Dx': [(d['x'], d['y']) for d in right_dots],
             },
             'statistics': {
-                'left': {
-                    'count': len(left_dots),
-                    'area': float(left_area),
-                    'perimeter': float(left_perimeter)
-                },
-                'right': {
-                    'count': len(right_dots),
-                    'area': float(right_area),
-                    'perimeter': float(right_perimeter)
-                },
-                'combined': {
-                    'total_vertices': len(formatted_dots),
-                    'total_area': float(total_area)
-                }
+                'left':     {'count': len(left_dots),  'area': float(left_area)},
+                'right':    {'count': len(right_dots), 'area': float(right_area)},
+                'combined': {'total_vertices': len(all_dots), 'total_area': float(left_area + right_area)},
             },
             'overlay_base64': overlay_base64,
-            'image_size': list(pil_image.size)
+            'image_size': list(pil_image.size),
         }
-        
-        print(f"📤 Risposta al frontend:")
-        print(f"   detection_results.dots: {len(adapted_results['detection_results']['dots'])}")
-        print(f"   groups.Sx: {len(adapted_results['groups']['Sx'])}")
-        print(f"   groups.Dx: {len(adapted_results['groups']['Dx'])}")
-        print(f"   coordinates.Sx: {len(adapted_results['coordinates']['Sx'])}")
-        print(f"   coordinates.Dx: {len(adapted_results['coordinates']['Dx'])}")
-        
-        return adapted_results
-        
+
     except HTTPException:
         raise
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Errore durante l'analisi white dots: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Errore analisi white dots: {str(e)}")
 
 
 def create_curved_eyebrow_polygon(points: List[Tuple[float, float]], is_left: bool, arc_segments: int = 20) -> List[Tuple[float, float]]:
@@ -1509,122 +1464,101 @@ def generate_white_dots_overlay(
     RIGHT_AREA_COLOR = (255, 100, 50, 60)   # Arancione trasparente per destra
     RIGHT_BORDER_COLOR = (255, 100, 50, 180) # Arancione più opaco per bordo
 
+    left_polygon_drawn  = False
+    right_polygon_drawn = False
+
     # Disegna poligono SINISTRO SOLO se ci sono esattamente 5 punti con tutti i nomi anatomici
     if len(left_dots_list) == 5:
         try:
-            # Ordine anatomico corretto per perimetro sopracciglio SINISTRO:
-            # Partendo da LA (esterno), verso LC (centro alto), LB (basso), LC1 (interno alto), LA0 (interno)
-            # Questo forma un pentagono che segue il contorno del sopracciglio
             LEFT_PERIMETER_ORDER = ['LA', 'LC', 'LB', 'LC1', 'LA0']
-
-            # Crea dizionario nome → coordinate
             left_dots_by_name = {d.get('anatomical_name'): (d['x'], d['y']) for d in left_dots_list if d.get('anatomical_name')}
-
-            # Verifica che tutti i punti anatomici siano presenti
             if all(name in left_dots_by_name for name in LEFT_PERIMETER_ORDER):
-                # Ordina secondo il perimetro anatomico
                 left_points_sorted = [left_dots_by_name[name] for name in LEFT_PERIMETER_ORDER]
-                # Crea poligono con curva convessa tra LB-LC1
                 left_points_curved = create_curved_eyebrow_polygon(left_points_sorted, is_left=True)
                 draw.polygon(left_points_curved, fill=LEFT_AREA_COLOR, outline=LEFT_BORDER_COLOR, width=3)
-                print(f"✅ Poligono SINISTRO disegnato con ordine: {LEFT_PERIMETER_ORDER} (con curva LB-LC1)")
+                left_polygon_drawn = True
             else:
-                # Non disegnare il poligono se mancano i nomi anatomici
                 missing = [n for n in LEFT_PERIMETER_ORDER if n not in left_dots_by_name]
-                print(f"⚠️ Poligono SINISTRO NON disegnato - mancano i nomi anatomici: {missing}")
+                print(f"⚠️ Poligono SINISTRO NON disegnato - mancano: {missing}")
         except Exception as e:
             print(f"⚠️ Errore disegno poligono sinistro: {e}")
-            import traceback
-            traceback.print_exc()
 
     # Disegna poligono DESTRO SOLO se ci sono esattamente 5 punti con tutti i nomi anatomici
     if len(right_dots_list) == 5:
         try:
-            # Ordine anatomico corretto per perimetro: RA → RC → RB → RC1 → RA0 → (chiude su RA)
             RIGHT_PERIMETER_ORDER = ['RA', 'RC', 'RB', 'RC1', 'RA0']
-
-            # Crea dizionario nome → coordinate
             right_dots_by_name = {d.get('anatomical_name'): (d['x'], d['y']) for d in right_dots_list if d.get('anatomical_name')}
-
-            # Verifica che tutti i punti anatomici siano presenti
             if all(name in right_dots_by_name for name in RIGHT_PERIMETER_ORDER):
-                # Ordina secondo il perimetro anatomico
                 right_points_sorted = [right_dots_by_name[name] for name in RIGHT_PERIMETER_ORDER]
-                # Crea poligono con curva convessa tra RB-RC1
                 right_points_curved = create_curved_eyebrow_polygon(right_points_sorted, is_left=False)
                 draw.polygon(right_points_curved, fill=RIGHT_AREA_COLOR, outline=RIGHT_BORDER_COLOR, width=3)
-                print(f"✅ Poligono DESTRO disegnato con ordine: {RIGHT_PERIMETER_ORDER} (con curva RB-RC1)")
+                right_polygon_drawn = True
             else:
-                # Non disegnare il poligono se mancano i nomi anatomici
                 missing = [n for n in RIGHT_PERIMETER_ORDER if n not in right_dots_by_name]
-                print(f"⚠️ Poligono DESTRO NON disegnato - mancano i nomi anatomici: {missing}")
+                print(f"⚠️ Poligono DESTRO NON disegnato - mancano: {missing}")
         except Exception as e:
             print(f"⚠️ Errore disegno poligono destro: {e}")
 
-    # ========== DISEGNA CERCHI E ETICHETTE SUI PUNTINI ==========
+    # ========== DISEGNA CERCHI, LINEE DI CONNESSIONE E ETICHETTE ==========
+    # Colori fissi per nome anatomico (identici a debug_trova_differenze.py)
+    ANAT_COLORS_RGBA = {
+        'LC1': (0, 255, 0, 230),    'LA0': (0, 204, 255, 230),
+        'LA':  (0, 136, 255, 230),  'LC':  (255, 136, 0, 230),
+        'LB':  (255, 50, 50, 230),
+        'RC1': (255, 255, 0, 230),  'RB':  (255, 0, 255, 230),
+        'RC':  (255, 100, 0, 230),  'RA':  (0, 255, 170, 230),
+        'RA0': (170, 255, 255, 230),
+    }
+    DEFAULT_LEFT_COLOR  = (68, 255, 170, 230)
+    DEFAULT_RIGHT_COLOR = (255, 170, 68, 230)
 
-    # Prepara lista con indici per etichette
-    left_dots = [(i, d) for i, d in enumerate(dots) if d.get('eyebrow') == 'left']
-    right_dots = [(i, d) for i, d in enumerate(dots) if d.get('eyebrow') == 'right']
+    # Linee di connessione: disegnate solo se il poligono NON è stato disegnato
+    # (il poligono copre già la geometria del bordo → evita doppio disegno RC1→RB)
+    LEFT_LINE_ORDER  = ['LC1', 'LA0', 'LA', 'LC', 'LB']
+    RIGHT_LINE_ORDER = ['RC1', 'RB', 'RC', 'RA', 'RA0']
 
-    # Disegna cerchi e ID per ogni puntino (sopra i poligoni)
-    for idx, (original_idx, dot) in enumerate(left_dots + right_dots):
-        x, y = dot['x'], dot['y']
-        size = dot.get('size', 10)
+    for side_dots_list, line_order, poly_drawn in [
+        (left_dots_list,  LEFT_LINE_ORDER,  left_polygon_drawn),
+        (right_dots_list, RIGHT_LINE_ORDER, right_polygon_drawn),
+    ]:
+        if poly_drawn:
+            continue  # Il poligono copre già la geometria, le linee sarebbero doppioni
+        if len(side_dots_list) < 2:
+            continue
+        by_name = {d.get('anatomical_name', ''): d for d in side_dots_list if d.get('anatomical_name')}
+        pts_in_order = [by_name[n] for n in line_order if n in by_name]
+        for i in range(len(pts_in_order) - 1):
+            p1 = pts_in_order[i];  p2 = pts_in_order[i + 1]
+            draw.line([(p1['x'], p1['y']), (p2['x'], p2['y'])],
+                      fill=(200, 200, 200, 160), width=3)
+
+    # Raggio fisso proporzionale alla larghezza immagine: ~1% della larghezza, min 8 max 30px
+    img_w = image_size[0]
+    radius = max(8, min(30, round(img_w * 0.01)))
+
+    # Disegna i cerchi sopra le linee (senza etichette testuali)
+    for dot in left_dots_list + right_dots_list:
+        x, y    = dot['x'], dot['y']
+        aname   = dot.get('anatomical_name', '')
         eyebrow = dot.get('eyebrow', 'unknown')
 
-        # USA NOME ANATOMICO se presente, altrimenti fallback su numerazione semplice
-        if 'anatomical_name' in dot and dot['anatomical_name']:
-            label = dot['anatomical_name']
+        if aname in ANAT_COLORS_RGBA:
+            color = ANAT_COLORS_RGBA[aname]
+        elif eyebrow == 'left':
+            color = DEFAULT_LEFT_COLOR
         else:
-            # Fallback per retrocompatibilità
-            if eyebrow == 'left':
-                local_idx = [i for i, (_, d) in enumerate(left_dots) if d == dot][0]
-                label = f"L{local_idx + 1}"
-            else:
-                local_idx = [i for i, (_, d) in enumerate(right_dots) if d == dot][0]
-                label = f"R{local_idx + 1}"
+            color = DEFAULT_RIGHT_COLOR
 
-        # Colore basato su dimensione del cluster
-        # VERDE: ≤15px (ideale), GIALLO: 16-25px, ARANCIONE: 26-35px, ROSSO: >35px
-        if size > 35:
-            color = (255, 0, 0, 200)      # Rosso - cluster troppo grande, sospetto
-        elif size > 25:
-            color = (255, 165, 0, 200)    # Arancione - cluster grande
-        elif size > 15:
-            color = (255, 255, 0, 200)    # Giallo - cluster medio
-        else:
-            color = (0, 255, 0, 200)      # Verde - cluster piccolo, ideale
-
-        # Raggio cerchio proporzionale a size
-        radius = int(np.sqrt(size / np.pi)) + 8
-
-        # Cerchio
+        # Cerchio esterno nero (outline)
+        draw.ellipse([x - radius - 3, y - radius - 3,
+                      x + radius + 3, y + radius + 3],
+                     fill=(0, 0, 0, 200))
+        # Cerchio colorato
         draw.ellipse([x - radius, y - radius, x + radius, y + radius],
-                    outline=color, width=4)
-
-        # Centro
-        draw.ellipse([x - 3, y - 3, x + 3, y + 3], fill=color)
-
-        # Etichetta ID (sopra il puntino)
-        # Sfondo semi-trasparente per leggibilità
-        bbox = draw.textbbox((0, 0), label, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-
-        label_x = x - text_width // 2
-        label_y = y - radius - text_height - 5
-
-        # Rettangolo sfondo
-        padding = 3
-        draw.rectangle(
-            [label_x - padding, label_y - padding,
-             label_x + text_width + padding, label_y + text_height + padding],
-            fill=(0, 0, 0, 180)
-        )
-
-        # Testo ID
-        draw.text((label_x, label_y), label, fill=(255, 255, 255, 255), font=font)
+                     fill=color)
+        # Bordo bianco sottile
+        draw.ellipse([x - radius, y - radius, x + radius, y + radius],
+                     outline=(255, 255, 255, 180), width=2)
 
     return overlay
 
@@ -2334,428 +2268,25 @@ async def get_best_frames():
             "message": f"Errore lettura dati frame: {e}"
         }
 
-# === API ENDPOINTS PER GREEN DOTS ===
+# === API ENDPOINT WHITE DOTS (trova differenze) ===
 
-@app.post("/api/green-dots/analyze", response_model=GreenDotsAnalysisResult)
-async def analyze_green_dots(request: GreenDotsAnalysisRequest):
-    """
-    Analizza un'immagine per rilevare puntini verdi e genera overlay grafico.
-    
-    Questo endpoint utilizza le funzioni del modulo src/green_dots_processor.py
-    per rilevare puntini verdi, dividerli in gruppi sinistro/destro,
-    calcolare statistiche delle forme e generare overlay trasparenti.
-    """
+@app.post("/api/green-dots/analyze")
+async def analyze_green_dots(request: WhiteDotsRequest):
+    """Rileva i puntini bianchi sulle sopracciglia e restituisce overlay + punti anatomici."""
     try:
-        # Genera ID sessione
-        session_id = str(uuid.uuid4())
-        timestamp = datetime.now().isoformat()
-        
-        print(f"🟢 Inizio analisi green dots - Sessione: {session_id}")
-
-        # Log parametri ricevuti dal frontend
-        if request.saturation_max is not None or request.value_min is not None:
-            print(f"⚙️ Parametri custom dal frontend: sat_max={request.saturation_max}, val_min={request.value_min}, val_max={request.value_max}, cluster_min={request.cluster_size_min}, cluster_max={request.cluster_size_max}, min_dist={request.min_distance}")
-
-        # Verifica disponibilità del modulo
-        if not GREEN_DOTS_AVAILABLE:
-            return GreenDotsAnalysisResult(
-                success=False,
-                session_id=session_id,
-                error="Modulo GreenDotsProcessor non disponibile. Verificare l'installazione delle dipendenze.",
-                timestamp=timestamp
-            )
-
-        # Processa l'immagine con i parametri forniti
-        # I nuovi parametri dinamici sovrascrivono il config se specificati
-        results = process_green_dots_analysis(
-            image_base64=request.image,
-            hue_range=request.hue_range,
-            saturation_min=request.saturation_min,
-            value_range=request.value_range,
-            cluster_size_range=request.cluster_size_range,
-            clustering_radius=request.clustering_radius,
-            # Nuovi parametri dinamici dal frontend sliders
-            saturation_max=request.saturation_max,
-            saturation_max_tail=request.saturation_max_tail,
-            cluster_min_tail=request.cluster_min_tail,
-            value_min=request.value_min,
-            value_max=request.value_max,
-            cluster_size_min=request.cluster_size_min,
-            cluster_size_max=request.cluster_size_max,
-            min_distance=request.min_distance,
-            adaptive=request.adaptive,
-            brightness_percentile=request.brightness_percentile,
-            sat_cap=request.sat_cap,
-            pass1_percentile=request.pass1_percentile,
-            pass1_sat_cap=request.pass1_sat_cap,
-            pass2_percentile=request.pass2_percentile,
-            pass2_sat_cap=request.pass2_sat_cap,
-        )
-
-        print(f"🟢 Analisi completata - Successo: {results.get('success', False)}")
-        
-        # Costruisce la risposta
-        if results['success']:
-            # Converte tutti i tipi NumPy in tipi Python nativi
-            clean_results = convert_numpy_types(results)
-            
-            # Converte i dati nelle strutture Pydantic
-            detection_results = GreenDotsDetectionResults(
-                dots=[GreenDotPoint(**dot) for dot in clean_results['detection_results']['dots']],
-                total_dots=clean_results['detection_results']['total_dots'],
-                total_green_pixels=clean_results['detection_results']['total_green_pixels'],
-                image_size=clean_results['detection_results']['image_size'],
-                parameters=clean_results['detection_results']['parameters']
-            )
-            
-            return GreenDotsAnalysisResult(
-                success=True,
-                session_id=session_id,
-                detection_results=detection_results,
-                groups=clean_results['groups'],
-                coordinates=clean_results['coordinates'],
-                statistics=clean_results['statistics'],
-                overlay_base64=clean_results.get('overlay_base64'),
-                image_size=clean_results['image_size'],
-                timestamp=timestamp
-            )
-        else:
-            # Converte anche i dati di errore
-            clean_results = convert_numpy_types(results)
-            
-            return GreenDotsAnalysisResult(
-                success=False,
-                session_id=session_id,
-                error=clean_results.get('error', 'Errore sconosciuto durante l\'analisi'),
-                detection_results=GreenDotsDetectionResults(
-                    dots=[GreenDotPoint(**dot) for dot in clean_results['detection_results']['dots']],
-                    total_dots=clean_results['detection_results']['total_dots'],
-                    total_green_pixels=clean_results['detection_results']['total_green_pixels'],
-                    image_size=clean_results['detection_results']['image_size'],
-                    parameters=clean_results['detection_results']['parameters']
-                ) if 'detection_results' in clean_results else None,
-                timestamp=timestamp
-            )
-            
+        extra = {}
+        if request.min_distance is not None:
+            extra['min_distance'] = request.min_distance
+        if request.outer_px is not None:
+            extra['outer_px'] = request.outer_px
+        results = process_green_dots_analysis(image_base64=request.image, **extra)
+        results = convert_numpy_types(results)
+        return results
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Errore endpoint green dots: {str(e)}")
-        return GreenDotsAnalysisResult(
-            success=False,
-            session_id=session_id if 'session_id' in locals() else str(uuid.uuid4()),
-            error=f"Errore interno del server: {str(e)}",
-            timestamp=datetime.now().isoformat()
-        )
-
-@app.get("/api/green-dots/info")
-async def get_green_dots_info():
-    """
-    Restituisce informazioni sui parametri e funzionalità del modulo WhiteDotsProcessorV2.
-    Endpoint mantenuto per retrocompatibilità (era /api/green-dots/info).
-    """
-    try:
-        # Carica parametri attivi dal config
-        config_params = load_white_dots_config()
-        
-        return {
-            "available": WHITE_DOTS_AVAILABLE,
-            "module_info": {
-                "description": "Modulo WhiteDotsProcessorV2 per rilevamento puntini BIANCHI sulle sopracciglia",
-                "functions": [
-                    "Rilevamento puntini bianchi usando maschere sopracciglia MediaPipe",
-                    "Ricerca limitata alle regioni sopracciglia (no scan intera immagine)",
-                    "Divisione automatica in gruppo sinistro/destro",
-                    "Generazione overlay con cerchi colorati + contorni maschere",
-                    "Filtro anti-bloom per cluster > large_cluster_threshold"
-                ],
-                "config_source": "config_white_dots_detection.json"
-            },
-            "active_parameters": {
-                "saturation_max": f"{config_params['saturation_max']}%",
-                "value_min": f"{config_params['value_min']}%",
-                "value_max": f"{config_params['value_max']}%",
-                "cluster_size_range": [config_params['cluster_size_min'], config_params['cluster_size_max']],
-                "clustering_radius": f"{config_params['clustering_radius']}px",
-                "min_distance": f"{config_params['min_distance']}px",
-                "large_cluster_threshold": f"{config_params['large_cluster_threshold']}px"
-            },
-            "output_format": {
-                "success": "bool - Indica se l'analisi è riuscita",
-                "groups": "Dict - Gruppi di puntini (Sx/Dx)",
-                "coordinates": "Dict - Coordinate dei puntini per gruppo",
-                "statistics": "Dict - Statistiche delle forme (area, perimetro, etc.)",
-                "overlay_base64": "str - Overlay grafico in formato base64",
-                "image_size": "Tuple - Dimensioni originali dell'immagine"
-            },
-            "requirements": {
-                "min_dots_total": 6,
-                "min_dots_per_side": 3,
-                "dependencies": ["opencv-python", "numpy", "pillow", "mediapipe"]
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Errore recupero informazioni: {str(e)}")
-
-@app.post("/api/green-dots/test")
-async def test_green_dots():
-    """
-    Endpoint di test per verificare il funzionamento del modulo GreenDotsProcessor.
-    """
-    try:
-        if not GREEN_DOTS_AVAILABLE:
-            return {
-                "success": False,
-                "message": "Modulo GreenDotsProcessor non disponibile",
-                "available": False
-            }
-        
-        # Test di inizializzazione del processore
-        try:
-            processor = GreenDotsProcessor()
-            return {
-                "success": True,
-                "message": "Modulo GreenDotsProcessor funzionante",
-                "available": True,
-                "processor_initialized": True,
-                "default_config": {
-                    "hue_range": [processor.hue_min, processor.hue_max],
-                    "saturation_min": processor.saturation_min,
-                    "value_range": [processor.value_min, processor.value_max],
-                    "cluster_size_range": [processor.cluster_min, processor.cluster_max],
-                    "clustering_radius": processor.clustering_radius
-                }
-            }
-        except Exception as init_error:
-            return {
-                "success": False,
-                "message": f"Errore inizializzazione processore: {str(init_error)}",
-                "available": True,
-                "processor_initialized": False
-            }
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Errore test modulo: {str(e)}")
-
-# === API ENDPOINTS SPECIFICI PER CORREZIONE SOPRACCIGLIA ===
-
-class EyebrowAnalysisRequest(BaseModel):
-    image: str  # Base64 encoded image
-    side: str   # "left" o "right"
-    expand_factor: float = 0.5  # Fattore espansione bounding box
-    hue_range: Tuple[int, int] = (60, 150)
-    saturation_min: int = 15
-    value_range: Tuple[int, int] = (15, 95)
-    cluster_size_range: Tuple[int, int] = (2, 150)
-    clustering_radius: int = 2
-
-class EyebrowAnalysisResult(BaseModel):
-    success: bool
-    session_id: str
-    side: str
-    dots: Optional[List[Dict[str, Any]]] = None
-    coordinates: Optional[List[Tuple[float, float]]] = None
-    statistics: Optional[Dict[str, Any]] = None
-    bbox: Optional[Dict[str, float]] = None
-    overlay_base64: Optional[str] = None
-    error: Optional[str] = None
-    timestamp: str
-
-@app.post("/api/eyebrow/analyze", response_model=EyebrowAnalysisResult)
-async def analyze_eyebrow(request: EyebrowAnalysisRequest):
-    """
-    Analizza un sopracciglio specifico (sinistro o destro) generando gli stessi
-    output di src/green_dots_processor.py per i pulsanti della webapp.
-    """
-    try:
-        # Genera ID sessione
-        session_id = str(uuid.uuid4())
-        timestamp = datetime.now().isoformat()
-        
-        print(f"✂️ Inizio analisi sopracciglio {request.side} - Sessione: {session_id}")
-        
-        # Verifica disponibilità del modulo
-        if not GREEN_DOTS_AVAILABLE:
-            return EyebrowAnalysisResult(
-                success=False,
-                session_id=session_id,
-                side=request.side,
-                error="Modulo GreenDotsProcessor non disponibile. Verificare l'installazione delle dipendenze.",
-                timestamp=timestamp
-            )
-        
-        # Valida il lato richiesto
-        if request.side not in ["left", "right"]:
-            return EyebrowAnalysisResult(
-                success=False,
-                session_id=session_id,
-                side=request.side,
-                error="Il parametro 'side' deve essere 'left' o 'right'",
-                timestamp=timestamp
-            )
-        
-        # Processa l'immagine con i parametri forniti
-        results = process_green_dots_analysis(
-            image_base64=request.image,
-            hue_range=request.hue_range,
-            saturation_min=request.saturation_min,
-            value_range=request.value_range,
-            cluster_size_range=request.cluster_size_range,
-            clustering_radius=request.clustering_radius
-        )
-        
-        if not results['success']:
-            return EyebrowAnalysisResult(
-                success=False,
-                session_id=session_id,
-                side=request.side,
-                error=results.get('error', 'Errore sconosciuto durante l\'analisi'),
-                timestamp=timestamp
-            )
-        
-        # Converte tutti i tipi NumPy in tipi Python nativi
-        clean_results = convert_numpy_types(results)
-        
-        # Estrai dati del sopracciglio richiesto
-        if request.side == "left":
-            eyebrow_dots = clean_results['groups']['Sx']
-            eyebrow_coordinates = clean_results['coordinates']['Sx']
-            eyebrow_statistics = clean_results['statistics']['left']
-        else:  # right
-            eyebrow_dots = clean_results['groups']['Dx']
-            eyebrow_coordinates = clean_results['coordinates']['Dx']
-            eyebrow_statistics = clean_results['statistics']['right']
-        
-        # Calcola bounding box con espansione
-        if eyebrow_dots:
-            # Usa il processore per calcolare il bounding box
-            processor = GreenDotsProcessor()
-            processor.left_dots = clean_results['groups']['Sx'] if request.side == "left" else []
-            processor.right_dots = clean_results['groups']['Dx'] if request.side == "right" else []
-            
-            if request.side == "left":
-                bbox_tuple = processor.get_left_eyebrow_bbox(request.expand_factor)
-            else:
-                bbox_tuple = processor.get_right_eyebrow_bbox(request.expand_factor)
-            
-            bbox = {
-                "x_min": bbox_tuple[0],
-                "y_min": bbox_tuple[1], 
-                "x_max": bbox_tuple[2],
-                "y_max": bbox_tuple[3]
-            }
-        else:
-            bbox = {"x_min": 0, "y_min": 0, "x_max": 0, "y_max": 0}
-        
-        # Genera overlay specifico per il lato richiesto
-        overlay_base64 = None
-        if 'overlay_base64' in clean_results:
-            # L'overlay originale contiene entrambi i lati
-            # Per un uso specifico, potremmo generare un overlay solo per un lato
-            # Ma per compatibilità, usiamo quello completo
-            overlay_base64 = clean_results['overlay_base64']
-        
-        print(f"✂️ Analisi sopracciglio {request.side} completata - Punti: {len(eyebrow_dots)}")
-        
-        return EyebrowAnalysisResult(
-            success=True,
-            session_id=session_id,
-            side=request.side,
-            dots=eyebrow_dots,
-            coordinates=eyebrow_coordinates,
-            statistics=eyebrow_statistics,
-            bbox=bbox,
-            overlay_base64=overlay_base64,
-            timestamp=timestamp
-        )
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ Errore endpoint sopracciglio {request.side}: {str(e)}")
-        return EyebrowAnalysisResult(
-            success=False,
-            session_id=session_id if 'session_id' in locals() else str(uuid.uuid4()),
-            side=request.side,
-            error=f"Errore interno del server: {str(e)}",
-            timestamp=datetime.now().isoformat()
-        )
-
-@app.post("/api/eyebrow/left")
-async def analyze_left_eyebrow(request: Dict[str, str]):
-    """
-    Endpoint specifico per il sopracciglio sinistro - equivalente alla funzione 
-    showLeftEyebrow() del JavaScript.
-    """
-    try:
-        # Crea richiesta per il sopracciglio sinistro
-        eyebrow_request = EyebrowAnalysisRequest(
-            image=request["image"],
-            side="left"
-        )
-        
-        # Analizza il sopracciglio sinistro
-        result = await analyze_eyebrow(eyebrow_request)
-        
-        # Restituisce un formato semplificato compatibile con il frontend
-        return {
-            "success": result.success,
-            "side": "left",
-            "data": {
-                "dots": result.dots,
-                "coordinates": result.coordinates,
-                "statistics": result.statistics,
-                "bbox": result.bbox
-            } if result.success else None,
-            "error": result.error,
-            "timestamp": result.timestamp
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "side": "left", 
-            "error": f"Errore analisi sopracciglio sinistro: {str(e)}",
-            "timestamp": datetime.now().isoformat()
-        }
-
-@app.post("/api/eyebrow/right")
-async def analyze_right_eyebrow(request: Dict[str, str]):
-    """
-    Endpoint specifico per il sopracciglio destro - equivalente alla funzione
-    showRightEyebrow() del JavaScript.
-    """
-    try:
-        # Crea richiesta per il sopracciglio destro
-        eyebrow_request = EyebrowAnalysisRequest(
-            image=request["image"],
-            side="right"
-        )
-        
-        # Analizza il sopracciglio destro
-        result = await analyze_eyebrow(eyebrow_request)
-        
-        # Restituisce un formato semplificato compatibile con il frontend
-        return {
-            "success": result.success,
-            "side": "right",
-            "data": {
-                "dots": result.dots,
-                "coordinates": result.coordinates,
-                "statistics": result.statistics,
-                "bbox": result.bbox
-            } if result.success else None,
-            "error": result.error,
-            "timestamp": result.timestamp
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "side": "right",
-            "error": f"Errore analisi sopracciglio destro: {str(e)}",
-            "timestamp": datetime.now().isoformat()
-        }
+        import traceback; traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Errore analisi white dots: {e}")
 
 # === ENDPOINT UNIFICATO PER ANALISI COMPLETA ===
 
@@ -4226,30 +3757,482 @@ async def camera_info(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# WHITE DOTS DEBUG – immagini diagnostiche per _detect_white_dots_v3
+# DEBUG PIPELINE TROVA DIFFERENZE – step-by-step con immagini
 # ---------------------------------------------------------------------------
 
-class WhiteDotsDebugRequest(BaseModel):
-    image: str  # dataURL base64
-    # default = WHITE_DOTS_THRESH_PERC / WHITE_DOTS_SAT_MAX_FRAC*100 → coincidono con production
-    thresh_percentile: int = WHITE_DOTS_THRESH_PERC        # 75 = top 25%
-    sat_max_pct: int      = round(WHITE_DOTS_SAT_MAX_FRAC * 100)  # 28
+def _img_to_b64(img_bgr: np.ndarray, quality: int = 82) -> str:
+    """Codifica un'immagine BGR in base64 JPEG per la risposta JSON."""
+    _, buf = cv2.imencode('.jpg', img_bgr, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
 
 
-@app.post("/api/white-dots/debug-images")
-async def white_dots_debug_images(payload: WhiteDotsDebugRequest):
+def _resize_debug(img: np.ndarray, max_side: int = 1200) -> np.ndarray:
+    h, w = img.shape[:2]
+    s = min(1.0, max_side / max(h, w))
+    if s < 1.0:
+        img = cv2.resize(img, (int(w * s), int(h * s)), interpolation=cv2.INTER_AREA)
+    return img
+
+
+def _upscale_for_labels(img: np.ndarray, target_w: int = 2400) -> tuple:
+    """Ingrandisce l'immagine per disegnarci sopra etichette leggibili; restituisce (img_up, scale)."""
+    h, w = img.shape[:2]
+    scale = target_w / w
+    img_up = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_LINEAR)
+    return img_up, scale
+
+
+def _generate_debug_steps(img_bgr: np.ndarray,
+                           target_width: int        = None,
+                           outer_px: int            = None,
+                           luma_min: int            = None,
+                           luma_max: int            = None,
+                           luma_lb: int             = None,
+                           luma_max_lb: int         = None,
+                           highlight_thresh_inner: int    = None,
+                           highlight_strength_inner: float = None,
+                           highlight_thresh_outer: int    = None,
+                           highlight_strength_outer: float = None,
+                           min_circularity_inner: float = None,
+                           max_circularity_inner: float = None,
+                           min_perimeter_inner: int = None,
+                           max_perimeter_inner: int = None,
+                           min_circularity_outer: float = None,
+                           max_circularity_outer: float = None,
+                           min_perimeter_outer: int = None,
+                           max_perimeter_outer: int = None,
+                           min_distance: int = None,
+                           **_kwargs) -> list:
     """
-    Genera due immagini di debug per _detect_white_dots_v3:
-      1. zone_image  – strip di ricerca dal convex hull dlib (60px fuori + 10px dentro)
-      2. detect_image – pixel bianchi rilevati + blobs + top-5 punti selezionati
-
-    Risposta: { zone_b64: "data:image/jpeg...", detect_b64: "data:image/jpeg..." }
+    Pipeline debug step-by-step: zona espansa → highlight boost → rilevamento → anatomico.
     """
     try:
         from eyebrows import extract_eyebrows_from_array
-        import base64 as _b64
+    except ImportError:
+        return [{"step": 0, "name": "Errore", "description": "Modulo eyebrows (dlib) non disponibile.", "image_b64": ""}]
 
-        # Decodifica immagine
+    _dat = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), '..', '..',
+        'face-landmark-localization-master', 'shape_predictor_68_face_landmarks.dat'
+    ))
+
+    steps = []
+
+    def _push(step_n, name, desc, img, hires=False, extra=None):
+        max_s = 2400 if hires else 1200
+        qual  = 90   if hires else 82
+        entry = {
+            "step": step_n,
+            "name": name,
+            "description": desc,
+            "image_b64": _img_to_b64(_resize_debug(img.copy(), max_side=max_s), quality=qual)
+        }
+        if extra:
+            entry.update(extra)
+        steps.append(entry)
+
+    TARGET_WIDTH       = target_width           if target_width           is not None else WHITE_DOTS_TARGET_WIDTH
+    OUTER_PX           = outer_px               if outer_px               is not None else WHITE_DOTS_OUTER_PX
+    LUMA_MIN           = luma_min               if luma_min               is not None else WHITE_DOTS_LUMA_MIN
+    LUMA_MAX           = luma_max               if luma_max               is not None else WHITE_DOTS_LUMA_MAX
+    LUMA_LB            = luma_lb                if luma_lb                is not None else WHITE_DOTS_LUMA_LB
+    LUMA_MAX_LB        = luma_max_lb            if luma_max_lb            is not None else WHITE_DOTS_LUMA_MAX_LB
+    HL_THRESH_INNER    = highlight_thresh_inner   if highlight_thresh_inner   is not None else WHITE_DOTS_HIGHLIGHT_THRESH_INNER
+    HL_STRENGTH_INNER  = highlight_strength_inner if highlight_strength_inner is not None else WHITE_DOTS_HIGHLIGHT_STRENGTH_INNER
+    HL_THRESH_OUTER    = highlight_thresh_outer   if highlight_thresh_outer   is not None else WHITE_DOTS_HIGHLIGHT_THRESH_OUTER
+    HL_STRENGTH_OUTER  = highlight_strength_outer if highlight_strength_outer is not None else WHITE_DOTS_HIGHLIGHT_STRENGTH_OUTER
+    MIN_CIRC_INNER     = min_circularity_inner  if min_circularity_inner  is not None else WHITE_DOTS_MIN_CIRCULARITY_INNER
+    MAX_CIRC_INNER     = max_circularity_inner  if max_circularity_inner  is not None else WHITE_DOTS_MAX_CIRCULARITY_INNER
+    MIN_PERI_INNER     = min_perimeter_inner    if min_perimeter_inner    is not None else WHITE_DOTS_MIN_PERIMETER_INNER
+    MAX_PERI_INNER     = max_perimeter_inner    if max_perimeter_inner    is not None else WHITE_DOTS_MAX_PERIMETER_INNER
+    MIN_CIRC_OUTER     = min_circularity_outer  if min_circularity_outer  is not None else WHITE_DOTS_MIN_CIRCULARITY_OUTER
+    MAX_CIRC_OUTER     = max_circularity_outer  if max_circularity_outer  is not None else WHITE_DOTS_MAX_CIRCULARITY_OUTER
+    MIN_PERI_OUTER     = min_perimeter_outer    if min_perimeter_outer    is not None else WHITE_DOTS_MIN_PERIMETER_OUTER
+    MAX_PERI_OUTER     = max_perimeter_outer    if max_perimeter_outer    is not None else WHITE_DOTS_MAX_PERIMETER_OUTER
+    MIN_DISTANCE       = min_distance           if min_distance           is not None else WHITE_DOTS_MIN_DISTANCE
+
+    _orig_h, _orig_w = img_bgr.shape[:2]
+    if _orig_w != TARGET_WIDTH:
+        _scale  = TARGET_WIDTH / _orig_w
+        img_bgr = cv2.resize(img_bgr, (TARGET_WIDTH, max(1, round(_orig_h * _scale))),
+                             interpolation=cv2.INTER_AREA if _orig_w > TARGET_WIDTH else cv2.INTER_LINEAR)
+
+    h, w = img_bgr.shape[:2]
+
+    res_dlib = extract_eyebrows_from_array(img_bgr, predictor_path=_dat)
+    if not res_dlib["face_detected"]:
+        _push(1, "Errore dlib", "Volto non rilevato da dlib — impossibile procedere.", img_bgr)
+        return steps
+
+    # Highlight boost separato per zona interna e strip esterna
+    gray_raw = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    gray_inner_f = gray_raw.copy()
+    mask_hi_inner = gray_raw >= HL_THRESH_INNER
+    gray_inner_f[mask_hi_inner] = np.clip(
+        gray_raw[mask_hi_inner] + HL_STRENGTH_INNER * (255.0 - gray_raw[mask_hi_inner]), 0, 255)
+    gray_inner = gray_inner_f.astype(np.uint8)
+    gray_outer_f = gray_raw.copy()
+    mask_hi_outer = gray_raw >= HL_THRESH_OUTER
+    gray_outer_f[mask_hi_outer] = np.clip(
+        gray_raw[mask_hi_outer] + HL_STRENGTH_OUTER * (255.0 - gray_raw[mask_hi_outer]), 0, 255)
+    gray_outer = gray_outer_f.astype(np.uint8)
+
+    k_outer = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (OUTER_PX*2+1, OUTER_PX*2+1))
+
+    # Step 1 – zona di ricerca espansa con strip LB/RB evidenziata
+    step1 = img_bgr.copy()
+    side_colors = {'left': (0, 255, 255), 'right': (0, 255, 0)}
+    expanded_masks = {}
+    col_idx = np.indices((h, w))[1]
+    for side, mask_key in [('left', 'left_mask'), ('right', 'right_mask')]:
+        mask = res_dlib[mask_key]
+        if not np.any(mask):
+            continue
+        expanded = cv2.dilate(mask, k_outer, iterations=1)
+        expanded_masks[side] = expanded
+
+        ys_m, xs_m = np.where(mask > 0)
+        x_min_mask, x_max_mask = int(xs_m.min()), int(xs_m.max())
+        if side == 'left':
+            lb_strip = (expanded > 0) & (col_idx <= x_min_mask + OUTER_PX)
+        else:
+            lb_strip = (expanded > 0) & (col_idx >= x_max_mask - OUTER_PX)
+
+        col = side_colors[side]
+        ov = step1.copy()
+        ov[(expanded > 0) & ~lb_strip] = (col[0]//2, col[1]//2, col[2]//2)
+        ov[mask > 0] = (col[0]//3, col[1]//3, col[2]//2)
+        ov[lb_strip] = (0, 120, 255)
+        cv2.addWeighted(ov, 0.40, step1, 0.60, 0, step1)
+
+        cnts, _ = cv2.findContours(expanded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(step1, cnts, -1, col, max(2, h//400))
+
+    _push(1, "Zona di ricerca espansa",
+          f"Ciano/Verde=zona principale | Arancio=strip LB/RB esclusiva | espansione {OUTER_PX}px",
+          step1)
+
+    # Step 2 – highlight boost + pixel rilevati + circolarità/perimetro
+    # Colori pixel overlay:
+    #   Giallo  (0,220,255) = passa soglie PRINCIPALI (luma_min/max)
+    #   Arancio (0,140,255) = passa solo soglie LB/RB (luma_lb/luma_max_lb)
+    # Colori blob:
+    #   Grigio pieno   = scartato per circolarità o perimetro
+    #   Ciano/Verde    = selezionato (zona interna)
+    #   Arancio vivace = selezionato (strip LB/RB)
+    # Usa gray_inner come sfondo (zona principale)
+    gray_bgr = cv2.cvtColor(gray_inner, cv2.COLOR_GRAY2BGR)
+    step2 = gray_bgr.copy()
+    all_candidates_pre_nms = []  # Tutti i blob prima di NMS globale
+    all_discarded_inner = []     # Blob scartati da filtri inner
+    all_discarded_outer = []     # Blob scartati da filtri outer
+    total_hit = 0
+    R_up = max(6, h // 200)  # raggio cerchio blob sull'immagine
+    # blob con area < 4px = rumore sub-pixel: cerchietto minimo, nessun popup
+    _MIN_AREA_LABEL = 4
+
+    for side in ['left', 'right']:
+        expanded = expanded_masks.get(side)
+        if expanded is None:
+            continue
+
+        white_mask = np.zeros((h, w), dtype=np.uint8)
+        white_mask[(gray_inner >= LUMA_MIN) & (gray_inner <= LUMA_MAX) & (expanded > 0)] = 255
+
+        mask_dbg = res_dlib[f'{side}_mask']
+        ys_m, xs_m = np.where(mask_dbg > 0)
+        x_min_mask, x_max_mask = int(xs_m.min()), int(xs_m.max())
+        if side == 'left':
+            lb_zone = (expanded > 0) & (col_idx <= x_min_mask + OUTER_PX)
+        else:
+            lb_zone = (expanded > 0) & (col_idx >= x_max_mask - OUTER_PX)
+        lb_mask = np.zeros((h, w), dtype=np.uint8)
+        lb_mask[(gray_outer >= LUMA_LB) & (gray_outer <= LUMA_MAX_LB) & lb_zone] = 255
+
+        n_hit = int(np.sum(white_mask > 0))
+        total_hit += n_hit
+
+        # Pixel overlay su step2 a 1200px
+        step2[white_mask > 0] = (0, 220, 255)
+        lb_only = lb_mask.copy()
+        lb_only[white_mask > 0] = 0
+        step2[lb_only > 0] = (0, 140, 255)
+
+        # ── Connected components principali (INNER) ───────────────────────────
+        n_lbl, lbl_map, stats_cc, centroids = cv2.connectedComponentsWithStats(white_mask, 8)
+        cands = []
+        discarded_inner = []
+        for lbl in range(1, n_lbl):
+            area = int(stats_cc[lbl, cv2.CC_STAT_AREA])
+            cx = int(round(float(centroids[lbl, 0])))
+            cy = int(round(float(centroids[lbl, 1])))
+            blob_mask = (lbl_map == lbl).astype(np.uint8)
+            cnts_b, _ = cv2.findContours(blob_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            if not cnts_b:
+                discarded_inner.append((cx, cy, area, 0.0, 0.0, "no cnt"))
+                continue
+            perimeter = cv2.arcLength(cnts_b[0], True)
+            circularity = (4.0 * math.pi * area / (perimeter ** 2)) if perimeter > 0 else 0.0
+            if perimeter < MIN_PERI_INNER or perimeter > MAX_PERI_INNER:
+                discarded_inner.append((cx, cy, area, perimeter, circularity, f"peri={perimeter:.0f}"))
+                continue
+            if circularity < MIN_CIRC_INNER or circularity > MAX_CIRC_INNER:
+                discarded_inner.append((cx, cy, area, perimeter, circularity, f"circ={circularity:.2f}"))
+                continue
+            mean_luma = float(np.mean(gray_inner[lbl_map == lbl]))
+            cands.append({'x': cx, 'y': cy, 'size': area, 'score': mean_luma / 255.0 * 100.0,
+                          'perim': perimeter, 'circ': circularity, 'side': side, 'zone': 'inner'})
+
+        # ── Connected components LB/RB (OUTER) ───────────────────────────────
+        n_lb, lbl_lb, stats_lb, ctr_lb = cv2.connectedComponentsWithStats(lb_mask, 8)
+        lb_cands = []
+        discarded_outer = []
+        for lbl in range(1, n_lb):
+            area = int(stats_lb[lbl, cv2.CC_STAT_AREA])
+            cx = int(round(float(ctr_lb[lbl, 0])))
+            cy = int(round(float(ctr_lb[lbl, 1])))
+            blob_mask = (lbl_lb == lbl).astype(np.uint8)
+            cnts_b, _ = cv2.findContours(blob_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+            if not cnts_b:
+                discarded_outer.append((cx, cy, area, 0.0, 0.0, "no cnt"))
+                continue
+            perimeter = cv2.arcLength(cnts_b[0], True)
+            circularity = (4.0 * math.pi * area / (perimeter ** 2)) if perimeter > 0 else 0.0
+            if perimeter < MIN_PERI_OUTER or perimeter > MAX_PERI_OUTER:
+                discarded_outer.append((cx, cy, area, perimeter, circularity, f"peri={perimeter:.0f}"))
+                continue
+            if circularity < MIN_CIRC_OUTER or circularity > MAX_CIRC_OUTER:
+                discarded_outer.append((cx, cy, area, perimeter, circularity, f"circ={circularity:.2f}"))
+                continue
+            mean_luma = float(np.mean(gray_outer[lbl_lb == lbl]))
+            lb_cands.append({'x': cx, 'y': cy, 'size': area,
+                              'score': mean_luma / 255.0 * 100.0, 'forced': True,
+                              'perim': perimeter, 'circ': circularity, 'side': side, 'zone': 'outer'})
+
+        # Accumula tutti i candidati (inner + outer) per NMS globale
+        all_candidates_pre_nms.extend(cands + lb_cands)
+        # Accumula i blob scartati con tag del lato
+        for item in discarded_inner:
+            all_discarded_inner.append(item + (side,))
+        for item in discarded_outer:
+            all_discarded_outer.append(item + (side,))
+
+    # ── Applica NMS GLOBALMENTE su tutti i blob di entrambi i lati ────────────────
+    before_nms = len(all_candidates_pre_nms)
+    rejected_by_nms = []  # Blob eliminati da NMS
+    if MIN_DISTANCE > 0 and before_nms > 0:
+        print(f"\n   [DEBUG] ===== NMS GLOBALE =====")
+        print(f"   [DEBUG] min_distance = {MIN_DISTANCE}px")
+        print(f"   [DEBUG] Blob pre-NMS = {before_nms}")
+        # Stampa coordinate di tutti i blob pre-NMS
+        for i, b in enumerate(all_candidates_pre_nms):
+            forced_tag = " [FORCED]" if b.get('forced') else ""
+            print(f"   [PRE-NMS #{i+1}] ({b['x']}, {b['y']}) score={b.get('score',0):.1f} circ={b.get('circ',0):.3f} side={b.get('side')} zone={b.get('zone')}{forced_tag}")
+        
+        all_candidates_post_nms, rejected_by_nms = _nms_by_distance(all_candidates_pre_nms, MIN_DISTANCE, debug=True)
+        
+        print(f"   [DEBUG] Blob post-NMS = {len(all_candidates_post_nms)} (eliminati {len(rejected_by_nms)})")
+        print(f"   [DEBUG] ===== FINE NMS =====\n")
+    else:
+        all_candidates_post_nms = all_candidates_pre_nms
+    after_nms = len(all_candidates_post_nms)
+    
+    # Separa nuovamente per lato
+    top_per_side = {
+        'left': [d for d in all_candidates_post_nms if d.get('side') == 'left'],
+        'right': [d for d in all_candidates_post_nms if d.get('side') == 'right']
+    }
+
+    # ── Prepara lista blob da disegnare sullo Step 2 (post-NMS) ──────────────────
+    _all_blobs_draw = []  # lista dict blob da disegnare e inviare al frontend
+
+    # Blob scartati da filtri circolarità/perimetro (inner)
+    for cx, cy, area, perim, circ, reason, side in all_discarded_inner:
+        side_tag = "SX" if side == 'left' else "DX"
+        is_noise = area < _MIN_AREA_LABEL
+        if "peri" in reason:
+            verdict = f"peri {perim:.0f}px fuori range [{MIN_PERI_INNER}–{MAX_PERI_INNER}]"
+        elif "circ" in reason:
+            verdict = f"circ {circ:.3f} fuori range [{MIN_CIRC_INNER:.1f}–{MAX_CIRC_INNER:.1f}]"
+        else:
+            verdict = reason
+        _all_blobs_draw.append({
+            "cx": cx, "cy": cy, "area": area, "perim": round(perim, 1),
+            "circ": round(circ, 4), "luma": None,
+            "type": "noise" if is_noise else "rejected",
+            "zone": "inner", "side": side_tag,
+            "verdict": verdict,
+            "hex": "#a06464" if not is_noise else "#504040",
+            "cv_color": (160, 100, 100) if not is_noise else (80, 55, 55),
+        })
+
+    # Blob scartati da filtri circolarità/perimetro (outer)
+    for cx, cy, area, perim, circ, reason, side in all_discarded_outer:
+        side_tag = "SX" if side == 'left' else "DX"
+        is_noise = area < _MIN_AREA_LABEL
+        if "peri" in reason:
+            verdict = f"peri {perim:.0f}px fuori range [{MIN_PERI_OUTER}–{MAX_PERI_OUTER}]"
+        elif "circ" in reason:
+            verdict = f"circ {circ:.3f} fuori range [{MIN_CIRC_OUTER:.1f}–{MAX_CIRC_OUTER:.1f}]"
+        else:
+            verdict = reason
+        _all_blobs_draw.append({
+            "cx": cx, "cy": cy, "area": area, "perim": round(perim, 1),
+            "circ": round(circ, 4), "luma": None,
+            "type": "noise" if is_noise else "rejected",
+            "zone": "outer", "side": side_tag,
+            "verdict": verdict,
+            "hex": "#c89650" if not is_noise else "#504030",
+            "cv_color": (200, 150, 80) if not is_noise else (80, 65, 40),
+        })
+
+    # Blob eliminati da NMS (disegna PRIMA degli accettati per sovrapposizione corretta)
+    for d in rejected_by_nms:
+        side = d.get('side')
+        side_tag = "SX" if side == 'left' else "DX"
+        zone = d.get('zone', 'unknown')
+        _all_blobs_draw.append({
+            "cx": d['x'], "cy": d['y'], "area": d['size'],
+            "perim": round(d.get('perim', 0), 1),
+            "circ": round(d.get('circ', 0), 4),
+            "luma": round(d['score'], 1),
+            "type": "rejected_nms",
+            "zone": zone, "side": side_tag,
+            "verdict": f"Eliminato NMS: {d.get('nms_reason', 'troppo vicino')}",
+            "hex": "#ff6644",  # Arancione/rosso per NMS
+            "cv_color": (255, 102, 68),
+        })
+
+    # Blob accettati (post-NMS globale)
+    for i, d in enumerate(all_candidates_post_nms):
+        side = d.get('side')
+        side_tag = "SX" if side == 'left' else "DX"
+        col_main = (0, 255, 255) if side == 'left' else (0, 255, 0)
+        col_lb   = (0, 160, 255)
+        is_lb = d.get('forced', False)
+        col_hex = "#00a0ff" if is_lb else ("#00ffff" if side == 'left' else "#00ff00")
+        _all_blobs_draw.append({
+            "cx": d['x'], "cy": d['y'], "area": d['size'],
+            "perim": round(d.get('perim', 0), 1),
+            "circ": round(d.get('circ', 0), 4),
+            "luma": round(d['score'], 1),
+            "type": "accepted",
+            "zone": "outer/LB" if is_lb else "inner",
+            "side": side_tag,
+            "verdict": f"OK #{i+1}  score={d['score']:.0f}%",
+            "hex": col_hex,
+            "cv_color": col_lb if is_lb else col_main,
+        })
+
+    # ── Disegna solo cerchietti sull'immagine (niente etichette) ─────────────
+    for b in _all_blobs_draw:
+        cx, cy, col = b["cx"], b["cy"], b["cv_color"]
+        if b["type"] == "noise":
+            cv2.circle(step2, (cx, cy), 2, col, -1)
+        elif b["type"] == "rejected" or b["type"] == "rejected_nms":
+            cv2.circle(step2, (cx, cy), max(4, R_up // 2), (45, 30, 30), -1)
+            cv2.circle(step2, (cx, cy), max(4, R_up // 2) + 1, col, 1)
+        else:  # accepted
+            cv2.circle(step2, (cx, cy), R_up, col, -1)
+            cv2.circle(step2, (cx, cy), R_up + 2, (255, 255, 255), 2)
+
+    # serializza blob per il frontend (coordinate normalizzate 0–1)
+    _blobs_json = []
+    for b in _all_blobs_draw:
+        _blobs_json.append({
+            "x": round(b["cx"] / w, 5),  # normalizzato larghezza immagine pipeline
+            "y": round(b["cy"] / h, 5),
+            "area": b["area"], "perim": b["perim"], "circ": b["circ"],
+            "luma": b["luma"], "type": b["type"],
+            "zone": b["zone"], "side": b["side"],
+            "verdict": b["verdict"], "hex": b["hex"],
+        })
+
+    # Legenda in alto a sinistra
+    legend = [
+        ((0, 220, 255),  "pixel inner (luma_min-luma_max su gray_inner)"),
+        ((0, 140, 255),  "pixel outer LB/RB (luma_lb-luma_max_lb su gray_outer)"),
+        ((0, 255, 255),  "blob SX accettato (inner)"),
+        ((0, 255,   0),  "blob DX accettato (inner)"),
+        ((0, 160, 255),  "blob accettato (outer LB/RB)"),
+        ((255, 102, 68), "blob eliminato NMS (troppo vicino)"),
+        ((160,100,100),  "blob scartato inner (area>=4px, circ/peri fuori range)"),
+        ((200,150, 80),  "blob scartato outer (area>=4px, circ/peri fuori range)"),
+        ((80, 60, 60),   "rumore sub-pixel (area<4px, nessuna etichetta)"),
+    ]
+    lx, ly = 8, 16
+    leg_lh = 18
+    leg_fs = 0.38
+    box_h  = len(legend) * leg_lh + 8
+    cv2.rectangle(step2, (lx - 4, ly - 14), (lx + 450, ly + box_h - 6), (20, 20, 20), -1)
+    for color, text in legend:
+        cv2.circle(step2, (lx + 6, ly - 3), 5, color, -1)
+        cv2.putText(step2, text, (lx + 16, ly), cv2.FONT_HERSHEY_SIMPLEX,
+                    leg_fs, (220, 220, 220), 1, cv2.LINE_AA)
+        ly += leg_lh
+
+    n_top = sum(len(v) for v in top_per_side.values())
+    nms_info = f"NMS: {before_nms}→{after_nms} blob (eliminati {before_nms - after_nms}, min_dist={MIN_DISTANCE}px)" if MIN_DISTANCE > 0 else "NMS disattivato (min_dist=0)"
+    _push(2, f"Rilevamento blob — click sui cerchietti per dettagli",
+          f"Ciano/Verde=accettato inner | Blu=accettato outer | Rosso=scartato | Grigio=rumore (<4px) | "
+          f"inner circ[{MIN_CIRC_INNER:.1f}–{MAX_CIRC_INNER:.1f}] peri[{MIN_PERI_INNER}–{MAX_PERI_INNER}] | "
+          f"outer circ[{MIN_CIRC_OUTER:.1f}–{MAX_CIRC_OUTER:.1f}] peri[{MIN_PERI_OUTER}–{MAX_PERI_OUTER}] | "
+          f"⚡ {nms_info}",
+          step2, extra={"blobs": _blobs_json, "img_w": w, "img_h": h})
+
+    # Step 3 – ordine anatomico finale
+    step3 = img_bgr.copy()
+    final_left  = sort_points_anatomical(top_per_side.get('left', []),  is_left=True)
+    final_right = sort_points_anatomical(top_per_side.get('right', []), is_left=False)
+    anat_colors = [(255,100,100),(100,255,100),(100,100,255),(255,255,100),(255,100,255)]
+    for pts, is_left in [(final_left, True), (final_right, False)]:
+        for i, d in enumerate(pts):
+            col = anat_colors[i % len(anat_colors)]
+            cv2.circle(step3, (d['x'], d['y']), max(8, h//180), col, -1)
+            cv2.circle(step3, (d['x'], d['y']), max(10, h//180)+2, (255, 255, 255), 2)
+            label = d.get('anatomical_name', str(i+1))
+            cv2.putText(step3, label, (d['x']+8, d['y']+5),
+                        cv2.FONT_HERSHEY_SIMPLEX, max(0.35, h/4000.0),
+                        (255, 255, 255), max(1, h//900))
+    n_final = len(final_left) + len(final_right)
+    _push(3, "Ordine anatomico finale",
+          f"{n_final} punti | LC1→LA0→LA→LC→LB (sx) | RC1→RB→RC→RA→RA0 (dx)",
+          step3)
+
+    return steps
+
+
+class WhiteDotsDebugRequest(BaseModel):
+    image: str
+    target_width:           int   = WHITE_DOTS_TARGET_WIDTH
+    outer_px:               int   = WHITE_DOTS_OUTER_PX
+    luma_min:               int   = WHITE_DOTS_LUMA_MIN
+    luma_max:               int   = WHITE_DOTS_LUMA_MAX
+    luma_lb:                int   = WHITE_DOTS_LUMA_LB
+    luma_max_lb:            int   = WHITE_DOTS_LUMA_MAX_LB
+    highlight_thresh_inner:       int   = WHITE_DOTS_HIGHLIGHT_THRESH_INNER
+    highlight_strength_inner:     float = WHITE_DOTS_HIGHLIGHT_STRENGTH_INNER
+    highlight_thresh_outer:       int   = WHITE_DOTS_HIGHLIGHT_THRESH_OUTER
+    highlight_strength_outer:     float = WHITE_DOTS_HIGHLIGHT_STRENGTH_OUTER
+    min_circularity_inner:  float = WHITE_DOTS_MIN_CIRCULARITY_INNER
+    max_circularity_inner:  float = WHITE_DOTS_MAX_CIRCULARITY_INNER
+    min_perimeter_inner:    int   = WHITE_DOTS_MIN_PERIMETER_INNER
+    max_perimeter_inner:    int   = WHITE_DOTS_MAX_PERIMETER_INNER
+    min_circularity_outer:  float = WHITE_DOTS_MIN_CIRCULARITY_OUTER
+    max_circularity_outer:  float = WHITE_DOTS_MAX_CIRCULARITY_OUTER
+    min_perimeter_outer:    int   = WHITE_DOTS_MIN_PERIMETER_OUTER
+    max_perimeter_outer:    int   = WHITE_DOTS_MAX_PERIMETER_OUTER
+    min_distance:           int   = WHITE_DOTS_MIN_DISTANCE
+
+
+@app.post("/api/debug/trova-differenze")
+async def debug_trova_differenze(payload: WhiteDotsDebugRequest):
+    """
+    Esegue la pipeline step-by-step e restituisce 3 step di debug.
+    Risposta: { success: true, steps: [...], total: 3 }
+    """
+    try:
+        import base64 as _b64
         b64 = payload.image
         if ',' in b64:
             b64 = b64.split(',', 1)[1]
@@ -4259,202 +4242,97 @@ async def white_dots_debug_images(payload: WhiteDotsDebugRequest):
         if img_bgr is None:
             raise ValueError("Impossibile decodificare l'immagine")
 
-        _dat = os.path.abspath(os.path.join(
-            os.path.dirname(__file__), '..', '..',
-            'face-landmark-localization-master', 'shape_predictor_68_face_landmarks.dat'
-        ))
-
-        res_dlib = extract_eyebrows_from_array(img_bgr, predictor_path=_dat)
-        if not res_dlib["face_detected"]:
-            raise ValueError("Volto non rilevato da dlib")
-
-        h, w = img_bgr.shape[:2]
-        hsv  = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-        v_ch = hsv[:, :, 2].astype(np.float32)
-        s_ch = hsv[:, :, 1].astype(np.float32)
-
-        # Parametri morfologici fissi (identici a _detect_white_dots_v3)
-        OUTER_PX = 25
-        INNER_PX = 25
-        k_outer = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (OUTER_PX*2+1, OUTER_PX*2+1))
-        k_inner = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (INNER_PX*2+1, INNER_PX*2+1))
-        MERGE_PX = 8
-        k_merge  = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MERGE_PX*2+1, MERGE_PX*2+1))
-
-        # Parametri configurabili dal frontend
-        THRESH_PERC = max(1, min(99, int(payload.thresh_percentile)))
-        SAT_MAX     = max(0, min(100, int(payload.sat_max_pct))) / 100.0 * 255
-
-        # ── Dot canonici: STESSA chiamata di "Trova Differenze" ─────────────
-        # Garantisce che debug e output del pulsante mostrino esattamente gli stessi punti.
-        v3_result = _detect_white_dots_v3(img_bgr,
-                                          thresh_perc=THRESH_PERC,
-                                          sat_max_frac=SAT_MAX / 255.0)
-        if 'error' in v3_result:
-            raise ValueError(v3_result['error'])
-
-        middle_x = w // 2
-        left_v3  = [d for d in v3_result['dots'] if d['x'] <  middle_x]
-        right_v3 = [d for d in v3_result['dots'] if d['x'] >= middle_x]
-        left_v3  = _select_best_5_for_eyebrow(left_v3,  is_left=True)
-        right_v3 = _select_best_5_for_eyebrow(right_v3, is_left=False)
-        all_selected = left_v3 + right_v3
-
-        # ── Immagine 1: zone di ricerca ──────────────────────────────────────
-        zone_img = img_bgr.copy()
-
-        # ── Immagine 2: rilevamento pixel bianchi ─────────────────────────────
-        detect_img = img_bgr.copy()
-
-        for side, mask, c_mask, c_zone, c_bright in [
-            ('left',  res_dlib['left_mask'],
-             (0, 255, 255),
-             (0, 255, 0),
-             (255, 0, 255)),
-            ('right', res_dlib['right_mask'],
-             (255, 255, 0),
-             (0, 200, 200),
-             (0, 100, 255)),
-        ]:
-            if not np.any(mask):
-                continue
-
-            # Striscia 25px fuori + 25px dentro
-            expanded    = cv2.dilate(mask, k_outer, iterations=1)
-            shrunk      = cv2.erode(mask,  k_inner, iterations=1)
-            search_zone = cv2.subtract(expanded, shrunk)
-
-            # IMG 1 — dlib mask + striscia con tinte semi-trasparenti
-            overlay_tmp = zone_img.copy()
-            overlay_tmp[mask > 0]        = c_mask
-            overlay_tmp[search_zone > 0] = c_zone
-            cv2.addWeighted(overlay_tmp, 0.35, zone_img, 0.65, 0, zone_img)
-
-            # Contorno della striscia
-            cnts_sz, _ = cv2.findContours(search_zone, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            cv2.drawContours(zone_img, cnts_sz, -1, c_zone, max(2, h // 400))
-
-            # IMG 2 — pixel bianchi con parametri configurabili
-            zone_v = v_ch[search_zone > 0]
-            if len(zone_v) < 10:
-                continue
-            thresh_v = float(np.percentile(zone_v, THRESH_PERC))
-            thresh_s = SAT_MAX
-
-            bright = np.zeros((h, w), dtype=np.uint8)
-            bright[(v_ch >= thresh_v) & (s_ch <= thresh_s) & (search_zone > 0)] = 255
-
-            # Colora i pixel bianchi sull'immagine di rilevamento
-            overlay_d = detect_img.copy()
-            overlay_d[bright > 0] = c_bright
-            cv2.addWeighted(overlay_d, 0.5, detect_img, 0.5, 0, detect_img)
-
-            # Fondi frammenti adiacenti (stesso kernel di _detect_white_dots_v3)
-            bright_m = cv2.dilate(bright, k_merge, iterations=1)
-            MAX_BLOB = WHITE_DOTS_MAX_BLOB
-            n_lbl, lbl_map, stats_cc, centroids = cv2.connectedComponentsWithStats(bright_m, 8)
-            cands = []
-            for lbl in range(1, n_lbl):
-                area = int(stats_cc[lbl, cv2.CC_STAT_AREA])
-                if area < 3 or area > MAX_BLOB:
-                    continue
-                cx_ = float(centroids[lbl, 0])
-                cy_ = float(centroids[lbl, 1])
-                bm  = lbl_map == lbl
-                mv  = float(np.mean(v_ch[bm]))
-                score = mv * (1.0 - area / (MAX_BLOB * 2.0))
-                cands.append({'x': int(round(cx_)), 'y': int(round(cy_)),
-                              'size': area, 'score': score})
-
-            # Dots canonici per questo lato (identici a "Trova Differenze")
-            side_selected = left_v3 if side == 'left' else right_v3
-            sel_xy_side   = {(d['x'], d['y']) for d in side_selected}
-
-            # Cerchi: grigio = candidato non selezionato, colorato = selezionato canonico
-            dot_r = max(5, h // 200)
-            for cc in cands:
-                if (cc['x'], cc['y']) not in sel_xy_side:
-                    cv2.circle(detect_img, (cc['x'], cc['y']), dot_r, (80, 80, 80), 1)
-            for i, cc in enumerate(side_selected):
-                cv2.circle(detect_img, (cc['x'], cc['y']), dot_r + 4, c_bright, -1)
-                cv2.circle(detect_img, (cc['x'], cc['y']), dot_r + 6, (255, 255, 255), 2)
-                cv2.putText(detect_img, str(i + 1),
-                            (cc['x'] - dot_r, cc['y'] - dot_r - 4),
-                            cv2.FONT_HERSHEY_SIMPLEX, max(0.5, h / 3000.0),
-                            (255, 255, 255), max(1, h // 800))
-
-            # Info testo su zona
-            ys_m, xs_m = np.where(mask > 0)
-            x_txt = int(xs_m.min())
-            y_txt = max(20, int(ys_m.min()) - 10)
-            txt = f"{side} strip=25+25px cand={len(cands)} sel={len(side_selected)}"
-            cv2.putText(zone_img, txt, (x_txt, y_txt),
-                        cv2.FONT_HERSHEY_SIMPLEX, max(0.5, h / 3000.0),
-                        (255, 255, 255), max(1, h // 800))
-
-        # Disegna anche i top-5 sull'immagine 1 (zone) per riferimento
-        for cc in all_selected:
-            cv2.circle(zone_img, (cc['x'], cc['y']),
-                       max(6, h // 200), (0, 0, 255), -1)
-            cv2.circle(zone_img, (cc['x'], cc['y']),
-                       max(8, h // 200) + 2, (255, 255, 255), 2)
-
-        # Immagine 3: porzione ORIGINALE visibile solo nella strip (nero fuori)
-        # Mostra esattamente i pixel analizzati per il rilevamento
-        both_strips = cv2.bitwise_or(
-            *[cv2.subtract(
-                cv2.dilate(res_dlib[f'{s}_mask'], k_outer, iterations=1),
-                cv2.erode( res_dlib[f'{s}_mask'], k_inner, iterations=1)
-              ) for s in ('left', 'right')]
+        steps = _generate_debug_steps(
+            img_bgr,
+            target_width=payload.target_width,
+            outer_px=payload.outer_px,
+            luma_min=payload.luma_min,
+            luma_max=payload.luma_max,
+            luma_lb=payload.luma_lb,
+            luma_max_lb=payload.luma_max_lb,
+            highlight_thresh_inner=payload.highlight_thresh_inner,
+            highlight_strength_inner=payload.highlight_strength_inner,
+            highlight_thresh_outer=payload.highlight_thresh_outer,
+            highlight_strength_outer=payload.highlight_strength_outer,
+            min_circularity_inner=payload.min_circularity_inner,
+            max_circularity_inner=payload.max_circularity_inner,
+            min_perimeter_inner=payload.min_perimeter_inner,
+            max_perimeter_inner=payload.max_perimeter_inner,
+            min_circularity_outer=payload.min_circularity_outer,
+            max_circularity_outer=payload.max_circularity_outer,
+            min_perimeter_outer=payload.min_perimeter_outer,
+            max_perimeter_outer=payload.max_perimeter_outer,
+            min_distance=payload.min_distance,
         )
-        masked_img = np.zeros_like(img_bgr)
-        masked_img[both_strips > 0] = img_bgr[both_strips > 0]
-        # Bordo verde della strip per chiarezza
-        cnts_all, _ = cv2.findContours(both_strips, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(masked_img, cnts_all, -1, (0, 230, 0), max(2, h // 500))
-        # Disegna top-5 selezionati anche qui
-        for cc in all_selected:
-            cv2.circle(masked_img, (cc['x'], cc['y']), max(6, h // 200), (0, 0, 255), -1)
-            cv2.circle(masked_img, (cc['x'], cc['y']), max(8, h // 200) + 2, (255, 255, 255), 2)
-
-        # Ridimensiona a max 1200px per il trasferimento
-        def _resize_for_transfer(img, max_side=1200):
-            mh, mw = img.shape[:2]
-            s = min(1.0, max_side / max(mh, mw))
-            if s < 1.0:
-                img = cv2.resize(img, (int(mw * s), int(mh * s)), interpolation=cv2.INTER_AREA)
-            return img
-
-        zone_img   = _resize_for_transfer(zone_img)
-        detect_img = _resize_for_transfer(detect_img)
-        masked_img = _resize_for_transfer(masked_img)
-
-        _, buf_z = cv2.imencode('.jpg', zone_img,   [cv2.IMWRITE_JPEG_QUALITY, 88])
-        _, buf_d = cv2.imencode('.jpg', detect_img, [cv2.IMWRITE_JPEG_QUALITY, 88])
-        _, buf_m = cv2.imencode('.jpg', masked_img, [cv2.IMWRITE_JPEG_QUALITY, 88])
-
-        return {
-            "success":        True,
-            "zone_b64":       "data:image/jpeg;base64," + _b64.b64encode(buf_z.tobytes()).decode(),
-            "detect_b64":     "data:image/jpeg;base64," + _b64.b64encode(buf_d.tobytes()).decode(),
-            "masked_b64":     "data:image/jpeg;base64," + _b64.b64encode(buf_m.tobytes()).decode(),
-            "total_selected": len(all_selected),
-            "params": {
-                "outer_px":          OUTER_PX,
-                "inner_px":          INNER_PX,
-                "merge_px":          MERGE_PX,
-                "thresh_percentile": THRESH_PERC,
-                "sat_max_pct":       int(payload.sat_max_pct),
-                "min_blob_area":     3,
-                "max_blob_area":     WHITE_DOTS_MAX_BLOB,
-                "top_n_per_side":    5,
-            },
-        }
+        return {"success": True, "steps": steps, "total": len(steps)}
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Errore debug images: {e}")
+        raise HTTPException(status_code=500, detail=f"Errore debug trova-differenze: {e}")
+
+
+@app.get("/api/debug/params")
+async def get_debug_params():
+    """Restituisce i parametri attuali della pipeline white-dots."""
+    return {"success": True, "params": _load_white_dots_params()}
+
+
+@app.put("/api/debug/params/approve")
+async def approve_debug_params(payload: WhiteDotsDebugRequest):
+    """Approva i parametri: salva su JSON e aggiorna le costanti globali in memoria."""
+    global WHITE_DOTS_TARGET_WIDTH, WHITE_DOTS_OUTER_PX
+    global WHITE_DOTS_LUMA_MIN, WHITE_DOTS_LUMA_MAX
+    global WHITE_DOTS_LUMA_LB, WHITE_DOTS_LUMA_MAX_LB
+    global WHITE_DOTS_HIGHLIGHT_THRESH_INNER, WHITE_DOTS_HIGHLIGHT_STRENGTH_INNER
+    global WHITE_DOTS_HIGHLIGHT_THRESH_OUTER, WHITE_DOTS_HIGHLIGHT_STRENGTH_OUTER
+    global WHITE_DOTS_MIN_CIRCULARITY_INNER, WHITE_DOTS_MAX_CIRCULARITY_INNER
+    global WHITE_DOTS_MIN_PERIMETER_INNER, WHITE_DOTS_MAX_PERIMETER_INNER
+    global WHITE_DOTS_MIN_CIRCULARITY_OUTER, WHITE_DOTS_MAX_CIRCULARITY_OUTER
+    global WHITE_DOTS_MIN_PERIMETER_OUTER, WHITE_DOTS_MAX_PERIMETER_OUTER
+    global WHITE_DOTS_MIN_DISTANCE
+    params = {
+        "target_width":           payload.target_width,
+        "outer_px":               payload.outer_px,
+        "luma_min":               payload.luma_min,
+        "luma_max":               payload.luma_max,
+        "luma_lb":                payload.luma_lb,
+        "luma_max_lb":            payload.luma_max_lb,
+        "highlight_thresh_inner":       payload.highlight_thresh_inner,
+        "highlight_strength_inner":     payload.highlight_strength_inner,
+        "highlight_thresh_outer":       payload.highlight_thresh_outer,
+        "highlight_strength_outer":     payload.highlight_strength_outer,
+        "min_circularity_inner":  payload.min_circularity_inner,
+        "max_circularity_inner":  payload.max_circularity_inner,
+        "min_perimeter_inner":    payload.min_perimeter_inner,
+        "max_perimeter_inner":    payload.max_perimeter_inner,
+        "min_circularity_outer":  payload.min_circularity_outer,
+        "max_circularity_outer":  payload.max_circularity_outer,
+        "min_perimeter_outer":    payload.min_perimeter_outer,
+        "max_perimeter_outer":    payload.max_perimeter_outer,
+        "min_distance":           payload.min_distance,
+    }
+    _save_white_dots_params(params)
+    WHITE_DOTS_TARGET_WIDTH          = payload.target_width
+    WHITE_DOTS_OUTER_PX              = payload.outer_px
+    WHITE_DOTS_LUMA_MIN              = payload.luma_min
+    WHITE_DOTS_LUMA_MAX              = payload.luma_max
+    WHITE_DOTS_LUMA_LB               = payload.luma_lb
+    WHITE_DOTS_LUMA_MAX_LB           = payload.luma_max_lb
+    WHITE_DOTS_HIGHLIGHT_THRESH_INNER    = payload.highlight_thresh_inner
+    WHITE_DOTS_HIGHLIGHT_STRENGTH_INNER  = payload.highlight_strength_inner
+    WHITE_DOTS_HIGHLIGHT_THRESH_OUTER    = payload.highlight_thresh_outer
+    WHITE_DOTS_HIGHLIGHT_STRENGTH_OUTER  = payload.highlight_strength_outer
+    WHITE_DOTS_MIN_CIRCULARITY_INNER = payload.min_circularity_inner
+    WHITE_DOTS_MAX_CIRCULARITY_INNER = payload.max_circularity_inner
+    WHITE_DOTS_MIN_PERIMETER_INNER   = payload.min_perimeter_inner
+    WHITE_DOTS_MAX_PERIMETER_INNER   = payload.max_perimeter_inner
+    WHITE_DOTS_MIN_CIRCULARITY_OUTER = payload.min_circularity_outer
+    WHITE_DOTS_MAX_CIRCULARITY_OUTER = payload.max_circularity_outer
+    WHITE_DOTS_MIN_PERIMETER_OUTER   = payload.min_perimeter_outer
+    WHITE_DOTS_MAX_PERIMETER_OUTER   = payload.max_perimeter_outer
+    WHITE_DOTS_MIN_DISTANCE          = payload.min_distance
+    return {"success": True, "message": "Parametri approvati e applicati", "params": params}
 
 
 # ---------------------------------------------------------------------------

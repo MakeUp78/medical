@@ -20,6 +20,26 @@
 
 console.log('🔄 EYEBROW PROCESSOR v4.4 CARICATO - 2025-11-16 23:13:00');
 
+// ==================== HELPER - Interrompe sintesi vocale ====================
+
+function stopVoiceAssistant() {
+  if (typeof voiceAssistant !== 'undefined' && voiceAssistant.audioPlayer) {
+    console.log('🔇 Interruzione sintesi vocale...');
+    voiceAssistant.audioPlayer.pause();
+    voiceAssistant.audioPlayer.currentTime = 0;
+    voiceAssistant.audioPlayer.src = '';
+    voiceAssistant.audioPlayer.onended = null;
+
+    // Svuota anche la coda delle frasi
+    if (voiceAssistant.queue) {
+      voiceAssistant.queue = [];
+    }
+    if (voiceAssistant.isPlaying !== undefined) {
+      voiceAssistant.isPlaying = false;
+    }
+  }
+}
+
 // ==================== ENTRY POINTS ====================
 
 /**
@@ -213,11 +233,27 @@ function calculateSymmetryAxis() {
     return null;
   }
 
-  console.log('✅ Asse simmetria calcolato con landmarks 9 (glabella) e 164 (philtrum)');
-  return {
-    p1: { x: glabella.x, y: glabella.y },
-    p2: { x: philtrum.x, y: philtrum.y }
-  };
+  // Usa la stessa funzione di main.js per garantire coerenza con l'asse visivo sul canvas
+  if (typeof window.getSymmetryAxisPosition === 'function') {
+    const axisPos = window.getSymmetryAxisPosition();
+    if (axisPos && axisPos.line) {
+      console.log('✅ Asse simmetria da getSymmetryAxisPosition()', axisPos.line);
+      return {
+        p1: { x: axisPos.line.x1, y: axisPos.line.y1 },
+        p2: { x: axisPos.line.x2, y: axisPos.line.y2 }
+      };
+    }
+  }
+
+  // Fallback: trasforma le coordinate raw con transformLandmarkCoordinate
+  if (typeof window.transformLandmarkCoordinate !== 'function') {
+    console.error('❌ transformLandmarkCoordinate non disponibile');
+    return null;
+  }
+  const p1 = window.transformLandmarkCoordinate(glabella);
+  const p2 = window.transformLandmarkCoordinate(philtrum);
+  console.log('✅ Asse simmetria calcolato con transformLandmarkCoordinate');
+  return { p1, p2 };
 }
 
 // ==================== STEP 3: RIFLESSIONE PUNTO ====================
@@ -676,7 +712,18 @@ function showEyebrowCorrectionWindow(croppedCanvas, side) {
   closeBtn.textContent = '❌ Chiudi';
   closeBtn.className = 'btn btn-secondary';
   closeBtn.style.cssText = 'padding: 10px 20px; font-size: 16px;';
-  closeBtn.onclick = () => document.body.removeChild(modal);
+  closeBtn.onclick = () => {
+    stopVoiceAssistant();
+    document.body.removeChild(modal);
+  };
+
+  // Chiudi modal cliccando sul background scuro
+  modal.onclick = (e) => {
+    if (e.target === modal) {
+      stopVoiceAssistant();
+      document.body.removeChild(modal);
+    }
+  };
 
   buttonsDiv.appendChild(saveBtn);
   buttonsDiv.appendChild(closeBtn);

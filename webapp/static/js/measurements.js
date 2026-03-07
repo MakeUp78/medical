@@ -4877,18 +4877,22 @@ window.redrawAllMeasurementOverlays = redrawAllMeasurementOverlays;
 }());
 
 // =============================================================================
-// === SIMMETRIA ALI NASALI ===
+// === DEVIAZIONE SETTO NASALE ===
 // =============================================================================
 
 /**
- * Calcola la simmetria delle ale nasali misurando la distanza
- * dal Nose Bridge Top (lm 1) verso Bridge Nose Left (lm 2) e Bridge Nose Right (lm 98).
- * Disegna overlay colorato sul canvas e annuncia vocalmente il risultato.
+ * Calcola la deviazione del setto nasale rispetto all'asse centrale del viso.
  *
- * Landmark MediaPipe:
- *   Nose Bridge Top  : 1
- *   Bridge Nose Left : 2   (lato sinistro immagine)
- *   Bridge Nose Right: 98  (lato destro immagine)
+ * Asse del viso: identico al tasto ASSE (lm 9 glabella → lm 164 philtrum),
+ *   esteso a tutto il canvas come linea tratteggiata rossa.
+ *
+ * Asse del setto: best-fit lineare sui soli landmark del dorso del naso:
+ *   168 (radice) → 6 (bridge) → 197 → 195 → 5 → 4 (tip) → 2 (subnasale)
+ *
+ * Deviazione = angolo (gradi) tra i due assi:
+ *   positivo → verso DESTRA, negativo → verso SINISTRA.
+ *
+ * Soglie: < 2° centrato | 2-5° lieve | 5-10° media | >10° pronunciata
  */
 async function measureNosalWingSymmetry(event) {
   const button = event ? event.currentTarget || event.target : null;
@@ -4907,8 +4911,8 @@ async function measureNosalWingSymmetry(event) {
       }
     }
 
-    // Landmark: 1 = Nose Bridge Top, 2 = Bridge Nose Left, 98 = Bridge Nose Right
-    const required = [1, 2, 98];
+    // Landmark asse viso (come tasto ASSE) + dorso naso esclusivamente
+    const required = [9, 164, 168, 6, 197, 195, 5, 4, 2];
     for (const idx of required) {
       if (!currentLandmarks[idx]) {
         showToast(`⚠️ Landmark ${idx} non disponibile`, 'warning');
@@ -4916,29 +4920,58 @@ async function measureNosalWingSymmetry(event) {
       }
     }
 
-    function tpt(idx) {
-      const lm = currentLandmarks[idx];
-      return (window.transformLandmarkCoordinate) ? window.transformLandmarkCoordinate(lm) : lm;
+    const tpt = idx => (window.transformLandmarkCoordinate)
+      ? window.transformLandmarkCoordinate(currentLandmarks[idx])
+      : currentLandmarks[idx];
+
+    // --- Asse del viso: lm 9 glabella → lm 164 philtrum (uguale al tasto ASSE) ---
+    const glabella = tpt(9);
+    const philtrum = tpt(164);
+    const faceDx = philtrum.x - glabella.x;
+    const faceDy = philtrum.y - glabella.y;
+    const faceLen = Math.sqrt(faceDx * faceDx + faceDy * faceDy);
+    const faceDirX = faceDx / faceLen, faceDirY = faceDy / faceLen;
+    let ext = 2000;
+    if (typeof fabricCanvas !== 'undefined' && fabricCanvas) {
+      const cw = fabricCanvas.getWidth(), ch = fabricCanvas.getHeight();
+      ext = Math.sqrt(cw * cw + ch * ch);
     }
+    const faceAxisLine = {
+      x1: glabella.x - faceDirX * ext, y1: glabella.y - faceDirY * ext,
+      x2: philtrum.x + faceDirX * ext, y2: philtrum.y + faceDirY * ext
+    };
 
-    const top = tpt(1);   // Nose Bridge Top
-    const wingL = tpt(2);  // Bridge Nose Left
-    const wingR = tpt(98); // Bridge Nose Right
+    // --- Asse del setto: solo landmark del dorso naso, best-fit lineare ---
+    const septumIdxs = [168, 6, 197, 195, 5, 4, 2];
+    const septumPts = septumIdxs.map(idx => tpt(idx));
+    const n = septumPts.length;
+    let sumX = 0, sumY = 0;
+    septumPts.forEach(p => { sumX += p.x; sumY += p.y; });
+    const mX = sumX / n, mY = sumY / n;
+    let Sxy = 0, Syy = 0;
+    septumPts.forEach(p => { Sxy += (p.x - mX) * (p.y - mY); Syy += (p.y - mY) * (p.y - mY); });
+    // Pendenza dx/dy (regressione x in funzione di y, stabile per linee quasi-verticali)
+    const slope = Syy > 0 ? Sxy / Syy : 0;
+    const septumTopY = septumPts[0].y, septumBotY = septumPts[n - 1].y;
+    const septumTop = { x: mX + slope * (septumTopY - mY), y: septumTopY };
+    const septumBot = { x: mX + slope * (septumBotY - mY), y: septumBotY };
+    const septumDx = septumBotY - septumTopY > 0 ? slope * (septumBotY - septumTopY) : 0;
+    const septumDy = septumBotY - septumTopY;
 
-    function dist2D(a, b) {
-      return Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.y - a.y, 2));
+    // --- Calcolo deviazione ---
+    function angleFromVertical(dx, dy) {
+      return Math.atan2(dx, dy) * (180 / Math.PI);
     }
+    const deviationDeg = angleFromVertical(septumDx, septumDy) - angleFromVertical(faceDx, faceDy);
+    const absDev = Math.abs(deviationDeg);
 
-    const distL = dist2D(top, wingL);
-    const distR = dist2D(top, wingR);
+    let severity, direction;
+    if (absDev < 2)       { severity = 'centrato';   direction = null; }
+    else if (absDev < 5)  { severity = 'lieve';       direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
+    else if (absDev < 10) { severity = 'media';       direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
+    else                  { severity = 'pronunciata'; direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
 
-    // Disegna overlay
-    _drawNosalWingOverlay(top, wingL, wingR, distL, distR);
-
-    // Calcola differenza %
-    const maxDist = Math.max(distL, distR);
-    const asymPercent = maxDist > 0 ? (Math.abs(distL - distR) / maxDist) * 100 : 0;
-    const largerSide = distL > distR ? 'sinistra' : distL < distR ? 'destra' : null;
+    _drawNosalWingOverlay({ faceAxisLine, septumPts, septumTop, septumBot, deviationDeg, severity, direction });
 
     // Aggiorna tabella
     const tableBody = document.getElementById('unified-table-body');
@@ -4946,86 +4979,107 @@ async function measureNosalWingSymmetry(event) {
       tableBody.querySelectorAll('[data-measurement="nasal-wing"]').forEach(r => r.remove());
     }
     ensureMeasurementsSectionOpen();
-    addMeasurementToTable('👃 Ala Nasale SX', distL.toFixed(1), 'px', 'nasal-wing');
-    addMeasurementToTable('👃 Ala Nasale DX', distR.toFixed(1), 'px', 'nasal-wing');
-    addMeasurementToTable('⚖️ Asimmetria Naso', asymPercent.toFixed(1), '%', 'nasal-wing');
+    addMeasurementToTable('Deviazione Setto', deviationDeg.toFixed(1), '°', 'nasal-wing');
+    addMeasurementToTable('Direzione', direction || 'Centrato', '', 'nasal-wing');
+    addMeasurementToTable('Entità', severity.charAt(0).toUpperCase() + severity.slice(1), '', 'nasal-wing');
 
-    // Stato globale per ridisegno su trasformazioni
     window.nosalWingOverlayActive = true;
 
     // Voce
-    let voiceMsg;
-    if (largerSide) {
-      voiceMsg = `L'ala nasale ${largerSide} è più larga di circa ${asymPercent.toFixed(0)} percento.`;
-    } else {
-      voiceMsg = 'Le due ali nasali sono perfettamente simmetriche.';
-    }
+    const voiceMsg = !direction
+      ? 'Il setto nasale risulta centrato rispetto all\'asse del viso.'
+      : `Il setto nasale presenta una deviazione ${severity} verso ${direction}, di circa ${Math.round(absDev)} gradi.`;
     if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
       voiceAssistant.speak(voiceMsg);
     }
 
-    const toastMsg = largerSide
-      ? `Ala ${largerSide} più larga (${asymPercent.toFixed(1)}%)`
-      : 'Ali nasali simmetriche';
-    showToast(`👃 ${toastMsg}`, asymPercent < 5 ? 'success' : 'warning', 3000);
+    const toastLabel = direction
+      ? `Deviazione ${severity} → ${direction} (${deviationDeg.toFixed(1)}°)`
+      : 'Setto nasale centrato';
+    showToast(`👃 ${toastLabel}`, absDev < 2 ? 'success' : absDev < 5 ? 'info' : 'warning', 3500);
 
   } catch (error) {
-    console.error('❌ Errore simmetria ali nasali:', error);
+    console.error('❌ Errore setto nasale:', error);
     showToast(`❌ Errore: ${error.message}`, 'error');
   } finally {
     if (button) {
       button.disabled = false;
-      button.textContent = button._origText || '👃 Sim. Naso';
+      button.textContent = button._origText || '👃 Sim.Naso';
     }
   }
 }
 
 /**
- * Disegna le linee e i punti dell'overlay simmetria ali nasali.
- * Separato dalla funzione principale per essere richiamato al ridisegno.
+ * Disegna l'overlay setto nasale:
+ *  - linea tratteggiata rossa estesa = asse del viso (come tasto ASSE)
+ *  - linea continua colorata = asse setto (solo landmark dorso naso)
+ *  - punti dorati sui landmark del setto
+ *  - etichette gradi e entità
  */
-function _drawNosalWingOverlay(top, wingL, wingR, distL, distR) {
+function _drawNosalWingOverlay(data) {
   if (!fabricCanvas) return;
 
   fabricCanvas.getObjects().filter(o => o.isNosalWingOverlay).forEach(o => fabricCanvas.remove(o));
 
-  const COL_L = '#00E5FF';  // ciano = lato sinistro
-  const COL_R = '#FF6B35';  // arancione = lato destro
-  const COL_T = '#FFFFFF';  // bianco = punto apicale
+  const { faceAxisLine, septumPts, septumTop, septumBot, deviationDeg, severity, direction } = data;
 
-  function addLine(p1, p2, color) {
-    fabricCanvas.add(new fabric.Line([p1.x, p1.y, p2.x, p2.y], {
-      stroke: color, strokeWidth: 2.5, selectable: false, evented: false,
-      isNosalWingOverlay: true
-    }));
+  const COL_FACE   = '#FF0000';  // rosso tratteggiato = asse viso (identico tasto ASSE)
+  const COL_SEPTUM = direction
+    ? (deviationDeg > 0 ? '#FF9800' : '#00E5FF')  // arancione=dx, ciano=sx
+    : '#4CAF50';                                    // verde=centrato
+  const COL_DOTS   = '#FFD700';
+  const COL_LABEL  = '#FFFFFF';
+
+  function mkF(obj) { return Object.assign(obj, { isNosalWingOverlay: true }); }
+
+  function addLine(x1, y1, x2, y2, color, width, dash) {
+    fabricCanvas.add(new fabric.Line([x1, y1, x2, y2], mkF({
+      stroke: color, strokeWidth: width || 2,
+      strokeDashArray: dash || null,
+      selectable: false, evented: false
+    })));
   }
 
-  function addDot(p, color) {
-    fabricCanvas.add(new fabric.Circle({
-      left: p.x - 4, top: p.y - 4, radius: 4,
-      fill: color, stroke: '#000', strokeWidth: 1,
-      selectable: false, evented: false, isNosalWingOverlay: true
-    }));
+  function addDot(p, color, r) {
+    fabricCanvas.add(new fabric.Circle(mkF({
+      left: p.x - (r || 3), top: p.y - (r || 3), radius: r || 3,
+      fill: color, stroke: 'rgba(0,0,0,0.7)', strokeWidth: 1,
+      selectable: false, evented: false
+    })));
   }
 
-  function addLabel(text, x, y, color) {
-    fabricCanvas.add(new fabric.Text(text, {
-      left: x, top: y, fontSize: 13, fill: color, fontFamily: 'monospace',
-      fontWeight: 'bold', selectable: false, evented: false,
-      isNosalWingOverlay: true,
-      shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.85)', blur: 4, offsetX: 1, offsetY: 1 })
-    }));
+  function addLabel(text, x, y, color, size) {
+    fabricCanvas.add(new fabric.Text(text, mkF({
+      left: x, top: y, fontSize: size || 13, fill: color,
+      fontFamily: 'monospace', fontWeight: 'bold',
+      selectable: false, evented: false,
+      shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.9)', blur: 5, offsetX: 1, offsetY: 1 })
+    })));
   }
 
-  addLine(top, wingL, COL_L);
-  addLine(top, wingR, COL_R);
+  // 1. Asse viso — tratteggiato rosso esteso a tutto il canvas
+  addLine(faceAxisLine.x1, faceAxisLine.y1, faceAxisLine.x2, faceAxisLine.y2, COL_FACE, 2, [10, 5]);
 
-  addDot(top, COL_T);
-  addDot(wingL, COL_L);
-  addDot(wingR, COL_R);
+  // 2. Asse setto — linea continua colorata, solo tra top e bottom del naso
+  addLine(septumTop.x, septumTop.y, septumBot.x, septumBot.y, COL_SEPTUM, 3);
 
-  addLabel(`SX ${distL.toFixed(1)}`, (top.x + wingL.x) / 2 - 28, (top.y + wingL.y) / 2 - 18, COL_L);
-  addLabel(`DX ${distR.toFixed(1)}`, (top.x + wingR.x) / 2 + 4, (top.y + wingR.y) / 2 - 18, COL_R);
+  // 3. Punti landmark dorso naso
+  septumPts.forEach((p, i) => {
+    const isFirst = i === 0;
+    const isLast  = i === septumPts.length - 1;
+    addDot(p, isFirst ? '#FFFFFF' : isLast ? COL_SEPTUM : COL_DOTS, isFirst || isLast ? 5 : 3);
+  });
+
+  // 4. Etichetta gradi + direzione, accanto alla punta del naso (lm 4 = indice 5)
+  const tipPt = septumPts[5];
+  const labelX = tipPt.x + (deviationDeg >= 0 ? 8 : -82);
+  const deviationLabel = direction
+    ? `${Math.abs(deviationDeg).toFixed(1)}° → ${direction}`
+    : '≈0° centrato';
+  addLabel(deviationLabel, labelX, tipPt.y + 4, COL_SEPTUM, 13);
+
+  // 5. Etichetta entità vicino alla radice (lm 168 = indice 0)
+  addLabel(severity.toUpperCase(), septumTop.x + 8, septumTop.y - 16, COL_LABEL, 11);
 
   fabricCanvas.renderAll();
 }
@@ -5033,25 +5087,54 @@ function _drawNosalWingOverlay(top, wingL, wingR, distL, distR) {
 window.measureNosalWingSymmetry = measureNosalWingSymmetry;
 
 /**
- * Ridisegna l'overlay simmetria ali nasali con coordinate aggiornate.
- * Chiamato da main.js ad ogni trasformazione canvas.
+ * Ridisegna l'overlay setto nasale. Chiamato da main.js ad ogni trasformazione.
  */
 window.redrawNosalWingOverlay = function () {
   if (!window.nosalWingOverlayActive) return;
   if (!currentLandmarks || currentLandmarks.length === 0) return;
   if (typeof window.transformLandmarkCoordinate !== 'function') return;
-  if (!currentLandmarks[1] || !currentLandmarks[2] || !currentLandmarks[98]) return;
+
+  const required = [9, 164, 168, 6, 197, 195, 5, 4, 2];
+  for (const idx of required) { if (!currentLandmarks[idx]) return; }
 
   const tpt = idx => window.transformLandmarkCoordinate(currentLandmarks[idx]);
-  const top = tpt(1);
-  const wingL = tpt(2);
-  const wingR = tpt(98);
 
-  function dist2D(a, b) {
-    return Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.y - a.y, 2));
-  }
+  const glabella = tpt(9), philtrum = tpt(164);
+  const faceDx = philtrum.x - glabella.x, faceDy = philtrum.y - glabella.y;
+  const faceLen = Math.sqrt(faceDx * faceDx + faceDy * faceDy);
+  const faceDirX = faceDx / faceLen, faceDirY = faceDy / faceLen;
+  const cw = fabricCanvas.getWidth(), ch = fabricCanvas.getHeight();
+  const ext = Math.sqrt(cw * cw + ch * ch);
+  const faceAxisLine = {
+    x1: glabella.x - faceDirX * ext, y1: glabella.y - faceDirY * ext,
+    x2: philtrum.x + faceDirX * ext, y2: philtrum.y + faceDirY * ext
+  };
 
-  _drawNosalWingOverlay(top, wingL, wingR, dist2D(top, wingL), dist2D(top, wingR));
+  const septumIdxs = [168, 6, 197, 195, 5, 4, 2];
+  const septumPts = septumIdxs.map(idx => tpt(idx));
+  const n = septumPts.length;
+  let sumX = 0, sumY = 0;
+  septumPts.forEach(p => { sumX += p.x; sumY += p.y; });
+  const mX = sumX / n, mY = sumY / n;
+  let Sxy = 0, Syy = 0;
+  septumPts.forEach(p => { Sxy += (p.x - mX) * (p.y - mY); Syy += (p.y - mY) * (p.y - mY); });
+  const slope = Syy > 0 ? Sxy / Syy : 0;
+  const septumTopY = septumPts[0].y, septumBotY = septumPts[n - 1].y;
+  const septumTop = { x: mX + slope * (septumTopY - mY), y: septumTopY };
+  const septumBot = { x: mX + slope * (septumBotY - mY), y: septumBotY };
+  const septumDy = septumBotY - septumTopY, septumDx = slope * septumDy;
+
+  function angleFromVertical(dx, dy) { return Math.atan2(dx, dy) * (180 / Math.PI); }
+  const deviationDeg = angleFromVertical(septumDx, septumDy) - angleFromVertical(faceDx, faceDy);
+  const absDev = Math.abs(deviationDeg);
+
+  let severity, direction;
+  if (absDev < 2)       { severity = 'centrato';   direction = null; }
+  else if (absDev < 5)  { severity = 'lieve';       direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
+  else if (absDev < 10) { severity = 'media';       direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
+  else                  { severity = 'pronunciata'; direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
+
+  _drawNosalWingOverlay({ faceAxisLine, septumPts, septumTop, septumBot, deviationDeg, severity, direction });
 };
 
 

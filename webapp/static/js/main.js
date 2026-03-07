@@ -17,6 +17,10 @@
 // Risoluzione massima per ANALISI (puntini, landmarks, ecc.)
 // Deve coincidere con la risoluzione max del flusso più frequente (webcam desktop).
 const ANALYSIS_MAX_PX = 1280;
+// Risoluzione max per l'analisi WHITE DOTS (Trova Differenze).
+// null = nessun resize: i dot bianchi sono piccoli (5-400px²), ridimensionare
+// l'immagine cambia il blob-size e sposta le coordinate rispetto al canvas display.
+const WHITE_DOTS_MAX_PX = null;
 // Qualità JPEG per le immagini di analisi (uguale a webcam desktop).
 const ANALYSIS_JPEG_QUALITY = 0.88;
 // Risoluzione max per i frame LIVE in streaming (WebSocket).
@@ -28,6 +32,7 @@ const STREAM_MAX_PX_MOBILE = 640;
 if (typeof currentTool === 'undefined') var currentTool = 'selection';
 if (typeof isWebcamActive === 'undefined') var isWebcamActive = false;
 if (typeof currentImage === 'undefined') var currentImage = null;
+if (typeof currentImageElement === 'undefined') var currentImageElement = null;
 if (typeof currentLandmarks === 'undefined') var currentLandmarks = [];
 
 // Array per memorizzare le linee perpendicolari all'asse (posizioni normalizzate 0-1)
@@ -37,6 +42,28 @@ if (typeof perpendicularLines === 'undefined') var perpendicularLines = [];
 window.currentLandmarks = currentLandmarks;
 window.currentImage = currentImage;
 window.perpendicularLines = perpendicularLines;
+
+// ===================================
+// HELPER - Interruzione sintesi vocale
+// ===================================
+
+function stopVoiceAssistant() {
+  if (typeof voiceAssistant !== 'undefined' && voiceAssistant.audioPlayer) {
+    console.log('🔇 Interruzione sintesi vocale...');
+    voiceAssistant.audioPlayer.pause();
+    voiceAssistant.audioPlayer.currentTime = 0;
+    voiceAssistant.audioPlayer.src = '';
+    voiceAssistant.audioPlayer.onended = null;
+
+    // Svuota anche la coda delle frasi
+    if (voiceAssistant.queue) {
+      voiceAssistant.queue = [];
+    }
+    if (voiceAssistant.isPlaying !== undefined) {
+      voiceAssistant.isPlaying = false;
+    }
+  }
+}
 
 // ===================================
 // SISTEMA DI AUTENTICAZIONE
@@ -514,6 +541,7 @@ function resetForNewAnalysis() {
   if (window.currentImage) {
     window.currentImage = null;
   }
+  currentImageElement = null;
 
   // ✅ RESET CANVAS MODES (pulsanti toolbar)
   if (typeof setCanvasMode === 'function') {
@@ -546,6 +574,7 @@ function resetForNewAnalysis() {
   // ✅ RESET GREEN DOTS / WHITE DOTS STATE
   window.greenDotsData = null;
   window.greenDotsDetected = false;
+  document.getElementById('green-dots-btn')?.classList.remove('active');
   window.currentGreenDotsOverlay = null;
   window.currentGreenDotsOverlayNaturalW = null;
   window.currentGreenDotsOverlayNaturalH = null;
@@ -608,6 +637,7 @@ function resetForNewAnalysis() {
   }
 
   // ✅ RESET MODALI CORREZIONE SOPRACCIGLIA (rimuovi tutti i modal generati dinamicamente)
+  stopVoiceAssistant();
   document.querySelectorAll('body > div[style*="position: fixed"][style*="z-index: 10000"]').forEach(modal => {
     modal.remove();
   });
@@ -684,6 +714,7 @@ function resetForNewAnalysis() {
     window.greenDotsData = null;
   }
   window.isDetectingGreenDots = false;
+  document.getElementById('green-dots-btn')?.classList.remove('active');
   // NON resettare imageOffset e imageScale - mantieni valori esistenti o default
   // Verranno sovrascritti quando la nuova immagine viene caricata
   if (!window.imageOffset) {
@@ -1094,7 +1125,7 @@ async function handleUnifiedFileLoad(file, type) {
 
         updateStatus(`Immagine caricata: ${file.name}`);
         showToast('Immagine caricata con successo', 'success');
-        setWhiteDotsParamsForSource('image');
+        setAnalysisSourceCanvas('image');
 
         // Su mobile: porta il canvas in primo piano dopo il caricamento
         if (window.innerWidth <= 768 && typeof window.focusCanvas === 'function') {
@@ -1129,7 +1160,7 @@ async function handleUnifiedFileLoad(file, type) {
     // RIPRISTINO SISTEMA ORIGINALE: Analisi automatica via WebSocket
     try {
       collapseDetectionSections();
-      setWhiteDotsParamsForSource('video');
+      setAnalysisSourceCanvas('video');
 
       // ========================================================================
       // PREPROCESSING VIDEO LATO CLIENT: Riduce dimensioni PRIMA dell'upload
@@ -1349,6 +1380,7 @@ function showVideoModeChoice(fileName) {
     document.body.appendChild(modal);
 
     window.selectMode = function (mode) {
+      stopVoiceAssistant();
       document.body.removeChild(modal);
       delete window.selectMode;
       resolve(mode);
@@ -1922,6 +1954,8 @@ function closeVideoPreview() {
   const modal = document.getElementById('preview-modal');
   const video = document.getElementById('preview-video');
 
+  stopVoiceAssistant();
+
   if (video && video.src) {
     URL.revokeObjectURL(video.src);
     video.src = '';
@@ -1933,6 +1967,7 @@ function closeVideoPreview() {
 }
 
 function closeVideoAnalysis() {
+  stopVoiceAssistant();
   const modal = document.getElementById('video-analysis-modal');
   if (modal) {
     modal.style.display = 'none';
@@ -1986,9 +2021,9 @@ function resizeCanvas() {
     canvas.height = newHeight;
 
     // Ridisegna solo se non siamo già in un processo di disegno
-    if (currentImage && !window.isDrawing) {
+    if (currentImageElement && !window.isDrawing) {
       window.isDrawing = true;
-      displayImageOnCanvas(currentImage);
+      displayImageOnCanvas(currentImageElement);
       window.isDrawing = false;
     }
   }
@@ -2016,6 +2051,9 @@ function displayImageOnCanvas(image) {
   const x = (canvasWidth - scaledWidth) / 2;
   const y = (canvasHeight - scaledHeight) / 2;
 
+
+  // Salva riferimento all'elemento HTML sorgente per i ridimensionamenti futuri
+  currentImageElement = image;
 
   // Crea oggetto immagine Fabric.js
   const fabricImage = new fabric.Image(image, {
@@ -2179,7 +2217,7 @@ async function startWebcamDirect() {
 
     // Reset completo prima di avviare webcam
     resetForNewAnalysis('Avvio nuova sessione webcam');
-    setWhiteDotsParamsForSource('webcam');
+    setAnalysisSourceCanvas('webcam');
 
     // Riconnetti WebSocket DOPO il reset
     await connectWebcamWebSocket();
@@ -3723,6 +3761,7 @@ function updateCanvasWithBestFrame(imageData, mimeType = 'image/jpeg') {
         // IMPORTANTE: Assegna currentImage per le funzioni che ne hanno bisogno
         currentImage = img;
         currentImage.isBackgroundImage = true;
+        currentImageElement = img.getElement ? img.getElement() : null;
 
         // Aggiorna le variabili globali di trasformazione
         window.imageScale = sizing.scale;
@@ -4205,6 +4244,11 @@ function rotateImageClockwise() {
       window.redrawEyebrowAreasOverlay();
     }
 
+    // Ridisegna overlay setto nasale se presente
+    if (window.nosalWingOverlayActive && typeof window.redrawNosalWingOverlay === 'function') {
+      window.redrawNosalWingOverlay();
+    }
+
     // Ridisegna linee perpendicolari
     if (typeof redrawPerpendicularLines === 'function') {
       redrawPerpendicularLines();
@@ -4272,6 +4316,11 @@ function rotateImageCounterClockwise() {
       window.redrawEyebrowAreasOverlay();
     }
 
+    // Ridisegna overlay setto nasale se presente
+    if (window.nosalWingOverlayActive && typeof window.redrawNosalWingOverlay === 'function') {
+      window.redrawNosalWingOverlay();
+    }
+
     // Ridisegna linee perpendicolari
     if (typeof redrawPerpendicularLines === 'function') {
       redrawPerpendicularLines();
@@ -4327,6 +4376,9 @@ function rotateImage90Clockwise() {
     if (typeof window.redrawEyebrowAreasOverlay === 'function') {
       window.redrawEyebrowAreasOverlay();
     }
+    if (window.nosalWingOverlayActive && typeof window.redrawNosalWingOverlay === 'function') {
+      window.redrawNosalWingOverlay();
+    }
     if (typeof redrawPerpendicularLines === 'function') {
       redrawPerpendicularLines();
     }
@@ -4378,6 +4430,9 @@ function rotateImage90CounterClockwise() {
     }
     if (typeof window.redrawEyebrowAreasOverlay === 'function') {
       window.redrawEyebrowAreasOverlay();
+    }
+    if (window.nosalWingOverlayActive && typeof window.redrawNosalWingOverlay === 'function') {
+      window.redrawNosalWingOverlay();
     }
     if (typeof redrawPerpendicularLines === 'function') {
       redrawPerpendicularLines();
@@ -5328,8 +5383,7 @@ function createSinglePerpendicularLine(normalizedPos) {
     normalizedPosition: normalizedPos,
     hoverCursor: 'move',
     moveCursor: 'move',
-    perPixelTargetFind: true,
-    targetFindTolerance: 3 // Solo 3px di tolleranza
+    padding: 20  // Area touch generosa per selezione da mobile
   });
 
   fabricCanvas.add(line);
@@ -5415,8 +5469,7 @@ function redrawPerpendicularLines() {
       normalizedPosition: normalizedPos,
       hoverCursor: 'move',
       moveCursor: 'move',
-      perPixelTargetFind: true,
-      targetFindTolerance: 3 // Solo 3px di tolleranza
+      padding: 20  // Area touch generosa per selezione da mobile
     });
 
     fabricCanvas.add(line);
@@ -5632,8 +5685,7 @@ function createCoupleLines(coupleId, normalizedAxisPos, distanceFromAxis) {
     distanceFromAxis: distanceFromAxis,
     hoverCursor: 'move',
     moveCursor: 'move',
-    perPixelTargetFind: true,
-    targetFindTolerance: 3
+    padding: 20  // Area touch generosa per selezione da mobile
   });
 
   // Crea linea destra
@@ -5654,8 +5706,7 @@ function createCoupleLines(coupleId, normalizedAxisPos, distanceFromAxis) {
     distanceFromAxis: distanceFromAxis,
     hoverCursor: 'move',
     moveCursor: 'move',
-    perPixelTargetFind: true,
-    targetFindTolerance: 3
+    padding: 20  // Area touch generosa per selezione da mobile
   });
 
   fabricCanvas.add(leftLine);
@@ -6011,21 +6062,11 @@ function drawGreenDotsOverlay(overlayBase64) {
   }
 }
 
-function enableImageMovement() {
-  /**
-   * DEPRECATA - Il movimento dell'immagine è ora gestito da canvas-modes.js
-   * Questa funzione è mantenuta per compatibilità ma NON riabilita più la selezione
-   */
-  if (!currentImage || !currentImage.isBackgroundImage) {
-    console.warn('⚠️ Immagine non disponibile per abilitare movimento');
-    return;
-  }
+function _setupOverlaySync() {
+  // Registra event listeners per sincronizzare l'overlay green dots
+  // con l'immagine durante pan/zoom/rotazione (gestiti da canvas-modes.js).
+  if (!currentImage || !currentImage.isBackgroundImage) return;
 
-  // NON abilitare più la selezione - gestita da canvas-modes.js
-  // L'immagine deve rimanere SEMPRE bloccata a meno che non sia attivo il tool PAN
-  console.log('ℹ️ enableImageMovement chiamata - movimento gestito da canvas-modes.js');
-
-  // Rimuovi event listeners precedenti per object events (NON mouse events - gestiti globalmente in canvas.js)
   fabricCanvas.off('object:moving');
   fabricCanvas.off('object:scaling');
   fabricCanvas.off('object:modified');
@@ -6033,47 +6074,31 @@ function enableImageMovement() {
   fabricCanvas.off('object:scaled');
   fabricCanvas.off('object:rotated');
 
-  // Configura nuovi event listeners specifici per l'immagine
   fabricCanvas.on('object:moving', function (e) {
-    console.log('🔄 Event object:moving triggerato, target:', e.target, 'currentImage:', currentImage);
     if (e.target === currentImage && window.currentGreenDotsOverlay) {
-      console.log('🔄 Immagine in movimento, sincronizzando overlay...');
-      // Sincronizza immediatamente durante il trascinamento
-      window.currentGreenDotsOverlay.set({
-        left: currentImage.left,
-        top: currentImage.top
-      });
+      window.currentGreenDotsOverlay.set({ left: currentImage.left, top: currentImage.top });
       fabricCanvas.requestRenderAll();
     }
   });
 
   fabricCanvas.on('object:scaling', function (e) {
-    console.log('🔄 Event object:scaling triggerato, target:', e.target, 'currentImage:', currentImage);
     if (e.target === currentImage && window.currentGreenDotsOverlay) {
-      console.log('🔄 Immagine ridimensionata, sincronizzando overlay...');
-      // Sincronizza posizione E scala durante il ridimensionamento
       window.currentGreenDotsOverlay.set({
-        left: currentImage.left,
-        top: currentImage.top,
-        scaleX: currentImage.scaleX,
-        scaleY: currentImage.scaleY
+        left: currentImage.left, top: currentImage.top,
+        scaleX: currentImage.scaleX, scaleY: currentImage.scaleY
       });
       fabricCanvas.requestRenderAll();
     }
   });
 
   fabricCanvas.on('object:modified', function (e) {
-    console.log('🔄 Event object:modified triggerato, target:', e.target, 'currentImage:', currentImage);
     if (e.target === currentImage && window.currentGreenDotsOverlay) {
-      console.log('🔄 Immagine modificata, sincronizzando overlay...');
-      // Sincronizza completamente dopo le modifiche
       syncGreenDotsOverlayWithImage();
     }
   });
-
-  fabricCanvas.renderAll();
-  console.log('🎯 Movimento immagine abilitato, sincronizzazione configurata');
 }
+// Alias retrocompatibile (chiamata da drawGreenDotsFromAPI e drawGreenDotsOverlay)
+const enableImageMovement = _setupOverlaySync;
 
 function disableImageMovement() {
   /**
@@ -6207,7 +6232,7 @@ function updateMeasurementsFromGreenDots(greenDotsResult) {
 
     // Genera e aggiungi le nuove righe dei green dots
     const tableRows = generateGreenDotsTableRows(greenDotsResult);
-    measurementsSection.insertAdjacentHTML('beforeend', tableRows);
+    measurementsSection.insertAdjacentHTML('afterbegin', tableRows);
 
     // Assicurati che la sezione misurazioni sia visibile ed espansa
     const measurementsSections = document.querySelectorAll('.right-sidebar .section');
@@ -6254,6 +6279,55 @@ function generateGreenDotsTableRows(result) {
     return rows;
   }
 
+  // === DETTAGLI PUNTINI BIANCHI === (header in cima, sempre visibile)
+  rows += `<tr data-type="green-dots" style="background:#2a4a5e; color:#fff; font-weight:bold; cursor:default;">
+    <td colspan="4" style="text-align:left; padding:6px 10px;">⚪ DETTAGLI PUNTINI BIANCHI</td>
+  </tr>`;
+
+  // === SOPRACCIGLIO SINISTRO (collassabile, chiuso) ===
+  const leftDots2 = result.groups?.Sx || [];
+  if (leftDots2.length > 0) {
+    const gidL = 'gd-collapse-left-' + Date.now();
+    rows += `<tr data-type="green-dots" style="background:#1a5276; color:#fff; font-weight:bold; cursor:pointer;"
+      onclick="document.querySelectorAll('[data-collapse=\\'${gidL}\\']').forEach(r=>{r.style.display=r.style.display==='none'?'':'none';})">
+      <td colspan="4" style="text-align:left; padding:6px 10px;">◀️ SOPRACCIGLIO SINISTRO (${leftDots2.length} puntini) ▾</td>
+    </tr>`;
+    leftDots2.forEach((dot, idx) => {
+      const colorClass = dot.size > 35 ? 'color:#f44336' : dot.size > 25 ? 'color:#ff9800' : dot.size > 15 ? 'color:#ffc107' : 'color:#4caf50';
+      const compactStr = dot.compactness ? dot.compactness.toFixed(2) : null;
+      const scoreStr = dot.score ? dot.score.toFixed(1) : (dot.size * 1.5).toFixed(1);
+      const hsvStr = (dot.h !== undefined && dot.s !== undefined && dot.v !== undefined) ? `H:${dot.h}° S:${dot.s}% V:${dot.v}%` : 'N/A';
+      const label = dot.anatomical_name || `L${idx + 1}`;
+      rows += `<tr data-type="green-dots" data-collapse="${gidL}" style="font-size:0.9em; display:none;">
+        <td style="padding-left:20px;"><strong>⚪ ${label}</strong> (${dot.x}, ${dot.y})</td>
+        <td style="${colorClass}">Size:${dot.size}px${compactStr ? ` | C:${compactStr}` : ''} | Score:${scoreStr}</td>
+        <td>${hsvStr}</td><td>✅</td>
+      </tr>`;
+    });
+  }
+
+  // === SOPRACCIGLIO DESTRO (collassabile, chiuso) ===
+  const rightDots2 = result.groups?.Dx || [];
+  if (rightDots2.length > 0) {
+    const gidR = 'gd-collapse-right-' + (Date.now() + 1);
+    rows += `<tr data-type="green-dots" style="background:#1a5276; color:#fff; font-weight:bold; cursor:pointer;"
+      onclick="document.querySelectorAll('[data-collapse=\\'${gidR}\\']').forEach(r=>{r.style.display=r.style.display==='none'?'':'none';})">
+      <td colspan="4" style="text-align:left; padding:6px 10px;">▶️ SOPRACCIGLIO DESTRO (${rightDots2.length} puntini) ▾</td>
+    </tr>`;
+    rightDots2.forEach((dot, idx) => {
+      const colorClass = dot.size > 35 ? 'color:#f44336' : dot.size > 25 ? 'color:#ff9800' : dot.size > 15 ? 'color:#ffc107' : 'color:#4caf50';
+      const compactStr = dot.compactness ? dot.compactness.toFixed(2) : null;
+      const scoreStr = dot.score ? dot.score.toFixed(1) : (dot.size * 1.5).toFixed(1);
+      const hsvStr = (dot.h !== undefined && dot.s !== undefined && dot.v !== undefined) ? `H:${dot.h}° S:${dot.s}% V:${dot.v}%` : 'N/A';
+      const label = dot.anatomical_name || `R${idx + 1}`;
+      rows += `<tr data-type="green-dots" data-collapse="${gidR}" style="font-size:0.9em; display:none;">
+        <td style="padding-left:20px;"><strong>⚪ ${label}</strong> (${dot.x}, ${dot.y})</td>
+        <td style="${colorClass}">Size:${dot.size}px${compactStr ? ` | C:${compactStr}` : ''} | Score:${scoreStr}</td>
+        <td>${hsvStr}</td><td>✅</td>
+      </tr>`;
+    });
+  }
+
   const stats = result.statistics;
 
   // Calcola quale poligono è maggiore
@@ -6294,7 +6368,6 @@ function generateGreenDotsTableRows(result) {
   }
 
   // === ANALISI SIMMETRIA ===
-  // Aggiungi analisi delle distanze dall'asse di simmetria
   const symmetryRows = generateSymmetryAnalysisRows(result);
   rows += symmetryRows;
 
@@ -6305,138 +6378,6 @@ function generateGreenDotsTableRows(result) {
       <td>${result.detection_results.total_dots}</td>
       <td>pz</td>
       <td>✅ OK</td>
-    </tr>`;
-  }
-
-  // === DETTAGLI PUNTINI BIANCHI ===
-  if (result.detection_results && result.detection_results.dots) {
-    const dots = result.detection_results.dots;
-
-    console.log('🔍 [DOTS DEBUG] Puntini disponibili:', {
-      total: dots.length,
-      sample: dots[0],
-      allDots: dots,
-      groups: result.groups
-    });
-
-    // Header sezione puntini
-    rows += `<tr data-type="green-dots" style="background: #f0f0f0; font-weight: bold;">
-      <td colspan="4">⚪ DETTAGLI PUNTINI BIANCHI</td>
-    </tr>`;
-
-    // USA I GRUPPI GIÀ FILTRATI DAL BACKEND invece di filtrare manualmente
-    const leftDots = result.groups?.Sx || [];
-    const rightDots = result.groups?.Dx || [];
-
-    console.log(`📊 Puntini raggruppati: Sinistro=${leftDots.length}, Destro=${rightDots.length}`);
-
-    // Puntini sinistro
-    if (leftDots.length > 0) {
-      rows += `<tr data-type="green-dots" style="background: #e8f4f8;">
-        <td colspan="4"><strong>◀️ SOPRACCIGLIO SINISTRO (${leftDots.length} puntini)</strong></td>
-      </tr>`;
-
-      leftDots.forEach((dot, idx) => {
-        const colorClass = dot.size > 35 ? 'color: #f44336' : dot.size > 25 ? 'color: #ff9800' : dot.size > 15 ? 'color: #ffc107' : 'color: #4caf50';
-        const compactStr = dot.compactness ? dot.compactness.toFixed(2) : null;
-        const scoreStr = dot.score ? dot.score.toFixed(1) : (dot.size * 1.5).toFixed(1);
-        const hsvStr = (dot.h !== undefined && dot.s !== undefined && dot.v !== undefined)
-          ? `H:${dot.h}° S:${dot.s}% V:${dot.v}%`
-          : 'N/A';
-
-        // USA NOME ANATOMICO se presente, altrimenti fallback L1, L2, L3...
-        const label = dot.anatomical_name || `L${idx + 1}`;
-
-        rows += `<tr data-type="green-dots" style="font-size: 0.9em;">
-          <td style="padding-left: 20px;"><strong>⚪ ${label}</strong> (${dot.x}, ${dot.y})</td>
-          <td style="${colorClass}">Size:${dot.size}px${compactStr ? ` | C:${compactStr}` : ''} | Score:${scoreStr}</td>
-          <td>${hsvStr}</td>
-          <td>✅</td>
-        </tr>`;
-      });
-    }
-
-    // Puntini destro
-    if (rightDots.length > 0) {
-      rows += `<tr data-type="green-dots" style="background: #e8f4f8;">
-        <td colspan="4"><strong>▶️ SOPRACCIGLIO DESTRO (${rightDots.length} puntini)</strong></td>
-      </tr>`;
-
-      rightDots.forEach((dot, idx) => {
-        const colorClass = dot.size > 35 ? 'color: #f44336' : dot.size > 25 ? 'color: #ff9800' : dot.size > 15 ? 'color: #ffc107' : 'color: #4caf50';
-        const compactStr = dot.compactness ? dot.compactness.toFixed(2) : null;
-        const scoreStr = dot.score ? dot.score.toFixed(1) : (dot.size * 1.5).toFixed(1);
-        const hsvStr = (dot.h !== undefined && dot.s !== undefined && dot.v !== undefined)
-          ? `H:${dot.h}° S:${dot.s}% V:${dot.v}%`
-          : 'N/A';
-
-        // USA NOME ANATOMICO se presente, altrimenti fallback R1, R2, R3...
-        const label = dot.anatomical_name || `R${idx + 1}`;
-
-        rows += `<tr data-type="green-dots" style="font-size: 0.9em;">
-          <td style="padding-left: 20px;"><strong>⚪ ${label}</strong> (${dot.x}, ${dot.y})</td>
-          <td style="${colorClass}">Size:${dot.size}px${compactStr ? ` | C:${compactStr}` : ''} | Score:${scoreStr}</td>
-          <td>${hsvStr}</td>
-          <td>✅</td>
-        </tr>`;
-      });
-    }
-  }
-
-  // === METODO DI RILEVAMENTO ===
-  const detParams = result.detection_results && result.detection_results.parameters;
-  const isDlibV3 = detParams && detParams.method === 'dlib_perimeter_v3';
-
-  rows += `<tr data-type="green-dots" style="background: #f0f0f0; font-weight: bold;">
-    <td colspan="4">⚙️ METODO RILEVAMENTO</td>
-  </tr>`;
-
-  if (isDlibV3) {
-    // Nuovo metodo semplificato
-    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
-      <td>Algoritmo</td>
-      <td>Dlib perimetro sopracciglio</td>
-      <td>v3</td>
-      <td>✅</td>
-    </tr>`;
-    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
-      <td>Maschera base</td>
-      <td>Sim. Sopracciglia (dlib)</td>
-      <td>Striscia 50px (±25px perimetro)</td>
-      <td>✅</td>
-    </tr>`;
-    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
-      <td>Zona ricerca</td>
-      <td>Perimetro bordo sopracciglio</td>
-      <td>top-5/lato</td>
-      <td>✅</td>
-    </tr>`;
-  } else if (result.config_parameters) {
-    // Metodo legacy (parametri HSV)
-    const config = result.config_parameters;
-    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
-      <td>Algoritmo</td>
-      <td>MediaPipe 2-pass adattivo</td>
-      <td>legacy</td>
-      <td>✅</td>
-    </tr>`;
-    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
-      <td>Saturazione Max</td>
-      <td>${config.saturation_max}%</td>
-      <td>HSV</td>
-      <td>✅</td>
-    </tr>`;
-    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
-      <td>Range Cluster Size</td>
-      <td>${config.cluster_size_min} - ${config.cluster_size_max} px</td>
-      <td>pixels</td>
-      <td>✅</td>
-    </tr>`;
-    rows += `<tr data-type="green-dots" style="font-size: 0.85em;">
-      <td>Min Distance</td>
-      <td>${config.min_distance} px</td>
-      <td>pixels</td>
-      <td>✅</td>
     </tr>`;
   }
 
@@ -7660,218 +7601,97 @@ function highlightSelectedLandmark(landmarkId, color) {
 }
 
 async function toggleGreenDots() {
-  /**
-   * Gestisce il toggle del pulsante GREEN DOTS nella sezione RILEVAMENTI.
-   * Replica esattamente canvas_app.py:toggle_green_dots_section()
-   */
-  // Guard: evita doppi click durante elaborazione
   if (window.isDetectingGreenDots) {
-    console.log('⚠️ Rilevamento già in corso, toggle ignorato');
+    showToast('⏳ Elaborazione già in corso, attendere...', 'info');
     return;
   }
 
   const btn = document.getElementById('green-dots-btn');
   btn.classList.toggle('active');
-
   const isActive = btn.classList.contains('active');
 
   if (isActive) {
-    // Se non ci sono green dots rilevati, rilevali automaticamente
     if (!window.greenDotsDetected) {
       await detectGreenDots();
     } else {
       updateCanvasDisplay();
-      // Se i dati esistono già, pronuncia comunque il feedback
       if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak && window.greenDotsData) {
         const feedback = analyzeEyebrowDesignFromData(window.greenDotsData);
-        if (feedback) {
-          voiceAssistant.speak(feedback);
-        }
+        if (feedback) voiceAssistant.speak(feedback);
       }
     }
   } else {
     updateCanvasDisplay();
   }
 
-  updateStatus(isActive ? 'Green dots attivi' : 'Green dots disattivi');
+  updateStatus(isActive ? 'Trova differenze attivo' : 'Trova differenze disattivo');
 }
 
 async function detectGreenDots() {
-  /**
-   * Rileva i puntini verdi REALI nell'immagine usando l'API green dots.
-   * Integra le funzionalità di src/green_dots_processor.py tramite API.
-   */
-  console.log('🟢 DEBUG: Funzioni disponibili:', {
-    analyzeGreenDotsViaAPI: typeof analyzeGreenDotsViaAPI,
-    API_CONFIG: typeof API_CONFIG,
-    currentImage: !!currentImage
-  });
-
   if (!currentImage) {
     showToast('Nessuna immagine caricata', 'warning');
     return;
   }
 
-  // Lock: evita richieste parallele
-  if (window.isDetectingGreenDots) {
-    console.log('⚠️ Rilevamento già in corso, skip');
-    return;
-  }
+  if (window.isDetectingGreenDots) return;
   window.isDetectingGreenDots = true;
 
   const btn = document.getElementById('green-dots-btn');
   if (btn) btn.disabled = true;
 
   try {
-    // VERIFICA se i landmarks sono già disponibili, altrimenti rileva direttamente
-    let symmetryAxisData = getSymmetryAxisPosition();
-
-    if (!symmetryAxisData) {
-      console.log('🔄 Landmarks non disponibili - rilevamento diretto (senza click simulato)...');
-      const gotLandmarks = await autoDetectLandmarksOnImageChange();
-      if (gotLandmarks) {
-        symmetryAxisData = getSymmetryAxisPosition();
-        console.log('✅ Landmarks rilevati - asse disponibile:', !!symmetryAxisData);
-      } else {
-        console.warn('⚠️ Landmarks non disponibili - procedo senza asse di simmetria');
-      }
-    } else {
-      console.log('✅ Asse di simmetria già disponibile, skip rilevamento');
+    // Assicura landmarks disponibili (necessari per asse di simmetria)
+    if (!getSymmetryAxisPosition()) {
+      await autoDetectLandmarksOnImageChange();
     }
 
-    updateStatus('🔄 Rilevamento green dots in corso...');
+    updateStatus('Rilevamento in corso...');
     showToast('⏳ Elaborazione in corso... Può richiedere 10-60 secondi', 'info');
 
-    // Ottieni l'immagine del canvas come base64 — usa ANALYSIS_MAX_PX (1280px)
-    // per garantire la stessa scala di input del flusso webcam (coerenza rilevamenti).
-    const canvasImageData = getCanvasImageAsBase64(ANALYSIS_MAX_PX);
-    if (!canvasImageData) {
-      throw new Error('Impossibile ottenere dati immagine dal canvas');
-    }
+    // Invia immagine full-res (WHITE_DOTS_MAX_PX = null): i dot bianchi sono piccoli
+    // (5-400px²) e ridimensionare sposta coordinate e altera i blob.
+    const canvasImageData = getCanvasImageAsBase64(WHITE_DOTS_MAX_PX);
+    if (!canvasImageData) throw new Error('Impossibile ottenere dati immagine dal canvas');
 
-    // Salva la scala di ridimensionamento applicata per l'eyebrow processor
     window.greenDotsImageScale = window.lastImageResizeScale || 1.0;
 
-    console.log('🟢 Invio richiesta API green dots...');
+    // Adatta parametri se il viso è piccolo nell'immagine (sopracciglio < 1/5 larghezza immagine)
+    const extraParams = _getGreenDotsParamsForFaceSize();
 
-    // Chiamata all'API - usa funzione centralizzata se disponibile, altrimenti fallback
-    let result;
-    if (typeof analyzeGreenDotsViaAPI === 'function') {
-      console.log('✅ Usando funzione API centralizzata con parametri correnti');
-      result = await analyzeGreenDotsViaAPI(canvasImageData, window.whiteDotsParams);
-    } else {
-      console.log('⚠️ Fallback: chiamata API diretta');
-      // USA ENDPOINT ESISTENTE green-dots con logica WHITE DOTS
-      const baseUrl = (typeof API_CONFIG !== 'undefined' && API_CONFIG?.baseURL)
-        ? API_CONFIG.baseURL
-        : window.location.origin;
-      const apiUrl = `${baseUrl}/api/green-dots/analyze`;
-      console.log('🌍 URL API (green-dots endpoint con white dots logic):', apiUrl);
-      console.log('🔧 API_CONFIG disponibile:', typeof API_CONFIG !== 'undefined');
+    const result = await analyzeGreenDotsViaAPI(canvasImageData, extraParams);
 
-      const p = window.whiteDotsParams;
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          image: canvasImageData,
-          saturation_max: p.saturation_max,
-          value_min: p.value_min,
-          value_max: p.value_max,
-          cluster_size_min: p.cluster_size_min,
-          cluster_size_max: p.cluster_size_max,
-          cluster_size_range: [p.cluster_size_min, p.cluster_size_max],
-          min_distance: p.min_distance,
-          clustering_radius: 2
-        })
-      });
+    if (!result.success) throw new Error(result.error || 'Errore sconosciuto');
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
+    window.greenDotsData = result;
+    window.greenDotsDetected = true;
 
-      result = await response.json();
+    updateMeasurementsFromGreenDots(result);
+
+    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+      const feedback = analyzeEyebrowDesignFromData(result);
+      if (feedback) voiceAssistant.speak(feedback);
     }
-    console.log('🟢 Risposta API green dots:', result);
 
-    if (result.success) {
-      // Salva i risultati globalmente
-      window.greenDotsData = result;
-      window.greenDotsDetected = true;
-
-      // Aggiorna le misurazioni con i risultati
-      console.log('📊 Chiamando updateMeasurementsFromGreenDots con:', result);
-      updateMeasurementsFromGreenDots(result);
-
-      // AUTOMAZIONE: Feedback vocale con analisi delle differenze
-      // Legge direttamente dai dati JSON (non dalla tabella HTML)
-      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
-        const feedback = analyzeEyebrowDesignFromData(result);
-        if (feedback) {
-          console.log('🔊 [GREEN DOTS] Feedback vocale generato:', feedback);
-          voiceAssistant.speak(feedback);
-        }
+    // Espandi sezione CORREZIONE SOPRACCIGLIA se chiusa
+    document.querySelectorAll('.left-sidebar .section').forEach(section => {
+      const toggleBtn = section.querySelector('.toggle-btn');
+      if (toggleBtn?.textContent.includes('✂️ CORREZIONE SOPRACCIGLIA') &&
+        section.dataset.expanded !== 'true') {
+        section.querySelector('.section-header')?.click();
       }
+    });
 
-      // NOTA: Asse di simmetria disponibile tramite landmarks rilevati all'inizio
-
-      // AUTOMAZIONE: Espandi la sezione correzione sopracciglia se è chiusa (nella LEFT sidebar!)
-      console.log('🔍 Cercando sezione CORREZIONE SOPRACCIGLIA nella left sidebar...');
-      const allSections = document.querySelectorAll('.left-sidebar .section');
-      console.log(`🔍 Trovate ${allSections.length} sezioni nella left sidebar`);
-
-      let found = false;
-      allSections.forEach(section => {
-        const toggleBtn = section.querySelector('.toggle-btn');
-        if (toggleBtn) {
-          console.log(`   - Sezione trovata: "${toggleBtn.textContent.substring(0, 40)}..."`);
-          if (toggleBtn.textContent.includes('✂️ CORREZIONE SOPRACCIGLIA')) {
-            found = true;
-            const isExpanded = section.dataset.expanded === 'true';
-            console.log(`   ✅ CORREZIONE SOPRACCIGLIA trovata! Expanded: ${isExpanded}`);
-            if (!isExpanded) {
-              console.log('📂 Apertura automatica sezione CORREZIONE SOPRACCIGLIA...');
-              const sectionHeader = section.querySelector('.section-header');
-              if (sectionHeader) {
-                sectionHeader.click(); // Espandi la sezione
-              } else {
-                console.warn('⚠️ section-header non trovato!');
-              }
-            } else {
-              console.log('   ℹ️ Sezione già aperta, nessuna azione necessaria');
-            }
-          }
-        }
-      });
-
-      if (!found) {
-        console.warn('⚠️ Sezione CORREZIONE SOPRACCIGLIA non trovata nella left sidebar!');
-      }
-
-      // Ridisegna il canvas con l'overlay
-      updateCanvasDisplay();
-
-      updateStatus(`✅ Rilevati ${result.detection_results.total_dots} green dots`);
-      showToast(`Rilevamento completato: ${result.detection_results.total_dots} punti verdi`, 'success');
-
-    } else {
-      throw new Error(result.error || 'Errore sconosciuto durante l\'analisi');
-    }
+    updateCanvasDisplay();
+    updateStatus(`Rilevati ${result.detection_results.total_dots} punti`);
+    showToast(`Rilevamento completato: ${result.detection_results.total_dots} punti`, 'success');
 
   } catch (error) {
-    console.error('❌ Errore rilevamento green dots:', error);
-    updateStatus('❌ Errore rilevamento green dots');
+    console.error('Errore rilevamento trova differenze:', error);
+    updateStatus('Errore rilevamento');
     showToast(`Errore: ${error.message}`, 'error');
-
-    // Disattiva il pulsante green dots in caso di errore
     const errBtn = document.getElementById('green-dots-btn');
-    if (errBtn && errBtn.classList.contains('active')) {
-      errBtn.classList.remove('active');
-    }
+    if (errBtn?.classList.contains('active')) errBtn.classList.remove('active');
   } finally {
-    // Rilascia il lock e riabilita il pulsante in ogni caso
     window.isDetectingGreenDots = false;
     const finalBtn = document.getElementById('green-dots-btn');
     if (finalBtn) finalBtn.disabled = false;
@@ -7879,8 +7699,211 @@ async function detectGreenDots() {
 }
 
 /**
- * Mostra il modal con le due immagini di debug del rilevamento punti bianchi v3.
- * Chiama /api/white-dots/debug-images con l'immagine corrente del canvas.
+ * Misura la larghezza del sopracciglio sinistro dai landmark MediaPipe già disponibili
+ * e la confronta con la larghezza dell'immagine. Se il sopracciglio è < 1/5 dell'immagine
+ * restituisce parametri ridotti per il rilevamento su visi piccoli.
+ */
+function _getGreenDotsParamsForFaceSize() {
+  const lms = window.currentLandmarks;
+  if (!lms || lms.length < 468) return {};
+
+  // Landmark sopracciglio sinistro MediaPipe: estremo esterno=46, estremo interno=107
+  const lbIdxs = [46, 53, 52, 65, 55, 107, 66, 105, 63, 70];
+  const xs = lbIdxs.map(i => lms[i] && lms[i].x).filter(x => x != null);
+  if (xs.length < 2) return {};
+
+  const eyebrowWidth = Math.max(...xs) - Math.min(...xs);
+
+  // I landmark sono in pixel riferiti a el.naturalWidth (dimensioni Fabric display).
+  // Usiamo la stessa sorgente per imgWidth, così il ratio è coerente.
+  let imgWidth = 0;
+  if (currentImage) {
+    const el = currentImage.getElement ? currentImage.getElement() : currentImage;
+    imgWidth = el.naturalWidth || el.width || 0;
+  }
+
+  if (imgWidth <= 0) return {};
+
+  const ratio = eyebrowWidth / imgWidth;
+  console.log(`📐 Sopracciglio/immagine ratio: ${(ratio * 100).toFixed(1)}% (${Math.round(eyebrowWidth)}px / ${imgWidth}px)`);
+
+  if (ratio < 0.2) {
+    console.log('🔎 Viso piccolo rilevato — parametri ridotti: min_distance=30, outer_px=25');
+    return { min_distance: 30, outer_px: 25 };
+  }
+  return {};
+}
+
+// ── Swatch luminanza: mostra quadratino grigio corrispondente al valore (0-255) ──
+function pdUpdateLumaSwatch(swatchId, luma) {
+  const el = document.getElementById(swatchId);
+  if (!el) return;
+  const v = Math.max(0, Math.min(255, luma));
+  el.style.background = `rgb(${v},${v},${v})`;
+}
+window.pdUpdateLumaSwatch = pdUpdateLumaSwatch;
+
+/**
+ * Disegna la curva di trasferimento highlight boost su un canvas.
+ * Asse X = grigio input (0-255), Asse Y = grigio output.
+ * La zona boosted è evidenziata in arancione trasparente.
+ */
+function pdUpdateHighlightPreview(canvasId, threshInputId, strengthInputId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const thresh = parseFloat(document.getElementById(threshInputId)?.value ?? 160);
+  const strength = parseFloat(document.getElementById(strengthInputId)?.value ?? 0.8);
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const PAD = 6;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#111118';
+  ctx.fillRect(0, 0, W, H);
+
+  // Helper: input gray → output gray
+  const boost = x => x < thresh ? x : Math.min(255, x + strength * (255 - x));
+  // Map gray 0-255 → canvas coords
+  const gx = g => PAD + (g / 255) * (W - PAD * 2);
+  const gy = g => H - PAD - (g / 255) * (H - PAD * 2);
+
+  // Zona boosted: da thresh a 255, riempita arancione semitrasparente
+  ctx.fillStyle = 'rgba(255,140,0,0.13)';
+  ctx.fillRect(gx(thresh), PAD, gx(255) - gx(thresh), H - PAD * 2);
+
+  // Linea diagonale identità (grigio)
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(gx(0), gy(0));
+  ctx.lineTo(gx(255), gy(255));
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Curva effettiva
+  ctx.strokeStyle = '#ffe066';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let g = 0; g <= 255; g++) {
+    const out = boost(g);
+    const px = gx(g), py = gy(out);
+    if (g === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Linea verticale soglia
+  ctx.strokeStyle = 'rgba(255,140,0,0.7)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 2]);
+  ctx.beginPath();
+  ctx.moveTo(gx(thresh), PAD);
+  ctx.lineTo(gx(thresh), H - PAD);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Etichetta soglia
+  ctx.fillStyle = 'rgba(255,140,0,0.9)';
+  ctx.font = '9px monospace';
+  ctx.fillText(`thr=${thresh}`, gx(thresh) + 2, PAD + 10);
+  ctx.fillStyle = 'rgba(255,220,80,0.7)';
+  ctx.fillText(`str=${strength.toFixed(2)}`, W - 52, H - PAD - 2);
+}
+window.pdUpdateHighlightPreview = pdUpdateHighlightPreview;
+
+/**
+ * Disegna anteprime delle forme accettabili in base a circolarità e perimetro.
+ * Mostra una griglia di blob sintetici: asse X = circolarità (min→max),
+ * asse Y = dimensione (perimetro min→max). 1.0=cerchio, valori bassi=forme allungate.
+ */
+function pdUpdateShapePreview(canvasId, minCircId, maxCircId, minPeriId, maxPeriId, accentColor) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const minC = parseFloat(document.getElementById(minCircId)?.value ?? 0.5);
+  const maxC = parseFloat(document.getElementById(maxCircId)?.value ?? 1.0);
+  const minP = parseFloat(document.getElementById(minPeriId)?.value ?? 3);
+  const maxP = parseFloat(document.getElementById(maxPeriId)?.value ?? 60);
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#111118';
+  ctx.fillRect(0, 0, W, H);
+
+  // Parse accent color to rgb
+  const tmp = document.createElement('canvas');
+  const tc = tmp.getContext('2d');
+  tc.fillStyle = accentColor;
+  tc.fillRect(0, 0, 1, 1);
+  const [ar, ag, ab] = tc.getImageData(0, 0, 1, 1).data;
+
+  const COLS = 5, ROWS = 2;
+  const cellW = W / COLS, cellH = H / ROWS;
+  // col = circolarità steps da minC a maxC
+  // row = perimetro: row 0 = minP, row 1 = maxP
+  const circSteps = COLS <= 1 ? [minC] : Array.from({ length: COLS }, (_, i) => minC + (maxC - minC) * i / (COLS - 1));
+  const periSteps = ROWS <= 1 ? [minP] : [minP, maxP];
+
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const circ = circSteps[col];
+      const peri = periSteps[row];
+      // Raggio base dal perimetro: peri = 2*pi*r → r = peri/(2*pi)
+      // Scala per stare nel cell
+      const rBase = Math.max(1.5, peri / (2 * Math.PI));
+      const maxR = Math.min(cellW, cellH) * 0.38;
+      const rDisp = Math.min(rBase * 1.4, maxR);
+      const cx = cellW * (col + 0.5);
+      const cy = cellH * (row + 0.5);
+
+      // Deformazione da circolarità: circ=1→cerchio, circ→0→ellisse schiacciata
+      // circ = 4π*area/peri² → per ellisse a=(r), b=r*k: area=π*a*b=π*r²*k, peri≈2π*r*sqrt((1+k²)/2)
+      // Approssimazione visiva: aspect ratio dal valore di circolarità
+      const aspectApprox = Math.max(0.2, Math.min(1, circ));
+      const rx = rDisp;
+      const ry = rDisp * aspectApprox;
+
+      const alpha = circ >= minC && circ <= maxC ? 1.0 : 0.2;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = accentColor;
+      ctx.fillStyle = `rgba(${ar},${ag},${ab},0.22)`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      // Label in basso
+      ctx.fillStyle = 'rgba(200,200,200,0.6)';
+      ctx.font = '8px monospace';
+      const lblC = circ.toFixed(1);
+      const lblP = `${Math.round(peri)}p`;
+      ctx.fillText(lblC, cx - 8, cy + ry + 10);
+      if (col === 0) ctx.fillText(lblP, 2, cy + 4);
+    }
+  }
+  // Bordo campo accettato (arancione/blu leggero)
+  ctx.strokeStyle = `rgba(${ar},${ag},${ab},0.3)`;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.strokeRect(1, 1, W - 2, H - 2);
+  ctx.setLineDash([]);
+}
+window.pdUpdateShapePreview = pdUpdateShapePreview;
+
+// Inizializza le anteprime canvas con i valori di default quando il DOM è pronto
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    pdUpdateHighlightPreview('pd-highlight-preview-inner', 'pd-highlight-thresh-inner', 'pd-highlight-strength-inner');
+    pdUpdateHighlightPreview('pd-highlight-preview-outer', 'pd-highlight-thresh-outer', 'pd-highlight-strength-outer');
+    pdUpdateShapePreview('pd-shape-preview-inner', 'pd-min-circ-inner', 'pd-max-circ-inner', 'pd-min-peri-inner', 'pd-max-peri-inner', '#7d9fff');
+    pdUpdateShapePreview('pd-shape-preview-outer', 'pd-min-circ-outer', 'pd-max-circ-outer', 'pd-min-peri-outer', 'pd-max-peri-outer', '#ff9966');
+  }, 300);
+});
+
+/**
+ * Vista rapida: chiama /api/debug/trova-differenze e mostra Step1+Step2+Step3
+ * nelle 3 card esistenti (zone, detect, masked).
  */
 async function showWhiteDotsDebugImages() {
   const modal = document.getElementById('wdots-debug-modal');
@@ -7894,15 +7917,9 @@ async function showWhiteDotsDebugImages() {
   if (!modal) return;
   modal.style.display = 'block';
 
-  // Leggi parametri dai controlli (usa default se modal non ancora renderizzato)
-  const percSlider = document.getElementById('wdots-perc');
-  const satSlider = document.getElementById('wdots-sat');
-  const topPct = percSlider ? parseInt(percSlider.value, 10) : 15;
-  const satMax = satSlider ? parseInt(satSlider.value, 10) : 30;
-  // thresh_percentile = 100 - topPct  (top 15% = percentile 85)
-  const thresh_percentile = 100 - topPct;
+  await loadCurrentParams();
 
-  status.textContent = `⏳ Ricalcolo... (lum top ${topPct}%, sat ≤ ${satMax}%)`;
+  status.textContent = '⏳ Ricalcolo...';
   [imgZ, imgD, imgM].forEach(el => el && (el.style.display = 'none'));
   if (paramsEl) paramsEl.style.display = 'none';
 
@@ -7912,17 +7929,25 @@ async function showWhiteDotsDebugImages() {
   }
 
   try {
-    const canvasImageData = getCanvasImageAsBase64(ANALYSIS_MAX_PX);  // ← stessa risoluzione di detectGreenDots
+    const canvasImageData = getCanvasImageAsBase64(WHITE_DOTS_MAX_PX);
     if (!canvasImageData) throw new Error('Impossibile ottenere dati immagine dal canvas');
 
     const baseUrl = (typeof API_CONFIG !== 'undefined' && API_CONFIG?.baseURL)
       ? API_CONFIG.baseURL
       : window.location.origin;
 
-    const resp = await fetch(`${baseUrl}/api/white-dots/debug-images`, {
+    // Vista rapida: usa i suoi slider per luma_min e luma_max
+    const params = readPipelineParams();
+    const lumaSlider = document.getElementById('wdots-luma');
+    const lumaMaxSlider = document.getElementById('wdots-luma-max');
+    if (lumaSlider) params.luma_min = parseInt(lumaSlider.value);
+    if (lumaMaxSlider) params.luma_max = parseInt(lumaMaxSlider.value);
+
+    const resp = await fetch(`${baseUrl}/api/debug/trova-differenze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: canvasImageData, thresh_percentile, sat_max_pct: satMax }),
+      body: JSON.stringify({ image: canvasImageData, ...params }),
+      signal: AbortSignal.timeout(120000),
     });
 
     if (!resp.ok) {
@@ -7931,31 +7956,31 @@ async function showWhiteDotsDebugImages() {
     }
 
     const data = await resp.json();
-    if (!data.success) throw new Error('Risposta non valida dal server');
+    if (!data.success || !Array.isArray(data.steps)) throw new Error('Risposta non valida dal server');
 
-    imgZ.src = data.zone_b64;
-    imgD.src = data.detect_b64;
-    [imgZ, imgD].forEach(el => el.style.display = 'block');
+    // Step 1 → zona, Step 2 → detect, Step 3 → ordine anatomico
+    const b64 = (n) => {
+      const s = data.steps.find(s => s.step === n);
+      return s ? `data:image/jpeg;base64,${s.image_b64}` : null;
+    };
+    if (imgZ && b64(1)) { imgZ.src = b64(1); imgZ.style.display = 'block'; }
+    if (imgD && b64(2)) { imgD.src = b64(2); imgD.style.display = 'block'; }
+    if (imgM && b64(3)) { imgM.src = b64(3); imgM.style.display = 'block'; }
 
-    if (data.masked_b64 && imgM) {
-      imgM.src = data.masked_b64;
-      imgM.style.display = 'block';
-    }
-
-    if (data.params && paramsEl && paramsTxt) {
-      const p = data.params;
+    if (paramsEl && paramsTxt) {
       paramsTxt.textContent =
-        `striscia ${p.outer_px}px fuori + ${p.inner_px}px dentro  |  ` +
-        `merge blob: ${p.merge_px}px  |  ` +
-        `luminosità: top ${100 - p.thresh_percentile}% (percentile ${p.thresh_percentile})  |  ` +
-        `saturazione max: ${p.sat_max_pct}%  |  ` +
-        `area blob: ${p.min_blob_area}–${p.max_blob_area}px²  |  ` +
-        `top ${p.top_n_per_side} per lato`;
+        `zona ${params.outer_px}px  |  ` +
+        `luma [${params.luma_min}–${params.luma_max}]  |  ` +
+        `LB/RB luma [${params.luma_lb}–${params.luma_max_lb}]  |  ` +
+        `boost inner thr=${params.highlight_thresh_inner} str=${params.highlight_strength_inner}  |  ` +
+        `boost outer thr=${params.highlight_thresh_outer} str=${params.highlight_strength_outer}  |  ` +
+        `circ inner [${params.min_circularity_inner}–${params.max_circularity_inner}] peri [${params.min_perimeter_inner}–${params.max_perimeter_inner}]  |  ` +
+        `circ outer [${params.min_circularity_outer}–${params.max_circularity_outer}] peri [${params.min_perimeter_outer}–${params.max_perimeter_outer}]`;
       paramsEl.style.display = 'block';
     }
 
-    status.textContent = `✅ ${data.total_selected}/10 punti selezionati  (lum top ${topPct}%, sat ≤ ${satMax}%)`;
-    console.log('🔬 Debug punti bianchi:', data.total_selected, 'punti | params:', data.params);
+    const n = data.steps.length;
+    status.textContent = `✅ ${n} step completati`;
 
   } catch (err) {
     console.error('❌ Errore debug immagini:', err);
@@ -7967,89 +7992,353 @@ async function showWhiteDotsDebugImages() {
 let _wdotsRecalcTimer = null;
 function wdotsScheduleRecalc() {
   clearTimeout(_wdotsRecalcTimer);
-  _wdotsRecalcTimer = setTimeout(() => showWhiteDotsDebugImages(), 400);
+  const pipelineVisible = document.getElementById('wdots-panel-pipeline')?.style.display !== 'none';
+  _wdotsRecalcTimer = setTimeout(() => pipelineVisible ? showDebugPipeline() : showWhiteDotsDebugImages(), 400);
 }
 window.wdotsScheduleRecalc = wdotsScheduleRecalc;
 
 window.showWhiteDotsDebugImages = showWhiteDotsDebugImages;
 
-// ==================== WHITE DOTS PARAMETER SLIDERS ====================
+// Tab switcher per il modal debug
+function wdotsSetTab(tab) {
+  const quickPanel = document.getElementById('wdots-panel-quick');
+  const pipelinePanel = document.getElementById('wdots-panel-pipeline');
+  const quickBtn = document.getElementById('wdots-tab-quick');
+  const pipelineBtn = document.getElementById('wdots-tab-pipeline');
+  if (!quickPanel || !pipelinePanel) return;
 
-// ── Parametri panel legacy rimossi: il backend usa _detect_white_dots_v3 con params fissi ──
-// (WHITE_DOTS_FACTORY, slider panel, eyedropper tool eliminati)
+  const isQuick = tab === 'quick';
+  quickPanel.style.display = isQuick ? '' : 'none';
+  pipelinePanel.style.display = isQuick ? 'none' : '';
 
-// Slim helper: resetta highResCanvasForAnalysis per sorgenti non-immagine
-function setWhiteDotsParamsForSource(sourceType) {
-  if (sourceType !== 'image') {
-    window.highResCanvasForAnalysis = null;
-    console.log(`🚫 highResCanvasForAnalysis azzerato (sorgente: ${sourceType})`);
+  if (quickBtn) {
+    quickBtn.style.background = isQuick ? '#1a4a2a' : '#111';
+    quickBtn.style.fontWeight = isQuick ? 'bold' : 'normal';
+  }
+  if (pipelineBtn) {
+    pipelineBtn.style.background = isQuick ? '#111' : '#1a1a3a';
+    pipelineBtn.style.fontWeight = isQuick ? 'normal' : 'bold';
+  }
+
+  // Alla prima apertura del tab pipeline: carica parametri e aggiorna preview
+  if (!isQuick) {
+    loadCurrentParams();
+    const grid = document.getElementById('wdots-pipeline-grid');
+    if (grid && grid.children.length === 0) showDebugPipeline();
   }
 }
+window.wdotsSetTab = wdotsSetTab;
 
-async function resetAndRedetect() {
-  window.greenDotsDetected = false;
-  window.greenDotsData = null;
-  window.isDetectingGreenDots = false;
-  updateCanvasDisplay();
-  showToast('🔄 Nuovo rilevamento avviato...', 'info');
-  await detectGreenDots();
+// Legge i valori degli slider parametri pipeline
+function readPipelineParams() {
+  return {
+    target_width: parseInt(document.getElementById('pd-target-width')?.value ?? 1200),
+    outer_px: parseInt(document.getElementById('pd-outer-px')?.value ?? 35),
+    luma_min: parseInt(document.getElementById('pd-luma-min')?.value ?? 200),
+    luma_max: parseInt(document.getElementById('pd-luma-max')?.value ?? 255),
+    luma_lb: parseInt(document.getElementById('pd-luma-lb')?.value ?? 120),
+    luma_max_lb: parseInt(document.getElementById('pd-luma-max-lb')?.value ?? 255),
+    highlight_thresh_inner: parseInt(document.getElementById('pd-highlight-thresh-inner')?.value ?? 160),
+    highlight_strength_inner: parseFloat(document.getElementById('pd-highlight-strength-inner')?.value ?? 0.8),
+    highlight_thresh_outer: parseInt(document.getElementById('pd-highlight-thresh-outer')?.value ?? 140),
+    highlight_strength_outer: parseFloat(document.getElementById('pd-highlight-strength-outer')?.value ?? 0.6),
+    min_circularity_inner: parseFloat(document.getElementById('pd-min-circ-inner')?.value ?? 0.5),
+    max_circularity_inner: parseFloat(document.getElementById('pd-max-circ-inner')?.value ?? 1.0),
+    min_perimeter_inner: parseInt(document.getElementById('pd-min-peri-inner')?.value ?? 3),
+    max_perimeter_inner: parseInt(document.getElementById('pd-max-peri-inner')?.value ?? 60),
+    min_circularity_outer: parseFloat(document.getElementById('pd-min-circ-outer')?.value ?? 0.3),
+    max_circularity_outer: parseFloat(document.getElementById('pd-max-circ-outer')?.value ?? 1.0),
+    min_perimeter_outer: parseInt(document.getElementById('pd-min-peri-outer')?.value ?? 2),
+    max_perimeter_outer: parseInt(document.getElementById('pd-max-peri-outer')?.value ?? 40),
+    min_distance: parseInt(document.getElementById('pd-min-distance')?.value ?? 12),
+  };
 }
 
-// PLACEHOLDER — non più usato, mantenuto per compatibilità backref
-window.WHITE_DOTS_FACTORY = Object.freeze({
-  cluster_size_min: 3,
-  cluster_size_max: 600,
-  min_distance: 30,
-  pass1_percentile: 50,
-  pass1_sat_cap: 28,
-  pass2_percentile: 80,
-  pass2_sat_cap: 25,
-});
-// (factory params non più usati dal backend)
-window.whiteDotsParams = {};  // mantenuto per compatibilità backref
-window.whiteDotsBaseParams = {};
-window.lastZoomLevel = 1.0;
-window.lastSuccessfulParams = null;
-
-// no-op stubs per evitare errori da eventuali chiamate residue
-function updateWhiteDotsParam(paramName, value) {
-  // no-op: parametri gestiti lato backend
+// Popola gli slider dagli oggetto params (sia pipeline che vista rapida)
+function populatePipelineSliders(params) {
+  const set = (id, valId, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val;
+    const lbl = document.getElementById(valId);
+    if (lbl) lbl.textContent = val;
+  };
+  set('pd-target-width', 'pd-target-width-val', params.target_width ?? 1200);
+  set('pd-outer-px', 'pd-outer-px-val', params.outer_px ?? 35);
+  set('pd-luma-min', 'pd-luma-min-val', params.luma_min ?? 200);
+  set('pd-luma-max', 'pd-luma-max-val', params.luma_max ?? 255);
+  set('pd-luma-lb', 'pd-luma-lb-val', params.luma_lb ?? 120);
+  set('pd-luma-max-lb', 'pd-luma-max-lb-val', params.luma_max_lb ?? 255);
+  set('pd-highlight-thresh-inner', 'pd-highlight-thresh-inner-val', params.highlight_thresh_inner ?? 160);
+  set('pd-highlight-strength-inner', 'pd-highlight-strength-inner-val', parseFloat(params.highlight_strength_inner ?? 0.8).toFixed(2));
+  set('pd-highlight-thresh-outer', 'pd-highlight-thresh-outer-val', params.highlight_thresh_outer ?? 140);
+  set('pd-highlight-strength-outer', 'pd-highlight-strength-outer-val', parseFloat(params.highlight_strength_outer ?? 0.6).toFixed(2));
+  set('pd-min-circ-inner', 'pd-min-circ-inner-val', parseFloat(params.min_circularity_inner ?? 0.5).toFixed(2));
+  set('pd-max-circ-inner', 'pd-max-circ-inner-val', parseFloat(params.max_circularity_inner ?? 1.0).toFixed(2));
+  set('pd-min-peri-inner', 'pd-min-peri-inner-val', params.min_perimeter_inner ?? 3);
+  set('pd-max-peri-inner', 'pd-max-peri-inner-val', params.max_perimeter_inner ?? 60);
+  set('pd-min-circ-outer', 'pd-min-circ-outer-val', parseFloat(params.min_circularity_outer ?? 0.3).toFixed(2));
+  set('pd-max-circ-outer', 'pd-max-circ-outer-val', parseFloat(params.max_circularity_outer ?? 1.0).toFixed(2));
+  set('pd-min-peri-outer', 'pd-min-peri-outer-val', params.min_perimeter_outer ?? 2);
+  set('pd-max-peri-outer', 'pd-max-peri-outer-val', params.max_perimeter_outer ?? 40);
+  set('pd-min-distance', 'pd-min-distance-val', params.min_distance ?? 12);
+  // sincronizza anche gli slider della vista rapida
+  set('wdots-luma', 'wdots-luma-val', params.luma_min ?? 200);
+  set('wdots-luma-max', 'wdots-luma-max-val', params.luma_max ?? 255);
+  // aggiorna swatches luminanza dopo popolamento
+  pdUpdateLumaSwatch('pd-luma-min-swatch', params.luma_min ?? 200);
+  pdUpdateLumaSwatch('pd-luma-max-swatch', params.luma_max ?? 255);
+  pdUpdateLumaSwatch('pd-luma-lb-swatch', params.luma_lb ?? 120);
+  pdUpdateLumaSwatch('pd-luma-max-lb-swatch', params.luma_max_lb ?? 255);
+  pdUpdateLumaSwatch('pd-highlight-thresh-inner-swatch', params.highlight_thresh_inner ?? 160);
+  pdUpdateLumaSwatch('pd-highlight-thresh-outer-swatch', params.highlight_thresh_outer ?? 140);
+  pdUpdateLumaSwatch('wdots-luma-swatch', params.luma_min ?? 200);
+  // aggiorna anteprime canvas
+  pdUpdateHighlightPreview('pd-highlight-preview-inner', 'pd-highlight-thresh-inner', 'pd-highlight-strength-inner');
+  pdUpdateHighlightPreview('pd-highlight-preview-outer', 'pd-highlight-thresh-outer', 'pd-highlight-strength-outer');
+  pdUpdateShapePreview('pd-shape-preview-inner', 'pd-min-circ-inner', 'pd-max-circ-inner', 'pd-min-peri-inner', 'pd-max-peri-inner', '#7d9fff');
+  pdUpdateShapePreview('pd-shape-preview-outer', 'pd-min-circ-outer', 'pd-max-circ-outer', 'pd-min-peri-outer', 'pd-max-peri-outer', '#ff9966');
 }
 
-function updateSliderRangesForZoom(zoomLevel) {
-  // no-op
+// Carica i parametri attuali dal server e popola gli slider
+async function loadCurrentParams() {
+  try {
+    const baseUrl = (typeof API_CONFIG !== 'undefined' && API_CONFIG?.baseURL)
+      ? API_CONFIG.baseURL : window.location.origin;
+    const resp = await fetch(`${baseUrl}/api/debug/params`);
+    const data = await resp.json();
+    if (data.success && data.params) populatePipelineSliders(data.params);
+  } catch (err) {
+    console.warn('loadCurrentParams error:', err);
+  }
 }
+window.loadCurrentParams = loadCurrentParams;
 
-function resetWhiteDotsParams() { /* no-op */ }
 
-/**
- * Mostra i parametri fissi di fabbrica attualmente in uso.
- * I parametri non vengono persistiti: al reload si riparte sempre dai valori fissi.
- */
-function saveAsDefaultWhiteDotsParams() { /* no-op */ }
-function updateAdaptiveParam(paramName, value, spanId, badgeId) { /* no-op */ }
-
-async function detectWithCurrentParams() {
-  await detectGreenDots();
+// Approva i parametri attuali degli slider come nuovi default
+async function approveDebugParams() {
+  if (!currentImage) {
+    alert('⚠️ Nessuna immagine caricata — impossibile determinare il contesto.');
+    return;
+  }
+  const params = readPipelineParams();
+  const baseUrl = (typeof API_CONFIG !== 'undefined' && API_CONFIG?.baseURL)
+    ? API_CONFIG.baseURL : window.location.origin;
+  try {
+    const canvasImageData = getCanvasImageAsBase64(WHITE_DOTS_MAX_PX);
+    const resp = await fetch(`${baseUrl}/api/debug/params/approve`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: canvasImageData || '', ...params }),
+    });
+    const data = await resp.json();
+    if (data.success) {
+      const st = document.getElementById('wdots-pipeline-status');
+      if (st) { st.textContent = `✅ ${data.message}`; st.style.display = ''; }
+    }
+  } catch (err) {
+    console.error('approveDebugParams error:', err);
+  }
 }
+window.approveDebugParams = approveDebugParams;
 
-function showWhiteDotsParamsPanel() { /* no-op: pannello rimosso */ }
+// Pipeline step-by-step debug
+async function showDebugPipeline() {
+  const grid = document.getElementById('wdots-pipeline-grid');
+  const pipeSt = document.getElementById('wdots-pipeline-status');
+  if (!grid) return;
 
-function syncSlidersToCurrentParams() { /* no-op: slider panel rimosso */ }
+  if (!currentImage) {
+    if (pipeSt) { pipeSt.textContent = '⚠️ Nessuna immagine caricata.'; pipeSt.style.display = ''; }
+    return;
+  }
 
-function loadLastSuccessfulParams() { /* no-op */ }
+  grid.innerHTML = '<div style="color:#888; font-size:12px; padding:16px;">⏳ Elaborazione pipeline... (10-60s)</div>';
+  if (pipeSt) { pipeSt.textContent = '⏳ Richiesta in corso...'; pipeSt.style.display = ''; }
 
-// ==================== EYEDROPPER TOOL (rimosso) ====================
-window.eyedropperActive = false;
-window.eyedropperSuggestion = null;
-function toggleEyedropper() { /* no-op: contagocce rimosso */ }
-function handleEyedropperClick(event) { /* no-op */ }
-function analyzePixelArea(x, y) { /* no-op */ }
-function analyzeClusterAtPoint() { /* no-op */ }
-function rgbToHsv(r, g, b) { return { h: 0, s: 0, v: 0 }; }
-function updateEyedropperUI() { /* no-op */ }
-function generateParameterSuggestion(hsv, clusterInfo) { return { text: '', canApply: false }; }
-function applyEyedropperSuggestion() { /* no-op */ }
+  try {
+    const canvasImageData = getCanvasImageAsBase64(WHITE_DOTS_MAX_PX);
+    if (!canvasImageData) throw new Error('Impossibile ottenere dati immagine dal canvas');
+
+    const baseUrl = (typeof API_CONFIG !== 'undefined' && API_CONFIG?.baseURL)
+      ? API_CONFIG.baseURL : window.location.origin;
+
+    const params = readPipelineParams();
+    const resp = await fetch(`${baseUrl}/api/debug/trova-differenze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: canvasImageData, ...params }),
+      signal: AbortSignal.timeout(120000)
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    if (!data.success || !Array.isArray(data.steps)) throw new Error('Risposta non valida');
+
+    const stepColors = ['#aaa', '#00d4ff', '#4dff91', '#ffd700', '#ff9900', '#ff66cc', '#ff4444', '#7dff7d', '#ffaa44', '#a0c4ff', '#7dff7d'];
+
+    grid.innerHTML = '';
+    // popup blob condiviso — riusa se già presente
+    let blobPopup = document.getElementById('blob-popup');
+    if (!blobPopup) {
+      blobPopup = document.createElement('div');
+      blobPopup.id = 'blob-popup';
+      blobPopup.style.cssText = 'display:none;position:fixed;z-index:20000;background:#111;border:1px solid #444;border-radius:8px;padding:12px 16px;min-width:200px;max-width:280px;box-shadow:0 4px 24px rgba(0,0,0,0.7);pointer-events:none;font-size:13px;line-height:1.6;';
+      document.body.appendChild(blobPopup);
+      document.addEventListener('click', () => { blobPopup.style.display = 'none'; });
+    }
+
+    data.steps.forEach(step => {
+      if (!step.image_b64) return;
+      const card = document.createElement('div');
+      card.style.cssText = 'background:#1a1a1a; border:1px solid #2a2a2a; border-radius:8px; overflow:hidden;';
+      const col = stepColors[step.step] || '#aaa';
+
+      // header
+      const header = document.createElement('div');
+      header.style.cssText = 'padding:8px 10px; border-bottom:1px solid #2a2a2a; display:flex; align-items:baseline; gap:8px;';
+      header.innerHTML = `<span style="color:${col};font-size:13px;font-weight:bold;">Step ${step.step}</span>
+        <span style="color:#eee;font-size:12px;font-weight:bold;">${step.name}</span>`;
+      card.appendChild(header);
+
+      if (step.step === 2 && Array.isArray(step.blobs)) {
+        // ── Step 2: immagine + canvas overlay interattivo ──────────────────
+        const hint = document.createElement('div');
+        hint.style.cssText = 'padding:4px 10px;background:#161a10;color:#8bc;font-size:11px;';
+        hint.textContent = '● Ciano/Verde = accettato inner  ● Blu = accettato outer  ● Rosso = scartato  ● Grigio = rumore  — click su un punto per i dettagli';
+        card.appendChild(hint);
+
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'position:relative;display:block;line-height:0;';
+
+        const img = document.createElement('img');
+        img.src = step.image_b64;
+        img.style.cssText = 'width:100%;display:block;';
+        wrap.appendChild(img);
+
+        const cvs = document.createElement('canvas');
+        cvs.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;';
+        wrap.appendChild(cvs);
+        card.appendChild(wrap);
+
+        const blobs = step.blobs;
+        const imgW = step.img_w, imgH = step.img_h;
+
+        function renderBlobOverlay() {
+          const dpr = window.devicePixelRatio || 1;
+          const rw = wrap.offsetWidth, rh = wrap.offsetHeight || (rw * imgH / imgW);
+          cvs.width = rw * dpr;
+          cvs.height = rh * dpr;
+          const ctx = cvs.getContext('2d');
+          ctx.scale(dpr, dpr);
+          ctx.clearRect(0, 0, rw, rh);
+          blobs.forEach(b => {
+            const px = b.x * rw, py = b.y * rh;
+            const r = b.type === 'noise' ? 3 : b.type === 'accepted' ? 7 : 5;
+            ctx.beginPath();
+            ctx.arc(px, py, r, 0, Math.PI * 2);
+            ctx.fillStyle = b.hex;
+            ctx.fill();
+            if (b.type === 'accepted') {
+              ctx.strokeStyle = '#fff';
+              ctx.lineWidth = 1.5;
+              ctx.stroke();
+            }
+          });
+        }
+
+        img.onload = renderBlobOverlay;
+        if (img.complete) renderBlobOverlay();
+        new ResizeObserver(renderBlobOverlay).observe(wrap);
+
+        // click su canvas → trova blob più vicino e mostra popup
+        cvs.addEventListener('click', e => {
+          e.stopPropagation();
+          const rect = cvs.getBoundingClientRect();
+          const mx = (e.clientX - rect.left) / rect.width;
+          const my = (e.clientY - rect.top) / rect.height;
+          // trova blob più vicino in coordinate normalizzate
+          let best = null, bestD = Infinity;
+          blobs.forEach(b => {
+            const dx = b.x - mx, dy = b.y - my;
+            // raggio click in spazio normalizzato (hitbox ~12px)
+            const hitR = 14 / rect.width;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d < hitR && d < bestD) { best = b; bestD = d; }
+          });
+          if (!best) { blobPopup.style.display = 'none'; return; }
+
+          const typeLabel = best.type === 'accepted' ? '✅ ACCETTATO' : best.type === 'noise' ? '⚪ RUMORE (sub-px)' : best.type === 'rejected_nms' ? '⚡ ELIMINATO NMS' : '❌ SCARTATO';
+          const typeColor = best.type === 'accepted' ? '#4dff91' : best.type === 'noise' ? '#888' : best.type === 'rejected_nms' ? '#ff6644' : '#ff7070';
+          blobPopup.innerHTML = `
+            <div style="font-weight:bold;color:${typeColor};margin-bottom:6px;">${typeLabel}</div>
+            <div style="color:#aaa;font-size:11px;margin-bottom:8px;">zona: <b style="color:#eee">${best.zone}</b> &nbsp; lato: <b style="color:#eee">${best.side}</b></div>
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+              <tr><td style="color:#888;padding:2px 6px 2px 0">area</td><td style="color:#eee;font-weight:bold">${best.area} px</td></tr>
+              <tr><td style="color:#888;padding:2px 6px 2px 0">perimetro</td><td style="color:#eee;font-weight:bold">${best.perim} px</td></tr>
+              <tr><td style="color:#888;padding:2px 6px 2px 0">circolarità</td><td style="color:#eee;font-weight:bold">${best.circ.toFixed(3)}<span style="color:#666;font-size:10px"> (1=cerchio)</span></td></tr>
+              ${best.luma !== null ? `<tr><td style="color:#888;padding:2px 6px 2px 0">score luma</td><td style="color:#eee;font-weight:bold">${best.luma}%</td></tr>` : ''}
+            </table>
+            ${best.type !== 'accepted' ? `<div style="margin-top:8px;padding:6px 8px;background:#1a1010;border-radius:4px;color:#ff9999;font-size:11px;">${best.verdict}</div>` : `<div style="margin-top:8px;padding:6px 8px;background:#0a1a0a;border-radius:4px;color:#4dff91;font-size:11px;">${best.verdict}</div>`}
+          `;
+          blobPopup.style.display = 'block';
+          // posiziona popup vicino al click ma dentro viewport
+          const pw = 280, ph = 220;
+          let px = e.clientX + 14, py = e.clientY - ph / 2;
+          if (px + pw > window.innerWidth - 8) px = e.clientX - pw - 14;
+          if (py < 8) py = 8;
+          if (py + ph > window.innerHeight - 8) py = window.innerHeight - ph - 8;
+          blobPopup.style.left = px + 'px';
+          blobPopup.style.top = py + 'px';
+        });
+
+      } else {
+        // ── altri step: immagine semplice ──────────────────────────────────
+        const img = document.createElement('img');
+        img.src = step.image_b64;
+        img.alt = `step${step.step}`;
+        img.style.cssText = 'width:100%;display:block;cursor:zoom-in;';
+        img.addEventListener('click', () => {
+          if (img.dataset.zoomed === '1') {
+            img.dataset.zoomed = '';
+            img.style.cssText = 'width:100%;display:block;cursor:zoom-in;';
+            document.body.style.overflow = '';
+          } else {
+            img.dataset.zoomed = '1';
+            img.style.cssText = 'position:fixed;inset:0;z-index:10000;width:auto;height:100vh;max-width:100vw;object-fit:contain;background:rgba(0,0,0,0.93);margin:auto;cursor:zoom-out;display:block;';
+            document.body.style.overflow = 'hidden';
+          }
+        });
+        card.appendChild(img);
+      }
+
+      const desc = document.createElement('div');
+      desc.style.cssText = 'padding:6px 10px; color:#888; font-size:11px;';
+      desc.textContent = step.description;
+      card.appendChild(desc);
+
+      grid.appendChild(card);
+    });
+
+    if (pipeSt) { pipeSt.textContent = `✅ ${data.total} step caricati`; }
+
+  } catch (err) {
+    console.error('❌ Errore debug pipeline:', err);
+    grid.innerHTML = `<div style="color:#ff4444; font-size:12px; padding:16px;">❌ Errore: ${err.message}</div>`;
+    if (pipeSt) { pipeSt.textContent = `❌ ${err.message}`; }
+  }
+}
+window.showDebugPipeline = showDebugPipeline;
+
+// Resetta highResCanvasForAnalysis per sorgenti non-immagine (video/webcam)
+function setAnalysisSourceCanvas(sourceType) {
+  if (sourceType !== 'image') {
+    window.highResCanvasForAnalysis = null;
+  }
+}
 
 // ==================== POINT PAIR HIGHLIGHT TOOL ====================
 
@@ -8316,22 +8605,9 @@ function resetPointPairHighlightOnUpdate() {
 // ==================== END POINT PAIR HIGHLIGHT TOOL ====================
 
 // Esponi le funzioni globalmente
-window.updateWhiteDotsParam = updateWhiteDotsParam;
-window.resetWhiteDotsParams = resetWhiteDotsParams;
-window.resetAndRedetect = resetAndRedetect;
-window.saveAsDefaultWhiteDotsParams = saveAsDefaultWhiteDotsParams;
-window.syncSlidersToCurrentParams = syncSlidersToCurrentParams;
-window.setWhiteDotsParamsForSource = setWhiteDotsParamsForSource;
-window.detectWithCurrentParams = detectWithCurrentParams;
-window.showWhiteDotsParamsPanel = showWhiteDotsParamsPanel;
+window.setAnalysisSourceCanvas = setAnalysisSourceCanvas;
 window.highlightPointPair = highlightPointPair;
 window.clearPointPairHighlight = clearPointPairHighlight;
-window.toggleEyedropper = toggleEyedropper;
-window.applyEyedropperSuggestion = applyEyedropperSuggestion;
-window.analyzePixelArea = analyzePixelArea;
-window.updateAdaptiveParam = updateAdaptiveParam;
-
-// ==================== END WHITE DOTS PARAMETER SLIDERS ====================
 
 function getCanvasImageAsBase64(maxDimension = null) {
   /**

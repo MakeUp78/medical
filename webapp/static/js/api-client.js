@@ -12,9 +12,7 @@ const API_CONFIG = {
     health: '/api/health',
     config: '/api/config/validate',
     landmarks: '/api/landmarks/info',
-    greenDotsAnalyze: '/api/green-dots/analyze',
-    greenDotsInfo: '/api/green-dots/info',
-    greenDotsTest: '/api/green-dots/test'
+    greenDotsAnalyze: '/api/green-dots/analyze'
   },
   timeout: 120000 // 120 secondi (2 minuti) - aumentato per elaborazione green dots
 };
@@ -368,75 +366,15 @@ document.addEventListener('DOMContentLoaded', function () {
 /**
  * Analizza immagine per rilevare green dots tramite API
  */
-async function analyzeGreenDotsViaAPI(imageBase64, parameters = {}) {
+async function analyzeGreenDotsViaAPI(imageBase64, extraParams = {}) {
   try {
-    // USA ENDPOINT ESISTENTE green-dots ma con logica WHITE DOTS
     const url = `${API_CONFIG.baseURL}${API_CONFIG.endpoints.greenDotsAnalyze}`;
-    console.log('⚪ API White Dots URL (via green-dots endpoint):', url);
-
-    const defaultParams = {
-      // Valori factory — allineati a WHITE_DOTS_FACTORY in main.js
-      cluster_size_min: 3,
-      cluster_size_max: 600,
-      clustering_radius: 2,
-      min_distance: 30,
-      // Parametri adattivi 2-pass
-      pass1_percentile: 50,
-      pass1_sat_cap: 28,
-      pass2_percentile: 80,
-      pass2_sat_cap: 25,
-    };
-
-    // Merge parametri con precedenza a quelli passati
-    const mergedParams = { ...defaultParams, ...parameters };
-
-    // Costruisci cluster_size_range da min/max se passati separatamente
-    if (mergedParams.cluster_size_min !== undefined && mergedParams.cluster_size_max !== undefined) {
-      mergedParams.cluster_size_range = [mergedParams.cluster_size_min, mergedParams.cluster_size_max];
-    }
-
-    const payload = {
-      image: imageBase64,
-      ...mergedParams
-    };
-
-    // Nota: i parametri pass1/pass2 sono inviati per retrocompat. ma il backend
-    // usa _detect_white_dots_v3 (dlib perimetro sopracciglio) → ignora questi valori.
-    console.log('⚙️ [v3-dlib-perimeter] Parametri inviati (ignorati dal backend v3):', {
-      cluster_size_range: mergedParams.cluster_size_range,
-      min_distance: mergedParams.min_distance,
-    });
-
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: imageBase64, ...extraParams }),
       signal: AbortSignal.timeout(API_CONFIG.timeout)
     });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-    console.log('⚪ Risposta API White Dots:', result);
-
-    return result;
-
-  } catch (error) {
-    console.error('❌ Errore API White Dots:', error);
-    throw error;
-  }
-}
-
-/**
- * Ottiene informazioni sui parametri Green Dots
- */
-async function getGreenDotsInfo() {
-  try {
-    const response = await fetch(`${API_CONFIG.baseURL}${API_CONFIG.endpoints.greenDotsInfo}`);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -445,7 +383,7 @@ async function getGreenDotsInfo() {
     return await response.json();
 
   } catch (error) {
-    console.error('❌ Errore recupero info Green Dots:', error);
+    console.error('❌ Errore API White Dots:', error);
     throw error;
   }
 }
@@ -455,5 +393,4 @@ window.analyzeImageViaAPI = analyzeImageViaAPI;
 window.validateScoringConfig = validateScoringConfig;
 window.getLandmarksInfo = getLandmarksInfo;
 window.analyzeGreenDotsViaAPI = analyzeGreenDotsViaAPI;
-window.getGreenDotsInfo = getGreenDotsInfo;
 window.checkAPIHealth = checkAPIHealth;

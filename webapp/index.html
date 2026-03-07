@@ -296,166 +296,6 @@
                             </button>
                         </div>
 
-                        <!-- pannello parametri rimosso: il backend usa _detect_white_dots_v3 con params fissi -->
-                        <div id="white-dots-params-panel" style="display:none;">
-                            <div
-                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                <span style="font-weight: bold; color: #00d4ff;">⚙️ Parametri Rilevamento</span>
-                                <button onclick="resetWhiteDotsParams()"
-                                    style="padding: 4px 8px; font-size: 11px; background: #ff6b6b; border: none; border-radius: 4px; color: white; cursor: pointer;">Reset</button>
-                            </div>
-
-                            <!-- Pulsanti principali azione -->
-                            <div style="display: flex; gap: 8px; margin-bottom: 14px;">
-                                <button onclick="resetAndRedetect()"
-                                    style="flex: 1; padding: 10px 6px; background: linear-gradient(135deg, #e67e22, #d35400); border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer; font-size: 13px;">
-                                    🔄 Rerileva
-                                </button>
-                                <button onclick="saveAsDefaultWhiteDotsParams()"
-                                    style="flex: 2; padding: 10px 6px; background: linear-gradient(135deg, #555, #333); border: 1px solid #666; border-radius: 6px; color: #aaa; font-weight: bold; cursor: pointer; font-size: 13px;">
-                                    ℹ️ Info Parametri Fissi
-                                </button>
-                            </div>
-
-                            <!-- Area scrollabile con tutti gli slider -->
-                            <div
-                                style="max-height: 55vh; overflow-y: auto; overflow-x: hidden; padding-right: 4px; scrollbar-width: thin; scrollbar-color: #4a4a8a #1a1a2e;">
-
-                                <!-- Badge info 2-pass automatico -->
-                                <div
-                                    style="padding:10px 12px; background:#0d2818; border:1px solid #2ea043; border-radius:6px; margin-bottom:14px;">
-                                    <div style="color:#3fb950; font-weight:bold; font-size:12px; margin-bottom:6px;">🎯
-                                        Rilevamento automatico 2-pass</div>
-                                    <div style="color:#8b949e; font-size:11px; line-height:1.6;">
-                                        <span style="color:#58a6ff;">Pass 1</span> (selettività <span
-                                            id="badge-p1-perc">50</span>%, sat-cap <span id="badge-p1-sat">28</span>%) →
-                                        <b style="color:#fff;">LB</b> + <b style="color:#fff;">RB</b> — punti più
-                                        esterni
-                                        (code)<br>
-                                        <span style="color:#f78166;">Pass 2</span> (selettività <span
-                                            id="badge-p2-perc">80</span>%, sat-cap <span id="badge-p2-sat">25</span>%) →
-                                        <b style="color:#fff;">4 punti sx</b> + <b style="color:#fff;">4 punti dx</b> —
-                                        punti centrali<br>
-                                        <span style="color:#3fb950;">Totale atteso: 10 punti</span>
-                                    </div>
-                                </div>
-
-                                <!-- Slider avanzati pass1/pass2 —visibili per immagini statiche -->
-                                <div id="adaptive-advanced-params"
-                                    style="display:none; margin-bottom:14px; padding:10px; background:#0d1117; border:1px solid #30363d; border-radius:6px;">
-                                    <div style="color:#58a6ff; font-size:11px; font-weight:bold; margin-bottom:10px;">🔧
-                                        Regolazione fine Pass 1 / Pass 2</div>
-
-                                    <div
-                                        style="color:#8b949e; font-size:10px; margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px;">
-                                        Pass 1 — code (LB / RB)</div>
-                                    <div class="param-slider-group">
-                                        <label>Selettività: <span id="p1-percentile-value">50</span>%</label>
-                                        <input type="range" id="p1-percentile-slider" min="20" max="85" value="50"
-                                            oninput="updateAdaptiveParam('pass1_percentile', this.value, 'p1-percentile-value', 'badge-p1-perc')">
-                                        <small>⬅ include più candidati — più restrittivo ➡</small>
-                                    </div>
-                                    <div class="param-slider-group">
-                                        <label>Filtro colore: <span id="p1-sat-cap-value">28</span>%</label>
-                                        <input type="range" id="p1-sat-cap-slider" min="10" max="70" value="28"
-                                            oninput="updateAdaptiveParam('pass1_sat_cap', this.value, 'p1-sat-cap-value', 'badge-p1-sat')">
-                                        <small>Abbassa se la pelle genera falsi positivi nelle code</small>
-                                    </div>
-
-                                    <div
-                                        style="color:#f78166; font-size:10px; margin:10px 0 6px; text-transform:uppercase; letter-spacing:.5px;">
-                                        Pass 2 — punti centrali (4+4)</div>
-                                    <div class="param-slider-group">
-                                        <label>Selettività: <span id="p2-percentile-value">80</span>%</label>
-                                        <input type="range" id="p2-percentile-slider" min="50" max="97" value="80"
-                                            oninput="updateAdaptiveParam('pass2_percentile', this.value, 'p2-percentile-value', 'badge-p2-perc')">
-                                        <small>⬅ più punti trovati — solo i più brillanti ➡</small>
-                                    </div>
-                                    <div class="param-slider-group">
-                                        <label>Filtro colore: <span id="p2-sat-cap-value">25</span>%</label>
-                                        <input type="range" id="p2-sat-cap-slider" min="10" max="70" value="25"
-                                            oninput="updateAdaptiveParam('pass2_sat_cap', this.value, 'p2-sat-cap-value', 'badge-p2-sat')">
-                                        <small>Abbassa se compaiono macchie colorate sui punti centrali</small>
-                                    </div>
-                                </div>
-
-                                <!-- Cluster Size Min -->
-                                <div class="param-slider-group">
-                                    <label>Dimensione Min Cluster: <span id="cluster-min-value">3</span>px</label>
-                                    <input type="range" id="cluster-min-slider" min="1" max="50" value="3"
-                                        oninput="updateWhiteDotsParam('cluster_size_min', this.value)">
-                                    <small>Più alto = ignora puntini piccoli (rumore)</small>
-                                </div>
-
-                                <!-- Cluster Size Max -->
-                                <div class="param-slider-group">
-                                    <label>Dimensione Max Cluster: <span id="cluster-max-value">600</span>px</label>
-                                    <input type="range" id="cluster-max-slider" min="20" max="700" value="600"
-                                        oninput="updateWhiteDotsParam('cluster_size_max', this.value)">
-                                    <small>Più alto = include cluster più grandi (fino a 700px)</small>
-                                </div>
-
-                                <!-- Min Distance -->
-                                <div class="param-slider-group">
-                                    <label>Distanza Min tra Punti: <span id="min-distance-value">30</span>px</label>
-                                    <input type="range" id="min-distance-slider" min="5" max="50" value="30"
-                                        oninput="updateWhiteDotsParam('min_distance', this.value)">
-                                    <small>Più alto = punti più distanziati</small>
-                                </div>
-
-                                <!-- Pulsanti azione -->
-                                <div style="display: flex; gap: 8px; margin-top: 12px;">
-                                    <!-- Pulsante Contagocce -->
-                                    <button id="eyedropper-btn" onclick="toggleEyedropper()"
-                                        style="flex: 1; padding: 10px; background: linear-gradient(135deg, #9b59b6, #8e44ad); border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer;">
-                                        💧 Contagocce
-                                    </button>
-                                    <!-- Pulsante Rileva -->
-                                    <button id="detect-with-params-btn" onclick="detectWithCurrentParams()"
-                                        style="flex: 2; padding: 10px; background: linear-gradient(135deg, #00d4ff, #0099cc); border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer;">
-                                        🔍 Rileva
-                                    </button>
-                                </div>
-
-                                <!-- Pannello risultati contagocce -->
-                                <div id="eyedropper-results"
-                                    style="display: none; margin-top: 10px; padding: 10px; background: #0d0d1a; border-radius: 6px; border: 1px solid #9b59b6;">
-                                    <div style="font-weight: bold; color: #9b59b6; margin-bottom: 8px;">💧 Analisi Punto
-                                        Selezionato</div>
-                                    <div id="eyedropper-color-preview"
-                                        style="width: 100%; height: 30px; border-radius: 4px; margin-bottom: 8px; border: 1px solid #444;">
-                                    </div>
-                                    <div
-                                        style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px;">
-                                        <div>RGB: <span id="eyedropper-rgb" style="color: #00d4ff;">-</span></div>
-                                        <div>Pos: <span id="eyedropper-pos" style="color: #00d4ff;">-</span></div>
-                                        <div>Hue: <span id="eyedropper-hue" style="color: #00d4ff;">-</span>°</div>
-                                        <div>Sat: <span id="eyedropper-sat" style="color: #00d4ff;">-</span>%</div>
-                                        <div>Val: <span id="eyedropper-val" style="color: #00d4ff;">-</span>%</div>
-                                        <div>Cluster: <span id="eyedropper-cluster" style="color: #00d4ff;">-</span>px
-                                        </div>
-                                    </div>
-                                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #333;">
-                                        <div style="font-size: 10px; color: #888;">Suggerimento parametri:</div>
-                                        <div id="eyedropper-suggestion"
-                                            style="font-size: 11px; color: #00ff88; margin-top: 4px;">
-                                            Clicca su un puntino bianco nell'immagine
-                                        </div>
-                                    </div>
-                                    <button onclick="applyEyedropperSuggestion()" id="apply-suggestion-btn"
-                                        style="display: none; width: 100%; margin-top: 8px; padding: 6px; background: #27ae60; border: none; border-radius: 4px; color: white; font-size: 11px; cursor: pointer;">
-                                        ✓ Applica suggerimento agli sliders
-                                    </button>
-                                </div>
-
-                                <!-- Info parametri correnti -->
-                                <div id="current-params-info"
-                                    style="margin-top: 10px; padding: 8px; background: #0d0d1a; border-radius: 4px; font-size: 11px; color: #888;">
-                                    Modifica i parametri e clicca "Rileva" per testare
-                                </div>
-
-                            </div><!-- fine area scrollabile -->
-                        </div><!-- fine white-dots-params-panel -->
                     </div><!-- fine section-content -->
                 </div><!-- fine section -->
 
@@ -600,11 +440,6 @@
 
             <!-- Video webcam nascosto -->
             <video id="webcam-video" autoplay muted style="position: absolute; left: -9999px; top: -9999px;"></video>
-
-            <!-- Info cursore -->
-            <div class="cursor-info" id="cursor-info">
-                Mouse: (0, 0) | Zoom: 100%
-            </div>
         </div>
 
         <!-- SIDEBAR DESTRA identica alla colonna destra dell'app -->
@@ -1483,7 +1318,7 @@
     <script src="static/js/face-analysis-complete.js"></script>
     <!-- Frame Processor Unificato -->
     <script src="static/js/frame-processor.js"></script>
-    <script src="static/js/main.js?v=20260225-accent"></script>
+    <script src="static/js/main.js?v=20260303-luma"></script>
 
     <!-- MediaPipe per face detection -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -2932,10 +2767,10 @@
     <div id="wdots-debug-modal"
         style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.82); z-index:9999; overflow:auto; padding:16px;">
         <div
-            style="max-width:1100px; margin:auto; background:#111; border-radius:10px; padding:18px; border:1px solid #3a7a3a;">
+            style="max-width:1200px; margin:auto; background:#111; border-radius:10px; padding:18px; border:1px solid #3a7a3a;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                <span style="color:#7dff7d; font-weight:bold; font-size:15px;">🔬 Debug Rilevamento Punti Bianchi (v3
-                    dlib-perimeter)</span>
+                <span style="color:#7dff7d; font-weight:bold; font-size:15px;">🔬 Debug Rilevamento Punti Bianchi (CLAHE
+                    + soglia assoluta)</span>
                 <button onclick="document.getElementById('wdots-debug-modal').style.display='none'"
                     style="background:#c0392b; color:white; border:none; border-radius:6px; padding:6px 14px; cursor:pointer; font-size:13px;">✕
                     Chiudi</button>
@@ -2943,51 +2778,366 @@
             <div id="wdots-debug-status" style="color:#aaa; font-size:12px; margin-bottom:10px;">Premi il pulsante per
                 generare le immagini...</div>
 
-            <!-- Controlli parametri interattivi -->
-            <div
-                style="background:#1a1a2e; border:1px solid #3a3a6a; border-radius:6px; padding:10px 14px; margin-bottom:12px; display:flex; gap:24px; flex-wrap:wrap; align-items:center;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <label style="color:#00d4ff; font-size:12px; white-space:nowrap;">Luminosità – top
-                        <span id="wdots-perc-val" style="color:#fff; font-weight:bold;">25</span>%
-                    </label>
-                    <input type="range" id="wdots-perc" min="1" max="50" value="25"
-                        style="width:110px; accent-color:#00d4ff;"
-                        oninput="document.getElementById('wdots-perc-val').textContent=this.value; wdotsScheduleRecalc()">
-                </div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <label style="color:#ffaa00; font-size:12px; white-space:nowrap;">Saturazione max
-                        <span id="wdots-sat-val" style="color:#fff; font-weight:bold;">28</span>%
-                    </label>
-                    <input type="range" id="wdots-sat" min="5" max="80" value="28"
-                        style="width:110px; accent-color:#ffaa00;"
-                        oninput="document.getElementById('wdots-sat-val').textContent=this.value; wdotsScheduleRecalc()">
-                </div>
-                <div style="color:#888; font-size:11px;">← modifica e l'immagine si ricalcola automaticamente</div>
+            <!-- Tab switcher -->
+            <div style="display:flex; gap:8px; margin-bottom:14px;">
+                <button id="wdots-tab-quick" onclick="wdotsSetTab('quick')"
+                    style="background:#1a4a2a; color:#7dff7d; border:1px solid #3a7a3a; border-radius:6px; padding:6px 14px; cursor:pointer; font-size:12px; font-weight:bold;">
+                    ⚡ Vista Rapida (3 immagini)
+                </button>
+                <button id="wdots-tab-pipeline" onclick="wdotsSetTab('pipeline')"
+                    style="background:#1a1a3a; color:#7d9fff; border:1px solid #3a3a7a; border-radius:6px; padding:6px 14px; cursor:pointer; font-size:12px;">
+                    🔬 Pipeline (3 step)
+                </button>
             </div>
 
-            <div id="wdots-debug-params"
-                style="display:none; background:#111d11; border:1px solid #3a6a3a; border-radius:6px; padding:8px 12px; margin-bottom:10px; font-size:11px; color:#aaa;">
-                <span style="color:#7dff7d; font-weight:bold;">⚙️ Parametri attivi:</span>
-                <span id="wdots-params-text" style="margin-left:8px;"></span>
+            <!-- ===== TAB: VISTA RAPIDA ===== -->
+            <div id="wdots-panel-quick">
+                <!-- Controlli parametri interattivi -->
+                <div
+                    style="background:#1a1a2e; border:1px solid #3a3a6a; border-radius:6px; padding:10px 14px; margin-bottom:12px; display:flex; gap:24px; flex-wrap:wrap; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <label style="color:#00d4ff; font-size:12px; white-space:nowrap;">Luma min
+                            <span id="wdots-luma-val" style="color:#fff; font-weight:bold;">200</span>
+                        </label>
+                        <input type="range" id="wdots-luma" min="60" max="255" value="200"
+                            style="width:90px; accent-color:#00d4ff;"
+                            oninput="document.getElementById('wdots-luma-val').textContent=this.value; pdUpdateLumaSwatch('wdots-luma-swatch', +this.value); wdotsScheduleRecalc()">
+                        <span id="wdots-luma-swatch"
+                            style="display:inline-block; width:16px; height:16px; border-radius:3px; border:1px solid #555; background:rgb(200,200,200); vertical-align:middle; flex-shrink:0;"></span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <label style="color:#00d4ff; font-size:12px; white-space:nowrap;">Luma max
+                            <span id="wdots-luma-max-val" style="color:#fff; font-weight:bold;">255</span>
+                        </label>
+                        <input type="range" id="wdots-luma-max" min="100" max="255" value="255"
+                            style="width:90px; accent-color:#00d4ff;"
+                            oninput="document.getElementById('wdots-luma-max-val').textContent=this.value; wdotsScheduleRecalc()">
+                    </div>
+                    <div style="color:#888; font-size:11px; align-self:center;">← modifica e l'immagine si ricalcola
+                        automaticamente</div>
+                </div>
+
+                <div id="wdots-debug-params"
+                    style="display:none; background:#111d11; border:1px solid #3a6a3a; border-radius:6px; padding:8px 12px; margin-bottom:10px; font-size:11px; color:#aaa;">
+                    <span style="color:#7dff7d; font-weight:bold;">⚙️ Parametri attivi:</span>
+                    <span id="wdots-params-text" style="margin-left:8px;"></span>
+                </div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:280px;">
+                        <div style="color:#00d4ff; font-size:12px; margin-bottom:6px;">① Zona di Ricerca (maschera dlib
+                            espansa)</div>
+                        <img id="wdots-debug-zone" src="" alt="zone"
+                            style="width:100%; border-radius:6px; border:1px solid #333; display:none;">
+                    </div>
+                    <div style="flex:1; min-width:280px;">
+                        <div style="color:#ffaa00; font-size:12px; margin-bottom:6px;">② CLAHE + rilevamento punti
+                            bianchi</div>
+                        <img id="wdots-debug-detect" src="" alt="detect"
+                            style="width:100%; border-radius:6px; border:1px solid #333; display:none;">
+                    </div>
+                    <div style="flex:1; min-width:280px;">
+                        <div style="color:#ff7dff; font-size:12px; margin-bottom:6px;">③ Ordine anatomico finale</div>
+                        <img id="wdots-debug-masked" src="" alt="masked"
+                            style="width:100%; border-radius:6px; border:1px solid #333; display:none;">
+                    </div>
+                </div>
             </div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                <div style="flex:1; min-width:280px;">
-                    <div style="color:#00d4ff; font-size:12px; margin-bottom:6px;">① Zona di Ricerca (maschera dlib +
-                        striscia)</div>
-                    <img id="wdots-debug-zone" src="" alt="zone"
-                        style="width:100%; border-radius:6px; border:1px solid #333; display:none;">
+
+            <!-- ===== TAB: PIPELINE COMPLETA ===== -->
+            <div id="wdots-panel-pipeline" style="display:none;">
+                <!-- Pannello parametri configurabili -->
+                <div id="wdots-pipeline-params"
+                    style="background:#1a1a2e; border:1px solid #3a3a6a; border-radius:8px; padding:12px; margin-bottom:12px;">
+                    <div style="color:#7d9fff; font-size:12px; font-weight:bold; margin-bottom:12px;">Parametri pipeline
+                    </div>
+
+                    <!-- STEP 0: Normalizzazione risoluzione -->
+                    <div style="margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #2a2a4a;">
+                        <div
+                            style="color:#7d9fff; font-size:10px; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">
+                            ⓪ Normalizzazione risoluzione</div>
+                        <label style="color:#aaa; font-size:11px;">Larghezza target: <span
+                                id="pd-target-width-val">1200</span> px</label>
+                        <input type="range" id="pd-target-width" min="400" max="2000" value="1200" step="50"
+                            style="width:100%; accent-color:#7d9fff; margin-bottom:4px;"
+                            oninput="document.getElementById('pd-target-width-val').textContent=this.value">
+                        <div style="font-size:10px; color:#888;">→ ogni immagine viene ridimensionata a questa larghezza
+                            prima della pipeline</div>
+                    </div>
+
+                    <!-- STEP 1: Zona ricerca -->
+                    <div style="margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #2a2a4a;">
+                        <div
+                            style="color:#7d9fff; font-size:10px; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">
+                            ① Zona di ricerca espansa</div>
+                        <label style="color:#aaa; font-size:11px;">Espansione maschera dlib: <span
+                                id="pd-outer-px-val">35</span>px</label>
+                        <input type="range" id="pd-outer-px" min="5" max="80" value="35" step="1"
+                            style="width:100%; accent-color:#7d9fff;"
+                            oninput="document.getElementById('pd-outer-px-val').textContent=this.value">
+                        <div style="font-size:10px; color:#888;">→ zona intera (non striscia): include l'interno del
+                            sopracciglio</div>
+                    </div>
+
+                    <!-- STEP 1b: Highlight boost inner -->
+                    <div style="margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #2a2a4a;">
+                        <div
+                            style="color:#7d9fff; font-size:10px; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">
+                            ① Highlight boost — zona interna (inner)</div>
+                        <div style="font-size:10px; color:#888; margin-bottom:6px;">Potenzia i toni alti dell'immagine
+                            <b>grigia</b> per la zona principale del sopracciglio. I pixel sopra <b>Soglia</b> vengono
+                            spinti verso il bianco con intensità <b>Forza</b>.</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 20px;">
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Soglia inner (0-255): <span
+                                        id="pd-highlight-thresh-inner-val">160</span>
+                                    <span id="pd-highlight-thresh-inner-swatch"
+                                        style="display:inline-block; width:14px; height:14px; border-radius:2px; border:1px solid #555; vertical-align:middle; margin-left:4px; background:rgb(160,160,160);"></span>
+                                </label>
+                                <input type="range" id="pd-highlight-thresh-inner" min="60" max="254" value="160"
+                                    step="1" style="width:100%; accent-color:#7d9fff;"
+                                    oninput="document.getElementById('pd-highlight-thresh-inner-val').textContent=this.value; pdUpdateLumaSwatch('pd-highlight-thresh-inner-swatch', +this.value); pdUpdateHighlightPreview('pd-highlight-preview-inner','pd-highlight-thresh-inner','pd-highlight-strength-inner'); wdotsScheduleRecalc()">
+                            </div>
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Forza inner (0.0–1.0): <span
+                                        id="pd-highlight-strength-inner-val">0.80</span></label>
+                                <input type="range" id="pd-highlight-strength-inner" min="0" max="1" value="0.8"
+                                    step="0.05" style="width:100%; accent-color:#7d9fff;"
+                                    oninput="document.getElementById('pd-highlight-strength-inner-val').textContent=parseFloat(this.value).toFixed(2); pdUpdateHighlightPreview('pd-highlight-preview-inner','pd-highlight-thresh-inner','pd-highlight-strength-inner'); wdotsScheduleRecalc()">
+                            </div>
+                        </div>
+                        <!-- Anteprima curva boost inner -->
+                        <canvas id="pd-highlight-preview-inner" width="260" height="54"
+                            style="margin-top:8px; border-radius:4px; border:1px solid #333; display:block;"></canvas>
+                        <div style="font-size:9px; color:#666; margin-top:2px;">↑ Curva di trasferimento: grigio input
+                            (asse X) → grigio output (asse Y). La zona arancione indica i pixel potenziati.</div>
+                    </div>
+
+                    <!-- STEP 1c: Highlight boost outer -->
+                    <div style="margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #2a2a4a;">
+                        <div
+                            style="color:#ff9966; font-size:10px; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">
+                            ① Highlight boost — strip esterna LB/RB (outer)</div>
+                        <div style="font-size:10px; color:#888; margin-bottom:6px;">Potenzia i toni alti per la <b>strip
+                                esterna</b> (zona LB/RB). Parametri separati perché i punti estremi possono avere
+                            luminosità diversa.</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 20px;">
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Soglia outer (0-255): <span
+                                        id="pd-highlight-thresh-outer-val">140</span>
+                                    <span id="pd-highlight-thresh-outer-swatch"
+                                        style="display:inline-block; width:14px; height:14px; border-radius:2px; border:1px solid #555; vertical-align:middle; margin-left:4px; background:rgb(140,140,140);"></span>
+                                </label>
+                                <input type="range" id="pd-highlight-thresh-outer" min="60" max="254" value="140"
+                                    step="1" style="width:100%; accent-color:#ff9966;"
+                                    oninput="document.getElementById('pd-highlight-thresh-outer-val').textContent=this.value; pdUpdateLumaSwatch('pd-highlight-thresh-outer-swatch', +this.value); pdUpdateHighlightPreview('pd-highlight-preview-outer','pd-highlight-thresh-outer','pd-highlight-strength-outer'); wdotsScheduleRecalc()">
+                            </div>
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Forza outer (0.0–1.0): <span
+                                        id="pd-highlight-strength-outer-val">0.60</span></label>
+                                <input type="range" id="pd-highlight-strength-outer" min="0" max="1" value="0.6"
+                                    step="0.05" style="width:100%; accent-color:#ff9966;"
+                                    oninput="document.getElementById('pd-highlight-strength-outer-val').textContent=parseFloat(this.value).toFixed(2); pdUpdateHighlightPreview('pd-highlight-preview-outer','pd-highlight-thresh-outer','pd-highlight-strength-outer'); wdotsScheduleRecalc()">
+                            </div>
+                        </div>
+                        <canvas id="pd-highlight-preview-outer" width="260" height="54"
+                            style="margin-top:8px; border-radius:4px; border:1px solid #333; display:block;"></canvas>
+                        <div style="font-size:9px; color:#666; margin-top:2px;">↑ Curva di trasferimento outer.
+                            L'arancione indica i pixel potenziati nella strip LB/RB.</div>
+                    </div>
+
+                    <!-- STEP 2: Soglia bianco -->
+                    <div style="margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #2a2a4a;">
+                        <div
+                            style="color:#7d9fff; font-size:10px; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">
+                            ② Soglia luminanza (punti centrali)</div>
+                        <div style="font-size:10px; color:#888; margin-bottom:6px;">Range di luminanza ammesso (0=nero,
+                            255=bianco puro), misurata sull'immagine in scala di grigi dopo highlight boost. I pixel con
+                            luminanza fuori dal range [min, max] vengono scartati.</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 20px;">
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Luma min: <span
+                                        id="pd-luma-min-val">200</span>
+                                    <span id="pd-luma-min-swatch"
+                                        style="display:inline-block; width:14px; height:14px; border-radius:2px; border:1px solid #555; vertical-align:middle; margin-left:4px; background:rgb(200,200,200);"></span>
+                                </label>
+                                <input type="range" id="pd-luma-min" min="60" max="255" value="200" step="1"
+                                    style="width:100%; accent-color:#7d9fff;"
+                                    oninput="document.getElementById('pd-luma-min-val').textContent=this.value; pdUpdateLumaSwatch('pd-luma-min-swatch', +this.value)">
+                            </div>
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Luma max: <span
+                                        id="pd-luma-max-val">255</span>
+                                    <span id="pd-luma-max-swatch"
+                                        style="display:inline-block; width:14px; height:14px; border-radius:2px; border:1px solid #555; vertical-align:middle; margin-left:4px; background:rgb(255,255,255);"></span>
+                                </label>
+                                <input type="range" id="pd-luma-max" min="100" max="255" value="255" step="1"
+                                    style="width:100%; accent-color:#7d9fff;"
+                                    oninput="document.getElementById('pd-luma-max-val').textContent=this.value; pdUpdateLumaSwatch('pd-luma-max-swatch', +this.value)">
+                            </div>
+                        </div>
+                        <div style="font-size:10px; color:#888; margin-top:4px;">→ il rilevamento avviene sull'immagine
+                            in scala di grigi dopo highlight boost</div>
+                    </div>
+
+                    <!-- STEP 3: Soglia LB/RB -->
+                    <div style="margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #2a2a4a;">
+                        <div
+                            style="color:#ff9966; font-size:10px; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">
+                            ③ Soglia luminanza LB/RB (estremi X) — overlay arancione</div>
+                        <div style="font-size:10px; color:#888; margin-bottom:6px;">Applicati SOLO nella strip esterna
+                            (LB=punto più a sinistra, RB=punto più a destra). Range separato perché i punti esterni
+                            possono essere meno luminosi dei centrali.</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 20px;">
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Luma min LB/RB: <span
+                                        id="pd-luma-lb-val">120</span>
+                                    <span id="pd-luma-lb-swatch"
+                                        style="display:inline-block; width:14px; height:14px; border-radius:2px; border:1px solid #555; vertical-align:middle; margin-left:4px; background:rgb(120,120,120);"></span>
+                                </label>
+                                <input type="range" id="pd-luma-lb" min="60" max="255" value="120" step="1"
+                                    style="width:100%; accent-color:#ff9966;"
+                                    oninput="document.getElementById('pd-luma-lb-val').textContent=this.value; pdUpdateLumaSwatch('pd-luma-lb-swatch', +this.value)">
+                            </div>
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Luma max LB/RB: <span
+                                        id="pd-luma-max-lb-val">255</span>
+                                    <span id="pd-luma-max-lb-swatch"
+                                        style="display:inline-block; width:14px; height:14px; border-radius:2px; border:1px solid #555; vertical-align:middle; margin-left:4px; background:rgb(255,255,255);"></span>
+                                </label>
+                                <input type="range" id="pd-luma-max-lb" min="100" max="255" value="255" step="1"
+                                    style="width:100%; accent-color:#ff9966;"
+                                    oninput="document.getElementById('pd-luma-max-lb-val').textContent=this.value; pdUpdateLumaSwatch('pd-luma-max-lb-swatch', +this.value)">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STEP 4: Circolarità + perimetro blob — zona interna -->
+                    <div style="margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #2a2a4a;">
+                        <div
+                            style="color:#7d9fff; font-size:10px; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">
+                            ④ Forma blob — zona interna (white_mask)</div>
+                        <div style="font-size:10px; color:#888; margin-bottom:6px;">Filtra blob per circolarità
+                            (1.0=cerchio perfetto) e perimetro (px). Solo blob che rispettano entrambi i range vengono
+                            tenuti.</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 20px;">
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Circ min inner: <span
+                                        id="pd-min-circ-inner-val">0.50</span></label>
+                                <input type="range" id="pd-min-circ-inner" min="0" max="1" value="0.5" step="0.05"
+                                    style="width:100%; accent-color:#7d9fff;"
+                                    oninput="document.getElementById('pd-min-circ-inner-val').textContent=parseFloat(this.value).toFixed(2); pdUpdateShapePreview('pd-shape-preview-inner','pd-min-circ-inner','pd-max-circ-inner','pd-min-peri-inner','pd-max-peri-inner','#7d9fff'); wdotsScheduleRecalc()">
+                            </div>
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Circ max inner: <span
+                                        id="pd-max-circ-inner-val">1.00</span></label>
+                                <input type="range" id="pd-max-circ-inner" min="0" max="3" value="1" step="0.05"
+                                    style="width:100%; accent-color:#7d9fff;"
+                                    oninput="document.getElementById('pd-max-circ-inner-val').textContent=parseFloat(this.value).toFixed(2); pdUpdateShapePreview('pd-shape-preview-inner','pd-min-circ-inner','pd-max-circ-inner','pd-min-peri-inner','pd-max-peri-inner','#7d9fff'); wdotsScheduleRecalc()">
+                            </div>
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Perimetro min inner: <span
+                                        id="pd-min-peri-inner-val">3</span> px</label>
+                                <input type="range" id="pd-min-peri-inner" min="0" max="50" value="3" step="1"
+                                    style="width:100%; accent-color:#7d9fff;"
+                                    oninput="document.getElementById('pd-min-peri-inner-val').textContent=this.value; pdUpdateShapePreview('pd-shape-preview-inner','pd-min-circ-inner','pd-max-circ-inner','pd-min-peri-inner','pd-max-peri-inner','#7d9fff'); wdotsScheduleRecalc()">
+                            </div>
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Perimetro max inner: <span
+                                        id="pd-max-peri-inner-val">60</span> px</label>
+                                <input type="range" id="pd-max-peri-inner" min="5" max="500" value="60" step="1"
+                                    style="width:100%; accent-color:#7d9fff;"
+                                    oninput="document.getElementById('pd-max-peri-inner-val').textContent=this.value; pdUpdateShapePreview('pd-shape-preview-inner','pd-min-circ-inner','pd-max-circ-inner','pd-min-peri-inner','pd-max-peri-inner','#7d9fff'); wdotsScheduleRecalc()">
+                            </div>
+                        </div>
+                        <!-- Anteprima forme accettate inner -->
+                        <canvas id="pd-shape-preview-inner" width="260" height="70"
+                            style="margin-top:8px; border-radius:4px; border:1px solid #333; display:block;"></canvas>
+                        <div style="font-size:9px; color:#666; margin-top:2px;">↑ Anteprime delle forme accettate: la
+                            dimensione dei cerchi varia col perimetro (min→max), la deformazione varia con la
+                            circolarità (sinistra=min, destra=max).</div>
+                    </div>
+
+                    <!-- STEP 4b: Circolarità + perimetro blob — strip esterna LB/RB -->
+                    <div style="margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #2a2a4a;">
+                        <div
+                            style="color:#ff9966; font-size:10px; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">
+                            ④b Forma blob — strip esterna LB/RB (lb_mask)</div>
+                        <div style="font-size:10px; color:#888; margin-bottom:6px;">Stessi criteri ma con parametri
+                            separati per la strip esterna — i punti LB/RB possono essere meno circolari e più piccoli.
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 20px;">
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Circ min outer: <span
+                                        id="pd-min-circ-outer-val">0.30</span></label>
+                                <input type="range" id="pd-min-circ-outer" min="0" max="1" value="0.3" step="0.05"
+                                    style="width:100%; accent-color:#ff9966;"
+                                    oninput="document.getElementById('pd-min-circ-outer-val').textContent=parseFloat(this.value).toFixed(2); pdUpdateShapePreview('pd-shape-preview-outer','pd-min-circ-outer','pd-max-circ-outer','pd-min-peri-outer','pd-max-peri-outer','#ff9966'); wdotsScheduleRecalc()">
+                            </div>
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Circ max outer: <span
+                                        id="pd-max-circ-outer-val">1.00</span></label>
+                                <input type="range" id="pd-max-circ-outer" min="0" max="10" value="1" step="0.05"
+                                    style="width:100%; accent-color:#ff9966;"
+                                    oninput="document.getElementById('pd-max-circ-outer-val').textContent=parseFloat(this.value).toFixed(2); pdUpdateShapePreview('pd-shape-preview-outer','pd-min-circ-outer','pd-max-circ-outer','pd-min-peri-outer','pd-max-peri-outer','#ff9966'); wdotsScheduleRecalc()">
+                            </div>
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Perimetro min outer: <span
+                                        id="pd-min-peri-outer-val">2</span> px</label>
+                                <input type="range" id="pd-min-peri-outer" min="0" max="50" value="2" step="1"
+                                    style="width:100%; accent-color:#ff9966;"
+                                    oninput="document.getElementById('pd-min-peri-outer-val').textContent=this.value; pdUpdateShapePreview('pd-shape-preview-outer','pd-min-circ-outer','pd-max-circ-outer','pd-min-peri-outer','pd-max-peri-outer','#ff9966'); wdotsScheduleRecalc()">
+                            </div>
+                            <div>
+                                <label style="color:#aaa; font-size:11px;">Perimetro max outer: <span
+                                        id="pd-max-peri-outer-val">40</span> px</label>
+                                <input type="range" id="pd-max-peri-outer" min="5" max="300" value="40" step="1"
+                                    style="width:100%; accent-color:#ff9966;"
+                                    oninput="document.getElementById('pd-max-peri-outer-val').textContent=this.value; pdUpdateShapePreview('pd-shape-preview-outer','pd-min-circ-outer','pd-max-circ-outer','pd-min-peri-outer','pd-max-peri-outer','#ff9966'); wdotsScheduleRecalc()">
+                            </div>
+                        </div>
+                        <canvas id="pd-shape-preview-outer" width="260" height="70"
+                            style="margin-top:8px; border-radius:4px; border:1px solid #333; display:block;"></canvas>
+                        <div style="font-size:9px; color:#666; margin-top:2px;">↑ Anteprime forme accettate outer.
+                            Perimetro e circolarità rappresentati visivamente.</div>
+                    </div>
+
+                    <!-- STEP 5: Distanza minima deduplicazione (NMS) -->
+                    <div style="margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #2a2a4a;">
+                        <div
+                            style="color:#9f9fff; font-size:10px; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">
+                            ⑤ Deduplicazione blob vicini (NMS)</div>
+                        <div style="font-size:10px; color:#888; margin-bottom:6px;">Rimuove blob duplicati troppo
+                            vicini, mantenendo quello con score o circolarità migliore.</div>
+                        <div>
+                            <label style="color:#aaa; font-size:11px;">Distanza minima: <span
+                                    id="pd-min-distance-val">12</span> px</label>
+                            <input type="range" id="pd-min-distance" min="0" max="50" value="12" step="1"
+                                style="width:100%; accent-color:#9f9fff;"
+                                oninput="document.getElementById('pd-min-distance-val').textContent=this.value; wdotsScheduleRecalc()">
+                        </div>
+                        <div style="font-size:9px; color:#666; margin-top:4px;">Se due blob sono più vicini di questa
+                            soglia, viene mantenuto solo quello migliore. Usa 0 per disattivare.</div>
+                    </div>
+
+                    <!-- Pulsanti azione -->
+                    <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+                        <button onclick="showDebugPipeline()"
+                            style="background:#1a2a5a; color:#7d9fff; border:1px solid #3a3a9a; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:12px;">🔄
+                            Testa</button>
+                        <button onclick="approveDebugParams()"
+                            style="background:#1a3a1a; color:#5fff5f; border:1px solid #3a6a3a; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:12px;">✅
+                            Approva</button>
+                        <button onclick="loadCurrentParams()"
+                            style="background:#2a1a3a; color:#bf9fff; border:1px solid #5a3a7a; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:12px;">↺
+                            Carica</button>
+                    </div>
                 </div>
-                <div style="flex:1; min-width:280px;">
-                    <div style="color:#ffaa00; font-size:12px; margin-bottom:6px;">② Rilevamento Blob + Top-5
-                        selezionati</div>
-                    <img id="wdots-debug-detect" src="" alt="detect"
-                        style="width:100%; border-radius:6px; border:1px solid #333; display:none;">
+                <div id="wdots-pipeline-status" style="color:#aaa; font-size:11px; margin-bottom:10px; display:none;">
                 </div>
-                <div style="flex:1; min-width:280px;">
-                    <div style="color:#ff7dff; font-size:12px; margin-bottom:6px;">③ Pixel analizzati (solo strip, nero
-                        fuori)</div>
-                    <img id="wdots-debug-masked" src="" alt="masked"
-                        style="width:100%; border-radius:6px; border:1px solid #333; display:none;">
+                <div id="wdots-pipeline-grid"
+                    style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:14px;">
+                    <!-- popolato da showDebugPipeline() -->
                 </div>
             </div>
         </div>

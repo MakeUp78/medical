@@ -144,6 +144,36 @@ function updateToolbarButtons(activeMode) {
 }
 
 /**
+ * Cerca manualmente la linea più vicina al punto di tocco entro una tolleranza extra.
+ * Fallback per dispositivi mobile dove la precisione del dito è limitata.
+ * Fabric.js già usa padding:20 sulle linee; questo aggiunge ulteriori 25px di sicurezza.
+ * @param {Object} pointer - Coordinate {x, y} sul canvas Fabric.js
+ * @returns {fabric.Object|null}
+ */
+function findNearestTouchTarget(pointer) {
+    if (!fabricCanvas) return null;
+    const EXTRA_TOLERANCE = 25; // px extra oltre al padding già impostato nelle linee
+
+    const objects = fabricCanvas.getObjects();
+    // Scansiona dall'ultimo (in cima allo stack) al primo per rispettare lo z-order
+    for (let i = objects.length - 1; i >= 0; i--) {
+        const obj = objects[i];
+        if (!obj.selectable || !obj.evented) continue;
+        if (!obj.isPerpendicularLine && !obj.isCoupleVerticalLine) continue;
+
+        const bounds = obj.getBoundingRect();
+        if (pointer.x >= bounds.left - EXTRA_TOLERANCE &&
+            pointer.x <= bounds.left + bounds.width + EXTRA_TOLERANCE &&
+            pointer.y >= bounds.top - EXTRA_TOLERANCE &&
+            pointer.y <= bounds.top + bounds.height + EXTRA_TOLERANCE) {
+            console.log(`👆 findNearestTouchTarget: linea trovata (${obj.isPerpendicularLine ? 'orizzontale' : 'coppia verticale'})`);
+            return obj;
+        }
+    }
+    return null;
+}
+
+/**
  * Gestisce eventi mouse per le diverse modalità
  */
 function setupCanvasModesHandlers() {
@@ -187,6 +217,17 @@ function setupCanvasModesHandlers() {
             return; // Non processare ulteriori eventi
         }
 
+        // PRIORITÀ 3: In modalità default (null) permetti sempre il drag di linee esistenti.
+        // Usa findNearestTouchTarget come fallback per tocchi imprecisi su mobile.
+        if (currentCanvasMode === null) {
+            const fallbackTarget = target || findNearestTouchTarget(pointer);
+            if (fallbackTarget && (fallbackTarget.isPerpendicularLine || fallbackTarget.isCoupleVerticalLine)) {
+                console.log('👆 Modalità default - linea rilevata, avvio drag nativo Fabric.js');
+                fabricCanvas.setActiveObject(fallbackTarget);
+                return;
+            }
+        }
+
         switch (currentCanvasMode) {
             case 'pan':
                 handlePanStart(opt, pointer);
@@ -207,29 +248,31 @@ function setupCanvasModesHandlers() {
                 }
                 break;
 
-            case 'line':
-                // Se clicchiamo su una linea perpendicolare esistente, NON creare una nuova linea
-                // Lascia che Fabric.js gestisca il drag
-                if (target && target.isPerpendicularLine) {
-                    console.log('🎯 Click su linea perpendicolare esistente - drag mode');
-                    fabricCanvas.setActiveObject(target);
+            case 'line': {
+                // Cerca linea con tolleranza extra per tocco mobile (fallback)
+                const resolvedLine = target || findNearestTouchTarget(pointer);
+                if (resolvedLine && resolvedLine.isPerpendicularLine) {
+                    console.log('🎯 Tocco su linea perpendicolare esistente - drag mode');
+                    fabricCanvas.setActiveObject(resolvedLine);
                     return; // Lascia gestire a Fabric.js
                 }
                 // Altrimenti crea una nuova linea
                 handleDrawStart(opt, pointer);
                 break;
+            }
 
-            case 'couple':
-                // Se clicchiamo su una linea verticale accoppiata esistente, NON creare una nuova coppia
-                // Lascia che Fabric.js gestisca il drag
-                if (target && target.isCoupleVerticalLine) {
-                    console.log('🎯 Click su linea coppia esistente - drag mode');
-                    fabricCanvas.setActiveObject(target);
+            case 'couple': {
+                // Cerca linea coppia con tolleranza extra per tocco mobile (fallback)
+                const resolvedCouple = target || findNearestTouchTarget(pointer);
+                if (resolvedCouple && resolvedCouple.isCoupleVerticalLine) {
+                    console.log('🎯 Tocco su linea coppia verticale esistente - drag mode');
+                    fabricCanvas.setActiveObject(resolvedCouple);
                     return; // Lascia gestire a Fabric.js
                 }
                 // Altrimenti crea una nuova coppia di linee speculari
                 handleCoupleDrawStart(opt, pointer);
                 break;
+            }
 
             case 'rectangle':
             case 'circle':

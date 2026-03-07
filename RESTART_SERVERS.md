@@ -32,57 +32,42 @@ Procedura per riavviare i 3 server necessari per la webapp kimerika.cloud.
 
 ## ⚡ RIAVVIO RAPIDO (One-Liner)
 
-Copia e incolla questo comando per riavviare tutto in un colpo:
-
 ```bash
-pkill -f "uvicorn.*main:app"; pkill -f "start_webapp.py"; pkill -f "websocket_frame_api.py"; fuser -k 8001/tcp 5000/tcp 8765/tcp 2>/dev/null; sleep 2 && cd /var/www/html/kimerika.cloud && nohup python3 -m uvicorn webapp.api.main:app --host 0.0.0.0 --port 8001 --reload > api_server.log 2>&1 & nohup python3 start_webapp.py > webapp_server.log 2>&1 & cd face-landmark-localization-master && nohup python3 websocket_frame_api.py > ../websocket_server.log 2>&1 & sleep 3 && echo "✅ Server riavviati!" && ps aux | grep -E "uvicorn|start_webapp|websocket_frame" | grep -v grep
+systemctl restart kimerika-api.service kimerika-websocket.service && echo "✅ Server riavviati!"
 ```
+
+> ⚠️ **NON usare uvicorn manualmente** — crea un processo zombie che occupa la porta 8001
+> impedendo al service systemd di avviarsi (il vecchio codice rimane in esecuzione).
 
 ---
 
 ## 📝 PROCEDURA PASSO-PASSO
 
-### 1️⃣ Ferma tutti i server
+### 1️⃣ Riavvia API Server (porta 8001)
 
 ```bash
-pkill -f "uvicorn.*main:app"
-pkill -f "start_webapp.py"
-pkill -f "websocket_frame_api.py"
-sleep 2
+systemctl restart kimerika-api.service
+systemctl status kimerika-api.service
 ```
 
-### 2️⃣ Avvia API Server (porta 8001)
+### 2️⃣ Riavvia WebSocket Server (porta 8765)
 
 ```bash
-cd /var/www/html/kimerika.cloud
-nohup python3 -m uvicorn webapp.api.main:app --host 0.0.0.0 --port 8001 --reload > api_server.log 2>&1 &
+systemctl restart kimerika-websocket.service
+systemctl status kimerika-websocket.service
 ```
 
-### 3️⃣ Avvia WebApp Frontend (porta 5000)
+### 3️⃣ Verifica che tutto sia attivo
 
 ```bash
-cd /var/www/html/kimerika.cloud
-nohup python3 start_webapp.py > webapp_server.log 2>&1 &
-```
-
-### 4️⃣ Avvia WebSocket Server (porta 8765)
-
-```bash
-cd /var/www/html/kimerika.cloud/face-landmark-localization-master
-nohup python3 websocket_frame_api.py > ../websocket_server.log 2>&1 &
-```
-
-### 5️⃣ Verifica che tutto sia attivo
-
-```bash
-# Verifica processi
-ps aux | grep -E "uvicorn|start_webapp|websocket_frame" | grep -v grep
+# Verifica servizi
+systemctl status kimerika-api.service kimerika-websocket.service kimerika-auth.service
 
 # Verifica porte
-netstat -tuln | grep -E ":8001|:5000|:8765"
+ss -tlnp | grep -E ":8001|:8765"
 
 # Test API Health
-curl -s https://kimerika.cloud/api/health | jq
+curl -s http://localhost:8001/health
 ```
 
 ---
@@ -92,27 +77,35 @@ curl -s https://kimerika.cloud/api/health | jq
 ### Riavvia solo un server specifico
 
 ```bash
-# Solo API
-pkill -f "uvicorn.*main:app"; fuser -k 8001/tcp 2>/dev/null; sleep 2 && cd /var/www/html/kimerika.cloud && nohup python3 -m uvicorn webapp.api.main:app --host 0.0.0.0 --port 8001 --reload > api_server.log 2>&1 &
+# Solo API (FastAPI/main.py — porta 8001)
+systemctl restart kimerika-api.service
 
-# Solo WebApp
-pkill -f "start_webapp.py"; fuser -k 5000/tcp 2>/dev/null; sleep 2 && cd /var/www/html/kimerika.cloud && nohup python3 start_webapp.py > webapp_server.log 2>&1 &
+# Solo WebSocket (porta 8765)
+systemctl restart kimerika-websocket.service
 
-# Solo WebSocket
-pkill -f "websocket_frame_api.py"; fuser -k 8765/tcp 2>/dev/null; sleep 2 && cd /var/www/html/kimerika.cloud/face-landmark-localization-master && nohup python3 websocket_frame_api.py > ../websocket_server.log 2>&1 &
+# Solo Auth (porta auth)
+systemctl restart kimerika-auth.service
 ```
 
 ### Visualizza log in real-time
 
 ```bash
 # API log
-tail -f /var/www/html/kimerika.cloud/api_server.log
-
-# WebApp log
-tail -f /var/www/html/kimerika.cloud/webapp_server.log
+journalctl -u kimerika-api.service -f
 
 # WebSocket log
-tail -f /var/www/html/kimerika.cloud/websocket_server.log
+journalctl -u kimerika-websocket.service -f
+
+# Auth log
+journalctl -u kimerika-auth.service -f
+```
+
+### Se la porta 8001 risulta occupata dopo un crash
+
+```bash
+# Trova e uccidi il processo zombie
+fuser -k 8001/tcp
+systemctl start kimerika-api.service
 ```
 
 ### Riavvia solo JavaScript frontend

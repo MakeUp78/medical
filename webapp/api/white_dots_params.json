@@ -1,0 +1,21 @@
+{
+  "target_width": 1400,
+  "outer_px": 35,
+  "luma_min": 221,
+  "luma_max": 255,
+  "luma_lb": 181,
+  "luma_max_lb": 255,
+  "highlight_thresh_inner": 205,
+  "highlight_strength_inner": 0.8,
+  "highlight_thresh_outer": 221,
+  "highlight_strength_outer": 0.6,
+  "min_circularity_inner": 0.2,
+  "max_circularity_inner": 2.1,
+  "min_perimeter_inner": 3,
+  "max_perimeter_inner": 109,
+  "min_circularity_outer": 0.05,
+  "max_circularity_outer": 6.85,
+  "min_perimeter_outer": 1,
+  "max_perimeter_outer": 40,
+  "min_distance": 50
+}
