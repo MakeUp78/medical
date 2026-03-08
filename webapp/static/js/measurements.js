@@ -492,7 +492,7 @@ function performFaceHeightMeasurement() {
     showToast('Rilevamento landmarks per misurazione...', 'info');
     autoDetectLandmarksOnImageChange().then(success => {
       if (success) {
-        measureFaceHeight(); // Richiama se stesso
+        performFaceHeightMeasurement();
       } else {
         showToast('Impossibile rilevare landmarks per la misurazione', 'error');
       }
@@ -703,7 +703,7 @@ function performNoseWidthMeasurement() {
     showToast('Rilevamento landmarks per misurazione...', 'info');
     autoDetectLandmarksOnImageChange().then(success => {
       if (success) {
-        measureNoseWidth(); // Richiama se stesso
+        performNoseWidthMeasurement();
       } else {
         showToast('Impossibile rilevare landmarks per la misurazione', 'error');
       }
@@ -758,7 +758,7 @@ function performMouthWidthMeasurement() {
     showToast('Rilevamento landmarks per misurazione...', 'info');
     autoDetectLandmarksOnImageChange().then(success => {
       if (success) {
-        measureMouthWidth(); // Richiama se stesso
+        performMouthWidthMeasurement();
       } else {
         showToast('Impossibile rilevare landmarks per la misurazione', 'error');
       }
@@ -901,7 +901,7 @@ function performNoseHeightMeasurement() {
     showToast('Rilevamento landmarks per misurazione...', 'info');
     autoDetectLandmarksOnImageChange().then(success => {
       if (success) {
-        measureNoseHeight();
+        performNoseHeightMeasurement();
       } else {
         showToast('Impossibile rilevare landmarks per la misurazione', 'error');
       }
@@ -4896,6 +4896,28 @@ window.redrawAllMeasurementOverlays = redrawAllMeasurementOverlays;
  */
 async function measureNosalWingSymmetry(event) {
   const button = event ? event.currentTarget || event.target : null;
+
+  // Toggle OFF - rimuove l'overlay e disattiva il pulsante
+  if (button && button.classList.contains('active')) {
+    button.classList.remove('active');
+    window.nosalWingOverlayActive = false;
+
+    // Rimuove tutti gli oggetti overlay dal canvas
+    if (fabricCanvas) {
+      fabricCanvas.getObjects().filter(o => o.isNosalWingOverlay).forEach(o => fabricCanvas.remove(o));
+      fabricCanvas.renderAll();
+    }
+
+    // Rimuove le righe dalla tabella
+    const tableBody = document.getElementById('unified-table-body');
+    if (tableBody) {
+      tableBody.querySelectorAll('[data-measurement="nasal-wing"]').forEach(r => r.remove());
+    }
+
+    return;
+  }
+
+  // Toggle ON - continua con la misurazione
   if (button) {
     button.disabled = true;
     button._origText = button.textContent;
@@ -4966,10 +4988,10 @@ async function measureNosalWingSymmetry(event) {
     const absDev = Math.abs(deviationDeg);
 
     let severity, direction;
-    if (absDev < 2)       { severity = 'centrato';   direction = null; }
-    else if (absDev < 5)  { severity = 'lieve';       direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
-    else if (absDev < 10) { severity = 'media';       direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
-    else                  { severity = 'pronunciata'; direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
+    if (absDev < 2) { severity = 'centrato'; direction = null; }
+    else if (absDev < 5) { severity = 'lieve'; direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
+    else if (absDev < 10) { severity = 'media'; direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
+    else { severity = 'pronunciata'; direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
 
     _drawNosalWingOverlay({ faceAxisLine, septumPts, septumTop, septumBot, deviationDeg, severity, direction });
 
@@ -4998,9 +5020,18 @@ async function measureNosalWingSymmetry(event) {
       : 'Setto nasale centrato';
     showToast(`👃 ${toastLabel}`, absDev < 2 ? 'success' : absDev < 5 ? 'info' : 'warning', 3500);
 
+    // Attiva il pulsante (cambia colore)
+    if (button) {
+      button.classList.add('active');
+    }
+
   } catch (error) {
     console.error('❌ Errore setto nasale:', error);
     showToast(`❌ Errore: ${error.message}`, 'error');
+    // In caso di errore, rimuove la classe active
+    if (button) {
+      button.classList.remove('active');
+    }
   } finally {
     if (button) {
       button.disabled = false;
@@ -5023,12 +5054,12 @@ function _drawNosalWingOverlay(data) {
 
   const { faceAxisLine, septumPts, septumTop, septumBot, deviationDeg, severity, direction } = data;
 
-  const COL_FACE   = '#FF0000';  // rosso tratteggiato = asse viso (identico tasto ASSE)
+  const COL_FACE = '#FF0000';  // rosso tratteggiato = asse viso (identico tasto ASSE)
   const COL_SEPTUM = direction
     ? (deviationDeg > 0 ? '#FF9800' : '#00E5FF')  // arancione=dx, ciano=sx
     : '#4CAF50';                                    // verde=centrato
-  const COL_DOTS   = '#FFD700';
-  const COL_LABEL  = '#FFFFFF';
+  const COL_DOTS = '#FFD700';
+  const COL_LABEL = '#FFFFFF';
 
   function mkF(obj) { return Object.assign(obj, { isNosalWingOverlay: true }); }
 
@@ -5066,7 +5097,7 @@ function _drawNosalWingOverlay(data) {
   // 3. Punti landmark dorso naso
   septumPts.forEach((p, i) => {
     const isFirst = i === 0;
-    const isLast  = i === septumPts.length - 1;
+    const isLast = i === septumPts.length - 1;
     addDot(p, isFirst ? '#FFFFFF' : isLast ? COL_SEPTUM : COL_DOTS, isFirst || isLast ? 5 : 3);
   });
 
@@ -5129,10 +5160,10 @@ window.redrawNosalWingOverlay = function () {
   const absDev = Math.abs(deviationDeg);
 
   let severity, direction;
-  if (absDev < 2)       { severity = 'centrato';   direction = null; }
-  else if (absDev < 5)  { severity = 'lieve';       direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
-  else if (absDev < 10) { severity = 'media';       direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
-  else                  { severity = 'pronunciata'; direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
+  if (absDev < 2) { severity = 'centrato'; direction = null; }
+  else if (absDev < 5) { severity = 'lieve'; direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
+  else if (absDev < 10) { severity = 'media'; direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
+  else { severity = 'pronunciata'; direction = deviationDeg > 0 ? 'destra' : 'sinistra'; }
 
   _drawNosalWingOverlay({ faceAxisLine, septumPts, septumTop, septumBot, deviationDeg, severity, direction });
 };

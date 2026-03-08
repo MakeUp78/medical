@@ -1793,17 +1793,35 @@ body {
 
 @media (max-width: 768px) {
   #webcam-fullscreen-overlay #wfs-stop-btn {
-    /* Centrato in basso — lontano dagli HUD del canvas */
+    /* Spostato a destra per fare spazio al bottone switch */
     top: unset !important;
-    right: unset !important;
+    right: calc(12px + env(safe-area-inset-right, 0px)) !important;
     bottom: calc(28px + env(safe-area-inset-bottom, 0px));
-    left: 50%;
-    transform: translateX(-50%);
+    left: unset;
+    transform: none;
     min-height: 52px;
-    min-width: 160px;
-    font-size: 16px;
-    padding: 14px 28px;
+    min-width: 130px;
+    font-size: 15px;
+    padding: 14px 18px;
     border-radius: 12px;
+    -webkit-tap-highlight-color: transparent;
+    white-space: nowrap;
+  }
+
+  #webcam-fullscreen-overlay #wfs-switch-camera-btn {
+    position: absolute;
+    bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+    left: calc(12px + env(safe-area-inset-left, 0px));
+    min-height: 52px;
+    min-width: 130px;
+    font-size: 15px;
+    padding: 14px 18px;
+    border-radius: 12px;
+    background: rgba(30, 120, 220, 0.85);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    z-index: 10002;
     -webkit-tap-highlight-color: transparent;
     white-space: nowrap;
   }
@@ -1856,4 +1874,90 @@ body {
     pointer-events: none;
     z-index: 10001;
   }
+}
+
+/* ========================================
+   PANNELLO ASSISTENTE VOCALE - Comandi
+   ======================================== */
+.voice-status-sidebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #e0e0e0;
+}
+.status-indicator-sidebar {
+  font-size: 16px;
+}
+.voice-controls-sidebar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.voice-controls-sidebar .btn {
+  flex: 1;
+  font-size: 13px;
+  padding: 7px 6px;
+}
+.voice-info-sidebar {
+  font-size: 11px;
+  color: #aaa;
+  padding: 4px 6px;
+  background: rgba(0,0,0,0.15);
+  border-radius: 4px;
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+.voice-commands-help-sidebar {
+  margin-top: 4px;
+}
+.voice-commands-help-sidebar summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b0b8d0;
+  padding: 5px 6px;
+  background: rgba(102,126,234,0.15);
+  border-radius: 5px;
+  user-select: none;
+  list-style: none;
+}
+.voice-commands-help-sidebar summary::-webkit-details-marker { display: none; }
+.voice-commands-help-sidebar[open] summary {
+  border-radius: 5px 5px 0 0;
+  margin-bottom: 2px;
+}
+.commands-list-sidebar {
+  background: rgba(0,0,0,0.18);
+  border-radius: 0 0 5px 5px;
+  padding: 4px 2px 6px 2px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+.cmd-group-title-sidebar {
+  font-size: 10px;
+  font-weight: 700;
+  color: #8899cc;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 6px 8px 2px 8px;
+  margin-top: 4px;
+}
+.cmd-group-title-sidebar:first-child {
+  margin-top: 0;
+}
+.command-item-sidebar {
+  font-size: 11px;
+  color: #ccc;
+  padding: 3px 8px;
+  line-height: 1.4;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.command-item-sidebar strong {
+  color: #e8d5ff;
+  font-weight: 600;
 }

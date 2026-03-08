@@ -131,11 +131,59 @@ class VoiceAssistant {
   }
 
   /**
-   * Riproduce tutti i messaggi in coda dopo lo sblocco (serializzato con mutex)
+   * Sospende l'elaborazione dei comandi vocali durante la riproduzione TTS.
+   * Usa due meccanismi complementari:
+   * 1. _ignoringResults: scarta immediatamente ogni onresult (funziona anche se
+   *    recognition.stop() non ha ancora effetto per via dell'asincronismo del browser)
+   * 2. recognition.stop(): riduce il carico e il rischio di catturare audio TTS
    */
+  _pauseRecognition() {
+    if (!this._ignoringResults) {
+      this._ignoringResults = true;
+      console.log('🔇 Riconoscimento vocale in pausa (TTS attivo)');
+    }
+    if (this.recognition && this.isListening && !this._recognitionPausedByTTS) {
+      this._recognitionPausedByTTS = true;
+      try {
+        this.recognition.stop();
+      } catch (_) {}
+    }
+    // Cancella eventuale cooldown precedente ancora in attesa
+    if (this._resumeCooldownTimer) {
+      clearTimeout(this._resumeCooldownTimer);
+      this._resumeCooldownTimer = null;
+    }
+  }
+
+  /**
+   * Riattiva il riconoscimento vocale dopo la riproduzione TTS.
+   * Il cooldown di 800ms garantisce che:
+   * - l'audio sia fisicamente terminato dagli altoparlanti
+   * - il browser non consegni più onresult in ritardo relativi al TTS
+   */
+  _resumeRecognition() {
+    // Cooldown: aspetta che gli altoparlanti smettano di risuonare.
+    // 1500ms per coprire anche frasi TTS lunghe (es. risposta simmetria ~3s)
+    // il microfono riprende solo dopo che l'audio è fisicamente finito + margine.
+    const COOLDOWN_MS = 1500;
+    this._resumeCooldownTimer = setTimeout(() => {
+      this._resumeCooldownTimer = null;
+      this._ignoringResults = false;
+      this._recognitionPausedByTTS = false;
+      console.log(`🎤 Riconoscimento vocale riattivato (cooldown ${COOLDOWN_MS}ms completato)`);
+      if (this.isListening && !this._flushRunning) {
+        try {
+          this.recognition.start();
+        } catch (_) {}
+      }
+    }, COOLDOWN_MS);
+  }
+
   async _flushQueue() {
     if (this._flushRunning) return;
     this._flushRunning = true;
+    // Sospendi microfono prima di iniziare a riprodurre audio
+    this._pauseRecognition();
     while (this.pendingQueue.length > 0) {
       const item = this.pendingQueue.shift();
       if (item.text) console.log(`🔊 (coda) ${item.text}`);
@@ -154,13 +202,17 @@ class VoiceAssistant {
           // Rimetti in testa alla coda e attendi sblocco
           this.pendingQueue.unshift(item);
           this.audioUnlocked = false;
+          this._flushRunning = false;
+          this._resumeRecognition();
           this._registerUnlockListeners();
-          break;
+          return;
         }
         console.warn('Errore riproduzione coda:', e);
       }
     }
     this._flushRunning = false;
+    // Riattiva microfono dopo che tutta la coda è svuotata
+    this._resumeRecognition();
   }
 
   /**
@@ -273,6 +325,16 @@ class VoiceAssistant {
 
     // Event: risultato riconosciuto
     this.recognition.onresult = (event) => {
+      // Scarta qualsiasi risultato arrivato mentre il TTS è in riproduzione o
+      // durante il cooldown post-TTS. recognition.stop() è asincrono e il browser
+      // può consegnare risultati in ritardo anche dopo la chiamata.
+      if (this._ignoringResults) {
+        const last = event.results.length - 1;
+        const ignored = event.results[last][0].transcript;
+        console.log(`🔇 Risultato ignorato durante TTS: "${ignored}"`);
+        return;
+      }
+
       const last = event.results.length - 1;
       const keyword = event.results[last][0].transcript.toLowerCase().trim();
 
@@ -292,8 +354,8 @@ class VoiceAssistant {
 
     // Event: fine riconoscimento
     this.recognition.onend = () => {
-      if (this.isListening) {
-        // Riavvia se dovrebbe essere ancora in ascolto
+      // Non riavviare se sospeso volontariamente durante TTS
+      if (this.isListening && !this._recognitionPausedByTTS) {
         this.recognition.start();
       }
     };
@@ -335,10 +397,22 @@ class VoiceAssistant {
         clearTimeout(this.activeTimeout);
         this.activeTimeout = null;
       }
+      // Cancella eventuale cooldown TTS in sospeso
+      if (this._resumeCooldownTimer) {
+        clearTimeout(this._resumeCooldownTimer);
+        this._resumeCooldownTimer = null;
+      }
+      // Cancella debounce comando in sospeso
+      if (this._commandDebounceTimer) {
+        clearTimeout(this._commandDebounceTimer);
+        this._commandDebounceTimer = null;
+      }
+      this._pendingCommandText = null;
+      this._ignoringResults = false;
+      this._recognitionPausedByTTS = false;
       this.recognition.stop();
       console.log('🎤 Ascolto vocale fermato');
       this.updateUI();
-      // Non chiamiamo speak() qui per evitare problemi
     }
   }
 
@@ -387,6 +461,24 @@ class VoiceAssistant {
     keywordLower = keywordLower.replace(/\bamerica\b/gi, 'kimerika');
     keywordLower = keywordLower.replace(/\bmerica\b/gi, 'kimerika');
 
+    // Rimuove la wake word e le sue varianti dal testo (utile in modalità ATTIVA
+    // quando il browser include ancora "chimerica" nell'utterance)
+    const stripWakeWord = (text) => {
+      let result = text;
+      for (const variant of this.activationKeywordVariants) {
+        // Rimuove la variante ovunque appaia nel testo
+        result = result.replace(new RegExp(variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '');
+      }
+      // Rimuove anche con matching fonetico: parole simili a "kimerika"
+      result = result.split(/\s+/).filter(word => {
+        if (!word) return false;
+        if (this.isSimilarPhonetically(word, 'kimerika', 2)) return false;
+        if (this.isSimilarPhonetically(word, 'chimerica', 2)) return false;
+        return true;
+      }).join(' ').trim();
+      return result;
+    };
+
     // MODALITÀ PASSIVA: Ascolta solo "KIMERIKA" + eventuale comando
     if (this.listeningMode === "passive") {
       this.lastHeardPhrase = `🔵 PASSIVO: ${keyword} → ${keywordLower}`;
@@ -412,26 +504,32 @@ class VoiceAssistant {
       if (foundVariant) {
         console.log(`✅ PAROLA CHIAVE RILEVATA: '${foundVariant.toUpperCase()}' → ATTIVAZIONE`);
 
-        // Estrae il comando dalla stessa frase (es: "KIMERIKA avvia webcam" → "avvia webcam")
-        const commandPart = keywordLower.replace(foundVariant, "").trim();
+        // Estrae il comando dalla stessa frase rimuovendo tutte le varianti della wake word
+        const commandPart = stripWakeWord(keywordLower);
 
         if (commandPart) {
-          // Ha detto KIMERIKA + COMANDO nella stessa frase → esegui subito
-          console.log(`🟢 [ATTIVO] Comando immediato: '${commandPart}'`);
+          // Ha detto KIMERIKA + COMANDO nella stessa frase.
+          // Usa debounce anche qui: il browser può consegnare versioni
+          // parziali dello stesso utterance ("kimerika asse di", poi
+          // "kimerika asse di simmetria") — esegui solo l'ultima versione.
+          console.log(`🟢 [ATTIVO] Candidato comando immediato: '${commandPart}'`);
           this.lastHeardPhrase = `🟢 ATTIVO: ${commandPart}`;
           this.listeningMode = "active";
           this.lastSpeechTime = Date.now();
           this.updateUI();
 
-          // Processa il comando immediatamente
-          await this.executeVoiceCommand(commandPart);
-
-          // Torna in modalità passiva dopo l'esecuzione
-          setTimeout(() => {
+          if (this._commandDebounceTimer) clearTimeout(this._commandDebounceTimer);
+          this._pendingCommandText = commandPart;
+          this._commandDebounceTimer = setTimeout(async () => {
+            this._commandDebounceTimer = null;
+            const commandToRun = this._pendingCommandText;
+            this._pendingCommandText = null;
+            console.log(`🟢 [ATTIVO] Esecuzione comando immediato (debounce): '${commandToRun}'`);
             this.listeningMode = "passive";
             this.lastHeardPhrase = "";
             this.updateUI();
-          }, 1000);
+            await this.executeVoiceCommand(commandToRun);
+          }, 600);
         } else {
           // Ha detto solo KIMERIKA → entra in modalità attiva per 4 secondi
           this.listeningMode = "active";
@@ -446,18 +544,44 @@ class VoiceAssistant {
       return;
     }
 
-    // MODALITÀ ATTIVA: Processa comandi vocali
+    // MODALITÀ ATTIVA: Processa comandi vocali con debounce
+    // Il browser consegna lo stesso utterance in versioni sempre più lunghe
+    // ("asse di", "asse di si", "asse di simmetria") — il debounce aspetta
+    // che l'utterance sia stabile prima di eseguire.
     if (this.listeningMode === "active") {
-      this.lastHeardPhrase = `🟢 ATTIVO: ${keyword}`;
-      console.log(`🟢 [ATTIVO] Comando riconosciuto: '${keyword}'`);
+      // Rimuove la wake word se il browser la include ancora nell'utterance
+      // (es: "chimerica altezza viso" → "altezza viso")
+      const cleanedKeyword = stripWakeWord(keywordLower);
+      this.lastHeardPhrase = `🟢 ATTIVO: ${cleanedKeyword || keywordLower}`;
+      console.log(`🟢 [ATTIVO] Candidato comando: '${cleanedKeyword || keywordLower}'`);
       this.lastSpeechTime = Date.now();
       this.updateUI();
 
-      // Resetta timeout
-      this.setActiveTimeout();
+      // Cancella debounce precedente (utterance ancora in evoluzione)
+      if (this._commandDebounceTimer) {
+        clearTimeout(this._commandDebounceTimer);
+      }
 
-      // Esegui il comando
-      await this.executeVoiceCommand(keywordLower);
+      // Salva il testo più aggiornato (già pulito dalla wake word) e aspetta stabilità
+      this._pendingCommandText = cleanedKeyword || keywordLower;
+      this._commandDebounceTimer = setTimeout(async () => {
+        this._commandDebounceTimer = null;
+        const commandToRun = this._pendingCommandText;
+        this._pendingCommandText = null;
+
+        console.log(`🟢 [ATTIVO] Esecuzione comando (debounce): '${commandToRun}'`);
+
+        // Torna subito in modalità passiva: un comando = una esecuzione
+        this.listeningMode = "passive";
+        this.lastHeardPhrase = "";
+        if (this.activeTimeout) {
+          clearTimeout(this.activeTimeout);
+          this.activeTimeout = null;
+        }
+        this.updateUI();
+
+        await this.executeVoiceCommand(commandToRun);
+      }, 600);
     }
   }
 
@@ -465,7 +589,22 @@ class VoiceAssistant {
    * Esegue un comando vocale (metodo estratto per riuso)
    */
   async executeVoiceCommand(commandText) {
+    // Protezione anti-doppia-esecuzione: ignora comando se identico
+    // a quello appena eseguito nei 2 secondi precedenti.
+    const now = Date.now();
+    if (commandText === this._lastExecutedCommand &&
+        now - (this._lastExecutedTime || 0) < 2000) {
+      console.log(`⚠️ Comando duplicato ignorato (${commandText}) — eseguito ${now - this._lastExecutedTime}ms fa`);
+      return;
+    }
+    this._lastExecutedCommand = commandText;
+    this._lastExecutedTime = now;
+
     try {
+      // Svuota la coda audio pendente: evita che TTS del comando precedente
+      // venga riprodotto di nuovo quando arriva un nuovo comando vocale.
+      this.pendingQueue = this.pendingQueue.filter(item => item.isCoach);
+
       // Prima controlla se è un comando per il report di analisi
       if (typeof window.processReportVoiceCommand === 'function') {
         const reportHandled = await window.processReportVoiceCommand(commandText);
@@ -483,10 +622,16 @@ class VoiceAssistant {
       const data = await response.json();
 
       if (data.success && data.action) {
-        console.log(`✅ Azione riconosciuta: ${data.action}`);
-        this.executeAction(data.action);
-        // Feedback vocale solo se esplicitamente fornito dal backend
-        // (evita doppio feedback con toast delle funzioni)
+        console.log(`✅ Azione riconosciuta: ${data.action}${data.param ? ` (param: ${data.param})` : ''}`);
+        // Sopprime il feedback vocale dei wrapper toggleAxis/toggleLandmarks/etc.
+        // in index.html, che altrimenti generano TTS con parole trigger ("asse",
+        // "simmetria"...) che il riconoscimento ri-cattura come nuovi comandi.
+        window.suppressVoiceFeedback = true;
+        this.executeAction(data.action, data.param);
+        // Ripristina dopo un tick (i wrapper leggono il flag in modo sincrono)
+        setTimeout(() => { window.suppressVoiceFeedback = false; }, 0);
+        // Il backend non restituisce message per i comandi toggle,
+        // quindi questo blocco non genera TTS aggiuntivo in quei casi.
         if (data.message && data.message.trim()) {
           console.log(`🔊 Feedback vocale: ${data.message}`);
           this.speak(data.message);
@@ -502,8 +647,8 @@ class VoiceAssistant {
   /**
    * Esegue azione nel frontend
    */
-  executeAction(action) {
-    console.log(`🎯 Esecuzione azione: ${action}`);
+  executeAction(action, param) {
+    console.log(`🎯 Esecuzione azione: ${action}${param ? ` (param: ${param})` : ''}`);
 
     // DEBUG: Verifica azione ricevuta
     if (action === 'stopWebcam') {
@@ -512,121 +657,129 @@ class VoiceAssistant {
       console.log('⚠️ AZIONE START WEBCAM RILEVATA');
     }
 
+    // Helper generico: clicca pulsante con selector o chiama funzione globale
+    const clickBtn = (selector, fallbackFn) => {
+      const btn = document.querySelector(selector);
+      if (btn) btn.click();
+      else if (typeof fallbackFn === 'function') fallbackFn();
+    };
+
     // Mappa azioni -> funzioni globali della webapp
     const actionMap = {
+      // --- SORGENTE ---
+      'loadImage': () => {
+        const btn = document.querySelector('button[onclick*="loadImage"]');
+        if (btn) btn.click();
+        else window.loadImage?.();
+      },
+      'loadVideo': () => {
+        const btn = document.querySelector('button[onclick*="loadVideo"]');
+        if (btn) btn.click();
+        else window.loadVideo?.();
+      },
+      'startWebcam': () => clickBtn('button[onclick*="startWebcam"]', window.startWebcam),
+      'stopWebcam': () => clickBtn('button[onclick*="stopWebcam"]', window.stopWebcam),
+
+      // --- TOGGLE OVERLAY ---
       'toggleAxis': () => {
         const btn = document.querySelector('#axis-btn');
-        console.log('toggleAxis - Pulsante trovato:', btn);
         if (btn) btn.click();
         else window.toggleAxis?.();
       },
       'toggleLandmarks': () => {
         const btn = document.querySelector('#landmarks-btn');
-        console.log('toggleLandmarks - Pulsante trovato:', btn);
         if (btn) btn.click();
         else window.toggleLandmarks?.();
       },
       'toggleGreenDots': () => {
         const btn = document.querySelector('#green-dots-btn');
-        console.log('toggleGreenDots - Pulsante trovato:', btn);
         if (btn) btn.click();
         else window.toggleGreenDots?.();
       },
-      'startWebcam': () => {
-        const btn = document.querySelector('button[onclick*="startWebcam"]');
-        console.log('startWebcam - Pulsante trovato:', btn);
+      'toggleMeasureMode': () => {
+        const btn = document.querySelector('#measure-btn');
         if (btn) btn.click();
-        else window.startWebcam?.();
+        else window.toggleMeasureMode?.();
       },
-      'stopWebcam': () => {
-        const btn = document.querySelector('button[onclick*="stopWebcam"]');
-        console.log('stopWebcam - Pulsante trovato:', btn);
-        if (btn) btn.click();
-        else window.stopWebcam?.();
-      },
-      'loadVideo': () => {
-        const btn = document.querySelector('button[onclick*="loadVideo"]');
-        console.log('loadVideo - Pulsante trovato:', btn);
-        if (btn) btn.click();
-        else window.loadVideo?.();
-      },
-      'analyzeFace': () => window.analyzeFace?.(),
+
+      // --- CANVAS / ROTAZIONI ---
       'clearCanvas': () => window.clearCanvas?.(),
+      'clearMeasurements': () => {
+        if (typeof window.clearAllMeasurementOverlays === 'function') window.clearAllMeasurementOverlays();
+      },
+      'rotateLeft90': () => window.rotateImage90CounterClockwise?.(),
+      'rotateRight90': () => window.rotateImage90Clockwise?.(),
+      'rotateLeft1': () => window.rotateImageCounterClockwise?.(),
+      'rotateRight1': () => window.rotateImageClockwise?.(),
+      'autoAlignAxis': () => window.autoRotateToVerticalAxis?.(),
+
+      // --- ANALISI FACCIALE ---
+      'analyzeFace': () => window.analyzeFace?.(),
+      'performCompleteAnalysis': () => {
+        const btn = document.querySelector('button[onclick*="performCompleteAnalysis"]');
+        if (btn) btn.click();
+        else window.performCompleteAnalysis?.();
+      },
+
+      // --- MISURAZIONI ---
+      'measureFacialSymmetry': () => {
+        const btn = document.querySelector('button[onclick*="measureFacialSymmetry"]');
+        if (btn) btn.click();
+        else window.measureFacialSymmetry?.();
+      },
+      'estimate_age': () => {
+        const btn = document.querySelector('button[onclick*="estimateAge"]');
+        if (btn) btn.click();
+        else window.estimateAge?.();
+      },
+      'measureFaceWidth': () => window.measureFaceWidth?.(null),
+      'measureFaceHeight': () => window.measureFaceHeight?.(null),
+      'measureEyeDistance': () => window.measureEyeDistance?.(null),
+      'measureNoseWidth': () => window.measureNoseWidth?.(null),
+      'measureNoseHeight': () => window.measureNoseHeight?.(null),
+      'measureMouthWidth': () => window.measureMouthWidth?.(null),
+      'measureEyeAreas': () => window.measureEyeAreas?.(null),
+      'measureForeheadWidth': () => window.measureForeheadWidth?.(null),
+      'measureFaceProportions': () => window.measureFaceProportions?.(null),
+      'measureEyeRotationDiff': () => window.measureEyeRotationDiff?.(null),
+      'measureNosalWingSymmetry': () => window.measureNosalWingSymmetry?.(null),
+      'measureEyebrowSymmetry': () => window.measureEyebrowSymmetry?.(null),
+
+      // --- CORREZIONE SOPRACCIGLIA ---
       'analyzeLeftEyebrow': () => window.analyzeLeftEyebrow?.(),
       'analyzeRightEyebrow': () => window.analyzeRightEyebrow?.(),
-      'measureFacialSymmetry': () => {
-        console.log('🎯 Esecuzione comando measureFacialSymmetry');
-        const btn = document.querySelector('button[onclick*="measureFacialSymmetry"]');
-        console.log('measureFacialSymmetry - Pulsante trovato:', btn);
-        if (btn) {
-          console.log('✅ Click sul pulsante simmetria');
-          btn.click();
-          // Dopo 2 secondi, leggi il risultato della simmetria
-          setTimeout(() => {
-            if (window.lastSymmetryMessage) {
-              console.log('🔊 Pronuncia risultato simmetria:', window.lastSymmetryMessage);
-              voiceAssistant.speak(window.lastSymmetryMessage);
-            } else {
-              console.warn('⚠️ Nessun messaggio simmetria disponibile');
-            }
-          }, 2000);
-        } else {
-          console.warn('⚠️ Pulsante non trovato, provo funzione globale');
-          if (typeof window.measureFacialSymmetry === 'function') {
-            window.measureFacialSymmetry();
-          } else {
-            console.error('❌ Funzione measureFacialSymmetry non disponibile');
-          }
-        }
-      },
       'analyze_eyebrow_design': () => {
-        console.log('🔍 Esecuzione comando analyze_eyebrow_design');
         if (typeof window.analyze_eyebrow_design === 'function') {
-          console.log('✅ Chiamata funzione analyze_eyebrow_design');
           window.analyze_eyebrow_design();
         } else {
-          console.error('❌ Funzione analyze_eyebrow_design non disponibile');
           voiceAssistant.speak('Funzione non disponibile');
         }
       },
       'show_left_eyebrow_with_voice': () => {
-        console.log('🔍 Esecuzione comando show_left_eyebrow_with_voice (preferenza destra)');
         if (typeof window.show_left_eyebrow_with_voice === 'function') {
-          console.log('✅ Chiamata funzione show_left_eyebrow_with_voice');
           window.show_left_eyebrow_with_voice();
         } else {
-          console.error('❌ Funzione show_left_eyebrow_with_voice non disponibile');
           voiceAssistant.speak('Funzione non disponibile');
         }
       },
       'show_right_eyebrow_with_voice': () => {
-        console.log('🔍 Esecuzione comando show_right_eyebrow_with_voice (preferenza sinistra)');
         if (typeof window.show_right_eyebrow_with_voice === 'function') {
-          console.log('✅ Chiamata funzione show_right_eyebrow_with_voice');
           window.show_right_eyebrow_with_voice();
         } else {
-          console.error('❌ Funzione show_right_eyebrow_with_voice non disponibile');
           voiceAssistant.speak('Funzione non disponibile');
         }
       },
-      'estimate_age': () => {
-        console.log('🎂 Esecuzione comando estimate_age');
-        const btn = document.querySelector('button[onclick*="estimateAge"]');
-        console.log('estimateAge - Pulsante trovato:', btn);
-        if (btn) {
-          console.log('✅ Click sul pulsante stima età');
-          btn.click();
-        } else {
-          console.warn('⚠️ Pulsante stima età non trovato, provo funzione globale');
-          if (typeof window.estimateAge === 'function') {
-            window.estimateAge();
-          } else {
-            console.error('❌ Funzione estimateAge non disponibile');
-            voiceAssistant.speak('Funzione stima età non disponibile');
-          }
-        }
-      },
     };
+
+    // Azioni con parametro (non in actionMap statica)
+    if (action === 'readGreenDotComparison') {
+      if (typeof window.readGreenDotComparison === 'function' && param) {
+        window.readGreenDotComparison(param);
+      } else {
+        console.warn(`⚠️ readGreenDotComparison: funzione non trovata o param mancante`);
+      }
+      return;
+    }
 
     const func = actionMap[action];
     if (func) {

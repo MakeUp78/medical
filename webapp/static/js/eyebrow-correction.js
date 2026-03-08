@@ -758,6 +758,16 @@ function displayCorrectionWindow(croppedCanvas, side) {
   modal.appendChild(content);
   document.body.appendChild(modal);
 
+  // Esponi dati popup globalmente per sincronizzazione TTS
+  window._eyebrowCorrectionPopup = {
+    modal,
+    imageContainer,
+    img,
+    croppedCanvas,
+    scale,
+    side
+  };
+
   console.log('✅ Finestra modale aperta');
 }
 

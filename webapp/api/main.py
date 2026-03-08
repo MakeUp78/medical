@@ -375,6 +375,7 @@ class VoiceKeywordResponse(BaseModel):
     keyword: str
     action: Optional[str] = None
     message: Optional[str] = None
+    param: Optional[str] = None  # parametro aggiuntivo per azioni che lo richiedono
 
 # === MODELLI PYDANTIC PER CONTACT FORM ===
 
@@ -3032,7 +3033,7 @@ async def process_voice_keyword(request: VoiceKeywordCommand):
     # Mappa parole chiave -> azioni frontend
     # IMPORTANTE: pattern più specifici PRIMA per evitare conflitti
     keyword_map = {
-        # Stop webcam - PRIMA di "webcam" (senza message per evitare doppio feedback)
+        # ── STOP WEBCAM (prima di "webcam" generica per evitare conflitti) ──
         "ferma webcam": {"action": "stopWebcam"},
         "stop webcam": {"action": "stopWebcam"},
         "chiudi webcam": {"action": "stopWebcam"},
@@ -3041,49 +3042,137 @@ async def process_voice_keyword(request: VoiceKeywordCommand):
         "ferma camera": {"action": "stopWebcam"},
         "stop camera": {"action": "stopWebcam"},
         "chiudi camera": {"action": "stopWebcam"},
-        # Start webcam - DOPO stop (senza message per evitare doppio feedback)
+        # ── START WEBCAM ──
         "avvia webcam": {"action": "startWebcam"},
         "avvia camera": {"action": "startWebcam"},
         "attiva webcam": {"action": "startWebcam"},
         "accendi webcam": {"action": "startWebcam"},
         "apri webcam": {"action": "startWebcam"},
         "webcam": {"action": "startWebcam"},
-        # Altri comandi
-        "carica immagine": {"action": "loadImage", "message": "Apertura caricamento immagine"},
-        "carica video": {"action": "loadVideo", "message": "Apertura caricamento video"},
-        "punti verdi": {"action": "toggleGreenDots", "message": "Attivazione/disattivazione punti verdi"},
-        "sopracciglio sinistro": {"action": "analyzeLeftEyebrow", "message": "Analisi sopracciglio sinistro"},
-        "sopracciglio destro": {"action": "analyzeRightEyebrow", "message": "Analisi sopracciglio destro"},
-        "asse": {"action": "toggleAxis", "message": "Attivazione/disattivazione asse di simmetria"},
-        "landmarks": {"action": "toggleLandmarks", "message": "Attivazione/disattivazione landmarks"},
-        "verde": {"action": "toggleGreenDots", "message": "Attivazione/disattivazione punti verdi"},
-        "immagine": {"action": "loadImage", "message": "Apertura caricamento immagine"},
-        "video": {"action": "loadVideo", "message": "Apertura caricamento video"},
-        "analizza": {"action": "analyzeFace", "message": "Avvio analisi facciale"},
-        "analisi": {"action": "analyzeFace", "message": "Avvio analisi facciale"},
-        "cancella": {"action": "clearCanvas", "message": "Pulizia canvas"},
-        "pulisci": {"action": "clearCanvas", "message": "Pulizia canvas"},
-        # Comandi per simmetria facciale (con tutte le varianti: viso/volto/faccia)
-        "simmetria": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
-        "simmetrico": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
-        "simmetrica": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
-        "lato più grande": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
-        "quale lato": {"action": "measureFacialSymmetry", "message": "Analisi simmetria facciale"},
-        # Comando per correzione progettazione sopraccigliare
-        "correggimi la progettazione": {"action": "analyze_eyebrow_design", "message": "Avvio analisi della progettazione sopraccigliare"},
-        "correggi progettazione": {"action": "analyze_eyebrow_design", "message": "Avvio analisi della progettazione sopraccigliare"},
-        "correzione progettazione": {"action": "analyze_eyebrow_design", "message": "Avvio analisi della progettazione sopraccigliare"},
-        "analizza progettazione": {"action": "analyze_eyebrow_design", "message": "Avvio analisi della progettazione sopraccigliare"},
-        # Comando per preferenza destra (correzione sopracciglio sinistro)
-        "preferenza destra": {"action": "show_left_eyebrow_with_voice", "message": ""},
-        "preferenza a destra": {"action": "show_left_eyebrow_with_voice", "message": ""},
-        "correzione destra": {"action": "show_left_eyebrow_with_voice", "message": ""},
-        "correzione a destra": {"action": "show_left_eyebrow_with_voice", "message": ""},
-        # Comando per preferenza sinistra (correzione sopracciglio destro)
-        "preferenza sinistra": {"action": "show_right_eyebrow_with_voice", "message": ""},
-        "preferenza a sinistra": {"action": "show_right_eyebrow_with_voice", "message": ""},
-        "correzione sinistra": {"action": "show_right_eyebrow_with_voice", "message": ""},
-        "correzione a sinistra": {"action": "show_right_eyebrow_with_voice", "message": ""},
+        # ── SORGENTE ──
+        "carica immagine": {"action": "loadImage"},
+        "apri immagine": {"action": "loadImage"},
+        "immagine": {"action": "loadImage"},
+        "carica video": {"action": "loadVideo"},
+        "apri video": {"action": "loadVideo"},
+        "video": {"action": "loadVideo"},
+        # ── TOGGLE OVERLAY ──
+        # NOTA: "allinea asse" deve stare prima di "asse" per evitare conflitti substring
+        "asse di simmetria": {"action": "toggleAxis"},
+        "allinea asse": {"action": "autoAlignAxis"},
+        "asse": {"action": "toggleAxis"},
+        "landmarks": {"action": "toggleLandmarks"},
+        "punti facciali": {"action": "toggleLandmarks"},
+        "trova differenze": {"action": "toggleGreenDots"},
+        "punti verdi": {"action": "toggleGreenDots"},
+        # ── LETTURA COMPARAZIONI GREEN DOTS ──
+        # IMPORTANTE: le keyword specifiche devono stare PRIMA di "differenze" generica.
+        # Ogni punto anatomico ha molti sinonimi fonetici perché il browser STT
+        # può restituire varianti diverse della stessa lettera pronunciata.
+        #
+        # PUNTO A0 (inizio sopracciglio, versione zero)
+        "differenze a zero": {"action": "readGreenDotComparison", "param": "LA0 vs RA0"},
+        "differenze ah zero": {"action": "readGreenDotComparison", "param": "LA0 vs RA0"},
+        "differenze alfa zero": {"action": "readGreenDotComparison", "param": "LA0 vs RA0"},
+        "differenze punto a zero": {"action": "readGreenDotComparison", "param": "LA0 vs RA0"},
+        "differenze a0": {"action": "readGreenDotComparison", "param": "LA0 vs RA0"},
+        # PUNTO C1 (picco/apice sopracciglio, versione 1)
+        "differenze ci uno": {"action": "readGreenDotComparison", "param": "LC1 vs RC1"},
+        "differenze c uno": {"action": "readGreenDotComparison", "param": "LC1 vs RC1"},
+        "differenze che uno": {"action": "readGreenDotComparison", "param": "LC1 vs RC1"},
+        "differenze chi uno": {"action": "readGreenDotComparison", "param": "LC1 vs RC1"},
+        "differenze c1": {"action": "readGreenDotComparison", "param": "LC1 vs RC1"},
+        "differenze ci 1": {"action": "readGreenDotComparison", "param": "LC1 vs RC1"},
+        "differenze punto c uno": {"action": "readGreenDotComparison", "param": "LC1 vs RC1"},
+        "differenze punto c1": {"action": "readGreenDotComparison", "param": "LC1 vs RC1"},
+        # PUNTO B (coda sopracciglio)
+        "differenze bi": {"action": "readGreenDotComparison", "param": "LB vs RB"},
+        "differenze b": {"action": "readGreenDotComparison", "param": "LB vs RB"},
+        "differenze bee": {"action": "readGreenDotComparison", "param": "LB vs RB"},
+        "differenze punto b": {"action": "readGreenDotComparison", "param": "LB vs RB"},
+        "differenze coda": {"action": "readGreenDotComparison", "param": "LB vs RB"},
+        # PUNTO C (apice sopracciglio)
+        "differenze ci": {"action": "readGreenDotComparison", "param": "LC vs RC"},
+        "differenze c": {"action": "readGreenDotComparison", "param": "LC vs RC"},
+        "differenze che": {"action": "readGreenDotComparison", "param": "LC vs RC"},
+        "differenze chi": {"action": "readGreenDotComparison", "param": "LC vs RC"},
+        "differenze punto c": {"action": "readGreenDotComparison", "param": "LC vs RC"},
+        "differenze apice": {"action": "readGreenDotComparison", "param": "LC vs RC"},
+        # PUNTO A (inizio sopracciglio)
+        "differenze a": {"action": "readGreenDotComparison", "param": "LA vs RA"},
+        "differenze ah": {"action": "readGreenDotComparison", "param": "LA vs RA"},
+        "differenze alfa": {"action": "readGreenDotComparison", "param": "LA vs RA"},
+        "differenze punto a": {"action": "readGreenDotComparison", "param": "LA vs RA"},
+        "differenze inizio": {"action": "readGreenDotComparison", "param": "LA vs RA"},
+        # GENERICA: attiva/disattiva overlay
+        "differenze": {"action": "toggleGreenDots"},
+        "verde": {"action": "toggleGreenDots"},
+        "modalità misura": {"action": "toggleMeasureMode"},
+        "modalita misura": {"action": "toggleMeasureMode"},
+        "misura manuale": {"action": "toggleMeasureMode"},
+        # ── ANALISI FACCIALE ──
+        "analizza": {"action": "analyzeFace"},
+        "analisi viso": {"action": "analyzeFace"},
+        "analisi visagistica completa": {"action": "performCompleteAnalysis"},
+        "analisi completa": {"action": "performCompleteAnalysis"},
+        "visagistica": {"action": "performCompleteAnalysis"},
+        # ── MISURAZIONI (specifiche PRIMA delle generiche per evitare conflitti) ──
+        "simmetria sopracciglia": {"action": "measureEyebrowSymmetry"},
+        "simmetria naso": {"action": "measureNosalWingSymmetry"},
+        "simmetria viso": {"action": "measureFacialSymmetry"},
+        "simmetrico": {"action": "measureFacialSymmetry"},
+        "simmetrica": {"action": "measureFacialSymmetry"},
+        "lato piu grande": {"action": "measureFacialSymmetry"},
+        "lato più grande": {"action": "measureFacialSymmetry"},
+        "quale lato": {"action": "measureFacialSymmetry"},
+        "simmetria": {"action": "measureFacialSymmetry"},
+        "proporzioni viso": {"action": "measureFaceProportions"},
+        "proporzioni": {"action": "measureFaceProportions"},
+        "rotazione occhi": {"action": "measureEyeRotationDiff"},
+        "aree occhi": {"action": "measureEyeAreas"},
+        "distanza occhi": {"action": "measureEyeDistance"},
+        "larghezza viso": {"action": "measureFaceWidth"},
+        "altezza viso": {"action": "measureFaceHeight"},
+        "larghezza naso": {"action": "measureNoseWidth"},
+        "altezza naso": {"action": "measureNoseHeight"},
+        "larghezza bocca": {"action": "measureMouthWidth"},
+        "larghezza fronte": {"action": "measureForeheadWidth"},
+        "stima eta": {"action": "estimate_age"},
+        "stima età": {"action": "estimate_age"},
+        "quanti anni": {"action": "estimate_age"},
+        "età": {"action": "estimate_age"},
+        "eta": {"action": "estimate_age"},
+        # ── CANVAS ──
+        "resetta canvas": {"action": "clearCanvas"},
+        "cancella canvas": {"action": "clearCanvas"},
+        "pulisci canvas": {"action": "clearCanvas"},
+        "pulisci misurazioni": {"action": "clearMeasurements"},
+        "cancella misurazioni": {"action": "clearMeasurements"},
+        "cancella": {"action": "clearCanvas"},
+        # ── ROTAZIONI ──
+        "ruota sinistra": {"action": "rotateLeft90"},
+        "ruota antiorario": {"action": "rotateLeft90"},
+        "ruota destra": {"action": "rotateRight90"},
+        "ruota orario": {"action": "rotateRight90"},
+        "ruota un grado sinistra": {"action": "rotateLeft1"},
+        "ruota un grado destra": {"action": "rotateRight1"},
+        "allinea": {"action": "autoAlignAxis"},
+        "raddrizza": {"action": "autoAlignAxis"},
+        # ── CORREZIONE SOPRACCIGLIA ──
+        "sopracciglio sinistro": {"action": "analyzeLeftEyebrow"},
+        "sopracciglio destro": {"action": "analyzeRightEyebrow"},
+        "correggimi la progettazione": {"action": "analyze_eyebrow_design"},
+        "correggi progettazione": {"action": "analyze_eyebrow_design"},
+        "correzione progettazione": {"action": "analyze_eyebrow_design"},
+        "analizza progettazione": {"action": "analyze_eyebrow_design"},
+        "preferenza destra": {"action": "show_left_eyebrow_with_voice"},
+        "preferenza a destra": {"action": "show_left_eyebrow_with_voice"},
+        "correzione destra": {"action": "show_left_eyebrow_with_voice"},
+        "correzione a destra": {"action": "show_left_eyebrow_with_voice"},
+        "preferenza sinistra": {"action": "show_right_eyebrow_with_voice"},
+        "preferenza a sinistra": {"action": "show_right_eyebrow_with_voice"},
+        "correzione sinistra": {"action": "show_right_eyebrow_with_voice"},
+        "correzione a sinistra": {"action": "show_right_eyebrow_with_voice"},
     }
     
     # Cerca match
@@ -3093,7 +3182,8 @@ async def process_voice_keyword(request: VoiceKeywordCommand):
                 success=True,
                 keyword=keyword,
                 action=value["action"],
-                message=value.get("message", "")
+                message=value.get("message", ""),
+                param=value.get("param", None)
             )
     
     return VoiceKeywordResponse(

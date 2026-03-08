@@ -1179,20 +1179,75 @@ async function startReportReading() {
  * Fornisce istruzioni per l'uso del report con wake-word
  */
 async function provideReadingInstructions() {
-    // Crea lista delle sezioni (esclude sezione 4 che è già filtrata)
-    const sectionsList = Object.entries(reportSections)
-        .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))  // Ordina per numero
-        .map(([num, data]) => `Sezione ${num}, ${data.title}`)
-        .join('. ');
+    showSectionLegend();
+    await voiceAssistant.speak('Quale sezione vuoi ascoltare?');
+    console.log('🎤 Isabella in attesa di selezione sezione...');
+    showToast('🎤 Di\' "Kimerika" seguito dal numero di sezione', 'info');
+}
 
-    const instructions = `Report di analisi pronto. Per ascoltarlo, di' prima la parola Kimerika,
-        poi scegli cosa vuoi ascoltare. Puoi dire: ${sectionsList}.
-        Oppure di' Kimerika tutte, per ascoltare l'intero report.
-        Per fermare la lettura, di' Kimerika ferma.`;
+/**
+ * Mostra la leggenda delle sezioni nel popup
+ */
+function showSectionLegend() {
+    // Rimuovi leggenda precedente se esiste
+    const existing = document.getElementById('report-section-legend');
+    if (existing) existing.remove();
 
-    await voiceAssistant.speak(instructions);
-    console.log('🎤 Isabella ha fornito le istruzioni. In attesa di comando wake-word...');
-    showToast('🎤 Di\' "Kimerika" seguito dalla sezione che vuoi ascoltare', 'info');
+    const sorted = Object.entries(reportSections)
+        .sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+
+    if (sorted.length === 0) return;
+
+    const legend = document.createElement('div');
+    legend.id = 'report-section-legend';
+    legend.style.cssText = `
+        background: #1a1a2e;
+        color: #e0e0ff;
+        border: 2px solid #667eea;
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin-bottom: 18px;
+        font-family: sans-serif;
+        font-size: 14px;
+        line-height: 1.8;
+    `;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight: bold; font-size: 15px; margin-bottom: 10px; color: #a78bfa;';
+    title.textContent = '🎤 Sezioni disponibili — di\' "Kimerika" + numero:';
+    legend.appendChild(title);
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 20px;';
+
+    sorted.forEach(([num, data]) => {
+        const item = document.createElement('div');
+        item.style.cssText = 'display: flex; align-items: baseline; gap: 8px;';
+        item.innerHTML = `<span style="background:#667eea;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;flex-shrink:0;">${num}</span>
+            <span style="color:#cbd5e1;">${data.title}</span>`;
+        grid.appendChild(item);
+    });
+
+    // Aggiungi "tutte" e "ferma"
+    const extras = document.createElement('div');
+    extras.style.cssText = 'margin-top: 10px; color: #94a3b8; font-size: 13px;';
+    extras.innerHTML = '+ <em>"Kimerika tutte"</em> — ascolta tutto il report &nbsp;|&nbsp; <em>"Kimerika ferma"</em> — interrompi';
+    legend.appendChild(grid);
+    legend.appendChild(extras);
+
+    // Inserisci prima del report-content
+    const reportContent = document.getElementById('report-content');
+    if (reportContent) {
+        reportContent.parentNode.insertBefore(legend, reportContent);
+    }
+}
+
+/**
+ * Nasconde la leggenda delle sezioni
+ */
+function hideSectionLegend() {
+    const legend = document.getElementById('report-section-legend');
+    if (legend) legend.remove();
 }
 
 /**
@@ -1250,6 +1305,7 @@ async function readReportSection(sectionNumber = null) {
         // Reset stati
         isReadingReport = false;
         updateReadButton(false);
+        hideSectionLegend();
 
     } catch (error) {
         console.error('❌ Errore durante la lettura:', error);
@@ -1272,6 +1328,7 @@ function stopReportReading() {
     isReadingReport = false;
     awaitingSectionSelection = false;
     updateReadButton(false);
+    hideSectionLegend();
     console.log('🔊 Lettura report fermata');
     showToast('🔇 Lettura fermata', 'info');
 }

@@ -2228,10 +2228,11 @@ async function startWebcamDirect() {
     const _isMobileDevice = window.innerWidth <= 768;
     let videoConstraints;
     if (_isMobileDevice) {
+      const _facing = window.mobileCameraFacing || 'user';
       videoConstraints = {
         width: { ideal: 1920 },
         height: { ideal: 1080 },
-        facingMode: 'user',  // fotocamera frontale per analisi facciale
+        facingMode: _facing,
       };
     } else {
       videoConstraints = {
@@ -2317,6 +2318,23 @@ async function startWebcamDirect() {
     console.error('Errore avvio webcam:', error);
     updateStatus('Errore: Impossibile accedere alla webcam');
     showToast('Errore accesso webcam: ' + error.message, 'error');
+  }
+}
+
+async function switchMobileCamera() {
+  if (window.innerWidth > 768) return; // solo mobile
+  const current = window.mobileCameraFacing || 'user';
+  window.mobileCameraFacing = (current === 'user') ? 'environment' : 'user';
+  const label = window.mobileCameraFacing === 'user' ? 'Frontale' : 'Posteriore';
+  const btn = document.getElementById('wfs-switch-camera-btn');
+  if (btn) btn.textContent = '🔄 ' + label;
+  // Se la webcam è già attiva, riavviala con il nuovo facing senza annunci vocali
+  if (isWebcamActive) {
+    window._switchingCamera = true;
+    stopWebcam();
+    await new Promise(r => setTimeout(r, 400));
+    await startWebcamDirect();
+    window._switchingCamera = false;
   }
 }
 
@@ -3109,9 +3127,15 @@ function drawGuidanceText(ctx, W, H, yaw, pitch, roll, score) {
   const _domGuidance = document.getElementById('wfs-guidance-text');
   if (window.innerWidth <= 768) {
     if (_domGuidance) {
-      _domGuidance.textContent = msg;
-      _domGuidance.style.color = col;
-      _domGuidance.style.display = 'block';
+      const _now = Date.now();
+      const _changed = _domGuidance.textContent !== msg;
+      // Aggiorna testo solo se cambiato E trascorsi almeno 800ms dall'ultimo cambio
+      if (_changed && (_now - (window._lastGuidanceChangeTime || 0)) >= 800) {
+        _domGuidance.textContent = msg;
+        _domGuidance.style.color = col;
+        window._lastGuidanceChangeTime = _now;
+      }
+      if (_domGuidance.style.display !== 'block') _domGuidance.style.display = 'block';
     }
     return; // mobile: testo mostrato dal DOM, nessun ridisegno canvas
   }
@@ -3185,6 +3209,15 @@ function openWebcamFullscreen(video) {
   overlay.appendChild(fsCanvas);
   overlay.appendChild(guidanceText);
   overlay.appendChild(stopBtn);
+
+  // Bottone switch camera: solo su mobile
+  if (window.innerWidth <= 768) {
+    const switchBtn = document.createElement('button');
+    switchBtn.id = 'wfs-switch-camera-btn';
+    switchBtn.innerHTML = '🔄 Switch Camera';
+    switchBtn.onclick = () => switchMobileCamera();
+    overlay.appendChild(switchBtn);
+  }
   document.body.appendChild(overlay);
 
   // Avvia il rendering sul canvas fullscreen
@@ -6522,108 +6555,154 @@ function analyzeEyebrowDesignFromData(greenDotsData) {
     return null;
   }
 
-  let externalEyebrow = null; // quale sopracciglio inizia più esternamente (punto A)
-  let higherEyebrow = null;   // quale sopracciglio è più alto (punto C1)
-  let longerTail = null;      // quale ha la coda più lunga (punto B)
-  let thickerEyebrow = null;  // quale è più spesso (area)
+  // Valori numerici delle differenze (per frase più informativa)
+  let externalEyebrow = null;  // 'sinistro' | 'destro'
+  let externalDiffPx = 0;
+  let higherEyebrow = null;    // 'sinistro' | 'destro'
+  let higherDiffPx = 0;
+  let longerTail = null;       // 'sinistro' | 'destro'
+  let longerDiffPx = 0;
+  let archerEyebrow = null;    // 'sinistro' | 'destro' — arcata più pronunciata (altezza C1 da retta A-B)
+  let archerDiffPx = 0;
 
-  // === Analisi area (spessore) ===
-  const stats = greenDotsData.statistics;
-  if (stats && stats.left && stats.right) {
-    const leftArea = stats.left.area || 0;
-    const rightArea = stats.right.area || 0;
-    if (leftArea !== rightArea) {
-      thickerEyebrow = leftArea > rightArea ? 'sinistro' : 'destro';
-    }
-  }
+  // Helper: distanza perpendicolare di un punto pt=[x,y] dalla retta passante per p1=[x,y] e p2=[x,y]
+  // Formula: |( (p2y-p1y)*ptx - (p2x-p1x)*pty + p2x*p1y - p2y*p1x )| / dist(p1,p2)
+  const distPtFromSegment = (pt, p1, p2) => {
+    const dx = p2[0] - p1[0];
+    const dy = p2[1] - p1[1];
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) return 0;
+    return Math.abs(dy * pt[0] - dx * pt[1] + p2[0] * p1[1] - p2[1] * p1[0]) / len;
+  };
 
   // === Analisi coordinate (punto A, B, C1) ===
+  // Sx: [0]=LC1, [1]=LA0, [2]=LA, [3]=LC, [4]=LB
+  // Dx: [0]=RC1, [1]=RB,  [2]=RC, [3]=RA, [4]=RA0
   const coords = greenDotsData.coordinates;
-  if (coords && coords.Sx && coords.Dx) {
-    const sx = coords.Sx; // [LC1, LA0, LA, LC, LB]
-    const dx = coords.Dx; // [RC1, RB, RC, RA, RA0]
+  if (coords && coords.Sx && coords.Sx.length >= 5 && coords.Dx && coords.Dx.length >= 5) {
+    const sx = coords.Sx;
+    const dx = coords.Dx;
 
-    // Asse di simmetria: necessario per calcolare distanze
     const axisData = getSymmetryAxisPosition();
     if (axisData && axisData.lineOriginal) {
       const axis = axisData.lineOriginal;
+      const perpDist = (pt) => getPerpendicularDistanceFromLine(pt[0], pt[1], axis);
+      const projDist = (pt) => getProjectionAlongLine(pt[0], pt[1], axis);
 
-      // Punto A (indice 2 in Sx = LA, indice 3 in Dx = RA) — più lontano = più esterno
-      if (sx[2] && dx[3]) {
-        const distLA = typeof getPerpendicularDistanceFromLine === 'function'
-          ? getPerpendicularDistanceFromLine(sx[2][0], sx[2][1], axis)
-          : Math.abs(sx[2][0] - axisData.x);
-        const distRA = typeof getPerpendicularDistanceFromLine === 'function'
-          ? getPerpendicularDistanceFromLine(dx[3][0], dx[3][1], axis)
-          : Math.abs(dx[3][0] - axisData.x);
-        if (Math.abs(distLA - distRA) > 1) {
-          externalEyebrow = distLA > distRA ? 'sinistro' : 'destro';
-        }
+      // Punto A: LA=sx[2], RA=dx[3] — più lontano dall'asse = più esterno
+      const distLA = perpDist(sx[2]);
+      const distRA = perpDist(dx[3]);
+      const diffA = Math.abs(distLA - distRA);
+      if (diffA > 1) {
+        externalEyebrow = distLA > distRA ? 'sinistro' : 'destro';
+        externalDiffPx = Math.round(diffA);
       }
 
-      // Punto C1 (indice 0 in Sx = LC1, indice 0 in Dx = RC1) — y più bassa = più in alto
-      if (sx[0] && dx[0]) {
-        const heightLA = typeof getProjectionAlongLine === 'function'
-          ? getProjectionAlongLine(sx[0][0], sx[0][1], axis)
-          : sx[0][1];
-        const heightRA = typeof getProjectionAlongLine === 'function'
-          ? getProjectionAlongLine(dx[0][0], dx[0][1], axis)
-          : dx[0][1];
-        if (Math.abs(heightLA - heightRA) > 1) {
-          higherEyebrow = heightLA < heightRA ? 'sinistro' : 'destro';
-        }
+      // Punto C1: LC1=sx[0], RC1=dx[0] — y-proiezione minore = più in alto
+      const projLC1 = projDist(sx[0]);
+      const projRC1 = projDist(dx[0]);
+      const diffC1 = Math.abs(projLC1 - projRC1);
+      if (diffC1 > 1) {
+        higherEyebrow = projLC1 < projRC1 ? 'sinistro' : 'destro';
+        higherDiffPx = Math.round(diffC1);
       }
 
-      // Punto B (indice 4 in Sx = LB, indice 1 in Dx = RB) — più lontano = coda più lunga
-      if (sx[4] && dx[1]) {
-        const distLB = typeof getPerpendicularDistanceFromLine === 'function'
-          ? getPerpendicularDistanceFromLine(sx[4][0], sx[4][1], axis)
-          : Math.abs(sx[4][0] - axisData.x);
-        const distRB = typeof getPerpendicularDistanceFromLine === 'function'
-          ? getPerpendicularDistanceFromLine(dx[1][0], dx[1][1], axis)
-          : Math.abs(dx[1][0] - axisData.x);
-        if (Math.abs(distLB - distRB) > 1) {
-          longerTail = distLB > distRB ? 'sinistro' : 'destro';
-        }
+      // Punto B: LB=sx[4], RB=dx[1] — più lontano dall'asse = coda più lunga
+      const distLB = perpDist(sx[4]);
+      const distRB = perpDist(dx[1]);
+      const diffB = Math.abs(distLB - distRB);
+      if (diffB > 1) {
+        longerTail = distLB > distRB ? 'sinistro' : 'destro';
+        longerDiffPx = Math.round(diffB);
       }
+
+      // Arcata: altezza di C1 dalla retta A-B — misura reale dello "spessore" anatomico
+      // Sx: C1=sx[0], A=sx[2], B=sx[4]
+      // Dx: C1=dx[0], A=dx[3], B=dx[1]
+      const archL = distPtFromSegment(sx[0], sx[2], sx[4]);
+      const archR = distPtFromSegment(dx[0], dx[3], dx[1]);
+      const diffArch = Math.abs(archL - archR);
+      if (diffArch > 1) {
+        archerEyebrow = archL > archR ? 'sinistro' : 'destro';
+        archerDiffPx = Math.round(diffArch);
+      }
+      console.log(`🏹 [ARCATA] Sx=${archL.toFixed(1)}px, Dx=${archR.toFixed(1)}px, diff=${diffArch.toFixed(1)}px`);
+
     } else {
-      console.warn('⚠️ [FEEDBACK VOCALE] Asse non disponibile, skip analisi coordinate');
+      // Fallback senza asse: usa distanza orizzontale dal centro immagine
+      const imgW = (greenDotsData.image_size && greenDotsData.image_size[0]) || 1000;
+      const cx = imgW / 2;
+      const distLA = Math.abs(sx[2][0] - cx);
+      const distRA = Math.abs(dx[3][0] - cx);
+      const diffA = Math.abs(distLA - distRA);
+      if (diffA > 2) {
+        externalEyebrow = distLA > distRA ? 'sinistro' : 'destro';
+        externalDiffPx = Math.round(diffA);
+      }
+      const projLC1 = sx[0][1];
+      const projRC1 = dx[0][1];
+      const diffC1 = Math.abs(projLC1 - projRC1);
+      if (diffC1 > 2) {
+        higherEyebrow = projLC1 < projRC1 ? 'sinistro' : 'destro';
+        higherDiffPx = Math.round(diffC1);
+      }
+      const distLB = Math.abs(sx[4][0] - cx);
+      const distRB = Math.abs(dx[1][0] - cx);
+      const diffB = Math.abs(distLB - distRB);
+      if (diffB > 2) {
+        longerTail = distLB > distRB ? 'sinistro' : 'destro';
+        longerDiffPx = Math.round(diffB);
+      }
+      // Arcata anche nel fallback
+      const archL = distPtFromSegment(sx[0], sx[2], sx[4]);
+      const archR = distPtFromSegment(dx[0], dx[3], dx[1]);
+      const diffArch = Math.abs(archL - archR);
+      if (diffArch > 2) {
+        archerEyebrow = archL > archR ? 'sinistro' : 'destro';
+        archerDiffPx = Math.round(diffArch);
+      }
+      console.warn('⚠️ [FEEDBACK VOCALE] Asse non disponibile, usato fallback centro immagine');
     }
+  } else {
+    console.warn('⚠️ [FEEDBACK VOCALE] Coordinate insufficienti (servono 5 punti per lato)');
   }
 
   console.log('🔍 [FEEDBACK VOCALE] Risultati da dati JSON:', {
-    externalEyebrow, higherEyebrow, longerTail, thickerEyebrow
+    externalEyebrow, externalDiffPx,
+    higherEyebrow, higherDiffPx,
+    longerTail, longerDiffPx,
+    archerEyebrow, archerDiffPx
   });
 
-  if (!externalEyebrow && !higherEyebrow && !longerTail && !thickerEyebrow) {
+  if (!externalEyebrow && !higherEyebrow && !longerTail && !archerEyebrow) {
     console.warn('⚠️ [FEEDBACK VOCALE] Nessun dato sufficiente per generare feedback');
     return null;
   }
 
   let feedback = '';
 
-  if (externalEyebrow === 'destro') {
-    feedback += 'Il sopracciglio alla tua destra inizia più esternamente. ';
-  } else if (externalEyebrow === 'sinistro') {
-    feedback += 'Il sopracciglio alla tua sinistra inizia più esternamente. ';
+  if (externalEyebrow) {
+    feedback += `Il sopracciglio alla tua ${externalEyebrow === 'destro' ? 'destra' : 'sinistra'} inizia più esternamente`;
+    if (externalDiffPx > 0) feedback += ` di ${externalDiffPx} pixel`;
+    feedback += '. ';
   }
 
-  if (higherEyebrow === 'sinistro') {
-    feedback += 'Il sopracciglio alla tua sinistra è più alto rispetto all\'altro. ';
-  } else if (higherEyebrow === 'destro') {
-    feedback += 'Il sopracciglio alla tua destra è più alto rispetto all\'altro. ';
+  if (higherEyebrow) {
+    feedback += `Il sopracciglio alla tua ${higherEyebrow === 'sinistro' ? 'sinistra' : 'destra'} è più alto`;
+    if (higherDiffPx > 0) feedback += ` di ${higherDiffPx} pixel`;
+    feedback += '. ';
   }
 
-  if (longerTail === 'sinistro') {
-    feedback += 'La coda del sopracciglio alla tua sinistra è più lunga. ';
-  } else if (longerTail === 'destro') {
-    feedback += 'La coda del sopracciglio alla tua destra è più lunga. ';
+  if (longerTail) {
+    feedback += `La coda del sopracciglio alla tua ${longerTail === 'sinistro' ? 'sinistra' : 'destra'} è più lunga`;
+    if (longerDiffPx > 0) feedback += ` di ${longerDiffPx} pixel`;
+    feedback += '. ';
   }
 
-  if (thickerEyebrow === 'sinistro') {
-    feedback += 'Ed infine il sopracciglio sinistro è più spesso.';
-  } else if (thickerEyebrow === 'destro') {
-    feedback += 'Ed infine il sopracciglio destro è più spesso.';
+  if (archerEyebrow) {
+    feedback += `Il sopracciglio alla tua ${archerEyebrow === 'sinistro' ? 'sinistra' : 'destra'} ha l'arcata più pronunciata`;
+    if (archerDiffPx > 0) feedback += ` di ${archerDiffPx} pixel`;
+    feedback += '.';
   }
 
   console.log('✅ [FEEDBACK VOCALE] Feedback generato da dati JSON:', feedback);
@@ -7615,7 +7694,8 @@ async function toggleGreenDots() {
       await detectGreenDots();
     } else {
       updateCanvasDisplay();
-      if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak && window.greenDotsData) {
+      if (!window.suppressVoiceFeedback &&
+          typeof voiceAssistant !== 'undefined' && voiceAssistant.speak && window.greenDotsData) {
         const feedback = analyzeEyebrowDesignFromData(window.greenDotsData);
         if (feedback) voiceAssistant.speak(feedback);
       }
@@ -7667,7 +7747,8 @@ async function detectGreenDots() {
 
     updateMeasurementsFromGreenDots(result);
 
-    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+    if (!window.suppressVoiceFeedback &&
+        typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
       const feedback = analyzeEyebrowDesignFromData(result);
       if (feedback) voiceAssistant.speak(feedback);
     }
@@ -8389,6 +8470,70 @@ function highlightPointPair(rowElement) {
   // Mostra toast informativo
   showToast(`📍 ${pairData.leftLabel} ↔ ${pairData.rightLabel}: ${pairData.fartherPoint} più esterno, ${pairData.higherPoint} più alto`, 'info');
 }
+
+/**
+ * Comando vocale: legge la riga "⚖️ X vs Y" dalla tabella green dots,
+ * evidenzia la coppia sul canvas e pronuncia i dati via TTS.
+ * @param {string} comparisonName - es. "LA vs RA", "LA0 vs RA0", "LC1 vs RC1", "LB vs RB", "LC vs RC"
+ */
+function readGreenDotComparison(comparisonName) {
+  // Cerca la riga nella tabella tramite il testo della prima cella
+  const rows = document.querySelectorAll('tr.point-pair-row');
+  if (rows.length === 0) {
+    if (typeof voiceAssistant !== 'undefined') {
+      voiceAssistant.speak('Nessun dato disponibile. Prima esegui il rilevamento differenze.');
+    }
+    showToast('Prima esegui "Trova differenze"', 'warning');
+    return;
+  }
+
+  let targetRow = null;
+  for (const row of rows) {
+    const firstCell = row.querySelector('td');
+    if (firstCell && firstCell.textContent.includes(comparisonName)) {
+      targetRow = row;
+      break;
+    }
+  }
+
+  if (!targetRow) {
+    if (typeof voiceAssistant !== 'undefined') {
+      voiceAssistant.speak(`Confronto ${comparisonName} non trovato nella tabella.`);
+    }
+    return;
+  }
+
+  // Attiva l'highlight sul canvas (come click utente)
+  highlightPointPair(targetRow);
+
+  // Scorri la riga in vista
+  targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  // Costruisci messaggio vocale dai dati strutturati della riga
+  const pairDataStr = targetRow.getAttribute('data-pair');
+  if (!pairDataStr) return;
+
+  const pairData = JSON.parse(pairDataStr.replace(/&quot;/g, '"'));
+
+  const leftLabel = pairData.leftLabel;
+  const rightLabel = pairData.rightLabel;
+  const fartherPoint = pairData.fartherPoint;
+  const higherPoint = pairData.higherPoint;
+  const distanceDiff = pairData.distanceDiff != null ? parseFloat(pairData.distanceDiff).toFixed(1) : null;
+  const heightDiff = pairData.heightDiff != null ? parseFloat(pairData.heightDiff).toFixed(1) : null;
+
+  let msg = `Confronto ${leftLabel} contro ${rightLabel}. `;
+  msg += `Il punto ${fartherPoint} è più esterno dall'asse`;
+  if (distanceDiff) msg += ` di ${distanceDiff} pixel`;
+  msg += `. Il punto ${higherPoint} è posizionato più in alto`;
+  if (heightDiff) msg += ` di ${heightDiff} pixel`;
+  msg += '.';
+
+  if (typeof voiceAssistant !== 'undefined') {
+    voiceAssistant.speak(msg);
+  }
+}
+window.readGreenDotComparison = readGreenDotComparison;
 
 /**
  * Rimuove l'evidenziazione della coppia punti dal canvas
