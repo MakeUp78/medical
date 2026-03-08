@@ -744,6 +744,7 @@ class VoiceAssistant {
       'measureEyeRotationDiff': () => window.measureEyeRotationDiff?.(null),
       'measureNosalWingSymmetry': () => window.measureNosalWingSymmetry?.(null),
       'measureEyebrowSymmetry': () => window.measureEyebrowSymmetry?.(null),
+      'measureDominanceScore': () => window.measureDominanceScore?.(null),
 
       // --- CORREZIONE SOPRACCIGLIA ---
       'analyzeLeftEyebrow': () => window.analyzeLeftEyebrow?.(),

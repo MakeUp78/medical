@@ -384,6 +384,64 @@ async function detectLandmarksSilent() {
   }
 }
 
+/**
+ * Aggiunge una riga DEBUG nella tabella DATI ANALISI per un'immagine statica.
+ * Mostra score, posa (yaw/pitch/roll con direzione testuale) e stato visivo.
+ */
+function _addStaticImageDebugRow(score, poseAngles, frontalityScore) {
+  const tbody = document.getElementById('debug-data');
+  if (!tbody) return;
+
+  // Svuota completamente (nuovo upload = nuova riga, non accumulo)
+  tbody.innerHTML = '';
+
+  const yaw   = poseAngles.yaw   || 0;
+  const pitch = poseAngles.pitch || 0;
+  const roll  = poseAngles.roll  || 0;
+
+  // Etichette direzionali (soglia "frontale" = 0.3°, coerente con alert)
+  const yawLabel   = Math.abs(yaw)   <= 0.3 ? 'frontale'
+                   : yaw > 0                 ? '→ girato dx'
+                                             : '← girato sx';
+  const pitchLabel = Math.abs(pitch) <= 0.3 ? 'frontale'
+                   : pitch > 0               ? '↓ basso'
+                                             : '↑ alto';
+  const rollLabel  = Math.abs(roll)  <= 0.3 ? 'dritto'
+                   : roll > 0                ? '↻ orario'
+                                             : '↺ antior.';
+
+  const YAW_WARN   = 5;
+  const ANGLE_WARN = 10;
+  const isFrontal  = Math.abs(yaw) <= ANGLE_WARN && Math.abs(pitch) <= ANGLE_WARN && Math.abs(roll) <= ANGLE_WARN;
+  const statusText = isFrontal ? 'Frontale' : 'Non frontale';
+  const scoreDisplay = (frontalityScore > 0 ? frontalityScore : score);
+
+  const colYaw   = Math.abs(yaw)   > YAW_WARN   ? '#ff5252' : '#00e676';
+  const colPitch = Math.abs(pitch) > ANGLE_WARN  ? '#ff5252' : '#00e676';
+  const colRoll  = Math.abs(roll)  > ANGLE_WARN  ? '#ff5252' : '#00e676';
+
+  const row = document.createElement('tr');
+  row.className = isFrontal ? 'score-high' : 'score-low';
+  row.title = `Immagine statica — Score: ${scoreDisplay.toFixed(3)} | Yaw: ${yaw.toFixed(1)}° Pitch: ${pitch.toFixed(1)}° Roll: ${roll.toFixed(1)}°`;
+  row.innerHTML = `
+    <td>IMG</td>
+    <td>—</td>
+    <td class="score-cell" style="color: ${getFrontalityColor(scoreDisplay)}">${scoreDisplay.toFixed(3)}</td>
+    <td style="color:${colYaw}"  title="Yaw: rotazione sinistra/destra">${yaw.toFixed(1)}° ${yawLabel}</td>
+    <td style="color:${colPitch}" title="Pitch: inclinazione alto/basso">${pitch.toFixed(1)}° ${pitchLabel}</td>
+    <td style="color:${colRoll}"  title="Roll: rotazione oraria/antioraria">${roll.toFixed(1)}° ${rollLabel}</td>
+    <td class="status-cell">${statusText}</td>
+  `;
+
+  tbody.appendChild(row);
+
+  // Forza apertura sezione DATI ANALISI e tab DEBUG ad ogni upload (forceUpdate=true
+  // evita lo skip quando si è già sul tab debug da upload precedente)
+  openUnifiedAnalysisSection();
+  switchUnifiedTab('debug', null, true);
+  console.log(`📊 [DEBUG IMG] Score=${scoreDisplay.toFixed(3)} Yaw=${yaw.toFixed(1)}°(${yawLabel}) Pitch=${pitch.toFixed(1)}°(${pitchLabel}) Roll=${roll.toFixed(1)}°(${rollLabel}) → ${statusText}`);
+}
+
 // ============================================================================
 // HARD REFRESH PER NUOVA SESSIONE
 // ============================================================================
@@ -786,6 +844,16 @@ document.addEventListener('DOMContentLoaded', function () {
   updateBadges();
 });
 
+// === LOADER CARICAMENTO VIDEO ===
+function showVideoLoadingOverlay() {
+  const el = document.getElementById('video-loading-overlay');
+  if (el) { el.style.display = 'flex'; }
+}
+function hideVideoLoadingOverlay() {
+  const el = document.getElementById('video-loading-overlay');
+  if (el) { el.style.display = 'none'; }
+}
+
 // === GESTIONE SEZIONI COLLASSABILI ===
 
 function initializeSections() {
@@ -876,6 +944,7 @@ function loadVideoDirect() {
   input.onchange = function (e) {
     const file = e.target.files[0];
     if (file) {
+      showVideoLoadingOverlay();
       trackActivity('video_upload', { fileSize: file.size, fileType: file.type });
       handleUnifiedFileLoad(file, 'video');
     }
@@ -1141,12 +1210,58 @@ async function handleUnifiedFileLoad(file, type) {
           window.canvas.renderAll();
         }
 
-        // AUTO-RILEVAMENTO LANDMARKS silenzioso
-        const landmarksDetected = await autoDetectLandmarksOnImageChange();
-        if (landmarksDetected) {
-          updateStatus(`✅ Landmarks rilevati automaticamente (${currentLandmarks.length})`);
-          if (window.DEBUG_MODE) {
-            console.log('✅ Auto-rilevamento landmarks completato');
+        // AUTO-RILEVAMENTO LANDMARKS + DEBUG POSA (chiamata diretta con base64 già pronto)
+        try {
+          const analyzeResp = await fetch(`${window.location.origin}/api/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64Image })
+          });
+          if (analyzeResp.ok) {
+            const analyzeResult = await analyzeResp.json();
+            if (analyzeResult.landmarks && analyzeResult.landmarks.length > 0) {
+              // refW/refH = dimensioni dell'immagine inviata all'API (già ridimensionata)
+              const refW = finalWidth;
+              const refH = finalHeight;
+              const firstLm = analyzeResult.landmarks[0];
+              const isNorm = firstLm.x <= 1.0 && firstLm.y <= 1.0;
+              currentLandmarks = analyzeResult.landmarks.map(lm => ({
+                x: isNorm ? lm.x * refW : lm.x,
+                y: isNorm ? lm.y * refH : lm.y,
+                z: lm.z || 0,
+                visibility: lm.visibility || 1.0
+              }));
+              window.currentLandmarks = currentLandmarks;
+              landmarksAutoDetected = true;
+              lastImageProcessed = getImageSignature(img);
+              updateStatus(`✅ Landmarks rilevati automaticamente (${currentLandmarks.length})`);
+
+              // Mostra riga DEBUG con dati di posa
+              if (analyzeResult.pose_angles) {
+                const pa = analyzeResult.pose_angles;
+                window.imagePoseAngles = pa;
+                _addStaticImageDebugRow(analyzeResult.score || 0, pa, analyzeResult.frontality_score || 0);
+
+                // Alert se yaw > 0.3°: misurazioni coppie esterne inaffidabili
+                const YAW_WARN_THRESHOLD = 0.3;
+                if (Math.abs(pa.yaw) > YAW_WARN_THRESHOLD) {
+                  const yawDir = pa.yaw > 0 ? 'destra' : 'sinistra';
+                  showToast(
+                    `Attenzione: Yaw=${pa.yaw.toFixed(1)}° (viso girato a ${yawDir}). Le coppie esterne LB-RB, LC1-RC1, LC-RC potrebbero non essere affidabili.`,
+                    'warning',
+                    8000
+                  );
+                  console.warn(`⚠️ [POSA] Yaw=${pa.yaw.toFixed(1)}° > soglia ${YAW_WARN_THRESHOLD}° → coppie esterne inaffidabili`);
+                }
+              }
+            }
+          }
+        } catch (analyzeErr) {
+          console.warn('⚠️ Analisi posa immagine fallita, fallback ad autoDetect:', analyzeErr);
+          // Fallback: tenta comunque l'auto-rilevamento classico
+          const landmarksDetected = await autoDetectLandmarksOnImageChange();
+          if (landmarksDetected) {
+            updateStatus(`✅ Landmarks rilevati automaticamente (${currentLandmarks.length})`);
           }
         }
       };
@@ -1216,6 +1331,7 @@ async function handleUnifiedFileLoad(file, type) {
       await new Promise(resolve => {
         video.onloadedmetadata = resolve;
       });
+      hideVideoLoadingOverlay();
 
       await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -1252,6 +1368,7 @@ async function handleUnifiedFileLoad(file, type) {
       showToast('Video in elaborazione - sistema WebSocket automatico', 'success');
 
     } catch (error) {
+      hideVideoLoadingOverlay();
       console.error('Errore analisi video:', error);
       updateStatus('Errore: Impossibile analizzare il video');
       showToast('Errore analisi video', 'error');
@@ -9597,19 +9714,18 @@ function updateModeBadge(mode) {
   }
 }
 
-function showToast(message, type = 'info') {
+function showToast(message, type = 'info', duration = 3000) {
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = message;
 
   document.body.appendChild(toast);
 
-  // Rimuovi dopo 3 secondi
   setTimeout(() => {
     if (toast.parentNode) {
       toast.parentNode.removeChild(toast);
     }
-  }, 3000);
+  }, duration);
 }
 
 function showContextMenu(x, y) {

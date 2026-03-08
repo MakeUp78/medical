@@ -208,6 +208,7 @@
                                 Naso</button>
                             <button class="btn btn-analysis" onclick="measureEyebrowSymmetry(event)">✂️ Sim.
                                 Sopracciglia</button>
+                            <button class="btn btn-analysis" onclick="measureDominanceScore(event)">👤 Dominanza</button>
 
                             <!-- Pulsante Analisi Completa - occupa tutta la larghezza -->
                             <button class="btn btn-analysis btn-analysis-complete"
@@ -448,6 +449,9 @@
                                     <div class="command-item-sidebar">
                                         <strong>"Simmetria sopracciglia"</strong> → Simmetria sopraccigliare
                                     </div>
+                                    <div class="command-item-sidebar">
+                                        <strong>"Dominanza"</strong> / <strong>"Dominance score"</strong> → Geometria dominanza sociale percepita
+                                    </div>
 
                                     <div class="cmd-group-title-sidebar">🔄 Rotazioni</div>
                                     <div class="command-item-sidebar">
@@ -538,6 +542,12 @@
 
             <!-- Video webcam nascosto -->
             <video id="webcam-video" autoplay muted style="position: absolute; left: -9999px; top: -9999px;"></video>
+
+            <!-- Loader caricamento video -->
+            <div id="video-loading-overlay" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.6); z-index:100; flex-direction:column; align-items:center; justify-content:center; gap:14px; border-radius:8px;">
+                <div class="spinner"></div>
+                <span style="color:#fff; font-size:14px; letter-spacing:.4px;">Caricamento video in corso…</span>
+            </div>
         </div>
 
         <!-- SIDEBAR DESTRA identica alla colonna destra dell'app -->
@@ -895,6 +905,7 @@
             <button class="btn-tool-strip" onclick="measureEyeRotationDiff(event);">👁️ Rot.Occhi</button>
             <button class="btn-tool-strip" onclick="measureNosalWingSymmetry(event);">👃 Sim.Naso</button>
             <button class="btn-tool-strip" onclick="measureEyebrowSymmetry(event);">✂️ Sim.Sopracci.</button>
+            <button class="btn-tool-strip" onclick="measureDominanceScore(event);">👤 Dominanza</button>
             <button class="btn-tool-strip btn-tool-strip-complete" onclick="performCompleteAnalysis(event);">🧬 Analisi
                 Completa</button>
         </div>
@@ -1965,28 +1976,32 @@
             };
 
             // Funzione helper per determinare l'intensità dello spostamento
+            // Soglie in pixel backend (immagine normalizzata ~1200px larghezza)
             function getIntensity(pixels) {
-                if (pixels < 2) return '';
-                if (pixels < 5) return 'leggermente ';
-                if (pixels < 10) return '';
-                if (pixels < 20) return 'molto ';
-                return 'molto ';
+                if (pixels < 2)  return '';               // trascurabile, non pronunciare
+                if (pixels < 5)  return 'di pochissimo ';
+                if (pixels < 10) return 'leggermente ';
+                if (pixels < 18) return 'moderatamente ';
+                if (pixels < 30) return 'sensibilmente ';
+                if (pixels < 50) return 'molto ';
+                return 'notevolmente ';
             }
 
-            // Funzione helper per formattare i nomi dei punti per pronuncia corretta
+            // Funzione helper per formattare i nomi dei punti per pronuncia corretta.
+            // Le virgole interne inducono una pausa naturale nel TTS italiano,
+            // scandendo le lettere invece di fonderle in un'unica sillaba.
             function formatPointNameForSpeech(pointName) {
-                // Mappa nomi punti completi → pronuncia italiana naturale
                 const fullNameMap = {
-                    'LA':  'Elle A',
-                    'LA0': 'Elle A zero',
-                    'LC1': 'Elle Ci uno',
-                    'LB':  'Elle Bi',
-                    'LC':  'Elle Ci',
-                    'RA':  'Erre A',
-                    'RA0': 'Erre A zero',
-                    'RC1': 'Erre Ci uno',
-                    'RB':  'Erre Bi',
-                    'RC':  'Erre Ci',
+                    'LA':  'Elle, A',
+                    'LA0': 'Elle, A, zero',
+                    'LC1': 'Elle, Ci, uno',
+                    'LB':  'Elle, Bi',
+                    'LC':  'Elle, Ci',
+                    'RA':  'Erre, A',
+                    'RA0': 'Erre, A, zero',
+                    'RC1': 'Erre, Ci, uno',
+                    'RB':  'Erre, Bi',
+                    'RC':  'Erre, Ci',
                 };
                 return fullNameMap[pointName] || pointName;
             }
@@ -2045,7 +2060,7 @@
                     if (parts.length === 0) continue; // già allineati, salta
 
                     const pointSpeech = formatPointNameForSpeech(targetLabel);
-                    const phrase = `Sposta ${pointSpeech} ${parts.join(' e ')}.`;
+                    const phrase = `Sposta. ${pointSpeech}. ${parts.join(' e ')}.`;
 
                     // Evidenzia la riga nella tabella (usa la funzione esistente)
                     if (typeof window.highlightPointPair === 'function') {
@@ -2065,22 +2080,61 @@
                 document.querySelectorAll('.point-pair-row').forEach(r => r.classList.remove('active'));
             };
 
-            // Attendi che voiceAssistant finisca di riprodurre
+            // Attendi che voiceAssistant finisca di riprodurre la frase corrente.
+            // Strategia: aspetta che il fetch+encode TTS sia completato e l'audio
+            // sia effettivamente accodato, poi ascolta l'evento 'ended' sull'audioPlayer.
+            // Un secondo polling di sicurezza gestisce il caso in cui 'ended' venga perso
+            // (es. audio già finito prima che il listener fosse registrato).
             async function speakAndWait(phrase) {
-                return new Promise(resolve => {
-                    if (typeof voiceAssistant === 'undefined' || !voiceAssistant.speak) {
-                        resolve();
-                        return;
-                    }
-                    voiceAssistant.speak(phrase);
-                    const poll = () => {
-                        const ap = voiceAssistant.audioPlayer;
-                        const idle = (!voiceAssistant.pendingQueue || voiceAssistant.pendingQueue.length === 0)
-                                     && ap && ap.paused;
-                        if (idle) { setTimeout(resolve, 350); }
-                        else { setTimeout(poll, 150); }
+                if (typeof voiceAssistant === 'undefined' || !voiceAssistant.speak) return;
+
+                return new Promise(async resolve => {
+                    const ap = voiceAssistant.audioPlayer;
+
+                    // Registra il listener 'ended' PRIMA di chiamare speak(),
+                    // così non può perderlo nel caso in cui il TTS sia in cache
+                    // e la riproduzione parta quasi immediatamente.
+                    let resolved = false;
+                    const onEnded = () => {
+                        if (resolved) return;
+                        // Verifica che la coda sia davvero vuota prima di risolvere
+                        const queueEmpty = !voiceAssistant.pendingQueue || voiceAssistant.pendingQueue.length === 0;
+                        if (queueEmpty) {
+                            resolved = true;
+                            ap.removeEventListener('ended', onEnded);
+                            clearInterval(safeguardInterval);
+                            setTimeout(resolve, 200); // piccolo margine post-audio
+                        }
+                        // Se la coda non è ancora vuota, il listener resta attivo
+                        // e verrà richiamato all'ended del prossimo item
                     };
-                    setTimeout(poll, 700); // aspetta avvio TTS
+                    ap.addEventListener('ended', onEnded);
+
+                    // Avvia la riproduzione TTS
+                    await voiceAssistant.speak(phrase);
+
+                    // Safeguard polling: se 'ended' viene perso (audio già finito,
+                    // browser che non emette l'evento, ecc.) risolve comunque
+                    const safeguardInterval = setInterval(() => {
+                        const queueEmpty = !voiceAssistant.pendingQueue || voiceAssistant.pendingQueue.length === 0;
+                        const audioIdle = ap.paused || ap.ended;
+                        if (queueEmpty && audioIdle && !resolved) {
+                            resolved = true;
+                            ap.removeEventListener('ended', onEnded);
+                            clearInterval(safeguardInterval);
+                            setTimeout(resolve, 200);
+                        }
+                    }, 200);
+
+                    // Safety timeout assoluto: 30s max per frase
+                    setTimeout(() => {
+                        if (!resolved) {
+                            resolved = true;
+                            ap.removeEventListener('ended', onEnded);
+                            clearInterval(safeguardInterval);
+                            resolve();
+                        }
+                    }, 30000);
                 });
             }
 

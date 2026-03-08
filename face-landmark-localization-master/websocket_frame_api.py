@@ -197,15 +197,15 @@ class WebSocketFrameScorer:
         
         roll_weighted = abs(normalized_roll) * 0.3
 
-        # Pesi PRIORITÀ YAW: Yaw ha peso maggiore per privilegiare frontalità orizzontale
-        yaw_weighted = abs(yaw) * 2.5
+        # Pesi PRIORITÀ YAW: peso molto elevato per selezionare solo pose con yaw ≈ 0
+        yaw_weighted = abs(yaw) * 5.0
         pitch_weighted = abs(pitch) * 1.0
 
-        # BIAS: Penalità extra per Yaw fuori dalla soglia ottimale [-3, +3]
+        # BIAS: Penalità extra per Yaw fuori dalla soglia ottimale [-1, +1]
         yaw_penalty = 0
-        if abs(yaw) > 3:
-            # Penalità progressiva: ogni grado oltre ±3 costa 5 punti
-            yaw_penalty = (abs(yaw) - 3) * 5
+        if abs(yaw) > 1:
+            # Penalità progressiva: ogni grado oltre ±1 costa 10 punti
+            yaw_penalty = (abs(yaw) - 1) * 10
 
         pose_deviation = yaw_weighted + pitch_weighted + roll_weighted
         pose_score = max(0, 100 - pose_deviation * 0.8 - yaw_penalty)

@@ -184,14 +184,14 @@ body {
   background: linear-gradient(135deg, #2a5298 0%, #3a6bc8 100%);
 }
 
-/* 📊 STATUS SISTEMA - Verde acqua */
+/* ⚙️ IMPOSTAZIONI - Verde acqua */
 .left-sidebar .section:nth-child(3) .section-header {
   background: linear-gradient(135deg, #0d7377 0%, #14919b 100%);
   border-bottom: 2px solid #32c5d2;
 }
 
 .left-sidebar .section:nth-child(3) .section-header:hover {
-  background: linear-gradient(135deg, #14919b 0%, #1db2bf 100%);
+  background: linear-gradient(135deg, #0a5a5e 0%, #0d7377 100%);
 }
 
 /* 📏 MISURAZIONI PREDEFINITE - Arancione professionale */

@@ -5376,4 +5376,277 @@ window.measureEyebrowSymmetry = measureEyebrowSymmetry;
   };
 }());
 
+// =============================================================================
+// DOMINANCE SCORE — Geometria della dominanza sociale percepita
+// Basato su: fWHR (Carré & McCormick, 2008), angolo mandibolare, posizione sopracciglio
+// =============================================================================
+
+/**
+ * Calcola e visualizza il "Dominance Score" del viso.
+ * Toggle: se il pulsante è già attivo, rimuove l'overlay.
+ *
+ * Landmark usati:
+ *   fWHR       : larghezza 234-454, altezza superiore 0 / media(105,334)
+ *   Mandibola  : mento 152, angoli 172 e 397
+ *   Sopracciglio: brow_sx 105, eye_sx top 159, eye_sx bot 145
+ */
+async function measureDominanceScore(event) {
+  const button = event ? (event.currentTarget || event.target) : document.querySelector('[onclick*="measureDominanceScore"]');
+
+  // Toggle OFF
+  if (button && button.classList.contains('active')) {
+    button.classList.remove('active');
+    window.dominanceScoreOverlayActive = false;
+    if (fabricCanvas) {
+      fabricCanvas.getObjects().filter(o => o.isDominanceOverlay).forEach(o => fabricCanvas.remove(o));
+      fabricCanvas.renderAll();
+    }
+    const tableBody = document.getElementById('unified-table-body');
+    if (tableBody) {
+      tableBody.querySelectorAll('[data-measurement="dominance-score"]').forEach(r => r.remove());
+    }
+    return;
+  }
+
+  // Toggle ON
+  if (button) {
+    button.disabled = true;
+    button._origText = button.textContent;
+    button.textContent = '⏳...';
+  }
+
+  try {
+    if (!currentLandmarks || currentLandmarks.length === 0) {
+      const ok = await autoDetectLandmarksOnImageChange();
+      if (!ok || !currentLandmarks || currentLandmarks.length === 0) {
+        showToast('⚠️ Impossibile rilevare il viso', 'warning');
+        return;
+      }
+    }
+
+    const required = [234, 454, 0, 105, 334, 152, 172, 397, 159, 145];
+    for (const idx of required) {
+      if (!currentLandmarks[idx]) {
+        showToast(`⚠️ Landmark ${idx} non disponibile`, 'warning');
+        return;
+      }
+    }
+
+    const tpt = idx => window.transformLandmarkCoordinate
+      ? window.transformLandmarkCoordinate(currentLandmarks[idx])
+      : currentLandmarks[idx];
+
+    const dist = (a, b) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+
+    // --- fWHR ---
+    const p234 = tpt(234), p454 = tpt(454);
+    const p0   = tpt(0);
+    const p105 = tpt(105), p334 = tpt(334);
+    const bizyWidth  = dist(p234, p454);
+    const browMidY   = (p105.y + p334.y) / 2;
+    const faceUpperH = p0.y - browMidY;
+    const fWHR = faceUpperH > 0 ? bizyWidth / faceUpperH : 1.85;
+
+    // --- Angolo mandibolare ---
+    const p152 = tpt(152), p172 = tpt(172), p397 = tpt(397);
+    const jawMidY   = (p172.y + p397.y) / 2;
+    const jawWidth  = dist(p172, p397);
+    const chinH     = Math.abs(p152.y - jawMidY);
+    const jawAngle  = jawWidth > 0 ? chinH / jawWidth : 0.4;
+
+    // --- Posizione sopracciglio (sx) ---
+    const p159 = tpt(159), p145 = tpt(145);
+    const eyeH      = Math.abs(p159.y - p145.y);
+    const browToEye = Math.abs(p105.y - p159.y);
+    const browRatio = eyeH > 0 ? browToEye / eyeH : 0.5;
+
+    // --- Score composito 0-100 ---
+    const fwhrScore = Math.max(0, Math.min(100, ((fWHR - 1.4) / (2.4 - 1.4)) * 100));
+    const jawScore  = Math.max(0, Math.min(100, ((jawAngle - 0.2) / (0.6 - 0.2)) * 100));
+    const browScore = Math.max(0, Math.min(100, 100 - ((browRatio - 0.2) / (0.8 - 0.2)) * 100));
+    const score     = Math.round((fwhrScore * 0.6) + (jawScore * 0.2) + (browScore * 0.2));
+
+    let label, suggestion;
+    if (score <= 30) {
+      label      = 'Molto empatico e affidabile';
+      suggestion = 'Un sopracciglio più orizzontale e leggermente abbassato può aumentare la percezione di autorevolezza.';
+    } else if (score <= 50) {
+      label      = 'Bilanciato, tende all\'accessibilità';
+      suggestion = 'Il viso è già bilanciato tra autorevolezza e accessibilità.';
+    } else if (score <= 70) {
+      label      = 'Bilanciato, tende all\'autorevolezza';
+      suggestion = 'Il viso è già bilanciato tra autorevolezza e accessibilità.';
+    } else {
+      label      = 'Molto dominante e autorevole';
+      suggestion = 'Un sopracciglio più arcuato e sollevato può bilanciare la dominanza visiva verso maggiore accessibilità.';
+    }
+
+    // --- Overlay canvas ---
+    _drawDominanceOverlay({ score, fWHR, jawAngle, browRatio, fwhrScore, jawScore, browScore, label, p234, p454, p0, p105, p334, p152, p172, p397 });
+
+    // --- Tabella misurazioni ---
+    const tableBody = document.getElementById('unified-table-body');
+    if (tableBody) tableBody.querySelectorAll('[data-measurement="dominance-score"]').forEach(r => r.remove());
+    ensureMeasurementsSectionOpen();
+    addMeasurementToTable('Dominance Score', score, '/100', 'dominance-score');
+    addMeasurementToTable('fWHR', fWHR.toFixed(2), '', 'dominance-score');
+    addMeasurementToTable('Angolo Mandibola', jawAngle.toFixed(2), '', 'dominance-score');
+    addMeasurementToTable('Posizione Sopracciglio', browRatio.toFixed(2), '', 'dominance-score');
+    addMeasurementToTable('Percezione', label, '', 'dominance-score');
+
+    window.dominanceScoreOverlayActive = true;
+
+    if (button) button.classList.add('active');
+
+    // --- Voce ---
+    const voiceMsg = `Dominance Score: ${score} su 100. ${label}. ${suggestion}`;
+    if (typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+      voiceAssistant.speak(voiceMsg);
+    }
+
+    const toastColor = score <= 30 ? 'info' : score <= 70 ? 'success' : 'warning';
+    showToast(`👤 Dominance Score: ${score}/100 — ${label}`, toastColor, 5000);
+
+  } catch (err) {
+    console.error('❌ Errore Dominance Score:', err);
+    showToast(`❌ Errore: ${err.message}`, 'error');
+    if (button) button.classList.remove('active');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = button._origText || '👤 Dominanza';
+    }
+  }
+}
+
+/**
+ * Disegna l'overlay Dominance Score sul canvas Fabric.js.
+ * Mostra: spettro Empatico↔Dominante con marker, valori dei 3 parametri.
+ */
+function _drawDominanceOverlay({ score, fWHR, jawAngle, browRatio, fwhrScore, jawScore, browScore, label, p234, p454, p0, p105, p334, p152, p172, p397 }) {
+  if (!fabricCanvas) return;
+
+  // Rimuovi overlay precedente
+  fabricCanvas.getObjects().filter(o => o.isDominanceOverlay).forEach(o => fabricCanvas.remove(o));
+
+  const cw = fabricCanvas.getWidth();
+  const ch = fabricCanvas.getHeight();
+
+  // Posizione pannello: in basso, larghezza ~80% canvas
+  const panelW  = Math.round(cw * 0.82);
+  const panelH  = 150;
+  const panelX  = Math.round((cw - panelW) / 2);
+  const panelY  = ch - panelH - 16;
+  const padding = 12;
+
+  const mkObj = (obj) => { obj.isDominanceOverlay = true; return obj; };
+
+  // Sfondo pannello
+  fabricCanvas.add(mkObj(new fabric.Rect({
+    left: panelX, top: panelY, width: panelW, height: panelH,
+    fill: 'rgba(15,15,30,0.88)', stroke: '#5533aa', strokeWidth: 1.5,
+    rx: 8, ry: 8, selectable: false, evented: false
+  })));
+
+  // Titolo
+  fabricCanvas.add(mkObj(new fabric.Text('DOMINANCE SCORE', {
+    left: panelX + padding, top: panelY + 8,
+    fontSize: 11, fontWeight: 'bold', fill: '#bb99ff',
+    fontFamily: 'monospace', selectable: false, evented: false
+  })));
+
+  // Score numerico grande
+  fabricCanvas.add(mkObj(new fabric.Text(`${score}/100`, {
+    left: panelX + panelW - padding - 60, top: panelY + 6,
+    fontSize: 20, fontWeight: 'bold', fill: '#ffffff',
+    fontFamily: 'monospace', selectable: false, evented: false, textAlign: 'right'
+  })));
+
+  // Spettro orizzontale
+  const barX  = panelX + padding;
+  const barY  = panelY + 32;
+  const barW  = panelW - padding * 2;
+  const barH  = 14;
+
+  // Barra spettro: tre segmenti colorati (blu → viola → rosso)
+  const seg = Math.round(barW / 3);
+  [['#2196f3', 0], ['#9c27b0', seg], ['#f44336', seg * 2]].forEach(([color, dx]) => {
+    const sw = dx === seg * 2 ? barW - seg * 2 : seg;
+    fabricCanvas.add(mkObj(new fabric.Rect({
+      left: barX + dx, top: barY, width: sw, height: barH,
+      fill: color, stroke: 'transparent', strokeWidth: 0,
+      rx: dx === 0 ? 4 : 0, ry: dx === 0 ? 4 : 0,
+      selectable: false, evented: false
+    })));
+  });
+  // Bordo esterno barra
+  fabricCanvas.add(mkObj(new fabric.Rect({
+    left: barX, top: barY, width: barW, height: barH,
+    fill: 'transparent', stroke: '#444', strokeWidth: 0.5, rx: 4, ry: 4,
+    selectable: false, evented: false
+  })));
+
+  // Marker posizione score
+  const markerX = barX + (score / 100) * barW;
+  fabricCanvas.add(mkObj(new fabric.Polygon(
+    [{ x: 0, y: 0 }, { x: 8, y: -10 }, { x: -8, y: -10 }],
+    { left: markerX, top: barY + barH + 1, fill: '#ffffff', selectable: false, evented: false, isDominanceOverlay: true }
+  )));
+
+  // Etichette spettro
+  fabricCanvas.add(mkObj(new fabric.Text('Empatico', {
+    left: barX, top: barY + barH + 6, fontSize: 9, fill: '#90caf9', fontFamily: 'sans-serif', selectable: false, evented: false
+  })));
+  fabricCanvas.add(mkObj(new fabric.Text('Dominante', {
+    left: barX + barW - 55, top: barY + barH + 6, fontSize: 9, fill: '#ef9a9a', fontFamily: 'sans-serif', selectable: false, evented: false
+  })));
+
+  // Label percezione
+  fabricCanvas.add(mkObj(new fabric.Text(label, {
+    left: panelX + padding, top: panelY + 64, fontSize: 10, fill: '#eeeeee',
+    fontFamily: 'sans-serif', selectable: false, evented: false
+  })));
+
+  // Parametri dettaglio
+  const params = [
+    { name: 'fWHR', val: fWHR.toFixed(2), pct: Math.round(fwhrScore), note: '(principale)' },
+    { name: 'Mandibola', val: jawAngle.toFixed(2), pct: Math.round(jawScore), note: '' },
+    { name: 'Sopracciglio', val: browRatio.toFixed(2), pct: Math.round(browScore), note: '' },
+  ];
+
+  const rowY  = panelY + 82;
+  const colW  = Math.floor((panelW - padding * 2) / 3);
+  const barPH = 6;
+
+  params.forEach((p, i) => {
+    const cx = panelX + padding + i * colW;
+    fabricCanvas.add(mkObj(new fabric.Text(`${p.name}: ${p.val} ${p.note}`, {
+      left: cx, top: rowY, fontSize: 8.5, fill: '#cccccc',
+      fontFamily: 'monospace', selectable: false, evented: false
+    })));
+    // Barra parametro
+    const bw = colW - 8;
+    fabricCanvas.add(mkObj(new fabric.Rect({
+      left: cx, top: rowY + 12, width: bw, height: barPH,
+      fill: '#333355', stroke: '#555577', strokeWidth: 0.5, rx: 2, ry: 2,
+      selectable: false, evented: false
+    })));
+    fabricCanvas.add(mkObj(new fabric.Rect({
+      left: cx, top: rowY + 12, width: Math.round(bw * p.pct / 100), height: barPH,
+      fill: '#7c4dff', rx: 2, ry: 2, selectable: false, evented: false
+    })));
+  });
+
+  // Tooltip fonte scientifica
+  fabricCanvas.add(mkObj(new fabric.Text('Weston 2007 / Carré & McCormick 2008', {
+    left: panelX + padding, top: panelY + panelH - 14, fontSize: 7.5,
+    fill: '#666688', fontFamily: 'sans-serif', fontStyle: 'italic',
+    selectable: false, evented: false
+  })));
+
+  fabricCanvas.renderAll();
+}
+
+window.measureDominanceScore = measureDominanceScore;
+
 // === FINE DEL FILE ===

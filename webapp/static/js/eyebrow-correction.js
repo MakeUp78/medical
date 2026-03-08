@@ -307,41 +307,46 @@ function createFullImageOverlay(sourceCanvas, side, axis) {
     console.log(`    🔴 Punto rosso ${i + 1}: backend(${dot.x.toFixed(1)},${dot.y.toFixed(1)}) → riflesso_backend(${reflected.x.toFixed(1)},${reflected.y.toFixed(1)}) → original(${originalX.toFixed(1)},${originalY.toFixed(1)})`);
   });
 
-  // CORREZIONE: Accoppia ogni punto verde con il punto rosso PIÙ VICINO (in coordinate backend)
-  // Questo garantisce che le frecce puntino sempre al centro del punto corrispondente
-  console.log(`  🔗 Accoppiamento punti verde-rosso per distanza minima (coordinate backend):`);
+  // Accoppia ogni punto verde con il punto rosso tramite nome anatomico corrispondente.
+  // Gli ordini nei due array differiscono: Sx=[LC1,LA0,LA,LC,LB], Dx=[RC1,RB,RC,RA,RA0]
+  // quindi né l'indice né la distanza minima garantiscono l'accoppiamento corretto.
+  // La mappa L↔R è: LA↔RA, LA0↔RA0, LC1↔RC1, LC↔RC, LB↔RB
+  const anatomicalPairMap = { 'LA':'RA','LA0':'RA0','LC1':'RC1','LC':'RC','LB':'RB',
+                               'RA':'LA','RA0':'LA0','RC1':'LC1','RC':'LC','RB':'LB' };
+  // Costruisce una mappa nome→{point, reflectedPoint} per dotsToReflect
+  const redDotByName = {};
+  dotsToReflect.forEach((dot, i) => {
+    const name = dot.anatomical_name;
+    if (name) redDotByName[name] = reflectedRedDots[i];
+  });
+
+  console.log(`  🔗 Accoppiamento punti verde-rosso per nome anatomico:`);
   greenDots.forEach((greenDot, greenIdx) => {
-    // Trova il punto rosso più vicino a questo punto verde (in coordinate backend)
-    let minDistance = Infinity;
-    let closestRedDot = null;
-    let closestRedIdx = -1;
+    const greenName = greenDot.anatomical_name;
+    const partnerName = anatomicalPairMap[greenName];
+    const matchedRedDot = partnerName ? redDotByName[partnerName] : null;
 
-    reflectedRedDots.forEach((redDot, redIdx) => {
-      const dx = redDot.x - greenDot.x;
-      const dy = redDot.y - greenDot.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+    if (!matchedRedDot) {
+      console.warn(`    ⚠️ Verde ${greenIdx} (${greenName}): nessun punto rosso corrispondente per "${partnerName}"`);
+      return;
+    }
 
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestRedDot = redDot;
-        closestRedIdx = redIdx;
+    const dx = matchedRedDot.x - greenDot.x;
+    const dy = matchedRedDot.y - greenDot.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    // Scala entrambi i punti a originale per il disegno
+    arrowPairs.push({
+      from: {
+        x: wasResized ? (greenDot.x * backendToOriginalX) : greenDot.x,
+        y: wasResized ? (greenDot.y * backendToOriginalY) : greenDot.y
+      },
+      to: {
+        x: wasResized ? (matchedRedDot.x * backendToOriginalX) : matchedRedDot.x,
+        y: wasResized ? (matchedRedDot.y * backendToOriginalY) : matchedRedDot.y
       }
     });
-
-    if (closestRedDot) {
-      // Scala entrambi i punti a originale per il disegno
-      arrowPairs.push({
-        from: {
-          x: wasResized ? (greenDot.x * backendToOriginalX) : greenDot.x,
-          y: wasResized ? (greenDot.y * backendToOriginalY) : greenDot.y
-        },
-        to: {
-          x: wasResized ? (closestRedDot.x * backendToOriginalX) : closestRedDot.x,
-          y: wasResized ? (closestRedDot.y * backendToOriginalY) : closestRedDot.y
-        }
-      });
-      console.log(`    🔗 Verde ${greenIdx} → Rosso ${closestRedIdx} (distanza backend: ${minDistance.toFixed(1)}px)`);
-    }
+    console.log(`    🔗 Verde[${greenIdx}] ${greenName} → Rosso ${partnerName} (distanza backend: ${distance.toFixed(1)}px)`);
   });
 
   // Restituisce il canvas E i dati delle frecce per disegnarle in SVG

@@ -3119,6 +3119,10 @@ async def process_voice_keyword(request: VoiceKeywordCommand):
         # ── MISURAZIONI (specifiche PRIMA delle generiche per evitare conflitti) ──
         "simmetria sopracciglia": {"action": "measureEyebrowSymmetry"},
         "simmetria naso": {"action": "measureNosalWingSymmetry"},
+        "dominance score": {"action": "measureDominanceScore"},
+        "dominanza": {"action": "measureDominanceScore"},
+        "dominante": {"action": "measureDominanceScore"},
+        "geometria dominanza": {"action": "measureDominanceScore"},
         "simmetria viso": {"action": "measureFacialSymmetry"},
         "simmetrico": {"action": "measureFacialSymmetry"},
         "simmetrica": {"action": "measureFacialSymmetry"},
