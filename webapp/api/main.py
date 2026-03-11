@@ -2289,6 +2289,64 @@ async def analyze_green_dots(request: WhiteDotsRequest):
         import traceback; traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Errore analisi white dots: {e}")
 
+
+class ManualDotsRequest(BaseModel):
+    """Richiesta per generare overlay da punti anatomici forniti manualmente."""
+    image_width: int
+    image_height: int
+    # Punti per lato: lista di {x, y, anatomical_name}
+    left_dots: List[Dict]
+    right_dots: List[Dict]
+
+@app.post("/api/green-dots/overlay-from-points")
+async def overlay_from_manual_points(request: ManualDotsRequest):
+    """
+    Genera l'overlay PNG identico al flusso automatico ma usando punti anatomici
+    forniti manualmente dall'utente. Restituisce la stessa struttura di /analyze.
+    """
+    try:
+        image_size = (request.image_width, request.image_height)
+
+        # Aggiunge eyebrow tag ai punti
+        left_dots  = [dict(d, eyebrow='left')  for d in request.left_dots]
+        right_dots = [dict(d, eyebrow='right') for d in request.right_dots]
+        all_dots   = left_dots + right_dots
+
+        # Genera overlay con la stessa funzione del flusso automatico
+        overlay_img    = generate_white_dots_overlay(image_size, all_dots)
+        overlay_base64 = convert_pil_image_to_base64(overlay_img)
+
+        left_area  = sum(d.get('size', 10) for d in left_dots)
+        right_area = sum(d.get('size', 10) for d in right_dots)
+
+        return convert_numpy_types({
+            'success': True,
+            'detection_results': {
+                'dots': all_dots,
+                'total_dots': len(all_dots),
+                'total_green_pixels': 0,
+                'image_size': list(image_size),
+                'parameters': {'method': 'manual'},
+            },
+            'groups':      {'Sx': left_dots, 'Dx': right_dots},
+            'coordinates': {
+                'Sx': [(d['x'], d['y']) for d in left_dots],
+                'Dx': [(d['x'], d['y']) for d in right_dots],
+            },
+            'statistics': {
+                'left':     {'count': len(left_dots),  'area': float(left_area)},
+                'right':    {'count': len(right_dots), 'area': float(right_area)},
+                'combined': {'total_vertices': len(all_dots), 'total_area': float(left_area + right_area)},
+            },
+            'overlay_base64': overlay_base64,
+            'image_size': list(image_size),
+        })
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Errore overlay manuale: {e}")
+
+
 # === ENDPOINT UNIFICATO PER ANALISI COMPLETA ===
 
 class CanvasAnalysisRequest(BaseModel):

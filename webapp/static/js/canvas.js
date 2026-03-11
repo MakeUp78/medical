@@ -142,25 +142,40 @@ function setupCanvasEventListeners() {
 
   console.log('ℹ️ Event listeners canvas - delegati a canvas-modes.js');
 
-  // Zoom con rotella mouse
+  // Zoom con rotella mouse / pinch trackpad (ctrlKey) + pan trackpad 2 dita
   fabricCanvas.on('mouse:wheel', function (opt) {
-    const delta = opt.e.deltaY;
-    let zoom = fabricCanvas.getZoom();
-    zoom *= 0.999 ** delta;
+    const e = opt.e;
+    e.preventDefault();
+    e.stopPropagation();
 
-    if (zoom > 20) zoom = 20;
-    if (zoom < 0.01) zoom = 0.01;
+    if (e.ctrlKey) {
+      // Pinch trackpad o Ctrl+scroll → zoom centrato sul cursore
+      const delta = e.deltaY;
+      let zoom = fabricCanvas.getZoom();
+      zoom *= 0.995 ** delta;
 
-    fabricCanvas.setZoom(zoom);
-    canvasScale = zoom;
-    opt.e.preventDefault();
-    opt.e.stopPropagation();
+      if (zoom > 20) zoom = 20;
+      if (zoom < 0.01) zoom = 0.01;
 
-    updateZoomDisplay(zoom);
+      const point = new fabric.Point(e.offsetX, e.offsetY);
+      fabricCanvas.zoomToPoint(point, zoom);
+      canvasScale = zoom;
 
-    // Aggiorna dinamicamente i range degli slider per white dots
-    if (typeof updateSliderRangesForZoom === 'function') {
-      updateSliderRangesForZoom(zoom);
+      updateZoomDisplay(zoom);
+
+      if (typeof updateSliderRangesForZoom === 'function') {
+        updateSliderRangesForZoom(zoom);
+      }
+    } else {
+      // Scroll trackpad 2 dita → pan (diagonale inclusa)
+      // Normalizza deltaMode: 0=pixel, 1=linee(~16px), 2=pagina(~600px)
+      const lineSize = 16;
+      const pageSize = fabricCanvas.height || 600;
+      const multiplier = e.deltaMode === 1 ? lineSize : e.deltaMode === 2 ? pageSize : 1;
+      const vpt = fabricCanvas.viewportTransform;
+      vpt[4] -= e.deltaX * multiplier;
+      vpt[5] -= e.deltaY * multiplier;
+      fabricCanvas.requestRenderAll();
     }
   });
 

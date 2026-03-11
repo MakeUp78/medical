@@ -2105,7 +2105,6 @@ function initializeCanvas() {
   canvas.addEventListener('mousedown', onCanvasMouseDown);
   canvas.addEventListener('mousemove', onCanvasMouseMove);
   canvas.addEventListener('mouseup', onCanvasMouseUp);
-  canvas.addEventListener('wheel', onCanvasWheel);
   canvas.addEventListener('contextmenu', onCanvasRightClick);
 
   // Event listeners per touch mobile
@@ -4827,14 +4826,6 @@ function onCanvasMouseUp(e) {
   finalizeDrawing(startX, startY, endX, endY);
 }
 
-function onCanvasWheel(e) {
-  e.preventDefault();
-
-  if (currentTool === 'zoom-in' || currentTool === 'zoom-out') {
-    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    zoomCanvas(zoomFactor, e.offsetX, e.offsetY);
-  }
-}
 
 function onCanvasRightClick(e) {
   e.preventDefault();
@@ -4888,12 +4879,20 @@ function finalizeDrawing(startX, startY, endX, endY) {
 }
 
 function zoomCanvas(factor, centerX, centerY) {
-  // TODO: Implementare zoom
-  console.log(`Zoom: ${factor} al punto (${centerX}, ${centerY})`);
+  if (!fabricCanvas) return;
+  const zoom = fabricCanvas.getZoom();
+  const newZoom = Math.min(Math.max(zoom * factor, 0.01), 20);
+  const point = new fabric.Point(centerX, centerY);
+  fabricCanvas.zoomToPoint(point, newZoom);
+  canvasScale = newZoom;
+  if (typeof updateZoomDisplay === 'function') updateZoomDisplay(newZoom);
+  if (typeof updateSliderRangesForZoom === 'function') updateSliderRangesForZoom(newZoom);
 }
 
 // === GESTIONE EVENTI TOUCH PER MOBILE ===
 let lastTouchDistance = 0;
+let lastTouchMidX = 0;
+let lastTouchMidY = 0;
 let touchStartTime = 0;
 
 function onCanvasTouchStart(e) {
@@ -4906,7 +4905,7 @@ function onCanvasTouchStart(e) {
 
   touchStartTime = Date.now();
 
-  // Pinch to zoom con 2 dita
+  // Pinch to zoom + pan con 2 dita
   if (e.touches.length === 2) {
     const touch1 = e.touches[0];
     const touch2 = e.touches[1];
@@ -4914,6 +4913,8 @@ function onCanvasTouchStart(e) {
       touch2.clientX - touch1.clientX,
       touch2.clientY - touch1.clientY
     );
+    lastTouchMidX = (touch1.clientX + touch2.clientX) / 2;
+    lastTouchMidY = (touch1.clientY + touch2.clientY) / 2;
     return;
   }
 
@@ -4931,7 +4932,7 @@ function onCanvasTouchStart(e) {
 function onCanvasTouchMove(e) {
   e.preventDefault();
 
-  // Pinch to zoom con 2 dita
+  // Pinch to zoom + pan con 2 dita
   if (e.touches.length === 2) {
     const touch1 = e.touches[0];
     const touch2 = e.touches[1];
@@ -4939,16 +4940,32 @@ function onCanvasTouchMove(e) {
       touch2.clientX - touch1.clientX,
       touch2.clientY - touch1.clientY
     );
+    const midX = (touch1.clientX + touch2.clientX) / 2;
+    const midY = (touch1.clientY + touch2.clientY) / 2;
 
-    if (lastTouchDistance > 0) {
-      const zoomFactor = currentDistance / lastTouchDistance;
-      const centerX = (touch1.clientX + touch2.clientX) / 2;
-      const centerY = (touch1.clientY + touch2.clientY) / 2;
+    if (lastTouchDistance > 0 && fabricCanvas) {
       const rect = e.target.getBoundingClientRect();
-      zoomCanvas(zoomFactor, centerX - rect.left, centerY - rect.top);
+      const canvasMidX = midX - rect.left;
+      const canvasMidY = midY - rect.top;
+
+      // Zoom centrato sul punto medio tra le dita
+      const zoomFactor = currentDistance / lastTouchDistance;
+      zoomCanvas(zoomFactor, canvasMidX, canvasMidY);
+
+      // Pan: sposta il viewport in base al movimento del punto medio
+      const dx = midX - lastTouchMidX;
+      const dy = midY - lastTouchMidY;
+      if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
+        const vpt = fabricCanvas.viewportTransform;
+        vpt[4] += dx;
+        vpt[5] += dy;
+        fabricCanvas.requestRenderAll();
+      }
     }
 
     lastTouchDistance = currentDistance;
+    lastTouchMidX = midX;
+    lastTouchMidY = midY;
     return;
   }
 
@@ -4973,6 +4990,8 @@ function onCanvasTouchEnd(e) {
   // Reset pinch zoom
   if (e.touches.length < 2) {
     lastTouchDistance = 0;
+    lastTouchMidX = 0;
+    lastTouchMidY = 0;
   }
 
   // Non finalizzare se siamo in modalità misurazione
@@ -5128,6 +5147,16 @@ function updateCanvasDisplay() {
   if (greenDotsActive && window.greenDotsDetected) {
     console.log('🎯 Disegno green dots - abilitati nell\'interfaccia');
     drawGreenDots();
+  }
+
+  // Se l'editor punti è aperto, ridisegna i cerchi editor sopra gli overlay
+  if (window._gdeState?.active) {
+    _gdeDrawEditorPoints();
+  }
+
+  // Ridisegna highlight coppia punti se attivo
+  if (window.highlightedPair && typeof drawPointPairHighlight === 'function') {
+    setTimeout(() => drawPointPairHighlight(window.highlightedPair), 50);
   }
 
   // 🔧 ASSICURA che le sezioni sidebar rimangano sempre visibili
@@ -6064,8 +6093,11 @@ function drawGreenDotsFromAPI() {
     console.log(`🧹 Rimossi ${elementsToRemove.length} elementi green dots dal canvas`);
   }
 
-  // Disegna solo l'overlay se disponibile, altrimenti disegna i gruppi manualmente
-  if (data.overlay_base64) {
+  // Se i punti sono stati confermati/modificati manualmente, usa overlay manuale
+  if (!data.overlay_base64 && (window._gdeState?.active || window._gdeState?.manualOverlayReady)) {
+    console.log('✏️ Uso overlay manuale (punti modificati dall\'editor)');
+    _gdeDrawManualOverlay();
+  } else if (data.overlay_base64) {
     console.log('🎨 Uso overlay generato dal processore');
     drawGreenDotsOverlay(data.overlay_base64);
   } else if (data.groups) {
@@ -6877,8 +6909,25 @@ function generateSymmetryAnalysisRows(result) {
   console.log(`⚖️ generateSymmetryAnalysisRows: Asse X = ${symmetryAxisData.x.toFixed(1)}, Linea: (${symmetryAxisData.line.x1.toFixed(1)},${symmetryAxisData.line.y1}) → (${symmetryAxisData.line.x2.toFixed(1)},${symmetryAxisData.line.y2})`);
   console.log(`   Linea in coordinate IMMAGINE ORIGINALE: (${symmetryAxisData.lineOriginal.x1.toFixed(1)},${symmetryAxisData.lineOriginal.y1}) → (${symmetryAxisData.lineOriginal.x2.toFixed(1)},${symmetryAxisData.lineOriginal.y2})`);
 
-  const leftPoints = result.coordinates.Sx; // Coordinate [(x,y), ...] in coordinate IMMAGINE ORIGINALE
-  const rightPoints = result.coordinates.Dx;
+  // result.coordinates.Sx/Dx sono in coordinate BACKEND (spazio dell'immagine processata dal server).
+  // lineOriginal è in coordinate "immagine originale" (pixel del canvas HTML).
+  // Dobbiamo portare i punti backend → immagine originale prima di calcolare le distanze.
+  const backendW = result.image_size ? result.image_size[0] : 1;
+  const backendH = result.image_size ? result.image_size[1] : 1;
+  const imgElem = currentImage ? (currentImage._element || currentImage.getElement()) : null;
+  const origW = imgElem ? (imgElem.naturalWidth || imgElem.width) : backendW;
+  const origH = imgElem ? (imgElem.naturalHeight || imgElem.height) : backendH;
+  const btoX = origW / backendW;   // scala backend → immagine originale
+  const btoY = origH / backendH;
+  // Per normalizzare le distanze a pixel backend (usato da getIntensity) prendiamo la scala inversa
+  const origToBackend = backendW / origW;
+
+  // Converti punti da backend → originale per calcolo con lineOriginal
+  const leftPoints  = (result.coordinates.Sx || []).map(([x, y]) => [x * btoX, y * btoY]);
+  const rightPoints = (result.coordinates.Dx || []).map(([x, y]) => [x * btoX, y * btoY]);
+
+  console.log(`   Scale backend→originale: X=${btoX.toFixed(3)}, Y=${btoY.toFixed(3)}`);
+  console.log(`   Punti backend originals: Sx=${result.coordinates.Sx?.length}, Dx=${result.coordinates.Dx?.length}`);
 
   console.log('📍 COORDINATE GREEN DOTS (immagine originale):');
   console.log('   Sx (sinistro):', leftPoints);
@@ -6926,20 +6975,29 @@ function generateSymmetryAnalysisRows(result) {
 
       console.log(`  📊 ${comparisonName}: L=${leftLabels[leftIdx]}(${leftPoint[0].toFixed(1)},${leftPoint[1].toFixed(1)}, dist⊥=${leftDistance.toFixed(1)}, h=${leftHeight.toFixed(1)}) vs R=${rightLabels[rightIdx]}(${rightPoint[0].toFixed(1)},${rightPoint[1].toFixed(1)}, dist⊥=${rightDistance.toFixed(1)}, h=${rightHeight.toFixed(1)}) → 🔴 ${fartherPoint} più lontano, ⬆️ ${higherPoint} più alto (diff=${heightDifference.toFixed(1)}px)`);
 
+      // distanceDiff e heightDiff normalizzati a pixel backend per getIntensity()
+      // (le distanze sopra sono in px immagine originale, ma getIntensity() usa soglie ~1200px backend)
+      const distanceDiffBackend = distanceDifference * origToBackend;
+      const heightDiffBackend   = heightDifference   * origToBackend;
+
       // Prepara dati per highlight interattivo
+      // leftPoint/rightPoint sono già in coordinate "immagine originale" (dopo conversione btoX/Y)
+      // ma applyPopupGreyingByPoints si aspetta coordinate backend → salviamo anche le versioni backend
+      const leftPointBackend  = (result.coordinates.Sx || [])[leftIdx]  || leftPoint;
+      const rightPointBackend = (result.coordinates.Dx || [])[rightIdx] || rightPoint;
       const pairData = JSON.stringify({
         leftLabel: leftLabels[leftIdx],
         rightLabel: rightLabels[rightIdx],
-        leftPoint: leftPoint,
-        rightPoint: rightPoint,
+        leftPoint: leftPointBackend,
+        rightPoint: rightPointBackend,
         leftIdx: leftIdx,
         rightIdx: rightIdx,
         fartherPoint: fartherPoint,
         closerPoint: closerPoint,
         higherPoint: higherPoint,
         lowerPoint: lowerPoint,
-        distanceDiff: distanceDifference,
-        heightDiff: heightDifference
+        distanceDiff: distanceDiffBackend,
+        heightDiff: heightDiffBackend
       }).replace(/"/g, '&quot;');
 
       // Riga distanza dall'asse - CLICCABILE per evidenziare la coppia
@@ -7881,7 +7939,18 @@ async function detectGreenDots() {
 
     updateCanvasDisplay();
     updateStatus(`Rilevati ${result.detection_results.total_dots} punti`);
-    showToast(`Rilevamento completato: ${result.detection_results.total_dots} punti`, 'success');
+
+    const totalDots = result.detection_results.total_dots;
+    if (totalDots < 10) {
+      showToast(
+        `⚠️ Rilevati solo ${totalDots}/10 punti — usa "Modifica Punti" per correggere`,
+        'warning'
+      );
+      // Apri automaticamente il pannello di editing per guidare l'utente
+      setTimeout(() => openGreenDotsEditor(), 800);
+    } else {
+      showToast(`Rilevamento completato: ${totalDots} punti`, 'success');
+    }
 
   } catch (error) {
     console.error('Errore rilevamento trova differenze:', error);
@@ -10955,3 +11024,1154 @@ if (typeof MutationObserver !== 'undefined') {
     console.log('👀 Observers per sincronizzazione tabella unificata attivati');
   });
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SISTEMA EDITING PUNTI GREEN DOTS (TROVA DIFFERENZA)
+// Permette di aggiungere o spostare i 10 punti rilevati (5 Sx + 5 Dx)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Struttura nomi anatomici attesa:
+ *   Sx (sinistro, indici 0-4): LC1, LA0, LA, LC, LB
+ *   Dx (destro,   indici 0-4): RC1, RB,  RC, RA, RA0
+ *
+ * coordinates.Sx e coordinates.Dx sono array di [x, y] in spazio immagine API.
+ * groups.Sx e groups.Dx sono array di oggetti {x, y, anatomical_name, size, ...}.
+ */
+
+const GDE_LEFT_NAMES  = ['LC1', 'LA0', 'LA', 'LC', 'LB'];
+const GDE_RIGHT_NAMES = ['RC1', 'RB',  'RC', 'RA', 'RA0'];
+
+// Stato interno dell'editor
+window._gdeState = {
+  active: false,           // editor aperto?
+  selectedSide: null,      // 'Sx' | 'Dx' | null
+  selectedIndex: null,     // indice 0-4 del punto selezionato
+  awaitingClick: false,    // in attesa che l'utente clicchi sul canvas
+  fabricObjects: [],       // cerchi/label disegnati dall'editor
+  candidates: { Sx: [], Dx: [] }, // punti automatici non classificati
+};
+
+// ─── Conversione coordinate ─────────────────────────────────────────────────
+
+/**
+ * Da coordinate API (spazio immagine inviata) → coordinate canvas Fabric.js.
+ * Usa transformGreenDotCoordinate che già gestisce rotazione/scala.
+ */
+function _gdeApiToCanvas(apiX, apiY) {
+  return transformGreenDotCoordinate(apiX, apiY);
+}
+
+/**
+ * Da coordinate canvas Fabric.js → coordinate API (spazio immagine).
+ * Inversa di transformGreenDotCoordinate.
+ */
+function _gdeCanvasToApi(canvasX, canvasY) {
+  const natW  = window.currentGreenDotsOverlayNaturalW;
+  const natH  = window.currentGreenDotsOverlayNaturalH;
+  const scaleX = window.greenDotsOverlayScaleXAtDetection;
+  const scaleY = window.greenDotsOverlayScaleYAtDetection;
+
+  if (!natW || !natH || !scaleX || !scaleY || !currentImage) {
+    // Fallback senza metadati overlay
+    return { x: canvasX, y: canvasY };
+  }
+
+  const center = currentImage.getCenterPoint();
+  let relX = canvasX - center.x;
+  let relY = canvasY - center.y;
+
+  // Rimuovi rotazione aggiuntiva post-detection
+  const detectionAngle = window.greenDotsDetectionAngle || 0;
+  const additionalAngle = (currentImage.angle || 0) - detectionAngle;
+  if (additionalAngle !== 0) {
+    const rad = -additionalAngle * Math.PI / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const rx = relX * cos - relY * sin;
+    const ry = relX * sin + relY * cos;
+    relX = rx;
+    relY = ry;
+  }
+
+  // Inverti scala overlay
+  const cx = relX / scaleX;
+  const cy = relY / scaleY;
+
+  return {
+    x: cx + natW / 2,
+    y: cy + natH / 2
+  };
+}
+
+// ─── Disegno punti editor sul canvas ─────────────────────────────────────────
+
+function _gdeClearEditorObjects() {
+  if (!fabricCanvas) return;
+  window._gdeState.fabricObjects.forEach(obj => {
+    try { fabricCanvas.remove(obj); } catch(e) {}
+  });
+  window._gdeState.fabricObjects = [];
+  fabricCanvas.renderAll();
+}
+
+/**
+ * Disegna tutti i punti attuali come cerchi colorati+etichette sul canvas.
+ * Punti presenti = verde (Sx) / arancione (Dx).
+ * Punto selezionato = giallo pulsante.
+ * Slot mancante = cerchio tratteggiato grigio.
+ */
+function _gdeDrawEditorPoints() {
+  _gdeClearEditorObjects();
+  if (!window.greenDotsData || !fabricCanvas) return;
+
+  const coords = window.greenDotsData.coordinates || {};
+  const sxCoords = coords.Sx || [];
+  const dxCoords = coords.Dx || [];
+
+  const state = window._gdeState;
+
+  // Pre-costruisce lookup name→size dai groups per usare la dimensione reale del blob
+  const groupsData = window.greenDotsData.groups || {};
+  const dotSizeByName = {};
+  ['Sx', 'Dx'].forEach(s => {
+    (groupsData[s] || []).forEach(d => {
+      if (d.anatomical_name) dotSizeByName[d.anatomical_name] = d.size || 0;
+    });
+  });
+
+  // Scala pixel@1200px (spazio backend) → pixel canvas.
+  // I `size` sono calcolati internamente dal backend sull'immagine ridimensionata a
+  // WHITE_DOTS_TARGET_WIDTH=1200px, indipendentemente dalla risoluzione inviata.
+  const apiToCanvasScale = (() => {
+    if (!currentImage) return 1;
+    const bbox = currentImage.getBoundingRect(true);
+    return bbox.width / 1200;
+  })();
+
+  const drawPoint = (apiCoord, side, idx, name) => {
+    const isSel = state.selectedSide === side && state.selectedIndex === idx;
+    const isSx  = side === 'Sx';
+
+    let fillColor, strokeColor;
+    if (isSel) {
+      fillColor   = 'rgba(255, 230, 0, 0.5)';
+      strokeColor = '#ff8800';
+    } else if (apiCoord) {
+      fillColor   = isSx ? 'rgba(0, 220, 80, 0.35)' : 'rgba(255, 140, 0, 0.35)';
+      strokeColor = isSx ? '#00cc50' : '#ee7700';
+    } else {
+      fillColor   = 'rgba(120,120,120,0.15)';
+      strokeColor = '#888888';
+    }
+
+    let canvasPos;
+    if (apiCoord) {
+      const savedXY = (window._gdeCanvasXY || {})[`${side}_${idx}`];
+      canvasPos = savedXY || _gdeApiToCanvas(apiCoord[0], apiCoord[1]);
+    } else {
+      // Punto mancante: posizione stimata vicino al sopracciglio
+      if (!currentImage) return;
+      const center = currentImage.getCenterPoint();
+      const offset = isSx ? -60 : 60;
+      canvasPos = { x: center.x + offset, y: center.y - 30 + idx * 14 };
+    }
+
+    // Radius = dimensione reale del blob sul canvas, senza padding aggiuntivo.
+    // size è in px² @1200px → r_api = sqrt(size/π) → r_canvas = r_api * (canvasW/1200)
+    const dotSize = dotSizeByName[name] || 0;
+    const baseRadius = (() => {
+      if (dotSize > 0) {
+        const rApi = Math.sqrt(dotSize / Math.PI);
+        return Math.min(8, Math.max(2, Math.round(rApi * apiToCanvasScale)));
+      }
+      return 3; // Fallback punti mancanti
+    })();
+    const radius = isSel ? baseRadius + 1 : baseRadius;
+    const circle = new fabric.Circle({
+      left: canvasPos.x,
+      top:  canvasPos.y,
+      originX: 'center',
+      originY: 'center',
+      radius: radius,
+      fill: fillColor,
+      stroke: strokeColor,
+      strokeWidth: isSel ? 2 : 1,
+      strokeDashArray: apiCoord ? null : [4, 4],
+      selectable: false,
+      evented: true,
+      hasControls: false,
+      hasBorders: false,
+      isGreenDotsEditorPoint: true,
+      gdeSide: side,
+      gdeIndex: idx,
+      gdeName: name,
+      hoverCursor: 'pointer',
+    });
+
+    // Evidenziazione hover
+    circle.on('mouseover', function() {
+      if (!window._gdeState.awaitingClick) {
+        this.set({ radius: this.radius + 2, strokeWidth: this.strokeWidth + 1 });
+        fabricCanvas.renderAll();
+      }
+    });
+    circle.on('mouseout', function() {
+      if (!window._gdeState.awaitingClick) {
+        this.set({ radius: this.radius - 2, strokeWidth: Math.max(1, this.strokeWidth - 1) });
+        fabricCanvas.renderAll();
+      }
+    });
+
+    circle.on('mousedown', function() {
+      if (!window._gdeState.awaitingClick) {
+        _gdeSelectPoint(side, idx);
+      }
+    });
+
+    fabricCanvas.add(circle);
+    window._gdeState.fabricObjects.push(circle);
+
+    // Etichetta testo (fontSize adattivo come il radius)
+    const fontSize = Math.min(12, Math.max(7, radius + 2));
+    const label = new fabric.Text(name, {
+      left: canvasPos.x + radius + 2,
+      top:  canvasPos.y - fontSize / 2,
+      fontSize: fontSize,
+      fill: isSel ? '#ffee00' : (isSx ? '#88ffaa' : '#ffcc88'),
+      fontFamily: 'monospace',
+      fontWeight: isSel ? 'bold' : 'normal',
+      selectable: false,
+      evented: false,
+      isGreenDotsEditorPoint: true,
+      shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.8)', blur: 3, offsetX: 1, offsetY: 1 }),
+    });
+    fabricCanvas.add(label);
+    window._gdeState.fabricObjects.push(label);
+  };
+
+  GDE_LEFT_NAMES.forEach((name, idx) => {
+    const coord = sxCoords[idx] || null;
+    drawPoint(coord, 'Sx', idx, name);
+  });
+  GDE_RIGHT_NAMES.forEach((name, idx) => {
+    const coord = dxCoords[idx] || null;
+    drawPoint(coord, 'Dx', idx, name);
+  });
+
+  // Disegna i candidati automatici non ancora assegnati (cerchi azzurri numerati)
+  const candidates = window._gdeState.candidates || {};
+  const drawCandidate = (cand, side, candIdx) => {
+    const canvasPos = _gdeApiToCanvas(cand.x, cand.y);
+    const sz = cand.size || 0;
+    const rApi = sz > 0 ? Math.sqrt(sz / Math.PI) : 3;
+    const r = Math.min(8, Math.max(2, Math.round(rApi * apiToCanvasScale)));
+
+    const circle = new fabric.Circle({
+      left: canvasPos.x - r,
+      top:  canvasPos.y - r,
+      radius: r,
+      fill: 'rgba(0,180,255,0.2)',
+      stroke: '#00aaff',
+      strokeWidth: 1,
+      strokeDashArray: [3, 2],
+      selectable: false,
+      evented: false,
+      isGreenDotsEditorPoint: true,
+      opacity: 0.85,
+    });
+    fabricCanvas.add(circle);
+    window._gdeState.fabricObjects.push(circle);
+
+    const lbl = new fabric.Text(cand.label, {
+      left: canvasPos.x + r + 1,
+      top:  canvasPos.y - 5,
+      fontSize: Math.min(11, Math.max(7, r + 2)),
+      fill: '#55ddff',
+      fontFamily: 'monospace',
+      selectable: false,
+      evented: false,
+      isGreenDotsEditorPoint: true,
+      shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.8)', blur: 2 }),
+    });
+    fabricCanvas.add(lbl);
+    window._gdeState.fabricObjects.push(lbl);
+  };
+
+  ['Sx', 'Dx'].forEach(side => {
+    (candidates[side] || []).forEach((cand, i) => drawCandidate(cand, side, i));
+  });
+
+  fabricCanvas.renderAll();
+}
+
+// ─── Selezione punto ──────────────────────────────────────────────────────────
+
+function _gdeSelectPoint(side, idx) {
+  const state = window._gdeState;
+  const names = side === 'Sx' ? GDE_LEFT_NAMES : GDE_RIGHT_NAMES;
+  const name  = names[idx];
+  const coords = window.greenDotsData?.coordinates || {};
+  const arr    = (side === 'Sx' ? coords.Sx : coords.Dx) || [];
+  const hasPoint = !!arr[idx];
+
+  state.selectedSide  = side;
+  state.selectedIndex = idx;
+
+  _gdeDrawEditorPoints();
+  _gdeUpdatePanelSelection(side, idx, name, hasPoint);
+
+  // Entra in modalità "attesa click" per spostare/posizionare il punto
+  _gdeStartAwaitingClick(name);
+}
+
+function _gdeStartAwaitingClick(pointName) {
+  const state = window._gdeState;
+  state.awaitingClick = true;
+
+  // Aggiorna UI pannello
+  const hint = document.getElementById('gde-hint');
+  if (hint) {
+    hint.textContent = `Clicca sull'immagine per posizionare "${pointName}"`;
+    hint.style.display = 'block';
+  }
+
+  // Cambia cursore canvas
+  if (fabricCanvas) {
+    fabricCanvas.defaultCursor = 'crosshair';
+    fabricCanvas.hoverCursor   = 'crosshair';
+  }
+}
+
+function _gdeCancelSelection() {
+  const state = window._gdeState;
+  state.selectedSide  = null;
+  state.selectedIndex = null;
+  state.awaitingClick = false;
+
+  const hint = document.getElementById('gde-hint');
+  if (hint) hint.style.display = 'none';
+
+  if (fabricCanvas) {
+    fabricCanvas.defaultCursor = 'default';
+    fabricCanvas.hoverCursor   = 'move';
+  }
+
+  _gdeDrawEditorPoints();
+  _gdeUpdatePanelSelection(null, null, null, false);
+}
+
+// ─── Gestione click canvas in modalità editing ────────────────────────────────
+
+function _gdeHandleCanvasClick(e) {
+  const state = window._gdeState;
+  if (!state.active || !state.awaitingClick) return;
+  if (state.selectedSide === null || state.selectedIndex === null) return;
+
+  const pointer = e.absolutePointer || fabricCanvas.getPointer(e.e, false);
+
+  // Ignora click su cerchi editor (evented=true ma gestiamo qui)
+  const target = e.target;
+  if (target && target.isGreenDotsEditorPoint) {
+    // Click su altro punto: seleziona quello
+    if (target.gdeSide !== undefined && target.gdeIndex !== undefined) {
+      _gdeSelectPoint(target.gdeSide, target.gdeIndex);
+    }
+    return;
+  }
+
+  // Converti canvas → coordinate API per i dati strutturati
+  const apiCoord = _gdeCanvasToApi(pointer.x, pointer.y);
+
+  // Aggiorna greenDotsData con le coordinate API
+  _gdeSetPointCoord(state.selectedSide, state.selectedIndex, [apiCoord.x, apiCoord.y]);
+
+  // Memorizza anche le coordinate canvas-world originali per evitare offset nel ridisegno.
+  // Il round-trip canvas→API→canvas può introdurre drift se i metadati overlay non sono
+  // perfettamente allineati. Con _canvasXY ridisegniamo esattamente dove l'utente ha cliccato.
+  if (!window._gdeCanvasXY) window._gdeCanvasXY = {};
+  window._gdeCanvasXY[`${state.selectedSide}_${state.selectedIndex}`] = { x: pointer.x, y: pointer.y };
+
+  // Esci dalla modalità attesa
+  state.awaitingClick = false;
+  if (fabricCanvas) {
+    fabricCanvas.defaultCursor = 'default';
+    fabricCanvas.hoverCursor   = 'move';
+  }
+
+  const hint = document.getElementById('gde-hint');
+  if (hint) hint.style.display = 'none';
+
+  // Ridisegna e aggiorna pannello
+  _gdeDrawEditorPoints();
+  _gdeRefreshPanel();
+
+  const names = state.selectedSide === 'Sx' ? GDE_LEFT_NAMES : GDE_RIGHT_NAMES;
+  showToast(`✅ Punto ${names[state.selectedIndex]} posizionato`, 'success');
+
+  // Deseleziona automaticamente
+  state.selectedSide  = null;
+  state.selectedIndex = null;
+}
+
+// ─── Modifica struttura dati ──────────────────────────────────────────────────
+
+function _gdeSetPointCoord(side, idx, coord) {
+  if (!window.greenDotsData) return;
+
+  if (!window.greenDotsData.coordinates) window.greenDotsData.coordinates = {};
+  const coordData = window.greenDotsData.coordinates;
+  if (!coordData.Sx) coordData.Sx = new Array(5).fill(null);
+  if (!coordData.Dx) coordData.Dx = new Array(5).fill(null);
+
+  if (side === 'Sx') {
+    coordData.Sx[idx] = coord;
+  } else {
+    coordData.Dx[idx] = coord;
+  }
+
+  // Aggiorna anche groups per coerenza (se esiste)
+  const groups = window.greenDotsData.groups || {};
+  const groupArr = groups[side] || [];
+  const names = side === 'Sx' ? GDE_LEFT_NAMES : GDE_RIGHT_NAMES;
+  const name  = names[idx];
+  const existing = groupArr.find(d => d.anatomical_name === name);
+  if (existing) {
+    existing.x = coord[0];
+    existing.y = coord[1];
+  } else {
+    if (!window.greenDotsData.groups) window.greenDotsData.groups = {};
+    if (!window.greenDotsData.groups[side]) window.greenDotsData.groups[side] = [];
+    window.greenDotsData.groups[side].push({
+      x: coord[0], y: coord[1],
+      anatomical_name: name,
+      size: 10, score: 1.0, compactness: 0.8,
+      h: 0, s: 0, v: 200
+    });
+  }
+
+  // Ricalcola statistics (aree poligoni)
+  _gdeRecalcStatistics();
+
+  // Aggiorna total_dots
+  const sxFilled = (window.greenDotsData.coordinates.Sx || []).filter(Boolean).length;
+  const dxFilled = (window.greenDotsData.coordinates.Dx || []).filter(Boolean).length;
+  if (!window.greenDotsData.detection_results) window.greenDotsData.detection_results = {};
+  window.greenDotsData.detection_results.total_dots = sxFilled + dxFilled;
+}
+
+function _gdeRecalcStatistics() {
+  const data = window.greenDotsData;
+  if (!data || !data.coordinates) return;
+
+  const sxPts = (data.coordinates.Sx || []).filter(Boolean);
+  const dxPts = (data.coordinates.Dx || []).filter(Boolean);
+
+  const polyArea = (pts) => {
+    if (pts.length < 3) return 0;
+    let area = 0;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      area += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]);
+    }
+    return Math.abs(area) / 2;
+  };
+
+  const leftArea  = polyArea(sxPts);
+  const rightArea = polyArea(dxPts);
+
+  if (!data.statistics) data.statistics = {};
+  data.statistics.left     = { area: leftArea };
+  data.statistics.right    = { area: rightArea };
+  data.statistics.combined = { total_area: leftArea + rightArea };
+}
+
+// ─── Overlay manuale (poligoni + cerchi punti) basato sulle coordinate correnti ─
+
+/**
+ * Disegna l'overlay dei punti direttamente sul canvas Fabric.js usando
+ * le coordinate in window.greenDotsData.coordinates (spazio immagine API).
+ * Replica l'aspetto dell'overlay PNG del backend: area colorata + cerchi punti.
+ * Usato dopo la modifica manuale dei punti in sostituzione/integrazione dell'overlay PNG.
+ */
+function _gdeDrawManualOverlay() {
+  if (!window.greenDotsData || !fabricCanvas) return;
+
+  const coords = window.greenDotsData.coordinates || {};
+  const sxPts  = (coords.Sx || []).filter(Boolean);
+  const dxPts  = (coords.Dx || []).filter(Boolean);
+
+  // Rimuovi vecchi overlay green dots
+  const toRemove = fabricCanvas.getObjects().filter(obj =>
+    obj.isGreenDot || obj.isGreenDotsOverlay || obj.isGreenDotsGroup || obj.isGdeManualOverlay
+  );
+  toRemove.forEach(o => fabricCanvas.remove(o));
+
+  const addObj = (obj) => {
+    obj.isGdeManualOverlay = true;
+    fabricCanvas.add(obj);
+    // Mettilo sopra l'immagine ma sotto gli editor points
+    const bg = fabricCanvas.getObjects().find(o => o.isBackgroundImage);
+    if (bg) {
+      const bgIdx = fabricCanvas.getObjects().indexOf(bg);
+      fabricCanvas.moveTo(obj, bgIdx + 1);
+    }
+  };
+
+  // Lookup size reale blob per nome anatomico (dai groups)
+  const groups = window.greenDotsData.groups || {};
+  const sizeByName = {};
+  ['Sx', 'Dx'].forEach(s => {
+    (groups[s] || []).forEach(d => {
+      if (d.anatomical_name) sizeByName[d.anatomical_name] = d.size || 0;
+    });
+  });
+
+  // Scala pixel@1200px (spazio backend) → pixel canvas
+  const overlayScale = (() => {
+    if (!currentImage) return 1;
+    const bbox = currentImage.getBoundingRect(true);
+    return bbox.width / 1200;
+  })();
+
+  const dotRadius = (name) => {
+    const sz = sizeByName[name] || 0;
+    if (sz > 0) {
+      const rApi = Math.sqrt(sz / Math.PI);
+      return Math.min(8, Math.max(2, Math.round(rApi * overlayScale)));
+    }
+    return 3;
+  };
+
+  const drawSide = (apiPts, names, fillColor, strokeColor, side, slotIndices) => {
+    if (apiPts.length < 2) return;
+
+    // Usa coordinate canvas-world dirette per i punti posizionati manualmente
+    const savedXY = window._gdeCanvasXY || {};
+    const canvasPts = apiPts.map((p, i) => {
+      const slotIdx = slotIndices ? slotIndices[i] : i;
+      return savedXY[`${side}_${slotIdx}`] || _gdeApiToCanvas(p[0], p[1]);
+    });
+
+    if (canvasPts.length >= 3) {
+      const poly = new fabric.Polygon(canvasPts.map(p => ({ x: p.x, y: p.y })), {
+        fill: fillColor,
+        stroke: strokeColor,
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+        opacity: 0.5,
+      });
+      addObj(poly);
+    } else if (canvasPts.length === 2) {
+      const line = new fabric.Line(
+        [canvasPts[0].x, canvasPts[0].y, canvasPts[1].x, canvasPts[1].y],
+        { stroke: strokeColor, strokeWidth: 1.5, selectable: false, evented: false }
+      );
+      addObj(line);
+    }
+
+    // Cerchi + etichette anatomiche
+    canvasPts.forEach((p, i) => {
+      const r = dotRadius(names[i]);
+      const dot = new fabric.Circle({
+        left: p.x - r,
+        top:  p.y - r,
+        radius: r,
+        fill: fillColor,
+        stroke: strokeColor,
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+        opacity: 0.9,
+      });
+      addObj(dot);
+
+      const lbl = new fabric.Text(names[i] || '', {
+        left: p.x + r + 1,
+        top:  p.y - 5,
+        fontSize: 9,
+        fill: strokeColor,
+        fontFamily: 'monospace',
+        selectable: false,
+        evented: false,
+        shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.9)', blur: 2 }),
+      });
+      addObj(lbl);
+    });
+  };
+
+  const sxSlots = (coords.Sx || []).map((c, i) => c ? i : null).filter(i => i !== null);
+  const dxSlots = (coords.Dx || []).map((c, i) => c ? i : null).filter(i => i !== null);
+  const sxNames = sxSlots.map(i => GDE_LEFT_NAMES[i]);
+  const dxNames = dxSlots.map(i => GDE_RIGHT_NAMES[i]);
+
+  drawSide(sxPts, sxNames, 'rgba(0,200,80,0.25)',  'rgba(0,220,80,0.9)',  'Sx', sxSlots);
+  drawSide(dxPts, dxNames, 'rgba(255,140,0,0.25)', 'rgba(255,150,0,0.9)', 'Dx', dxSlots);
+
+  fabricCanvas.renderAll();
+}
+
+// ─── Conferma e ricalcolo finale ──────────────────────────────────────────────
+
+async function _gdeConfirmAndRecalculate() {
+  const data = window.greenDotsData;
+  if (!data) return;
+
+  const sxFilled = (data.coordinates?.Sx || []).filter(Boolean).length;
+  const dxFilled = (data.coordinates?.Dx || []).filter(Boolean).length;
+  const total = sxFilled + dxFilled;
+
+  if (total < 10) {
+    if (!confirm(`Hai ${total}/10 punti. Vuoi confermare ugualmente e ricalcolare con i punti disponibili?`)) {
+      return;
+    }
+  }
+
+  showToast('⏳ Generazione overlay in corso...', 'info');
+
+  // Costruisce i gruppi con nomi anatomici corretti
+  const leftDots  = [];
+  const rightDots = [];
+  GDE_LEFT_NAMES.forEach((name, i) => {
+    const coord = (data.coordinates?.Sx || [])[i];
+    if (coord) leftDots.push({ x: coord[0], y: coord[1], anatomical_name: name, size: 10 });
+  });
+  GDE_RIGHT_NAMES.forEach((name, i) => {
+    const coord = (data.coordinates?.Dx || [])[i];
+    if (coord) rightDots.push({ x: coord[0], y: coord[1], anatomical_name: name, size: 10 });
+  });
+
+  // Dimensioni immagine originale (spazio coordinate API)
+  const imgW = data.image_size ? data.image_size[0] : (window.currentGreenDotsOverlayNaturalW || 3024);
+  const imgH = data.image_size ? data.image_size[1] : (window.currentGreenDotsOverlayNaturalH || 4032);
+
+  try {
+    // Chiama il backend per generare l'overlay PNG identico al flusso automatico
+    const response = await fetch('/api/green-dots/overlay-from-points', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_width:  imgW,
+        image_height: imgH,
+        left_dots:  leftDots,
+        right_dots: rightDots,
+      })
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const result = await response.json();
+
+    // Sostituisce greenDotsData con il risultato del backend (ha overlay_base64, groups, statistics corretti)
+    // Mantiene le coordinate manuali che abbiamo
+    result.coordinates = data.coordinates;
+    window.greenDotsData = result;
+    window.greenDotsDetected = true;
+
+    // Chiudi l'editor
+    closeGreenDotsEditor();
+
+    // Esegui esattamente il flusso originale post-rilevamento
+    updateMeasurementsFromGreenDots(result);
+    updateCanvasDisplay();
+
+    // Feedback vocale identico al flusso automatico
+    if (!window.suppressVoiceFeedback &&
+        typeof voiceAssistant !== 'undefined' && voiceAssistant.speak) {
+      const feedback = analyzeEyebrowDesignFromData(result);
+      if (feedback) voiceAssistant.speak(feedback);
+    }
+
+    updateStatus(`Trova differenze: ${total}/10 punti`);
+    showToast(`✅ Analisi completata con ${total}/10 punti`, total === 10 ? 'success' : 'warning');
+
+  } catch (err) {
+    console.error('Errore generazione overlay:', err);
+    // Fallback: usa overlay manuale
+    data.groups = { Sx: leftDots.map(d => ({...d, eyebrow:'left'})), Dx: rightDots.map(d => ({...d, eyebrow:'right'})) };
+    data.success = true;
+    data.overlay_base64 = null;
+    window.currentGreenDotsOverlay = null;
+    if (!data.detection_results) data.detection_results = {};
+    data.detection_results.total_dots = total;
+    _gdeRecalcStatistics();
+    window._gdeState.manualOverlayReady = true;
+    closeGreenDotsEditor();
+    window.greenDotsDetected = true;
+    updateMeasurementsFromGreenDots(data);
+    updateCanvasDisplay();
+    showToast(`⚠️ Overlay approssimativo (${total}/10 punti)`, 'warning');
+  }
+}
+
+// ─── Pannello UI ──────────────────────────────────────────────────────────────
+
+/**
+ * Normalizza coordinates.Sx/Dx in slot canonici e raccoglie i punti automatici
+ * non classificati come "candidati" (window._gdeState.candidates).
+ *
+ * - Se un lato ha 5 nomi anatomici validi → li mantiene negli slot canonici.
+ * - Se ha meno di 5 nomi validi → azzera gli slot (nomi provvisori L1/L2 non affidabili)
+ *   e mette tutti i punti trovati in candidates[side] per permettere il mapping manuale.
+ * - Se ha 5 nomi validi ma alcuni sono anche in candidates, i candidati sono ignorati.
+ */
+function _gdeNormalizeCoordinates() {
+  const data = window.greenDotsData;
+  if (!data) return;
+  if (!data.coordinates) data.coordinates = {};
+
+  const VALID_SX = new Set(GDE_LEFT_NAMES);
+  const VALID_DX = new Set(GDE_RIGHT_NAMES);
+
+  // Inizializza candidati
+  window._gdeState.candidates = { Sx: [], Dx: [] };
+
+  const normalize = (side, validSet, names) => {
+    const groups = (data.groups || {})[side] || [];
+
+    // Raccoglie tutti i punti trovati come candidati (con posizione e size)
+    const allCandidates = groups.map((d, i) => ({
+      x: d.x, y: d.y,
+      size: d.size || 0,
+      originalName: d.anatomical_name || `${side}${i+1}`,
+      label: `#${i+1}` // etichetta visiva sul canvas
+    }));
+
+    // Conta nomi anatomici validi
+    const validGroups = groups.filter(d => d.anatomical_name && validSet.has(d.anatomical_name));
+
+    if (validGroups.length === 5) {
+      // Tutti e 5 i punti classificati correttamente → mappa negli slot canonici
+      const byName = {};
+      validGroups.forEach(d => { byName[d.anatomical_name] = [d.x, d.y]; });
+      data.coordinates[side] = names.map(name => byName[name] || null);
+      // Nessun candidato: i punti sono già classificati
+      window._gdeState.candidates[side] = [];
+    } else {
+      // Meno di 5 classificati → azzera slot e metti tutti come candidati
+      data.coordinates[side] = new Array(5).fill(null);
+      window._gdeState.candidates[side] = allCandidates;
+      // Pulisci groups non validi
+      if (data.groups && data.groups[side]) {
+        data.groups[side] = [];
+      }
+    }
+  };
+
+  normalize('Sx', VALID_SX, GDE_LEFT_NAMES);
+  normalize('Dx', VALID_DX, GDE_RIGHT_NAMES);
+}
+
+/**
+ * Assegna un candidato (punto automatico) a uno slot anatomico.
+ * @param {string} side  'Sx' | 'Dx'
+ * @param {number} slotIdx  indice 0-4 nello slot anatomico
+ * @param {number} candIdx  indice nel array candidates[side]
+ */
+function _gdeAssignCandidate(side, slotIdx, candIdx) {
+  const cands = window._gdeState.candidates[side] || [];
+  const cand = cands[candIdx];
+  if (!cand) return;
+
+  // Assegna la coordinata all'slot
+  _gdeSetPointCoord(side, slotIdx, [cand.x, cand.y]);
+
+  // Rimuovi il candidato dalla lista (è stato usato)
+  window._gdeState.candidates[side].splice(candIdx, 1);
+
+  _gdeDrawEditorPoints();
+  _gdeRefreshPanel();
+
+  const names = side === 'Sx' ? GDE_LEFT_NAMES : GDE_RIGHT_NAMES;
+  showToast(`✅ Candidato assegnato a ${names[slotIdx]}`, 'success');
+}
+window._gdeAssignCandidate = _gdeAssignCandidate;
+
+/**
+ * Ignora un candidato (lo rimuove dalla lista senza assegnarlo).
+ */
+function _gdeIgnoreCandidate(side, candIdx) {
+  const cands = window._gdeState.candidates[side] || [];
+  if (candIdx < 0 || candIdx >= cands.length) return;
+  window._gdeState.candidates[side].splice(candIdx, 1);
+  _gdeDrawEditorPoints();
+  _gdeRefreshPanel();
+}
+window._gdeIgnoreCandidate = _gdeIgnoreCandidate;
+
+function openGreenDotsEditor() {
+  if (!window.greenDotsData || !window.greenDotsData.success) {
+    showToast('Prima esegui "Trova Differenza"', 'warning');
+    return;
+  }
+
+  // Normalizza coordinate: se < 5 punti validi per lato, azzera quegli slot
+  // così l'utente non vede nomi anatomici errati assegnati a punti sbagliati
+  _gdeNormalizeCoordinates();
+
+  window._gdeState.active = true;
+  window._gdeState.awaitingClick = false;
+  window._gdeState.selectedSide = null;
+  window._gdeState.selectedIndex = null;
+  window._gdeState.manualOverlayReady = false;
+  window._gdeCanvasXY = {}; // resetta coordinate canvas manuali
+
+  _gdeBuildPanel();
+  _gdeDrawEditorPoints();
+
+  // Disabilita drag dell'immagine durante l'editor per evitare spostamenti accidentali
+  // che farebbero apparire il cerchio in posizione sbagliata rispetto al click
+  if (currentImage) {
+    currentImage.set({ selectable: false, evented: false });
+    fabricCanvas.discardActiveObject();
+    fabricCanvas.renderAll();
+  }
+
+  // Registra listener click canvas
+  if (fabricCanvas) {
+    fabricCanvas.off('mouse:down', _gdeHandleCanvasClick);
+    fabricCanvas.on('mouse:down', _gdeHandleCanvasClick);
+  }
+}
+window.openGreenDotsEditor = openGreenDotsEditor;
+
+function closeGreenDotsEditor() {
+  window._gdeState.active = false;
+  window._gdeState.awaitingClick = false;
+  window._gdeState.selectedSide = null;
+  window._gdeState.selectedIndex = null;
+
+  // Ripristina drag dell'immagine
+  if (currentImage) {
+    currentImage.set({ selectable: true, evented: true });
+    fabricCanvas.renderAll();
+  }
+
+  if (fabricCanvas) {
+    fabricCanvas.off('mouse:down', _gdeHandleCanvasClick);
+    fabricCanvas.defaultCursor = 'default';
+    fabricCanvas.hoverCursor   = 'move';
+  }
+
+  _gdeClearEditorObjects();
+
+  const panel = document.getElementById('gde-panel');
+  if (panel) panel.remove();
+}
+window.closeGreenDotsEditor = closeGreenDotsEditor;
+
+function _gdeBuildPanel() {
+  // Rimuovi pannello precedente
+  const existing = document.getElementById('gde-panel');
+  if (existing) existing.remove();
+
+  const panel = document.createElement('div');
+  panel.id = 'gde-panel';
+  panel.style.cssText = `
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    width: 280px;
+    max-height: 80vh;
+    overflow-y: auto;
+    background: #1a2332;
+    border: 2px solid #00aaff;
+    border-radius: 10px;
+    z-index: 9999;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.7);
+    font-family: monospace;
+    font-size: 12px;
+    color: #e0e8f0;
+    user-select: none;
+  `;
+
+  panel.innerHTML = `
+    <div id="gde-header" style="
+      background: #0d1c2e;
+      padding: 8px 12px;
+      border-radius: 8px 8px 0 0;
+      display: flex; align-items: center; justify-content: space-between;
+      cursor: move; border-bottom: 1px solid #00aaff33;
+    ">
+      <span style="font-weight:bold; color:#00ccff; font-size:13px;">✏️ Modifica Punti</span>
+      <button onclick="closeGreenDotsEditor()" style="
+        background:none; border:none; color:#ff6666; font-size:16px;
+        cursor:pointer; padding:0 4px; line-height:1;
+      ">✕</button>
+    </div>
+
+    <div id="gde-hint" style="
+      display:none; background:#ff8c00; color:#fff; padding:6px 10px;
+      font-size:11px; text-align:center; font-weight:bold;
+    "></div>
+
+    <div style="padding: 8px 10px;">
+      <div id="gde-status-bar" style="
+        background:#0d2233; border-radius:6px; padding:5px 10px;
+        margin-bottom:8px; text-align:center;
+        font-size:11px; color:#aaccee;
+      "></div>
+
+      <!-- Candidati automatici -->
+      <div id="gde-candidates-section" style="margin-bottom:10px; display:none;">
+        <div style="
+          background:#0d2a3a; border-radius:5px 5px 0 0; padding:4px 8px;
+          color:#55ddff; font-weight:bold; font-size:11px;
+        ">◉ PUNTI AUTOMATICI (azzurri sul canvas)</div>
+        <div id="gde-candidates-body" style="background:#071520; border-radius:0 0 5px 5px; padding:4px 6px;
+          font-size:10px; color:#aaccdd; line-height:1.6;">
+        </div>
+      </div>
+
+      <!-- Sopracciglio Sinistro -->
+      <div style="margin-bottom:10px;">
+        <div style="
+          background:#1a4a2a; border-radius:5px 5px 0 0; padding:4px 8px;
+          color:#88ffaa; font-weight:bold; font-size:11px;
+        ">◀ SINISTRO (Sx)</div>
+        <div id="gde-list-Sx" style="background:#101c15; border-radius:0 0 5px 5px; padding:4px 6px;"></div>
+      </div>
+
+      <!-- Sopracciglio Destro -->
+      <div style="margin-bottom:10px;">
+        <div style="
+          background:#4a2a00; border-radius:5px 5px 0 0; padding:4px 8px;
+          color:#ffcc88; font-weight:bold; font-size:11px;
+        ">▶ DESTRO (Dx)</div>
+        <div id="gde-list-Dx" style="background:#1c1408; border-radius:0 0 5px 5px; padding:4px 6px;"></div>
+      </div>
+
+      <!-- Azioni -->
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <button onclick="_gdeCancelSelection()" style="
+          flex:1; background:#2a3a4a; border:1px solid #556; color:#aac;
+          border-radius:5px; padding:5px; cursor:pointer; font-size:11px;
+        ">Deseleziona</button>
+        <button onclick="_gdeConfirmAndRecalculate()" style="
+          flex:2; background:#1a5a20; border:1px solid #3fa; color:#cfc;
+          border-radius:5px; padding:5px; cursor:pointer; font-size:11px; font-weight:bold;
+        ">✅ Conferma e Ricalcola</button>
+      </div>
+
+      <div style="margin-top:8px; padding:6px; background:#0d1c2e; border-radius:5px;
+                  font-size:10px; color:#6699aa; line-height:1.5;">
+        <strong style="color:#88bbcc;">Come usare:</strong><br>
+        • <span style="color:#55ddff;">Punti azzurri</span> = trovati automaticamente (non classificati)<br>
+        • Clicca <strong>Assegna</strong> su un candidato per metterlo in uno slot anatomico<br>
+        • Oppure clicca uno <strong>slot verde/arancio</strong> e poi clicca sulla foto<br>
+        • <strong>Ignora</strong> un candidato errato per scartarlo<br>
+        • Premi <strong style="color:#aaffaa;">Conferma e Ricalcola</strong> quando hai 10 punti
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(panel);
+
+  // Abilita drag del pannello
+  _gdeMakeDraggable(panel, document.getElementById('gde-header'));
+
+  _gdeRefreshPanel();
+}
+
+function _gdeRefreshPanel() {
+  const data = window.greenDotsData;
+  if (!data) return;
+
+  const sxCoords = data.coordinates?.Sx || [];
+  const dxCoords = data.coordinates?.Dx || [];
+
+  const sxFilled = sxCoords.filter(Boolean).length;
+  const dxFilled = dxCoords.filter(Boolean).length;
+  const total = sxFilled + dxFilled;
+
+  const statusBar = document.getElementById('gde-status-bar');
+  if (statusBar) {
+    const color = total === 10 ? '#4caf50' : total >= 7 ? '#ff9800' : '#f44336';
+    statusBar.innerHTML = `<span style="color:${color}; font-weight:bold; font-size:14px;">${total}/10</span> punti classificati`;
+  }
+
+  // Sezione candidati
+  const candidates = window._gdeState.candidates || {};
+  const allCands = [...(candidates.Sx || []).map(c=>({...c,side:'Sx'})),
+                    ...(candidates.Dx || []).map(c=>({...c,side:'Dx'}))];
+  const candSection = document.getElementById('gde-candidates-section');
+  const candBody = document.getElementById('gde-candidates-body');
+  if (candSection && candBody) {
+    if (allCands.length > 0) {
+      candSection.style.display = 'block';
+      candBody.innerHTML = '';
+      allCands.forEach((cand, globalIdx) => {
+        const side = cand.side;
+        const localIdx = (candidates[side] || []).indexOf(
+          (candidates[side] || []).find(c => c === cand || (c.x===cand.x && c.y===cand.y))
+        );
+        const names = side === 'Sx' ? GDE_LEFT_NAMES : GDE_RIGHT_NAMES;
+        const coords = (side === 'Sx' ? data.coordinates?.Sx : data.coordinates?.Dx) || [];
+        const sideLabel = side === 'Sx' ? '◀Sx' : '▶Dx';
+        const sideColor = side === 'Sx' ? '#88ffaa' : '#ffcc88';
+
+        // Wrapper candidato
+        const row = document.createElement('div');
+        row.style.cssText = `
+          background:#0d2030; border-radius:4px; margin-bottom:4px; padding:4px 6px;
+          border-left: 2px solid #0088cc;
+        `;
+
+        // Header riga: label + pulsante ignora
+        const head = document.createElement('div');
+        head.style.cssText = 'display:flex; align-items:center; gap:4px; margin-bottom:3px;';
+        head.innerHTML = `
+          <span style="color:#00ccff; font-weight:bold;">${cand.label}</span>
+          <span style="color:${sideColor}; font-size:10px;">${sideLabel}</span>
+          <span style="color:#556677; font-size:10px; flex:1;">(${Math.round(cand.x)},${Math.round(cand.y)})</span>
+          <button onclick="_gdeIgnoreCandidate('${side}',${localIdx})" style="
+            background:#3a1010; border:1px solid #833; color:#f88; border-radius:3px;
+            padding:1px 5px; cursor:pointer; font-size:10px;" title="Scarta questo punto">✕</button>
+        `;
+        row.appendChild(head);
+
+        // Bottoni assegnazione per slot vuoti del lato corrispondente
+        const assignRow = document.createElement('div');
+        assignRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:3px;';
+        names.forEach((name, slotIdx) => {
+          if (!coords[slotIdx]) { // slot vuoto
+            const btn = document.createElement('button');
+            btn.textContent = name;
+            btn.title = `Assegna come ${name}`;
+            btn.style.cssText = `
+              background:#0d3020; border:1px solid #2a8040; color:#88ddaa;
+              border-radius:3px; padding:2px 6px; cursor:pointer; font-size:10px;
+              font-family:monospace;
+            `;
+            btn.onclick = () => _gdeAssignCandidate(side, slotIdx, localIdx);
+            assignRow.appendChild(btn);
+          }
+        });
+
+        if (assignRow.children.length > 0) {
+          row.appendChild(assignRow);
+        } else {
+          const done = document.createElement('span');
+          done.style.cssText = 'color:#4a8; font-size:10px;';
+          done.textContent = '✓ tutti gli slot assegnati';
+          row.appendChild(done);
+        }
+
+        candBody.appendChild(row);
+      });
+    } else {
+      candSection.style.display = 'none';
+    }
+  }
+
+  _gdeRenderPointList('Sx', sxCoords, GDE_LEFT_NAMES);
+  _gdeRenderPointList('Dx', dxCoords, GDE_RIGHT_NAMES);
+}
+
+function _gdeRenderPointList(side, coords, names) {
+  const container = document.getElementById(`gde-list-${side}`);
+  if (!container) return;
+
+  const state = window._gdeState;
+  container.innerHTML = '';
+
+  names.forEach((name, idx) => {
+    const coord = coords[idx];
+    const isSel = state.selectedSide === side && state.selectedIndex === idx;
+    const hasPoint = !!coord;
+
+    const row = document.createElement('div');
+    row.style.cssText = `
+      display: flex; align-items: center; gap: 6px;
+      padding: 3px 4px; border-radius: 4px; margin-bottom: 2px;
+      cursor: pointer;
+      background: ${isSel ? 'rgba(255,220,0,0.2)' : 'transparent'};
+      border: 1px solid ${isSel ? '#ffcc00' : 'transparent'};
+      transition: background 0.15s;
+    `;
+    row.onmouseenter = () => { if (!isSel) row.style.background = 'rgba(255,255,255,0.07)'; };
+    row.onmouseleave = () => { if (!isSel) row.style.background = 'transparent'; };
+
+    const dot = document.createElement('span');
+    dot.style.cssText = `
+      width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0;
+      background: ${isSel ? '#ffcc00' : hasPoint ? (side === 'Sx' ? '#00dd60' : '#ff8822') : 'transparent'};
+      border: 2px solid ${isSel ? '#ffaa00' : hasPoint ? (side === 'Sx' ? '#00aa40' : '#cc5500') : '#666'};
+      border-style: ${hasPoint ? 'solid' : 'dashed'};
+    `;
+
+    const label = document.createElement('span');
+    label.textContent = name;
+    label.style.cssText = `
+      flex: 1; color: ${isSel ? '#ffdd44' : hasPoint ? '#e0e8f0' : '#778899'};
+      font-weight: ${isSel ? 'bold' : 'normal'};
+    `;
+
+    const coordLabel = document.createElement('span');
+    if (coord) {
+      coordLabel.textContent = `(${Math.round(coord[0])}, ${Math.round(coord[1])})`;
+      coordLabel.style.cssText = 'color:#556677; font-size:10px;';
+    } else {
+      coordLabel.textContent = '—';
+      coordLabel.style.cssText = 'color:#445566; font-size:10px;';
+    }
+
+    const actionBtn = document.createElement('button');
+    actionBtn.textContent = isSel && window._gdeState.awaitingClick ? '⏳' : (hasPoint ? '✎' : '+');
+    actionBtn.title = hasPoint ? 'Clicca per spostare' : 'Clicca per aggiungere';
+    actionBtn.style.cssText = `
+      background: ${hasPoint ? '#1a3a5a' : '#1a4a1a'};
+      border: 1px solid ${hasPoint ? '#336' : '#363'};
+      color: ${hasPoint ? '#88aacc' : '#88cc88'};
+      border-radius: 3px; padding: 1px 5px; cursor: pointer; font-size:11px;
+    `;
+
+    row.appendChild(dot);
+    row.appendChild(label);
+    row.appendChild(coordLabel);
+    row.appendChild(actionBtn);
+
+    row.onclick = () => _gdeSelectPoint(side, idx);
+    actionBtn.onclick = (e) => { e.stopPropagation(); _gdeSelectPoint(side, idx); };
+
+    container.appendChild(row);
+  });
+}
+
+function _gdeUpdatePanelSelection(side, idx, name, hasPoint) {
+  _gdeRefreshPanel();
+}
+
+// ─── Drag pannello ────────────────────────────────────────────────────────────
+
+function _gdeMakeDraggable(panel, handle) {
+  let isDragging = false;
+  let startX, startY, origLeft, origTop;
+
+  handle.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    const rect = panel.getBoundingClientRect();
+    origLeft = rect.left;
+    origTop  = rect.top;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    panel.style.left = (origLeft + dx) + 'px';
+    panel.style.top  = (origTop  + dy) + 'px';
+    panel.style.right = 'auto';
+  });
+
+  document.addEventListener('mouseup', () => { isDragging = false; });
+}
+
+// ─── Esposizione globale e pulsante nella UI ──────────────────────────────────
+
+window._gdeSelectPoint           = _gdeSelectPoint;
+window._gdeCancelSelection       = _gdeCancelSelection;
+window._gdeConfirmAndRecalculate = _gdeConfirmAndRecalculate;
+window._gdeRefreshPanel          = _gdeRefreshPanel;

@@ -268,6 +268,12 @@
             transform: scaleX(-1);
         }
 
+        /* Guida immagine viso — ruotata 180° in modalità SDRAIATO */
+        body.operator-lying #face-guide {
+            transform: rotate(180deg);
+            transform-origin: center center;
+        }
+
         /* Guida immagine viso */
         #face-guide {
             position: fixed;
@@ -444,6 +450,9 @@
         let animFrameId = null;
         let lastFrameTime = 0;
 
+        // Orientamento operatore (sdraiato/in piedi)
+        let operatorLying = false;
+
         // Toast coaching visivo
         let lastCoachTime = 0;
         let coachToastTimer = null;
@@ -504,11 +513,24 @@
             // Mostra info device
             deviceInfo.textContent = `Device: ${config.deviceId.substring(0, 8)}...`;
 
+            // Applica orientamento operatore salvato
+            applyOrientationMode();
+
             return config;
         }
 
         function saveConfig() {
             localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+        }
+
+        function applyOrientationMode() {
+            const cfg = config || {};
+            operatorLying = cfg.operatorLying === true;
+            if (operatorLying) {
+                document.body.classList.add('operator-lying');
+            } else {
+                document.body.classList.remove('operator-lying');
+            }
         }
 
         function generateDeviceId() {
@@ -619,6 +641,14 @@
                 }
                 // Avvia coaching vocale
                 updateCoaching(data);
+            } else if (data.action === 'operator_orientation') {
+                // Desktop ha cambiato l'orientamento operatore → applica rotazione
+                operatorLying = data.lying === true;
+                if (operatorLying) {
+                    document.body.classList.add('operator-lying');
+                } else {
+                    document.body.classList.remove('operator-lying');
+                }
             } else if (data.action === 'error') {
                 console.error('Errore server:', data.message);
             }
@@ -940,6 +970,8 @@
 
             // Specchio iniziale in base alla camera preferita
             applyMirror();
+
+            // Orientamento: aggiornato via WebSocket (action: 'operator_orientation')
         };
 
         window.onbeforeunload = function () {

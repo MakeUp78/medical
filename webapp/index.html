@@ -76,7 +76,7 @@
                 <!-- Sezione IMPOSTAZIONI -->
                 <div class="section" data-expanded="false" id="settings-section">
                     <div class="section-header" onclick="toggleSection(this)">
-                        <button class="toggle-btn">⚙️ IMPOSTAZIONI</button>
+                        <button class="toggle-btn">📱 SMARTPHONE CAM</button>
                         <span class="icon">►</span>
                     </div>
                     <div class="section-content" style="display: none;">
@@ -143,6 +143,49 @@
                                 <span style="font-size: 0.8em; color: #2c5282;"><strong>Requisito:</strong> iPhone e PC
                                     sulla stessa rete WiFi</span>
                             </div>
+
+                            <!-- Toggle Orientamento Operatore -->
+                            <div id="operator-orientation-toggle"
+                                style="margin-top: 0.85rem; background: #f8f4ff; border-radius: 8px; padding: 0.75rem; border: 1px solid #d6bcfa;">
+                                <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.55rem;">
+                                    <span style="font-size: 1em;">🔄</span>
+                                    <span style="font-weight: 700; font-size: 0.88em; color: #44337a;">Orientamento Smartphone</span>
+                                </div>
+
+                                <!-- Slider toggle -->
+                                <div style="display: flex; align-items: center; gap: 0.6rem;">
+                                    <span id="orient-label-standing"
+                                        style="font-size: 0.82em; font-weight: 600; color: #553c9a; min-width: 60px; text-align: right;">IN PIEDI</span>
+                                    <div style="position: relative; flex: 1; cursor: pointer;" onclick="toggleOrientationMode()" title="">
+                                        <div id="orient-track"
+                                            style="width: 100%; height: 28px; border-radius: 14px; background: #9f7aea; transition: background 0.3s; border: 2px solid #805ad5; display: flex; align-items: center; padding: 0 3px;">
+                                            <div id="orient-thumb"
+                                                style="width: 22px; height: 22px; border-radius: 50%; background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.25); transition: transform 0.3s; transform: translateX(0px); flex-shrink: 0;"></div>
+                                        </div>
+                                    </div>
+                                    <span id="orient-label-lying"
+                                        style="font-size: 0.82em; font-weight: 600; color: #b794f4; min-width: 60px;">SDRAIATO</span>
+                                </div>
+
+                                <!-- Stato attivo visivo -->
+                                <div id="orient-status-badge"
+                                    style="margin-top: 0.5rem; text-align: center; font-size: 0.8em; font-weight: 700; padding: 0.3rem 0.6rem; border-radius: 20px; background: #e9d8fd; color: #553c9a; display: inline-block; width: 100%;">
+                                    Modalità: IN PIEDI
+                                </div>
+
+                                <!-- Tooltip IN PIEDI -->
+                                <div id="orient-tooltip-standing"
+                                    style="margin-top: 0.55rem; padding: 0.55rem 0.7rem; background: #f0fff4; border-radius: 6px; border-left: 3px solid #48bb78; font-size: 0.79em; color: #276749; line-height: 1.5;">
+                                    🧍 <strong>Operatore di fronte al cliente</strong><br>
+                                    Il cliente è in piedi o seduto, l'operatore si posiziona frontalmente reggendo lo smartphone verso il viso del cliente.
+                                </div>
+                                <!-- Tooltip SDRAIATO -->
+                                <div id="orient-tooltip-lying"
+                                    style="margin-top: 0.55rem; padding: 0.55rem 0.7rem; background: #fffbeb; border-radius: 6px; border-left: 3px solid #ed8936; font-size: 0.79em; color: #7b341e; line-height: 1.5; display: none;">
+                                    🛋️ <strong>Cliente sdraiato sul lettino</strong><br>
+                                    L'operatore si posiziona dietro la testa del lettino, alle spalle del cliente, reggendo lo smartphone verso il viso rivolto verso l'alto.
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -208,7 +251,8 @@
                                 Naso</button>
                             <button class="btn btn-analysis" onclick="measureEyebrowSymmetry(event)">✂️ Sim.
                                 Sopracciglia</button>
-                            <button class="btn btn-analysis" onclick="measureDominanceScore(event)">👤 Dominanza</button>
+                            <button class="btn btn-analysis" onclick="measureDominanceScore(event)">👤
+                                Dominanza</button>
 
                             <!-- Pulsante Analisi Completa - occupa tutta la larghezza -->
                             <button class="btn btn-analysis btn-analysis-complete"
@@ -285,6 +329,10 @@
                         <div class="eyebrow-buttons">
                             <button class="btn btn-analysis" id="green-dots-btn" onclick="toggleGreenDots()">🔍 Trova
                                 Differenze</button>
+                            <button class="btn btn-eyebrow" id="gde-open-btn" onclick="openGreenDotsEditor()"
+                                title="Modifica o aggiungi i 10 punti rilevati"
+                                style="background: linear-gradient(135deg, #1a2f4a, #243a55); border-color: #3a6aaa; color: #88bbff;">
+                                ✏️ Modifica Punti</button>
                             <button class="btn btn-eyebrow" onclick="show_left_eyebrow_with_voice()">✂️ Preferenza
                                 Destra</button>
                             <button class="btn btn-eyebrow" onclick="show_right_eyebrow_with_voice()">✂️ Preferenza
@@ -377,22 +425,28 @@
                                         <strong>"Landmarks"</strong> → Attiva/disattiva punti facciali
                                     </div>
                                     <div class="command-item-sidebar">
-                                        <strong>"Punti verdi"</strong> / <strong>"Trova differenze"</strong> → Rileva differenze sopracciglia
+                                        <strong>"Punti verdi"</strong> / <strong>"Trova differenze"</strong> → Rileva
+                                        differenze sopracciglia
                                     </div>
                                     <div class="command-item-sidebar">
-                                        <strong>"Differenze A"</strong> / <strong>"Differenze inizio"</strong> → Legge e mostra confronto punto A (inizio sopracciglio)
+                                        <strong>"Differenze A"</strong> / <strong>"Differenze inizio"</strong> → Legge e
+                                        mostra confronto punto A (inizio sopracciglio)
                                     </div>
                                     <div class="command-item-sidebar">
-                                        <strong>"Differenze A zero"</strong> → Legge e mostra confronto punto A0 (pre-inizio)
+                                        <strong>"Differenze A zero"</strong> → Legge e mostra confronto punto A0
+                                        (pre-inizio)
                                     </div>
                                     <div class="command-item-sidebar">
-                                        <strong>"Differenze B"</strong> / <strong>"Differenze coda"</strong> → Legge e mostra confronto punto B (coda)
+                                        <strong>"Differenze B"</strong> / <strong>"Differenze coda"</strong> → Legge e
+                                        mostra confronto punto B (coda)
                                     </div>
                                     <div class="command-item-sidebar">
-                                        <strong>"Differenze C"</strong> / <strong>"Differenze apice"</strong> → Legge e mostra confronto punto C (apice)
+                                        <strong>"Differenze C"</strong> / <strong>"Differenze apice"</strong> → Legge e
+                                        mostra confronto punto C (apice)
                                     </div>
                                     <div class="command-item-sidebar">
-                                        <strong>"Differenze C uno"</strong> / <strong>"Differenze Ci uno"</strong> → Legge e mostra confronto punto C1 (picco)
+                                        <strong>"Differenze C uno"</strong> / <strong>"Differenze Ci uno"</strong> →
+                                        Legge e mostra confronto punto C1 (picco)
                                     </div>
                                     <div class="command-item-sidebar">
                                         <strong>"Modalità misura"</strong> → Attiva misura manuale
@@ -403,7 +457,8 @@
                                         <strong>"Analizza"</strong> → Analisi facciale standard
                                     </div>
                                     <div class="command-item-sidebar">
-                                        <strong>"Analisi completa"</strong> / <strong>"Visagistica"</strong> → Analisi visagistica completa
+                                        <strong>"Analisi completa"</strong> / <strong>"Visagistica"</strong> → Analisi
+                                        visagistica completa
                                     </div>
 
                                     <div class="cmd-group-title-sidebar">📐 Misurazioni</div>
@@ -411,7 +466,8 @@
                                         <strong>"Simmetria"</strong> → Analisi simmetria facciale
                                     </div>
                                     <div class="command-item-sidebar">
-                                        <strong>"Stima età"</strong> / <strong>"Quanti anni"</strong> → Stima età dal viso
+                                        <strong>"Stima età"</strong> / <strong>"Quanti anni"</strong> → Stima età dal
+                                        viso
                                     </div>
                                     <div class="command-item-sidebar">
                                         <strong>"Larghezza viso"</strong> → Misura larghezza viso
@@ -450,7 +506,8 @@
                                         <strong>"Simmetria sopracciglia"</strong> → Simmetria sopraccigliare
                                     </div>
                                     <div class="command-item-sidebar">
-                                        <strong>"Dominanza"</strong> / <strong>"Dominance score"</strong> → Geometria dominanza sociale percepita
+                                        <strong>"Dominanza"</strong> / <strong>"Dominance score"</strong> → Geometria
+                                        dominanza sociale percepita
                                     </div>
 
                                     <div class="cmd-group-title-sidebar">🔄 Rotazioni</div>
@@ -461,7 +518,8 @@
                                         <strong>"Ruota destra"</strong> → Ruota 90° orario
                                     </div>
                                     <div class="command-item-sidebar">
-                                        <strong>"Allinea asse"</strong> / <strong>"Raddrizza"</strong> → Auto-allinea asse simmetria
+                                        <strong>"Allinea asse"</strong> / <strong>"Raddrizza"</strong> → Auto-allinea
+                                        asse simmetria
                                     </div>
 
                                     <div class="cmd-group-title-sidebar">✂️ Correzione Sopracciglia</div>
@@ -469,7 +527,8 @@
                                         <strong>"Preferenza destra"</strong> → Correzione sopracciglio sx (pref. destra)
                                     </div>
                                     <div class="command-item-sidebar">
-                                        <strong>"Preferenza sinistra"</strong> → Correzione sopracciglio dx (pref. sinistra)
+                                        <strong>"Preferenza sinistra"</strong> → Correzione sopracciglio dx (pref.
+                                        sinistra)
                                     </div>
 
                                     <div class="cmd-group-title-sidebar">📖 Report Vocale</div>
@@ -544,7 +603,8 @@
             <video id="webcam-video" autoplay muted style="position: absolute; left: -9999px; top: -9999px;"></video>
 
             <!-- Loader caricamento video -->
-            <div id="video-loading-overlay" style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.6); z-index:100; flex-direction:column; align-items:center; justify-content:center; gap:14px; border-radius:8px;">
+            <div id="video-loading-overlay"
+                style="display:none; position:absolute; inset:0; background:rgba(0,0,0,0.6); z-index:100; flex-direction:column; align-items:center; justify-content:center; gap:14px; border-radius:8px;">
                 <div class="spinner"></div>
                 <span style="color:#fff; font-size:14px; letter-spacing:.4px;">Caricamento video in corso…</span>
             </div>
@@ -838,6 +898,10 @@
             <span class="mobile-nav-icon">🔍</span>
             <span class="mobile-nav-label">Differenze</span>
         </button>
+        <button class="mobile-nav-item" data-panel="editpunti" onclick="openGreenDotsEditor(); focusCanvas();">
+            <span class="mobile-nav-icon">✏️</span>
+            <span class="mobile-nav-label">Edit Punti</span>
+        </button>
         <button class="mobile-nav-item" data-panel="camera" onclick="startWebcam();">
             <span class="mobile-nav-icon">📷</span>
             <span class="mobile-nav-label">Camera</span>
@@ -871,7 +935,7 @@
                     onclick="startWebcam(); closeMobileQuickPanel('camera');">
                     📹 Avvia Webcam
                 </button>
-<button class="btn btn-warning btn-mobile-action"
+                <button class="btn btn-warning btn-mobile-action"
                     onclick="stopWebcam(); closeMobileQuickPanel('camera');">
                     ⏹️ Stop Webcam
                 </button>
@@ -1422,12 +1486,12 @@
     <!-- Sistema modalità canvas (PAN, ZOOM, SELEZIONE) -->
     <script src="static/js/canvas-modes.js"></script>
     <!-- NUOVO FILE PULITO - Correzione sopracciglia -->
-    <script src="static/js/eyebrow-correction.js?v=20260307-grey"></script>
+    <script src="static/js/eyebrow-correction.js?v=20260310-grey2"></script>
     <!-- Analisi Visagistica Completa -->
     <script src="static/js/face-analysis-complete.js?v=20260308-legend"></script>
     <!-- Frame Processor Unificato -->
     <script src="static/js/frame-processor.js"></script>
-    <script src="static/js/main.js?v=20260307-vocfix"></script>
+    <script src="static/js/main.js?v=20260310-gde-fixes2"></script>
 
     <!-- MediaPipe per face detection -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -1978,8 +2042,8 @@
             // Funzione helper per determinare l'intensità dello spostamento
             // Soglie in pixel backend (immagine normalizzata ~1200px larghezza)
             function getIntensity(pixels) {
-                if (pixels < 2)  return '';               // trascurabile, non pronunciare
-                if (pixels < 5)  return 'di pochissimo ';
+                if (pixels < 2) return '';               // trascurabile, non pronunciare
+                if (pixels < 5) return 'di pochissimo ';
                 if (pixels < 10) return 'leggermente ';
                 if (pixels < 18) return 'moderatamente ';
                 if (pixels < 30) return 'sensibilmente ';
@@ -1992,16 +2056,16 @@
             // scandendo le lettere invece di fonderle in un'unica sillaba.
             function formatPointNameForSpeech(pointName) {
                 const fullNameMap = {
-                    'LA':  'Elle, A',
+                    'LA': 'Elle, A',
                     'LA0': 'Elle, A, zero',
                     'LC1': 'Elle, Ci, uno',
-                    'LB':  'Elle, Bi',
-                    'LC':  'Elle, Ci',
-                    'RA':  'Erre, A',
+                    'LB': 'Elle, Bi',
+                    'LC': 'Elle, Ci',
+                    'RA': 'Erre, A',
                     'RA0': 'Erre, A, zero',
                     'RC1': 'Erre, Ci, uno',
-                    'RB':  'Erre, Bi',
-                    'RC':  'Erre, Ci',
+                    'RB': 'Erre, Bi',
+                    'RC': 'Erre, Ci',
                 };
                 return fullNameMap[pointName] || pointName;
             }
@@ -2010,6 +2074,10 @@
             // Pronuncia in sequenza le coppie di punti del sopracciglio con greying sul popup.
             // Legge i dati direttamente da data-pair delle righe point-pair-row nella tabella.
             window.speakEyebrowPairsSequentially = async function (side) {
+                // Imposta flag attivo; ogni nuova chiamata annulla quella precedente
+                window._speakPairsActive = true;
+                const myToken = window._speakPairsActive; // truthy token (sempre true, ma basta il flag)
+
                 // Ordine delle comparazioni (la stessa per entrambi i lati)
                 const comparisons = ['LA vs RA', 'LA0 vs RA0', 'LC1 vs RC1', 'LB vs RB', 'LC vs RC'];
 
@@ -2017,6 +2085,9 @@
                 const targetPrefix = side === 'left' ? 'L' : 'R';
 
                 for (const compName of comparisons) {
+                    // Controlla se il loop è stato interrotto (finestra chiusa)
+                    if (!window._speakPairsActive) break;
+
                     // Trova la riga point-pair-row corrispondente
                     const row = Array.from(document.querySelectorAll('tr.point-pair-row')).find(r => {
                         const cell = r.querySelector('td');
@@ -2031,13 +2102,13 @@
                     } catch (e) { continue; }
 
                     const { leftLabel, rightLabel, leftPoint, rightPoint,
-                            fartherPoint, higherPoint, distanceDiff, heightDiff } = pair;
+                        fartherPoint, higherPoint, distanceDiff, heightDiff } = pair;
 
                     // Determina quale punto stiamo suggerendo di spostare
                     const targetLabel = targetPrefix === 'L' ? leftLabel : rightLabel;
-                    const otherLabel  = targetPrefix === 'L' ? rightLabel : leftLabel;
+                    const otherLabel = targetPrefix === 'L' ? rightLabel : leftLabel;
                     const targetPoint = targetPrefix === 'L' ? leftPoint : rightPoint;
-                    const otherPoint  = targetPrefix === 'L' ? rightPoint : leftPoint;
+                    const otherPoint = targetPrefix === 'L' ? rightPoint : leftPoint;
 
                     const parts = [];
 
@@ -2074,10 +2145,14 @@
                     await speakAndWait(phrase);
 
                     if (greyOverlay) greyOverlay.remove();
+
+                    // Ricontrolla dopo l'attesa TTS
+                    if (!window._speakPairsActive) break;
                 }
 
                 // Rimuovi evidenziazione righe tabella
                 document.querySelectorAll('.point-pair-row').forEach(r => r.classList.remove('active'));
+                window._speakPairsActive = false;
             };
 
             // Attendi che voiceAssistant finisca di riprodurre la frase corrente.
@@ -2152,23 +2227,25 @@
                 const existing = imageContainer.querySelector('.eyebrow-grey-overlay');
                 if (existing) existing.remove();
 
-                // Le coordinate di leftPoint/rightPoint in data-pair sono in spazio "immagine originale".
-                // arrowPairs.from/to sono già in spazio "immagine originale" (stessa pipeline).
-                // Conversione: orig → display = (origCoord - bbox.offset) * scale
+                // leftPoint/rightPoint da data-pair sono in coordinate BACKEND (spazio API).
+                // bbox è in coordinate "immagine originale" (pixel canvas).
+                // Conversione: backend → originale → display
+                const btoX = croppedCanvas.backendToOriginalX || 1;
+                const btoY = croppedCanvas.backendToOriginalY || 1;
                 const toDisplay = (origPt) => ({
-                    x: (origPt[0] - bbox.x) * scale,
-                    y: (origPt[1] - bbox.y) * scale,
+                    x: (origPt[0] * btoX - bbox.x) * scale,
+                    y: (origPt[1] * btoY - bbox.y) * scale,
                 });
 
                 const gDisp = toDisplay(origLeft);
                 const rDisp = toDisplay(origRight);
 
-                const displayW = croppedCanvas.width  * scale;
+                const displayW = croppedCanvas.width * scale;
                 const displayH = croppedCanvas.height * scale;
 
                 const overlay = document.createElement('canvas');
                 overlay.className = 'eyebrow-grey-overlay';
-                overlay.width  = displayW;
+                overlay.width = displayW;
                 overlay.height = displayH;
                 overlay.style.cssText = `position:absolute;top:0;left:0;width:${displayW}px;height:${displayH}px;pointer-events:none;z-index:500;`;
 
@@ -2503,6 +2580,26 @@
                     // Avvia webcam automaticamente senza attendere il pulsante
                     if (!window.isWebcamActive && typeof startWebcam === 'function') {
                         setTimeout(() => startWebcam(), 300);
+                    }
+                    // Invia subito l'orientamento corrente all'iPhone appena connesso
+                    if (typeof window.toggleOrientationMode === 'function') {
+                        // Usa _sendOrientationViaWS direttamente se disponibile
+                        setTimeout(() => {
+                            try {
+                                const raw = localStorage.getItem('kimerika_camera_config');
+                                const cfg = raw ? JSON.parse(raw) : {};
+                                const lying = cfg.operatorLying === true;
+                                const ws = typeof webcamWebSocket !== 'undefined' ? webcamWebSocket : null;
+                                const token = window._iphoneSessionToken;
+                                if (ws && ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({
+                                        action: 'operator_orientation',
+                                        lying: lying,
+                                        session_token: token || ''
+                                    }));
+                                }
+                            } catch (e) {}
+                        }, 500);
                     }
                 } else if (data.action === 'iphone_disconnected') {
                     window.isIPhoneStreamActive = false;
@@ -2867,6 +2964,97 @@
         }
     </script>
 
+    <!-- Orientamento Operatore (IN PIEDI / SDRAIATO) -->
+    <script>
+        (function () {
+            const ORIENT_KEY = 'kimerika_camera_config';
+            let _orientLying = false;
+
+            function _loadOrientFromStorage() {
+                try {
+                    const raw = localStorage.getItem(ORIENT_KEY);
+                    if (raw) {
+                        const cfg = JSON.parse(raw);
+                        _orientLying = cfg.operatorLying === true;
+                    }
+                } catch (e) {}
+            }
+
+            function _saveOrientToStorage(lying) {
+                try {
+                    const raw = localStorage.getItem(ORIENT_KEY);
+                    const cfg = raw ? JSON.parse(raw) : {};
+                    cfg.operatorLying = lying;
+                    localStorage.setItem(ORIENT_KEY, JSON.stringify(cfg));
+                } catch (e) {}
+            }
+
+            function _applyOrientUI(lying) {
+                const thumb = document.getElementById('orient-thumb');
+                const track = document.getElementById('orient-track');
+                const badge = document.getElementById('orient-status-badge');
+                const ttStanding = document.getElementById('orient-tooltip-standing');
+                const ttLying = document.getElementById('orient-tooltip-lying');
+                const lblStanding = document.getElementById('orient-label-standing');
+                const lblLying = document.getElementById('orient-label-lying');
+                if (!thumb) return;
+
+                if (lying) {
+                    // Spostato verso destra → SDRAIATO
+                    const trackW = track ? track.offsetWidth - 28 : 0;
+                    thumb.style.transform = 'translateX(' + (trackW > 0 ? trackW : 110) + 'px)';
+                    track.style.background = '#ed8936';
+                    track.style.borderColor = '#dd6b20';
+                    badge.textContent = 'Modalità: SDRAIATO';
+                    badge.style.background = '#feebc8';
+                    badge.style.color = '#7b341e';
+                    lblStanding.style.color = '#b794f4';
+                    lblLying.style.color = '#c05621';
+                    ttStanding.style.display = 'none';
+                    ttLying.style.display = 'block';
+                } else {
+                    thumb.style.transform = 'translateX(0px)';
+                    track.style.background = '#9f7aea';
+                    track.style.borderColor = '#805ad5';
+                    badge.textContent = 'Modalità: IN PIEDI';
+                    badge.style.background = '#e9d8fd';
+                    badge.style.color = '#553c9a';
+                    lblStanding.style.color = '#553c9a';
+                    lblLying.style.color = '#b794f4';
+                    ttStanding.style.display = 'block';
+                    ttLying.style.display = 'none';
+                }
+            }
+
+            function _sendOrientationViaWS(lying) {
+                try {
+                    const ws = typeof webcamWebSocket !== 'undefined' ? webcamWebSocket : null;
+                    const token = window._iphoneSessionToken;
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            action: 'operator_orientation',
+                            lying: lying,
+                            session_token: token || ''
+                        }));
+                    }
+                } catch (e) {}
+            }
+
+            window.toggleOrientationMode = function () {
+                _orientLying = !_orientLying;
+                _saveOrientToStorage(_orientLying);
+                _applyOrientUI(_orientLying);
+                _sendOrientationViaWS(_orientLying);
+            };
+
+            // Inizializza al caricamento
+            document.addEventListener('DOMContentLoaded', function () {
+                _loadOrientFromStorage();
+                _applyOrientUI(_orientLying);
+            });
+        })();
+    </script>
+
     <!-- Voice Widget Control Functions (Global) -->
     <script>
         // Variabili globali per il widget
@@ -3135,7 +3323,8 @@
                             ① Highlight boost — zona interna (inner)</div>
                         <div style="font-size:10px; color:#888; margin-bottom:6px;">Potenzia i toni alti dell'immagine
                             <b>grigia</b> per la zona principale del sopracciglio. I pixel sopra <b>Soglia</b> vengono
-                            spinti verso il bianco con intensità <b>Forza</b>.</div>
+                            spinti verso il bianco con intensità <b>Forza</b>.
+                        </div>
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 20px;">
                             <div>
                                 <label style="color:#aaa; font-size:11px;">Soglia inner (0-255): <span

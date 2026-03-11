@@ -118,9 +118,11 @@ function showEyebrowCorrectionWindow(side) {
     const croppedCanvas = cropImageToBbox(fullImageWithOverlay, bbox);
     console.log(`✅ Ritaglio completato: ${croppedCanvas.width}x${croppedCanvas.height}`);
 
-    // Salva bbox e arrowPairs nel canvas per usarli nel popup
+    // Salva bbox, arrowPairs e scale backend→originale nel canvas per usarli nel popup
     croppedCanvas.bbox = bbox;
     croppedCanvas.arrowPairs = fullImageWithOverlay.arrowPairs;
+    croppedCanvas.backendToOriginalX = fullImageWithOverlay.backendToOriginalX;
+    croppedCanvas.backendToOriginalY = fullImageWithOverlay.backendToOriginalY;
 
     // STEP 7: Mostra finestra popup
     displayCorrectionWindow(croppedCanvas, side);
@@ -351,6 +353,9 @@ function createFullImageOverlay(sourceCanvas, side, axis) {
 
   // Restituisce il canvas E i dati delle frecce per disegnarle in SVG
   overlayCanvas.arrowPairs = arrowPairs;
+  // Salva le scale per conversione backend→originale (usata da applyPopupGreyingByPoints)
+  overlayCanvas.backendToOriginalX = backendToOriginalX;
+  overlayCanvas.backendToOriginalY = backendToOriginalY;
 
   return overlayCanvas;
 }
@@ -739,6 +744,7 @@ function displayCorrectionWindow(croppedCanvas, side) {
   closeBtn.textContent = '❌ Chiudi';
   closeBtn.className = 'btn btn-secondary';
   closeBtn.onclick = () => {
+    window._speakPairsActive = false;
     stopVoiceAssistant();
     modal.remove();
   };
@@ -746,6 +752,7 @@ function displayCorrectionWindow(croppedCanvas, side) {
   // Chiudi modal cliccando sul background scuro
   modal.onclick = (e) => {
     if (e.target === modal) {
+      window._speakPairsActive = false;
       stopVoiceAssistant();
       modal.remove();
     }

@@ -805,6 +805,19 @@ async def handle_websocket(websocket):
                     if device_id and device_id in curr_sess['iphone_devices']:
                         curr_sess['iphone_devices'][device_id]['last_frame'] = time.time()
 
+                    # Se operatore sdraiato: ruota il frame 180° prima dell'analisi
+                    if curr_sess.get('operator_lying'):
+                        try:
+                            _fb = base64.b64decode(frame_data)
+                            _narr = np.frombuffer(_fb, np.uint8)
+                            _img = cv2.imdecode(_narr, cv2.IMREAD_COLOR)
+                            if _img is not None:
+                                _img = cv2.rotate(_img, cv2.ROTATE_180)
+                                _, _buf = cv2.imencode('.jpg', _img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                                frame_data = base64.b64encode(_buf).decode('utf-8')
+                        except Exception as _e:
+                            logger.warning(f"Rotazione frame fallita: {_e}")
+
                     # Usa lo scorer di questa sessione
                     result = await curr_sess['frame_scorer'].process_frame(frame_data)
                     result['action'] = 'frame_processed'
@@ -899,6 +912,25 @@ async def handle_websocket(websocket):
                         "action": "webcam_stopped",
                         "message": "Desktop fermato"
                     }))
+
+                elif action == 'operator_orientation':
+                    # Desktop invia preferenza orientamento operatore → salva in sessione e forward agli iPhone
+                    token = conn_session_token or data.get('session_token')
+                    lying = data.get('lying', False)
+                    if token and token in _user_sessions:
+                        sess = _user_sessions[token]
+                        sess['operator_lying'] = lying  # salva per rotazione frame
+                        for did, dev in sess['iphone_devices'].items():
+                            iws = dev.get('websocket')
+                            if iws is not None:
+                                try:
+                                    await iws.send(json.dumps({
+                                        "action": "operator_orientation",
+                                        "lying": lying
+                                    }))
+                                except Exception:
+                                    pass
+                    await websocket.send(json.dumps({"action": "operator_orientation_ack", "lying": lying}))
 
                 elif action == 'get_iphone_status':
                     token = conn_session_token or data.get('session_token')
