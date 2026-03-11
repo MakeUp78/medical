@@ -608,6 +608,9 @@
                 <div class="spinner"></div>
                 <span style="color:#fff; font-size:14px; letter-spacing:.4px;">Caricamento video in corso…</span>
             </div>
+
+            <!-- Pannello GDE desktop: ancorato al bordo inferiore del canvas -->
+            <div id="gde-canvas-tray" style="display:none;"></div>
         </div>
 
         <!-- SIDEBAR DESTRA identica alla colonna destra dell'app -->
@@ -887,6 +890,9 @@
 
     <!-- Overlay per pannelli mobile -->
     <div class="mobile-overlay" id="mobile-overlay" onclick="closeAllMobilePanels()"></div>
+
+    <!-- Pannello GDE mobile: sopra la bottom nav -->
+    <div id="gde-mobile-tray"></div>
 
     <!-- Bottom Navigation Mobile -->
     <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
