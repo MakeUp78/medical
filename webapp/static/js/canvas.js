@@ -179,7 +179,15 @@ function setupCanvasEventListeners() {
     }
   });
 
-  // Event listeners per trasformazioni rimossi - gestiti dinamicamente in main.js
+  // === GESTURE TOUCH MOBILE: pinch-to-zoom + pan a 2 dita ===
+  // Solo su mobile (≤768px). Desktop usa mouse:wheel già gestito sopra.
+  // I listener vanno sull'upperCanvasEl di Fabric.js (è l'elemento che cattura gli eventi).
+  // La canvas-toolbar sopra non è toccata: i listener sono limitati all'area canvas.
+  if (window.innerWidth <= 768 && fabricCanvas.upperCanvasEl) {
+    fabricCanvas.upperCanvasEl.addEventListener('touchstart', onCanvasTouchStart, { passive: false });
+    fabricCanvas.upperCanvasEl.addEventListener('touchmove', onCanvasTouchMove, { passive: false });
+    fabricCanvas.upperCanvasEl.addEventListener('touchend', onCanvasTouchEnd, { passive: false });
+  }
 
   // Event listener per zoom canvas
   fabricCanvas.on('after:render', function () {

@@ -4896,17 +4896,10 @@ let lastTouchMidY = 0;
 let touchStartTime = 0;
 
 function onCanvasTouchStart(e) {
-  e.preventDefault();
-
-  // Non attivare il disegno se siamo in modalità misurazione o selezione landmarks
-  if (window.measurementMode || window.landmarkSelectionMode) {
-    return;
-  }
-
-  touchStartTime = Date.now();
-
-  // Pinch to zoom + pan con 2 dita
+  // Pinch to zoom + pan con 2 dita — va sempre gestito,
+  // indipendentemente dalla modalità corrente
   if (e.touches.length === 2) {
+    e.preventDefault();
     const touch1 = e.touches[0];
     const touch2 = e.touches[1];
     lastTouchDistance = Math.hypot(
@@ -4915,8 +4908,18 @@ function onCanvasTouchStart(e) {
     );
     lastTouchMidX = (touch1.clientX + touch2.clientX) / 2;
     lastTouchMidY = (touch1.clientY + touch2.clientY) / 2;
+    isDrawing = false; // annulla eventuale drawing da 1 dito
     return;
   }
+
+  e.preventDefault();
+
+  // Non attivare il disegno se siamo in modalità misurazione o selezione landmarks
+  if (window.measurementMode || window.landmarkSelectionMode) {
+    return;
+  }
+
+  touchStartTime = Date.now();
 
   // Pan/draw con 1 dito
   if (e.touches.length === 1) {
@@ -11854,123 +11857,144 @@ function closeGreenDotsEditor() {
 
   _gdeClearEditorObjects();
 
-  const panel = document.getElementById('gde-panel');
-  if (panel) panel.remove();
+  // Nascondi/svuota i tray invece di rimuovere un panel flottante
+  const dtray = document.getElementById('gde-canvas-tray');
+  if (dtray) { dtray.innerHTML = ''; dtray.style.display = 'none'; }
+  const mtray = document.getElementById('gde-mobile-tray');
+  if (mtray) { mtray.innerHTML = ''; mtray.style.display = 'none'; }
 }
 window.closeGreenDotsEditor = closeGreenDotsEditor;
 
 function _gdeBuildPanel() {
-  // Rimuovi pannello precedente
+  // Rimuovi eventuali istanze residue (compatibilità)
   const existing = document.getElementById('gde-panel');
   if (existing) existing.remove();
 
-  const panel = document.createElement('div');
-  panel.id = 'gde-panel';
-  panel.style.cssText = `
-    position: fixed;
-    top: 80px;
-    right: 20px;
-    width: 280px;
-    max-height: 80vh;
-    overflow-y: auto;
-    background: #1a2332;
-    border: 2px solid #00aaff;
-    border-radius: 10px;
-    z-index: 9999;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.7);
-    font-family: monospace;
-    font-size: 12px;
-    color: #e0e8f0;
-    user-select: none;
-  `;
+  const isMobile = window.innerWidth <= 768;
 
-  panel.innerHTML = `
+  const panelHTML = `
     <div id="gde-header" style="
       background: #0d1c2e;
-      padding: 8px 12px;
-      border-radius: 8px 8px 0 0;
+      padding: ${isMobile ? '5px 10px' : '8px 12px'};
       display: flex; align-items: center; justify-content: space-between;
-      cursor: move; border-bottom: 1px solid #00aaff33;
+      cursor: default;
+      border-bottom: 1px solid #00aaff33;
     ">
-      <span style="font-weight:bold; color:#00ccff; font-size:13px;">✏️ Modifica Punti</span>
-      <button onclick="closeGreenDotsEditor()" style="
-        background:none; border:none; color:#ff6666; font-size:16px;
-        cursor:pointer; padding:0 4px; line-height:1;
-      ">✕</button>
+      <span style="font-weight:bold; color:#00ccff; font-size:${isMobile ? '11px' : '13px'};">✏️ Modifica Punti</span>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button onclick="_gdeToggleTray()" id="gde-collapse-btn" style="
+          background:none; border:1px solid #336; color:#88aacc; font-size:10px;
+          cursor:pointer; padding:1px 6px; border-radius:4px; line-height:1.6;
+        ">▼ Riduci</button>
+        <button onclick="closeGreenDotsEditor()" style="
+          background:none; border:none; color:#ff6666; font-size:${isMobile ? '14px' : '16px'};
+          cursor:pointer; padding:0 4px; line-height:1;
+        ">✕</button>
+      </div>
     </div>
 
     <div id="gde-hint" style="
-      display:none; background:#ff8c00; color:#fff; padding:6px 10px;
-      font-size:11px; text-align:center; font-weight:bold;
+      display:none; background:#ff8c00; color:#fff; padding:4px 8px;
+      font-size:10px; text-align:center; font-weight:bold;
     "></div>
 
-    <div style="padding: 8px 10px;">
+    <div id="gde-body" style="padding: ${isMobile ? '4px 8px' : '8px 10px'};">
       <div id="gde-status-bar" style="
-        background:#0d2233; border-radius:6px; padding:5px 10px;
-        margin-bottom:8px; text-align:center;
-        font-size:11px; color:#aaccee;
+        background:#0d2233; border-radius:6px; padding:${isMobile ? '3px 8px' : '5px 10px'};
+        margin-bottom:${isMobile ? '4px' : '8px'}; text-align:center;
+        font-size:${isMobile ? '10px' : '11px'}; color:#aaccee;
       "></div>
 
+      ${isMobile ? `
+      <!-- Layout mobile: Sx e Dx affiancati + candidati sotto -->
+      <div style="display:flex; gap:4px; margin-bottom:4px;">
+        <div style="flex:1; min-width:0;">
+          <div style="background:#1a4a2a; border-radius:4px 4px 0 0; padding:2px 5px; color:#88ffaa; font-weight:bold; font-size:9px;">◀ SINISTRO</div>
+          <div id="gde-list-Sx" style="background:#101c15; border-radius:0 0 4px 4px; padding:2px 4px;"></div>
+        </div>
+        <div style="flex:1; min-width:0;">
+          <div style="background:#4a2a00; border-radius:4px 4px 0 0; padding:2px 5px; color:#ffcc88; font-weight:bold; font-size:9px;">▶ DESTRO</div>
+          <div id="gde-list-Dx" style="background:#1c1408; border-radius:0 0 4px 4px; padding:2px 4px;"></div>
+        </div>
+      </div>
+      <div id="gde-candidates-section" style="margin-bottom:4px; display:none;">
+        <div style="background:#0d2a3a; border-radius:4px 4px 0 0; padding:2px 5px; color:#55ddff; font-weight:bold; font-size:9px;">◉ PUNTI AUTOMATICI</div>
+        <div id="gde-candidates-body" style="background:#071520; border-radius:0 0 4px 4px; padding:2px 4px; font-size:9px; color:#aaccdd; line-height:1.4;"></div>
+      </div>
+      ` : `
       <!-- Candidati automatici -->
       <div id="gde-candidates-section" style="margin-bottom:10px; display:none;">
-        <div style="
-          background:#0d2a3a; border-radius:5px 5px 0 0; padding:4px 8px;
-          color:#55ddff; font-weight:bold; font-size:11px;
-        ">◉ PUNTI AUTOMATICI (azzurri sul canvas)</div>
-        <div id="gde-candidates-body" style="background:#071520; border-radius:0 0 5px 5px; padding:4px 6px;
-          font-size:10px; color:#aaccdd; line-height:1.6;">
-        </div>
+        <div style="background:#0d2a3a; border-radius:5px 5px 0 0; padding:4px 8px; color:#55ddff; font-weight:bold; font-size:11px;">◉ PUNTI AUTOMATICI (azzurri sul canvas)</div>
+        <div id="gde-candidates-body" style="background:#071520; border-radius:0 0 5px 5px; padding:4px 6px; font-size:10px; color:#aaccdd; line-height:1.6;"></div>
       </div>
 
       <!-- Sopracciglio Sinistro -->
       <div style="margin-bottom:10px;">
-        <div style="
-          background:#1a4a2a; border-radius:5px 5px 0 0; padding:4px 8px;
-          color:#88ffaa; font-weight:bold; font-size:11px;
-        ">◀ SINISTRO (Sx)</div>
+        <div style="background:#1a4a2a; border-radius:5px 5px 0 0; padding:4px 8px; color:#88ffaa; font-weight:bold; font-size:11px;">◀ SINISTRO (Sx)</div>
         <div id="gde-list-Sx" style="background:#101c15; border-radius:0 0 5px 5px; padding:4px 6px;"></div>
       </div>
 
       <!-- Sopracciglio Destro -->
       <div style="margin-bottom:10px;">
-        <div style="
-          background:#4a2a00; border-radius:5px 5px 0 0; padding:4px 8px;
-          color:#ffcc88; font-weight:bold; font-size:11px;
-        ">▶ DESTRO (Dx)</div>
+        <div style="background:#4a2a00; border-radius:5px 5px 0 0; padding:4px 8px; color:#ffcc88; font-weight:bold; font-size:11px;">▶ DESTRO (Dx)</div>
         <div id="gde-list-Dx" style="background:#1c1408; border-radius:0 0 5px 5px; padding:4px 6px;"></div>
       </div>
+      `}
 
       <!-- Azioni -->
-      <div style="display:flex; gap:6px; margin-top:8px;">
+      <div style="display:flex; gap:4px; margin-top:${isMobile ? '4px' : '8px'};">
         <button onclick="_gdeCancelSelection()" style="
           flex:1; background:#2a3a4a; border:1px solid #556; color:#aac;
-          border-radius:5px; padding:5px; cursor:pointer; font-size:11px;
+          border-radius:5px; padding:${isMobile ? '3px 4px' : '5px'}; cursor:pointer; font-size:${isMobile ? '10px' : '11px'};
         ">Deseleziona</button>
         <button onclick="_gdeConfirmAndRecalculate()" style="
           flex:2; background:#1a5a20; border:1px solid #3fa; color:#cfc;
-          border-radius:5px; padding:5px; cursor:pointer; font-size:11px; font-weight:bold;
+          border-radius:5px; padding:${isMobile ? '3px 4px' : '5px'}; cursor:pointer; font-size:${isMobile ? '10px' : '11px'}; font-weight:bold;
         ">✅ Conferma e Ricalcola</button>
       </div>
 
-      <div style="margin-top:8px; padding:6px; background:#0d1c2e; border-radius:5px;
-                  font-size:10px; color:#6699aa; line-height:1.5;">
+      ${!isMobile ? `
+      <div style="margin-top:8px; padding:6px; background:#0d1c2e; border-radius:5px; font-size:10px; color:#6699aa; line-height:1.5;">
         <strong style="color:#88bbcc;">Come usare:</strong><br>
         • <span style="color:#55ddff;">Punti azzurri</span> = trovati automaticamente (non classificati)<br>
         • Clicca <strong>Assegna</strong> su un candidato per metterlo in uno slot anatomico<br>
         • Oppure clicca uno <strong>slot verde/arancio</strong> e poi clicca sulla foto<br>
         • <strong>Ignora</strong> un candidato errato per scartarlo<br>
         • Premi <strong style="color:#aaffaa;">Conferma e Ricalcola</strong> quando hai 10 punti
-      </div>
+      </div>` : ''}
     </div>
   `;
 
-  document.body.appendChild(panel);
-
-  // Abilita drag del pannello
-  _gdeMakeDraggable(panel, document.getElementById('gde-header'));
+  if (isMobile) {
+    const tray = document.getElementById('gde-mobile-tray');
+    if (tray) {
+      tray.innerHTML = panelHTML;
+      tray.style.display = 'block';
+    }
+  } else {
+    const tray = document.getElementById('gde-canvas-tray');
+    if (tray) {
+      tray.innerHTML = panelHTML;
+      tray.style.display = 'block';
+      // Il tray desktop è ancorato nel layout flexbox: drag non applicabile
+    }
+  }
 
   _gdeRefreshPanel();
 }
+
+// Mostra/nascondi il body del tray (desktop e mobile)
+function _gdeToggleTray() {
+  const body = document.getElementById('gde-body');
+  const btn = document.getElementById('gde-collapse-btn');
+  if (!body) return;
+  const collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? 'block' : 'none';
+  if (btn) btn.textContent = collapsed ? '▼ Riduci' : '▲ Espandi';
+}
+window._gdeToggleTray = _gdeToggleTray;
+// Alias per compatibilità
+window._gdeToggleMobileTray = _gdeToggleTray;
 
 function _gdeRefreshPanel() {
   const data = window.greenDotsData;
@@ -12072,6 +12096,7 @@ function _gdeRenderPointList(side, coords, names) {
   if (!container) return;
 
   const state = window._gdeState;
+  const mob = window.innerWidth <= 768;
   container.innerHTML = '';
 
   names.forEach((name, idx) => {
@@ -12081,8 +12106,8 @@ function _gdeRenderPointList(side, coords, names) {
 
     const row = document.createElement('div');
     row.style.cssText = `
-      display: flex; align-items: center; gap: 6px;
-      padding: 3px 4px; border-radius: 4px; margin-bottom: 2px;
+      display: flex; align-items: center; gap: ${mob ? '3px' : '6px'};
+      padding: ${mob ? '2px 3px' : '3px 4px'}; border-radius: 4px; margin-bottom: ${mob ? '1px' : '2px'};
       cursor: pointer;
       background: ${isSel ? 'rgba(255,220,0,0.2)' : 'transparent'};
       border: 1px solid ${isSel ? '#ffcc00' : 'transparent'};
@@ -12092,10 +12117,11 @@ function _gdeRenderPointList(side, coords, names) {
     row.onmouseleave = () => { if (!isSel) row.style.background = 'transparent'; };
 
     const dot = document.createElement('span');
+    const dotSize = mob ? '7px' : '10px';
     dot.style.cssText = `
-      width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0;
+      width: ${dotSize}; height: ${dotSize}; border-radius: 50%; display: inline-block; flex-shrink: 0;
       background: ${isSel ? '#ffcc00' : hasPoint ? (side === 'Sx' ? '#00dd60' : '#ff8822') : 'transparent'};
-      border: 2px solid ${isSel ? '#ffaa00' : hasPoint ? (side === 'Sx' ? '#00aa40' : '#cc5500') : '#666'};
+      border: ${mob ? '1px' : '2px'} solid ${isSel ? '#ffaa00' : hasPoint ? (side === 'Sx' ? '#00aa40' : '#cc5500') : '#666'};
       border-style: ${hasPoint ? 'solid' : 'dashed'};
     `;
 
@@ -12104,15 +12130,20 @@ function _gdeRenderPointList(side, coords, names) {
     label.style.cssText = `
       flex: 1; color: ${isSel ? '#ffdd44' : hasPoint ? '#e0e8f0' : '#778899'};
       font-weight: ${isSel ? 'bold' : 'normal'};
+      font-size: ${mob ? '9px' : 'inherit'};
     `;
 
     const coordLabel = document.createElement('span');
-    if (coord) {
+    if (coord && !mob) {
       coordLabel.textContent = `(${Math.round(coord[0])}, ${Math.round(coord[1])})`;
       coordLabel.style.cssText = 'color:#556677; font-size:10px;';
+    } else if (coord && mob) {
+      // Su mobile mostra solo "✓" invece delle coordinate per risparmiare spazio
+      coordLabel.textContent = '✓';
+      coordLabel.style.cssText = 'color:#448844; font-size:9px;';
     } else {
       coordLabel.textContent = '—';
-      coordLabel.style.cssText = 'color:#445566; font-size:10px;';
+      coordLabel.style.cssText = `color:#445566; font-size:${mob ? '9px' : '10px'};`;
     }
 
     const actionBtn = document.createElement('button');
@@ -12122,7 +12153,7 @@ function _gdeRenderPointList(side, coords, names) {
       background: ${hasPoint ? '#1a3a5a' : '#1a4a1a'};
       border: 1px solid ${hasPoint ? '#336' : '#363'};
       color: ${hasPoint ? '#88aacc' : '#88cc88'};
-      border-radius: 3px; padding: 1px 5px; cursor: pointer; font-size:11px;
+      border-radius: 3px; padding: ${mob ? '1px 3px' : '1px 5px'}; cursor: pointer; font-size:${mob ? '10px' : '11px'};
     `;
 
     row.appendChild(dot);
