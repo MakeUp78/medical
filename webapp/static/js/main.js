@@ -1434,7 +1434,14 @@ async function startVideoFrameProcessing(video, fileName) {
 
   const seekTo = (t) => new Promise(resolve => {
     video.currentTime = clamp(t);
-    const h = () => { video.removeEventListener('seeked', h); resolve(); };
+    const h = () => {
+      video.removeEventListener('seeked', h);
+      // Piccolo delay dopo seeked: garantisce che il decoder abbia aggiornato
+      // il frame visibile prima che drawImage lo legga. Senza questo, su video
+      // H.264 con frame P/B il browser può emettere seeked prima che il frame
+      // target sia disponibile, e drawImage cattura il frame precedente.
+      setTimeout(resolve, 30);
+    };
     video.addEventListener('seeked', h);
   });
 
