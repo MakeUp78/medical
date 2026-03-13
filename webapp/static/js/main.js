@@ -93,6 +93,28 @@ async function checkAuthentication() {
     const data = await response.json();
 
     if (data.success && data.user) {
+      // Verifica accesso pagato (gli admin passano sempre)
+      if (data.user.role !== 'admin') {
+        try {
+          const subResp = await fetch(`${AUTH_SERVER_URL}/api/user/subscription`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const subData = await subResp.json();
+          const sub = subData.subscription;
+          const canAccess = sub && (sub.subscription_active || sub.trial_active);
+          if (!canAccess) {
+            localStorage.removeItem('auth_token');
+            sessionStorage.removeItem('auth_token');
+            window.location.href = '/landing.html?accesso=richiesto-abbonamento';
+            return false;
+          }
+        } catch (subError) {
+          // Se non si riesce a verificare l'abbonamento, blocca l'accesso per sicurezza
+          window.location.href = '/landing.html';
+          return false;
+        }
+      }
+
       updateUserUI(data.user);
       // Track login activity
       trackActivity('login');
@@ -1338,32 +1360,27 @@ async function handleUnifiedFileLoad(file, type) {
       // Imposta video per riproduzione singola (NO LOOP)
       video.loop = false;
 
-      // Handler per fermare quando finisce
+      // Handler per fine video (usato solo se il video viene riprodotto normalmente,
+      // non nel flusso seek-by-frame gestito da startVideoFrameProcessing)
+      video._seekModeActive = false;
       video.addEventListener('ended', () => {
+        if (video._seekModeActive) return; // gestito da startVideoFrameProcessing
         stopLivePreview();
-
-        // Attendi 2 secondi prima di chiudere il WebSocket
-        // per permettere al backend di processare gli ultimi frame
         setTimeout(() => {
-          // ✅ FIX: usa disconnectWebcamWebSocket() che invia get_results con final:true
-          // così handleResultsReady riceve is_final=true e aggiorna canvas+tabella
           disconnectWebcamWebSocket();
           currentBestScore = 0;
         }, 2000);
       });
 
-      // PROCESSO ORIGINALE: Setup anteprima + elaborazione WebSocket
       openWebcamSection();
       showWebcamPreview(video);
 
       // Aspetta WebSocket PRIMA di avviare il video
       await connectWebcamWebSocket();
 
-      // Ora avvia il video e l'anteprima
-      video.play().then(() => {
-        startLivePreview(video); // Anteprima continua
-        startVideoFrameProcessing(video, file.name); // Elaborazione frame
-      }).catch(e => console.error('Errore play video:', e));
+      // Analisi seek-by-frame: nessun playback, seek controllato frame per frame
+      video._seekModeActive = true;
+      startVideoFrameProcessing(video, file.name);
 
       showToast('Video in elaborazione - sistema WebSocket automatico', 'success');
 
@@ -1384,48 +1401,238 @@ async function handleUnifiedFileLoad(file, type) {
 // Codice consolidato in handleUnifiedFileLoad() - branch 'video'
 // Eliminata duplicazione del 2024-01-16
 
-function startVideoFrameProcessing(video, fileName) {
-  updateStatus(`Elaborazione video: ${fileName}`);
-
-  let lastCaptureTimestamp = 0;
-  let lastCaptureVideoTime = -1;   // traccia currentTime usato per l'ultimo invio
-  let framesCapturati = 0;
-  const FRAME_INTERVAL_MS = 500; // 2 FPS per il server
-
-  console.log(`🎬 captureLoop avviato: duration=${video.duration?.toFixed(1)}s paused=${video.paused} ended=${video.ended}`);
-
-  function captureLoop(timestamp) {
-    // Fermati se il video è finito o in pausa dopo l'inizio
-    if (video.ended) {
-      console.log(`🎬 captureLoop terminato: ${framesCapturati} frame inviati`);
-      return;
-    }
-    if (video.paused && video.currentTime > 0) {
-      console.log(`🎬 captureLoop: video in pausa a ${video.currentTime.toFixed(2)}s`);
-      return;
-    }
-
-    if (!webcamWebSocket || webcamWebSocket.readyState !== WebSocket.OPEN) {
-      // WS non ancora pronto — riprova al prossimo frame
-      requestAnimationFrame(captureLoop);
-      return;
-    }
-
-    if (timestamp - lastCaptureTimestamp >= FRAME_INTERVAL_MS) {
-      // ANTI-DUPLICATO: invia solo se il video ha avanzato di almeno 200ms
-      if (video.currentTime - lastCaptureVideoTime >= 0.2) {
-        captureFrameFromVideoElement(video);
-        lastCaptureVideoTime = video.currentTime;
-        framesCapturati++;
-        console.log(`🎬 Frame #${framesCapturati} inviato @ ${video.currentTime.toFixed(2)}s ws=${webcamWebSocket.readyState}`);
-      }
-      lastCaptureTimestamp = timestamp;
-    }
-
-    requestAnimationFrame(captureLoop);
+// ── ANALISI VIDEO: due fasi, scan yaw-only + invio candidati ──
+//
+// FASE 1 — Scan rapido a 160px via azione server 'scan_frame':
+//   Campiona ~60 frame uniformi, li manda in parallelo al server che risponde
+//   solo con il yaw (nessun buffer, nessun storage). Trova i 3 timestamp con
+//   |yaw| minimo. Rapido perché: frame piccoli + risposte parallele non bloccanti.
+//
+// FASE 2 — Invio candidati ad alta risoluzione via 'process_frame':
+//   Solo i 3 timestamp migliori vengono inviati ad alta risoluzione.
+//   Il server li mette nel buffer e restituisce il miglior frame via get_results.
+//
+// Non usa window.faceLandmarker (inaffidabile in modalità seek-by-frame).
+async function startVideoFrameProcessing(video, fileName) {
+  const duration = video.duration || 0;
+  if (duration < 0.1) {
+    updateStatus('Video troppo breve per l\'analisi.');
+    video.dispatchEvent(new Event('ended'));
+    return;
   }
 
-  requestAnimationFrame(captureLoop);
+  if (!webcamWebSocket || webcamWebSocket.readyState !== WebSocket.OPEN) {
+    updateStatus('Errore: WebSocket non disponibile.');
+    video.dispatchEvent(new Event('ended'));
+    return;
+  }
+
+  let stopped = false;
+  video._stopSeekLoop = () => { stopped = true; };
+
+  const clamp = (t) => Math.min(Math.max(t, 0), duration - 0.05);
+
+  const seekTo = (t) => new Promise(resolve => {
+    video.currentTime = clamp(t);
+    const h = () => { video.removeEventListener('seeked', h); resolve(); };
+    video.addEventListener('seeked', h);
+  });
+
+  // Canvas 160px riutilizzabile per tutte le fasi di scan
+  const SW = 160;
+  const SH = Math.round(SW * (video.videoHeight / video.videoWidth)) || 90;
+  const scanCanvas = document.createElement('canvas');
+  scanCanvas.width = SW; scanCanvas.height = SH;
+  const scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
+
+  // Invia un singolo frame a 160px al server e aspetta la risposta yaw.
+  // Usa un ID incrementale per evitare ambiguità nelle risposte parallele.
+  let _scanSeq = 0;
+  const scanOneYaw = (t) => new Promise(resolve => {
+    const seq = ++_scanSeq;
+    const _h = (ev) => {
+      try {
+        const d = JSON.parse(ev.data);
+        if (d.action === 'frame_scanned' && d.seq === seq) {
+          webcamWebSocket.removeEventListener('message', _h);
+          resolve(d.yaw !== null && d.yaw !== undefined ? Math.abs(d.yaw) : 999);
+        }
+      } catch (e) {}
+    };
+    webcamWebSocket.addEventListener('message', _h);
+    setTimeout(() => { webcamWebSocket.removeEventListener('message', _h); resolve(999); }, 3000);
+    scanCtx.drawImage(video, 0, 0, SW, SH);
+    const b64 = scanCanvas.toDataURL('image/jpeg', 0.70).split(',')[1];
+    webcamWebSocket.send(JSON.stringify({ action: 'scan_frame', frame_data: b64, t, seq }));
+  });
+
+  // ── FASE 1: scan a passo 0.5s, non-bloccante (fire-and-forget) ──────────────
+  // Invia tutti i frame 160px senza aspettare la risposta di ciascuno.
+  // Le risposte vengono raccolte da un listener globale tramite seq.
+  // Passo 0.5s: abbastanza fine da non perdere momenti frontali brevi,
+  // abbastanza rado da essere veloce (max ~120 frame per 60s di video).
+  const SCAN_STEP = 0.5;
+  const scanTimestamps = [];
+  for (let t = SCAN_STEP / 2; t < duration; t += SCAN_STEP) {
+    scanTimestamps.push(clamp(t));
+  }
+  const totalScan = scanTimestamps.length;
+  console.log(`🎬 FASE 1: ${totalScan} frame @ passo ${SCAN_STEP}s su ${duration.toFixed(1)}s`);
+  updateStatus(`Scansione video (${totalScan} frame)…`);
+
+  // yawMap: seq → {t, yaw}  (riempito dal listener mentre arrivano le risposte)
+  const yawMap = new Map(); // seq → {t, yaw}
+  const _scanListener = (ev) => {
+    try {
+      const d = JSON.parse(ev.data);
+      if (d.action === 'frame_scanned' && d.seq != null) {
+        yawMap.set(d.seq, { t: d.t, yaw: d.yaw !== null && d.yaw !== undefined ? Math.abs(d.yaw) : 999 });
+      }
+    } catch (e) {}
+  };
+  webcamWebSocket.addEventListener('message', _scanListener);
+
+  // Invia tutti i frame in sequenza (seek obbliga sequenzialità),
+  // ma NON aspetta la risposta del server → molto più veloce.
+  const seqMap = new Map(); // seq → t (per correlazione)
+  for (let i = 0; i < totalScan && !stopped; i++) {
+    const t = scanTimestamps[i];
+    await seekTo(t);
+    if (stopped) break;
+    renderLivePreview(video);
+    scanCtx.drawImage(video, 0, 0, SW, SH);
+    const b64 = scanCanvas.toDataURL('image/jpeg', 0.70).split(',')[1];
+    const seq = ++_scanSeq;
+    seqMap.set(seq, t);
+    webcamWebSocket.send(JSON.stringify({ action: 'scan_frame', frame_data: b64, t, seq }));
+    const pct = Math.round(((i + 1) / totalScan) * 100);
+    if (i % 5 === 0) updateStatus(`Scansione ${pct}%…`);
+  }
+
+  // Aspetta che le risposte in volo arrivino (max 4s)
+  const waitStart = Date.now();
+  while (yawMap.size < totalScan && !stopped && Date.now() - waitStart < 4000) {
+    await new Promise(r => setTimeout(r, 80));
+  }
+  webcamWebSocket.removeEventListener('message', _scanListener);
+  if (stopped) return;
+
+  // Tutti i risultati con volto rilevato, ordinati per yaw crescente
+  const allScan = Array.from(yawMap.values()).filter(r => r.yaw < 999).sort((a, b) => a.yaw - b.yaw);
+
+  if (allScan.length === 0) {
+    updateStatus('Nessun volto rilevato nel video.');
+    stopLivePreview();
+    setTimeout(() => { disconnectWebcamWebSocket(); currentBestScore = 0; }, 500);
+    return;
+  }
+
+  console.log(`🎬 FASE 1 completata: ${allScan.length}/${totalScan} frame con volto — migliore: t=${allScan[0].t.toFixed(2)}s yaw=${allScan[0].yaw.toFixed(2)}°`);
+
+  // ── FASE 2: scan fine attorno al minimo globale ───────────────────────────
+  // Finestra ±SCAN_STEP attorno al timestamp con yaw più basso trovato in Fase 1.
+  // Passo 0.1s → risoluzione 5× maggiore, max 10 frame aggiuntivi.
+  // Salta se il minimo è già ≤ 0.1° (non c'è molto da guadagnare).
+  const FINE_STEP = 0.1;
+  const coarseBest = allScan[0];
+  const fineResults = [];
+
+  if (coarseBest.yaw > 0.1) {
+    const lo = clamp(coarseBest.t - SCAN_STEP);
+    const hi = clamp(coarseBest.t + SCAN_STEP);
+    const fineTimestamps = [];
+    for (let t = lo; t <= hi + 0.001; t = Math.round((t + FINE_STEP) * 100) / 100) {
+      fineTimestamps.push(clamp(t));
+    }
+
+    console.log(`🎬 FASE 2: ${fineTimestamps.length} frame @ passo ${FINE_STEP}s in [${lo.toFixed(2)}, ${hi.toFixed(2)}]`);
+    updateStatus(`Ricerca precisa (${fineTimestamps.length} frame)…`);
+
+    // Fase 2 bloccante: pochi frame, vogliamo la risposta prima di procedere
+    for (let i = 0; i < fineTimestamps.length && !stopped; i++) {
+      const t = fineTimestamps[i];
+      await seekTo(t);
+      if (stopped) break;
+      renderLivePreview(video);
+      const yaw = await scanOneYaw(t);
+      if (yaw < 999) fineResults.push({ t, yaw });
+    }
+  }
+  if (stopped) return;
+
+  // Combina Fase 1 + Fase 2, prendi il minimo globale
+  const allResults = [...allScan, ...fineResults].sort((a, b) => a.yaw - b.yaw);
+  const best = allResults[0];
+  console.log(`🎬 MIGLIORE FINALE: t=${best.t.toFixed(2)}s yaw=${best.yaw.toFixed(3)}°`);
+
+  // ── FASE 3: invia i top 3 candidati ad alta risoluzione ──────────────────
+  // Inviare più frame permette al server di confrontarli nel suo buffer
+  // e restituire quello con score effettivo più alto (yaw calcolato su full-res).
+  const TOP_N = Math.min(3, allResults.length);
+  const topCandidates = allResults.slice(0, TOP_N);
+  updateStatus(`Invio ${TOP_N} frame migliori al server…`);
+  console.log(`🎬 FASE 3: candidati → ${topCandidates.map(r => `t=${r.t.toFixed(2)}s yaw=${r.yaw.toFixed(2)}°`).join(', ')}`);
+
+  let _resolveAck = null;
+  const _ackListener = (ev) => {
+    if (!_resolveAck) return;
+    try {
+      const d = JSON.parse(ev.data);
+      if (d.action === 'frame_processed') { const r = _resolveAck; _resolveAck = null; r(); }
+    } catch (e) {}
+  };
+  webcamWebSocket.addEventListener('message', _ackListener);
+
+  for (let i = 0; i < topCandidates.length && !stopped; i++) {
+    const { t, yaw } = topCandidates[i];
+    await seekTo(t);
+    if (stopped) break;
+    if (!webcamWebSocket || webcamWebSocket.readyState !== WebSocket.OPEN) break;
+    renderLivePreview(video);
+    const ackPromise = new Promise(r => { _resolveAck = r; });
+    captureFrameFromVideoElement(video);
+    updateStatus(`Invio ${i + 1}/${TOP_N} — t=${t.toFixed(2)}s yaw=${yaw.toFixed(2)}°`);
+    await Promise.race([ackPromise, new Promise(r => setTimeout(r, 8000))]);
+  }
+
+  webcamWebSocket.removeEventListener('message', _ackListener);
+
+  if (stopped) return;
+
+  // ── Richiedi risultati finali ─────────────────────────────────────────────
+  updateStatus('Recupero risultati…');
+  if (webcamWebSocket && webcamWebSocket.readyState === WebSocket.OPEN) {
+    const finalRequestId = ++getResultsRequestId;
+    pendingGetResultsRequests.add(finalRequestId);
+
+    const finalResultPromise = new Promise(resolve => {
+      const _fl = (ev) => {
+        try {
+          const d = JSON.parse(ev.data);
+          if (d.action === 'results_ready') { webcamWebSocket.removeEventListener('message', _fl); resolve(d); }
+        } catch (e) {}
+      };
+      webcamWebSocket.addEventListener('message', _fl);
+      setTimeout(() => { webcamWebSocket && webcamWebSocket.removeEventListener('message', _fl); resolve(null); }, 10000);
+    });
+
+    webcamWebSocket.send(JSON.stringify({
+      action: 'get_results',
+      request_id: finalRequestId,
+      session_token: window._iphoneSessionToken || '',
+      final: true
+    }));
+
+    const finalData = await finalResultPromise;
+    if (finalData) {
+      handleResultsReady(finalData);
+      openUnifiedAnalysisSection();
+      switchUnifiedTab('debug');
+    }
+  }
+
+  stopLivePreview();
+  setTimeout(() => { disconnectWebcamWebSocket(); currentBestScore = 0; }, 500);
 }
 
 function captureFrameFromVideoElement(video) {
@@ -2823,19 +3030,23 @@ function renderLivePreview(video) {
   try {
     const ctx = previewCanvas.getContext('2d');
 
-    // Calcola dimensioni dinamiche basate sul container e aspect ratio del video
+    // Calcola dimensioni CSS del canvas in base al container
     const containerWidth = previewCanvas.parentElement.offsetWidth - 16;
     const aspectRatio = video.videoWidth / video.videoHeight;
-    const canvasWidth = containerWidth;
-    const canvasHeight = canvasWidth / aspectRatio;
+    const cssW = containerWidth;
+    const cssH = Math.round(cssW / aspectRatio);
 
-    // Imposta dimensioni canvas
-    previewCanvas.width = video.videoWidth;
-    previewCanvas.height = video.videoHeight;
-    previewCanvas.style.width = canvasWidth + 'px';
-    previewCanvas.style.height = canvasHeight + 'px';
+    // Ridimensiona il canvas interno solo se le dimensioni sono cambiate
+    // (assegnare .width/.height resetta il contesto — molto costoso se fatto ad ogni frame)
+    if (previewCanvas.width !== video.videoWidth || previewCanvas.height !== video.videoHeight) {
+      previewCanvas.width = video.videoWidth;
+      previewCanvas.height = video.videoHeight;
+    }
+    if (previewCanvas.style.width !== cssW + 'px') {
+      previewCanvas.style.width = cssW + 'px';
+      previewCanvas.style.height = cssH + 'px';
+    }
 
-    // ✅ NO COMPRESSIONE - stream webcam già ridotto a monte (464x832)
     try {
       // Disegna a specchio (flip orizzontale) — solo visivo, il frame inviato al server NON è specchiato
       const W = previewCanvas.width, H = previewCanvas.height;

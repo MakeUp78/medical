@@ -40,7 +40,7 @@ class WebSocketFrameScorer:
         self.frames_added = 0
         self.frames_processed = 0  # Contatore frame totali processati
         self.session_id = None
-        self.min_score_threshold = 70  # Soglia minima: scarta solo frame molto scarsi
+        self.min_score_threshold = 0   # Soglia iniziale: accetta tutti i frame rilevati
         
         # MediaPipe setup
         # static_image_mode=True: tratta ogni frame come immagine indipendente
@@ -181,12 +181,17 @@ class WebSocketFrameScorer:
             return np.array([0.0, 0.0, 0.0])
     
     def calculate_face_score(self, pitch, yaw, roll, face_bbox, frame_width, frame_height):
-        """Sistema di scoring a 3 parametri ottimizzato"""
-        
-        # 1. POSE SCORE (0-100) - 60% del punteggio
-        # YAW e PITCH hanno peso UGUALE per bilanciare frontalità verticale/orizzontale
-        
-        # Normalizza Roll a range [-90, 90] (wrap semplice, niente inversione ±180°)
+        """Scoring dominato da YAW: pitch e roll hanno influenza minima."""
+
+        # 1. YAW SCORE (0-100) — componente principale
+        # yaw=0 → 100, penalità lineare: ogni grado costa 50 punti (a ±2° = 0)
+        yaw_score = max(0.0, 100.0 - abs(yaw) * 50.0)
+
+        # 2. PITCH SCORE (0-100) — influenza ridotta
+        # penalità leggera: ogni grado costa 3 punti
+        pitch_score = max(0.0, 100.0 - abs(pitch) * 3.0)
+
+        # 3. ROLL SCORE (0-100) — influenza minima
         normalized_roll = roll % 360
         if normalized_roll > 180:
             normalized_roll -= 360
@@ -194,69 +199,77 @@ class WebSocketFrameScorer:
             normalized_roll = 180 - normalized_roll
         elif normalized_roll < -90:
             normalized_roll = -180 - normalized_roll
-        
-        roll_weighted = abs(normalized_roll) * 0.3
+        roll_score = max(0.0, 100.0 - abs(normalized_roll) * 2.0)
 
-        # Pesi PRIORITÀ YAW: peso molto elevato per selezionare solo pose con yaw ≈ 0
-        yaw_weighted = abs(yaw) * 5.0
-        pitch_weighted = abs(pitch) * 1.0
-
-        # BIAS: Penalità extra per Yaw fuori dalla soglia ottimale [-1, +1]
-        yaw_penalty = 0
-        if abs(yaw) > 1:
-            # Penalità progressiva: ogni grado oltre ±1 costa 10 punti
-            yaw_penalty = (abs(yaw) - 1) * 10
-
-        pose_deviation = yaw_weighted + pitch_weighted + roll_weighted
-        pose_score = max(0, 100 - pose_deviation * 0.8 - yaw_penalty)
-        
-        # 2. SIZE SCORE (0-100) - 30% del punteggio - Premia volti PIÙ GRANDI
-        face_width = face_bbox[1] - face_bbox[0]
+        # 4. SIZE SCORE (0-100) — premia volti grandi
+        face_width  = face_bbox[1] - face_bbox[0]
         face_height = face_bbox[3] - face_bbox[2]
-        face_area = face_width * face_height
-        frame_area = frame_width * frame_height
-        face_ratio = face_area / frame_area
-        
-        # Range ottimale 30-45% del frame per volti più grandi
+        face_ratio  = (face_width * face_height) / (frame_width * frame_height)
         if face_ratio >= 0.30:
-            if face_ratio <= 0.45:
-                size_score = 100
-            elif face_ratio <= 0.55:
-                size_score = max(75, 100 - (face_ratio - 0.45) * 250)
-            else:
-                size_score = max(40, 75 - (face_ratio - 0.55) * 300)
+            size_score = min(100, 100 - max(0, face_ratio - 0.45) * 250)
         else:
-            if face_ratio >= 0.20:
-                size_score = max(40, (face_ratio - 0.20) * 600)
-            else:
-                size_score = max(0, face_ratio * 200)
-        
-        # 3. POSITION SCORE (0-100) - 10% del punteggio - Centramento completo
-        face_center_x = (face_bbox[0] + face_bbox[1]) / 2
-        face_center_y = (face_bbox[2] + face_bbox[3]) / 2
-        
-        frame_center_x = frame_width / 2
-        frame_center_y = frame_height / 2
-        
-        distance_x = abs(face_center_x - frame_center_x) / (frame_width / 2)
-        distance_y = abs(face_center_y - frame_center_y) / (frame_height / 2)
-        
+            size_score = max(0, face_ratio * 333)  # 0→0, 0.30→100
+
+        # 5. POSITION SCORE (0-100)
+        face_center_x  = (face_bbox[0] + face_bbox[1]) / 2
+        face_center_y  = (face_bbox[2] + face_bbox[3]) / 2
+        distance_x = abs(face_center_x - frame_width  / 2) / (frame_width  / 2)
+        distance_y = abs(face_center_y - frame_height / 2) / (frame_height / 2)
         total_distance = (distance_x + distance_y) / 2
-        position_score = max(0, 100 - total_distance * 100)
-        
-        # Combinazione finale con pesi ottimizzati
-        total_score = (pose_score * 0.6 + size_score * 0.3 + position_score * 0.1)
-        
+        position_score = max(0.0, 100.0 - total_distance * 100.0)
+
+        # Pesi finali: YAW domina (80%), pitch+roll quasi irrilevanti, size e pos secondari
+        total_score = (
+            yaw_score      * 0.80 +
+            pitch_score    * 0.05 +
+            roll_score     * 0.05 +
+            size_score     * 0.07 +
+            position_score * 0.03
+        )
+
         return total_score, {
-            'pose_score': pose_score,
-            'size_score': size_score,
-            'position_score': position_score,
-            'face_ratio': face_ratio,
-            'center_distance_x': distance_x,
-            'center_distance_y': distance_y,
-            'total_center_distance': total_distance
+            'pose_score':      round(yaw_score,   2),
+            'size_score':      round(size_score,  2),
+            'position_score':  round(position_score, 2),
+            'yaw_score':       round(yaw_score,   2),
+            'pitch_score':     round(pitch_score, 2),
+            'roll_score':      round(roll_score,  2),
+            'face_ratio':      round(face_ratio,  4),
+            'center_distance_x':    round(distance_x,      4),
+            'center_distance_y':    round(distance_y,      4),
+            'total_center_distance': round(total_distance, 4),
         }
     
+    async def scan_frame_yaw(self, frame_data):
+        """Calcola solo il yaw di un frame senza salvarlo nel buffer.
+        Usato per la scansione rapida in Fase 1 dell'analisi video.
+        Accetta frame piccoli (160px) per massima velocità.
+        Restituisce {'yaw': float|None, 'faces_detected': int}."""
+        try:
+            frame_bytes = base64.b64decode(frame_data)
+            nparr = np.frombuffer(frame_bytes, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if frame is None:
+                return {"yaw": None, "faces_detected": 0}
+            h, w = frame.shape[:2]
+            # Scala a max 160px (già piccolo, ma assicura consistenza)
+            SCAN_MAX_DIM = 160
+            if max(h, w) > SCAN_MAX_DIM:
+                scale = SCAN_MAX_DIM / max(h, w)
+                frame = cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+                h, w = frame.shape[:2]
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = self.face_mesh.process(rgb)
+            if not results.multi_face_landmarks:
+                return {"yaw": None, "faces_detected": 0}
+            lm_raw = results.multi_face_landmarks[0]
+            all_lm = self.get_all_mediapipe_landmarks(lm_raw, w, h)
+            pose = self.calculate_head_pose_from_mediapipe(all_lm, w, h)
+            return {"yaw": round(float(pose[1]), 3), "faces_detected": 1}
+        except Exception as e:
+            logger.debug(f"scan_frame_yaw errore: {e}")
+            return {"yaw": None, "faces_detected": 0}
+
     async def process_frame(self, frame_data):
         """Processa un singolo frame ricevuto dal client"""
         try:
@@ -331,7 +344,7 @@ class WebSocketFrameScorer:
                             score, score_details = self.calculate_face_score(
                                 head_pose[0], head_pose[1], head_pose[2], bbox, mp_w, mp_h
                             )
-                            
+
                             # ✅ FILTRO: Scarta solo Yaw/Pitch invalidi (>170°)
                             # Roll>170° è gestito con normalizzazione (inversione asse)
                             is_invalid = (abs(head_pose[0]) > 170 or  # Pitch invalido
@@ -363,14 +376,12 @@ class WebSocketFrameScorer:
                             }
                             
                             # ✅ BUFFER CIRCOLARE INTELLIGENTE CON PRIORITÀ PER FRAME ECCELLENTI
-                            # Frame con score >95 hanno SEMPRE priorità (pose quasi perfette)
-                            # Frame con |yaw|<8° E |pitch|<8° bypassano la soglia (frontalità prioritaria)
-                            is_excellent = score >= 95
-                            is_frontal_pose = (abs(head_pose[1]) < 8 and abs(head_pose[0]) < 8)
-                            
-                            reason = "" 
-                            if is_excellent:       reason = "EXCELLENT(>=95)"
-                            elif is_frontal_pose:  reason = "FRONTAL(|yaw|<8,|pitch|<8)"
+                            # Accetta tutti i frame con score > soglia minima
+                            # YAW domina lo score (80%) quindi i frame con yaw~0 emergono naturalmente
+                            is_excellent = score >= 75   # soglia abbassata: con YAW*0.8, max ~97
+
+                            reason = ""
+                            if is_excellent:                        reason = "EXCELLENT(>=75)"
                             elif score >= self.min_score_threshold: reason = "SCORE_OK"
 
                             if len(self.best_frames) < self.buffer_size:
@@ -715,6 +726,26 @@ async def handle_websocket(websocket):
                         "message": "Sessione iniziata. Invia frame con action='process_frame'"
                     }
                     await websocket.send(json.dumps(response))
+
+                elif action == 'scan_frame':
+                    # Scan veloce: calcola solo il yaw, senza salvare il frame nel buffer.
+                    # Risponde con {action:'frame_scanned', yaw, t, seq, faces_detected}.
+                    # Il campo seq permette al client di correlare risposta→richiesta
+                    # in modo univoco, senza ambiguità su float t.
+                    frame_data = data.get('frame_data')
+                    client_t = data.get('t', 0)
+                    client_seq = data.get('seq')
+                    if not frame_data:
+                        await websocket.send(json.dumps({"action": "frame_scanned", "yaw": None, "t": client_t, "seq": client_seq, "faces_detected": 0}))
+                        continue
+                    yaw_result = await scorer.scan_frame_yaw(frame_data)
+                    await websocket.send(json.dumps({
+                        "action": "frame_scanned",
+                        "yaw": yaw_result.get("yaw"),
+                        "t": client_t,
+                        "seq": client_seq,
+                        "faces_detected": yaw_result.get("faces_detected", 0)
+                    }))
 
                 elif action == 'process_frame':
                     frame_data = data.get('frame_data')
