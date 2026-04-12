@@ -40,63 +40,15 @@ DB_INIT_FLAG = False  # Indica se il database è stato inizializzato
 
 def check_singleton():
     """
-    Verifica che non ci siano già istanze del server in esecuzione.
-    Previene il problema del doppio processo che fa fallire il primo login.
-    
-    NOTA: Salta il check se siamo nel processo reloader di Flask (debug mode)
-    per evitare false positive. Il reloader crea un processo figlio che
-    viene identificato dalla variabile WERKZEUG_RUN_MAIN.
+    DISABILITATO: check_singleton() causava più problemi di quanti ne risolvesse.
+
+    Con debug=False (non Flask reloader), non è più necessario.
+    La protezione è affidata a:
+    1. Cleanup script (cleanup_servers.py)
+    2. Middleware di pulizia sessione database
+    3. Ordine avvio critico in restart_all.sh
     """
-    # Se siamo nel processo reloader di Flask, salta il check
-    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-        return
-    
-    # CONTROLLO PRIMARIO: Verifica se la porta 5000 è già in uso
-    # Questo è il metodo più affidabile per evitare istanze multiple
-    import socket
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        sock.bind(('0.0.0.0', 5000))
-        sock.close()
-    except OSError:
-        # Porta occupata - verifica se è il nostro server
-        print(f"❌ ERRORE: Porta 5000 già in uso!")
-        print(f"   Un'istanza di Auth Server è già in esecuzione.")
-        print(f"   Per terminare tutti i processi: python3 cleanup_servers.py auth")
-        sys.exit(1)
-    
-    # CONTROLLO SECONDARIO: Verifica PID file
-    if PID_FILE.exists():
-        try:
-            with open(PID_FILE, 'r') as f:
-                old_pid = int(f.read().strip())
-            
-            # Verifica se il processo esiste ancora
-            if psutil.pid_exists(old_pid):
-                try:
-                    proc = psutil.Process(old_pid)
-                    # Verifica che sia effettivamente auth_server.py
-                    cmdline = ' '.join(proc.cmdline())
-                    if 'auth_server.py' in cmdline:
-                        print(f"⚠ Warning: Auth server già in esecuzione (PID: {old_pid})")
-                        print(f"   Ma la porta 5000 è libera - possibile inconsistenza")
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    # Processo non esiste più, rimuovi PID file stantio
-                    PID_FILE.unlink()
-            else:
-                # PID file obsoleto, rimuovi
-                PID_FILE.unlink()
-        except (ValueError, IOError) as e:
-            print(f"⚠ Warning: PID file corrotto, lo rimuovo: {e}")
-            PID_FILE.unlink()
-    
-    # Scrivi il nuovo PID (solo nel processo principale)
-    try:
-        with open(PID_FILE, 'w') as f:
-            f.write(str(os.getpid()))
-        print(f"✅ Protezione singleton attiva (PID: {os.getpid()}, Porta: 5000)")
-    except IOError as e:
-        print(f"⚠ Warning: Impossibile creare PID file: {e}")
+    print(f"✅ Auth Server avviato (PID: {os.getpid()}, Porta: 5000)")
 
 def cleanup_pid_file():
     """Rimuovi PID file alla chiusura"""
