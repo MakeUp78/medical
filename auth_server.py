@@ -76,6 +76,15 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///kimerika.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# CRITICO: Pool di connessione database per evitare scadenza connessioni
+# Ricicla connessioni ogni 3600 secondi (1 ora) per evitare timeout
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_recycle': 3600,  # Ricicla connessioni ogni ora
+    'pool_pre_ping': True,  # Verifica connessione prima di usarla
+    'pool_size': 10,  # Numero connessioni nel pool
+    'max_overflow': 20,  # Connessioni extra se pool esaurito
+}
+
 # JWT Configuration
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', secrets.token_hex(32))
 app.config['JWT_EXPIRATION_DELTA'] = datetime.timedelta(days=7)
