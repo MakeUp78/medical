@@ -11,6 +11,9 @@ let plansChart = null;
 let periodChart = null;
 let currentUsersPage = 1;
 let currentAuditPage = 1;
+let currentSubPage = 1;
+let selectedSubUserId = null;
+let selectedRoleUserId = null;
 
 // ===================================
 // INITIALIZATION
@@ -121,6 +124,8 @@ function switchSection(sectionName) {
         const statusFilter = document.getElementById('status-filter');
         if (statusFilter) statusFilter.value = '';
         loadUsers(1);
+    } else if (sectionName === 'subscriptions') {
+        loadSubscriptions(1);
     } else if (sectionName === 'audit') {
         loadAuditLog(1);
     } else if (sectionName === 'analytics') {
@@ -345,8 +350,8 @@ function renderUsersTable(users) {
             <td>${user.id}</td>
             <td>${escapeHtml(user.firstname)} ${escapeHtml(user.lastname)}</td>
             <td>${escapeHtml(user.email)}</td>
-            <td><span class="role-badge ${user.role}">${user.role}</span></td>
-            <td><span class="plan-badge ${user.plan}">${capitalizeFirst(user.plan)}</span></td>
+            <td><span class="role-badge ${user.role}">${user.role === 'admin' ? 'Admin' : 'Utente'}</span></td>
+            <td><span class="plan-badge ${user.plan}">${planLabel(user.plan)}</span></td>
             <td>${user.analyses_count}/${user.analyses_limit === -1 ? '∞' : user.analyses_limit}</td>
             <td>${formatDate(user.created_at)}</td>
             <td><span class="status-badge ${user.is_active ? 'active' : 'inactive'}">${user.is_active ? 'Attivo' : 'Inattivo'}</span></td>
@@ -357,6 +362,9 @@ function renderUsersTable(users) {
                     </button>
                     <button class="btn-action edit" onclick="toggleUserStatus(${user.id})" title="${user.is_active ? 'Disattiva' : 'Attiva'}">
                         <i class="fas fa-${user.is_active ? 'ban' : 'check'}"></i>
+                    </button>
+                    <button class="btn-action edit" onclick="showChangeRoleModal(${user.id}, '${escapeHtml(user.firstname)} ${escapeHtml(user.lastname)}', '${user.role}')" title="Cambia Ruolo">
+                        <i class="fas fa-user-shield"></i>
                     </button>
                     <button class="btn-action edit" onclick="showResetPasswordModal(${user.id})" title="Reset Password">
                         <i class="fas fa-key"></i>
@@ -393,14 +401,16 @@ async function viewUser(userId) {
             const user = data.user;
             selectedUserId = userId;
 
+            const daysInfo = daysRemainingBadge(user.subscription_ends_at);
             document.getElementById('user-detail-content').innerHTML = `
                 <div class="user-detail-grid">
                     <div class="detail-row"><strong>ID</strong>${user.id}</div>
-                    <div class="detail-row"><strong>Ruolo</strong><span class="role-badge ${user.role}">${user.role}</span></div>
+                    <div class="detail-row"><strong>Ruolo</strong><span class="role-badge ${user.role}">${user.role === 'admin' ? 'Admin' : 'Utente'}</span></div>
                     <div class="detail-row"><strong>Nome</strong>${escapeHtml(user.firstname)} ${escapeHtml(user.lastname)}</div>
                     <div class="detail-row"><strong>Email</strong>${escapeHtml(user.email)}</div>
-                    <div class="detail-row"><strong>Piano</strong><span class="plan-badge ${user.plan}">${capitalizeFirst(user.plan)}</span></div>
+                    <div class="detail-row"><strong>Piano</strong><span class="plan-badge ${user.plan}">${planLabel(user.plan)}</span></div>
                     <div class="detail-row"><strong>Stato</strong><span class="status-badge ${user.is_active ? 'active' : 'inactive'}">${user.is_active ? 'Attivo' : 'Inattivo'}</span></div>
+                    <div class="detail-row"><strong>Scadenza</strong>${user.subscription_ends_at ? formatDate(user.subscription_ends_at) + ' ' + daysInfo : '<span style="color:#9e9e9e">—</span>'}</div>
                     <div class="detail-row"><strong>Analisi Effettuate</strong>${user.analyses_count}</div>
                     <div class="detail-row"><strong>Limite Analisi</strong>${user.analyses_limit === -1 ? 'Illimitate' : user.analyses_limit}</div>
                     <div class="detail-row"><strong>Data Registrazione</strong>${formatDateTime(user.created_at)}</div>
@@ -412,15 +422,25 @@ async function viewUser(userId) {
                 </div>
                 <div class="user-actions-panel">
                     <h4><i class="fas fa-tools"></i> Azioni Rapide</h4>
-                    <select id="change-plan-select">
-                        <option value="">Cambia Piano...</option>
-                        <option value="none" ${user.plan === 'none' ? 'disabled' : ''}>Nessun Piano</option>
-                        <option value="monthly" ${user.plan === 'monthly' ? 'disabled' : ''}>Mensile</option>
-                        <option value="annual" ${user.plan === 'annual' ? 'disabled' : ''}>Annuale</option>
-                    </select>
-                    <button class="btn btn-primary" onclick="changePlan(${user.id})">
-                        <i class="fas fa-save"></i> Applica
-                    </button>
+                    <div style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;">
+                        <div style="display:flex;gap:.5rem;align-items:center;">
+                            <select id="change-plan-select">
+                                <option value="">Cambia Piano...</option>
+                                <option value="none" ${user.plan === 'none' ? 'disabled' : ''}>Nessun Piano</option>
+                                <option value="monthly" ${user.plan === 'monthly' ? 'disabled' : ''}>Mensile</option>
+                                <option value="annual" ${user.plan === 'annual' ? 'disabled' : ''}>Annuale</option>
+                            </select>
+                            <button class="btn btn-primary btn-sm" onclick="changePlan(${user.id})">
+                                <i class="fas fa-save"></i> Applica Piano
+                            </button>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" onclick="closeUserModal();showExtendModal(${user.id},'${escapeHtml(user.firstname)} ${escapeHtml(user.lastname)}','${user.plan}','${user.subscription_ends_at || ''}')">
+                            <i class="fas fa-calendar-plus"></i> Estendi Scadenza
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="closeUserModal();showChangeRoleModal(${user.id},'${escapeHtml(user.firstname)} ${escapeHtml(user.lastname)}','${user.role}')">
+                            <i class="fas fa-user-shield"></i> Cambia Ruolo
+                        </button>
+                    </div>
                 </div>
             `;
             document.getElementById('user-detail-modal').classList.add('active');
@@ -892,6 +912,7 @@ function formatAction(action) {
         'user_activated': '<i class="fas fa-user-check" style="color:#4caf50"></i> Utente Attivato',
         'user_deactivated': '<i class="fas fa-user-slash" style="color:#f44336"></i> Utente Disattivato',
         'plan_changed': '<i class="fas fa-exchange-alt" style="color:#ff9800"></i> Piano Modificato',
+        'role_changed': '<i class="fas fa-user-shield" style="color:#9c27b0"></i> Ruolo Modificato',
         'password_reset': '<i class="fas fa-key" style="color:#2196f3"></i> Password Reset',
         'user_deleted': '<i class="fas fa-trash" style="color:#f44336"></i> Utente Eliminato'
     };
@@ -902,7 +923,13 @@ function formatDetails(details) {
     if (typeof details === 'object') {
         const parts = [];
         if (details.old_plan && details.new_plan) {
-            parts.push(`${capitalizeFirst(details.old_plan)} → ${capitalizeFirst(details.new_plan)}`);
+            parts.push(`Piano: ${planLabel(details.old_plan)} → ${planLabel(details.new_plan)}`);
+        }
+        if (details.old_role && details.new_role) {
+            parts.push(`Ruolo: ${details.old_role} → ${details.new_role}`);
+        }
+        if (details.subscription_ends_at) {
+            parts.push(`Scad: ${details.subscription_ends_at.slice(0,10)}`);
         }
         if (details.deleted_email) {
             parts.push(`Email: ${details.deleted_email}`);
@@ -1000,6 +1027,258 @@ function showToast(message, type = 'info') {
     toast.className = `toast ${type}`;
     toast.classList.add('show');
     setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// ===================================
+// SUBSCRIPTIONS MANAGEMENT
+// ===================================
+
+async function loadSubscriptions(page = 1) {
+    currentSubPage = page;
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const plan = document.getElementById('sub-plan-filter')?.value || '';
+    const statusFilter = document.getElementById('sub-status-filter')?.value || '';
+
+    try {
+        const params = new URLSearchParams({ page, per_page: 20, sort: 'subscription_ends_at', order: 'asc' });
+        if (plan) params.set('plan', plan);
+        // status mapping
+        if (statusFilter === 'active') params.set('status', 'active');
+        else if (statusFilter !== '') params.set('status', 'active'); // still fetch all, filter client-side
+
+        const response = await fetch(`${API_URL}/admin/users?${params}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            let users = data.users;
+
+            // Client-side filter by subscription status
+            const now = new Date();
+            const in7days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+            if (statusFilter === 'expiring') {
+                users = users.filter(u => {
+                    if (!u.subscription_ends_at) return false;
+                    const exp = new Date(u.subscription_ends_at);
+                    return exp > now && exp <= in7days;
+                });
+            } else if (statusFilter === 'expired') {
+                users = users.filter(u => {
+                    if (!u.subscription_ends_at) return false;
+                    return new Date(u.subscription_ends_at) < now;
+                });
+            } else if (statusFilter === 'active') {
+                users = users.filter(u => {
+                    if (u.plan === 'none') return false;
+                    if (!u.subscription_ends_at) return u.plan !== 'none';
+                    return new Date(u.subscription_ends_at) >= now;
+                });
+            }
+
+            // Compute stats
+            let annual = 0, monthly = 0, expiring = 0, expired = 0;
+            data.users.forEach(u => {
+                if (u.plan === 'annual') annual++;
+                if (u.plan === 'monthly') monthly++;
+                if (u.subscription_ends_at) {
+                    const exp = new Date(u.subscription_ends_at);
+                    if (exp < now) expired++;
+                    else if (exp <= in7days) expiring++;
+                }
+            });
+            document.getElementById('sub-annual-count').textContent = annual;
+            document.getElementById('sub-monthly-count').textContent = monthly;
+            document.getElementById('sub-expiring-count').textContent = expiring;
+            document.getElementById('sub-expired-count').textContent = expired;
+
+            renderSubscriptionsTable(users);
+            renderPagination(data.pagination, 'sub-pagination', loadSubscriptions);
+        }
+    } catch (error) {
+        console.error('Load subscriptions error:', error);
+        showToast('Errore nel caricamento abbonamenti', 'error');
+    }
+}
+
+function renderSubscriptionsTable(users) {
+    const tbody = document.getElementById('sub-tbody');
+    if (users.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:2rem">Nessun abbonamento trovato</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = users.map(user => {
+        const daysInfo = daysRemainingBadge(user.subscription_ends_at);
+        const expText = user.subscription_ends_at ? formatDate(user.subscription_ends_at) : '<span style="color:#9e9e9e">—</span>';
+        return `
+        <tr>
+            <td title="${escapeHtml(user.firstname)} ${escapeHtml(user.lastname)}">${escapeHtml(user.firstname)} ${escapeHtml(user.lastname)}</td>
+            <td title="${escapeHtml(user.email)}">${escapeHtml(user.email)}</td>
+            <td><span class="plan-badge ${user.plan}">${planLabel(user.plan)}</span></td>
+            <td>${expText}</td>
+            <td>${daysInfo}</td>
+            <td><span class="status-badge ${user.is_active ? 'active' : 'inactive'}">${user.is_active ? 'Attivo' : 'Disattivo'}</span></td>
+            <td>
+                <div class="action-buttons">
+                    <button class="btn-action view" onclick="viewUser(${user.id})" title="Dettagli"><i class="fas fa-eye"></i></button>
+                    <button class="btn-action edit" onclick="showExtendModal(${user.id},'${escapeHtml(user.firstname)} ${escapeHtml(user.lastname)}','${user.plan}','${user.subscription_ends_at || ''}')" title="Estendi/Modifica"><i class="fas fa-calendar-plus"></i></button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function daysRemainingBadge(subscription_ends_at) {
+    if (!subscription_ends_at) return '';
+    const now = new Date();
+    const exp = new Date(subscription_ends_at);
+    const days = Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
+    if (days < 0) return `<span style="color:#f44336;font-weight:600">Scaduto (${Math.abs(days)}gg fa)</span>`;
+    if (days <= 7) return `<span style="color:#ff9800;font-weight:600">${days} giorni</span>`;
+    if (days <= 30) return `<span style="color:#ffeb3b;font-weight:600">${days} giorni</span>`;
+    return `<span style="color:#4caf50;font-weight:600">${days} giorni</span>`;
+}
+
+function planLabel(plan) {
+    const labels = { none: 'Nessuno', monthly: 'Mensile', annual: 'Annuale' };
+    return labels[plan] || plan;
+}
+
+function exportSubscriptionsCSV() {
+    const rows = document.querySelectorAll('#sub-tbody tr');
+    const headers = ['Nome','Email','Piano','Scadenza','Stato'];
+    const lines = [headers.join(';')];
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 6) return;
+        const line = [
+            cells[0].textContent.trim(),
+            cells[1].textContent.trim(),
+            cells[2].textContent.trim(),
+            cells[3].textContent.trim(),
+            cells[5].textContent.trim()
+        ].map(v => `"${v.replace(/"/g,'""')}"`).join(';');
+        lines.push(line);
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `abbonamenti_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// ===================================
+// EXTEND SUBSCRIPTION MODAL
+// ===================================
+
+function showExtendModal(userId, userName, currentPlan, currentExpiry) {
+    selectedSubUserId = userId;
+    document.getElementById('extend-user-name').textContent = userName;
+    document.getElementById('extend-plan').value = currentPlan || 'monthly';
+    document.getElementById('extend-days').value = '';
+    // Pre-fill date
+    if (currentExpiry) {
+        const d = new Date(currentExpiry);
+        document.getElementById('extend-date').value = d.toISOString().slice(0, 10);
+    } else {
+        const def = new Date();
+        def.setMonth(def.getMonth() + 1);
+        document.getElementById('extend-date').value = def.toISOString().slice(0, 10);
+    }
+    document.getElementById('extend-sub-modal').classList.add('active');
+}
+
+function closeExtendModal() {
+    document.getElementById('extend-sub-modal').classList.remove('active');
+    selectedSubUserId = null;
+}
+
+async function confirmExtendSubscription() {
+    if (!selectedSubUserId) return;
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const newPlan = document.getElementById('extend-plan').value;
+    const daysInput = parseInt(document.getElementById('extend-days').value);
+    let newDate = document.getElementById('extend-date').value;
+
+    // If days provided, compute from today
+    if (!isNaN(daysInput) && daysInput > 0) {
+        const d = new Date();
+        d.setDate(d.getDate() + daysInput);
+        newDate = d.toISOString().slice(0, 10);
+    }
+
+    try {
+        // First change plan
+        const planResp = await fetch(`${API_URL}/admin/users/${selectedSubUserId}/change-plan`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan: newPlan, subscription_ends_at: newDate || null })
+        });
+        const planData = await planResp.json();
+
+        if (planData.success) {
+            showToast('Abbonamento aggiornato con successo', 'success');
+            closeExtendModal();
+            loadSubscriptions(currentSubPage);
+            loadStats();
+        } else {
+            showToast(planData.message || 'Errore aggiornamento abbonamento', 'error');
+        }
+    } catch (error) {
+        console.error('Extend subscription error:', error);
+        showToast('Errore durante operazione', 'error');
+    }
+}
+
+// ===================================
+// CHANGE ROLE MODAL
+// ===================================
+
+function showChangeRoleModal(userId, userName, currentRole) {
+    selectedRoleUserId = userId;
+    document.getElementById('role-user-name').textContent = userName;
+    document.getElementById('new-role-select').value = currentRole;
+    document.getElementById('change-role-modal').classList.add('active');
+}
+
+function closeChangeRoleModal() {
+    document.getElementById('change-role-modal').classList.remove('active');
+    selectedRoleUserId = null;
+}
+
+async function confirmChangeRole() {
+    if (!selectedRoleUserId) return;
+    const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+    const newRole = document.getElementById('new-role-select').value;
+
+    // Safety check: non togliere il ruolo admin a se stessi
+    if (selectedRoleUserId === currentUser?.id && newRole !== 'admin') {
+        showToast('Non puoi rimuovere il ruolo admin a te stesso', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/admin/users/${selectedRoleUserId}/change-role`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: newRole })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('Ruolo aggiornato con successo', 'success');
+            closeChangeRoleModal();
+            loadUsers(currentUsersPage);
+        } else {
+            showToast(data.message || 'Errore aggiornamento ruolo', 'error');
+        }
+    } catch (error) {
+        console.error('Change role error:', error);
+        showToast('Errore durante operazione', 'error');
+    }
 }
 
 function logout() {

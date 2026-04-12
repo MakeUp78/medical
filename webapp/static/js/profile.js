@@ -251,13 +251,24 @@ async function loadSubscriptionData() {
       document.getElementById('subscription-status').textContent = 'Non attivo';
     }
 
-    // Expiry
+    // Expiry + days remaining
     if (sub.subscription_ends_at) {
       const expiryDate = new Date(sub.subscription_ends_at);
-      document.getElementById('subscription-expiry').textContent =
-        `Scade il ${formatDate(expiryDate)}`;
+      const now = new Date();
+      const daysLeft = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));
+      let daysHtml = '';
+      if (daysLeft < 0) {
+        daysHtml = ` <span style="color:#f44336;font-weight:600">(Scaduto)</span>`;
+      } else if (daysLeft <= 7) {
+        daysHtml = ` <span style="color:#ff9800;font-weight:600">(${daysLeft} giorni rimasti)</span>`;
+      } else if (daysLeft <= 30) {
+        daysHtml = ` <span style="color:#ffeb3b;font-weight:600">(${daysLeft} giorni rimasti)</span>`;
+      } else {
+        daysHtml = ` <span style="color:#4caf50;font-size:.9em">(${daysLeft} giorni rimasti)</span>`;
+      }
+      document.getElementById('subscription-expiry').innerHTML =
+        `Scade il ${formatDate(expiryDate)}${daysHtml}`;
     } else if (sub.subscription_active && (sub.plan === 'monthly' || sub.plan === 'annual')) {
-      // Piano attivo senza scadenza specificata
       document.getElementById('subscription-expiry').textContent = 'Attivo';
     } else {
       document.getElementById('subscription-expiry').textContent = '-';
@@ -538,24 +549,8 @@ async function handleSettingsUpdate(e) {
 // ===================================
 
 function selectPlan(plan) {
-  // Reindirizza alla pagina di pagamento/prenotazione demo
-  const calendlyBaseUrl = 'https://calendly.com/kimerika/demo';
-
-  // Costruisci URL con parametri
-  const params = new URLSearchParams();
-  params.set('plan', plan);
-
-  if (currentUser && currentUser.email) {
-    params.set('email', currentUser.email);
-    params.set('name', `${currentUser.firstname} ${currentUser.lastname}`);
-  }
-
-  const calendlyUrl = `${calendlyBaseUrl}?${params.toString()}`;
-
-  // Apri Calendly
-  window.open(calendlyUrl, '_blank');
-
-  showToast(`Ti stiamo reindirizzando per attivare il piano ${getPlanName(plan)}...`, 'info');
+  // Porta l'utente alla landing page con il piano preselezionato per il pagamento PayPal
+  window.location.href = `landing.html?upgrade=${plan}#pricing`;
 }
 
 function cancelSubscription() {

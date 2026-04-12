@@ -10,18 +10,113 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
 import os
+import sys
+import signal
+import atexit
+import psutil
 import secrets
 from functools import wraps
+from pathlib import Path
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
+import threading
+import time
 
 # Carica variabili d'ambiente dal file .env
 load_dotenv()
 
 # OAuth libraries
 from authlib.integrations.flask_client import OAuth
+
+# ===================================
+# SINGLETON PROTECTION & DATABASE LOCK
+# ===================================
+
+PID_FILE = Path(__file__).parent / '.auth_server.pid'
+DB_INIT_LOCK = threading.Lock()
+DB_INIT_FLAG = False  # Indica se il database è stato inizializzato
+
+def check_singleton():
+    """
+    Verifica che non ci siano già istanze del server in esecuzione.
+    Previene il problema del doppio processo che fa fallire il primo login.
+    
+    NOTA: Salta il check se siamo nel processo reloader di Flask (debug mode)
+    per evitare false positive. Il reloader crea un processo figlio che
+    viene identificato dalla variabile WERKZEUG_RUN_MAIN.
+    """
+    # Se siamo nel processo reloader di Flask, salta il check
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        return
+    
+    # CONTROLLO PRIMARIO: Verifica se la porta 5000 è già in uso
+    # Questo è il metodo più affidabile per evitare istanze multiple
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(('0.0.0.0', 5000))
+        sock.close()
+    except OSError:
+        # Porta occupata - verifica se è il nostro server
+        print(f"❌ ERRORE: Porta 5000 già in uso!")
+        print(f"   Un'istanza di Auth Server è già in esecuzione.")
+        print(f"   Per terminare tutti i processi: python3 cleanup_servers.py auth")
+        sys.exit(1)
+    
+    # CONTROLLO SECONDARIO: Verifica PID file
+    if PID_FILE.exists():
+        try:
+            with open(PID_FILE, 'r') as f:
+                old_pid = int(f.read().strip())
+            
+            # Verifica se il processo esiste ancora
+            if psutil.pid_exists(old_pid):
+                try:
+                    proc = psutil.Process(old_pid)
+                    # Verifica che sia effettivamente auth_server.py
+                    cmdline = ' '.join(proc.cmdline())
+                    if 'auth_server.py' in cmdline:
+                        print(f"⚠ Warning: Auth server già in esecuzione (PID: {old_pid})")
+                        print(f"   Ma la porta 5000 è libera - possibile inconsistenza")
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    # Processo non esiste più, rimuovi PID file stantio
+                    PID_FILE.unlink()
+            else:
+                # PID file obsoleto, rimuovi
+                PID_FILE.unlink()
+        except (ValueError, IOError) as e:
+            print(f"⚠ Warning: PID file corrotto, lo rimuovo: {e}")
+            PID_FILE.unlink()
+    
+    # Scrivi il nuovo PID (solo nel processo principale)
+    try:
+        with open(PID_FILE, 'w') as f:
+            f.write(str(os.getpid()))
+        print(f"✅ Protezione singleton attiva (PID: {os.getpid()}, Porta: 5000)")
+    except IOError as e:
+        print(f"⚠ Warning: Impossibile creare PID file: {e}")
+
+def cleanup_pid_file():
+    """Rimuovi PID file alla chiusura"""
+    if PID_FILE.exists():
+        try:
+            PID_FILE.unlink()
+            print(f"🧹 PID file rimosso: {PID_FILE}")
+        except IOError:
+            pass
+
+def signal_handler(signum, frame):
+    """Handler per segnali di terminazione"""
+    print(f"\n⚠ Ricevuto segnale {signum}, chiusura in corso...")
+    cleanup_pid_file()
+    sys.exit(0)
+
+# Registra cleanup handlers
+atexit.register(cleanup_pid_file)
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
@@ -49,6 +144,43 @@ app.config['FROM_EMAIL'] = os.environ.get('FROM_EMAIL', 'noreply@kimerika.com')
 CORS(app)
 db = SQLAlchemy(app)
 oauth = OAuth(app)
+
+# ===================================
+# DATABASE SESSION CLEANUP MIDDLEWARE
+# ===================================
+
+@app.before_request
+def cleanup_db_session():
+    """
+    Middleware globale: pulisce la sessione database prima di ogni richiesta.
+    Risolve il problema PendingRollbackError che causa il doppio login.
+
+    Questo è il FIX DEFINITIVO per il problema del doppio login.
+    """
+    try:
+        # Se c'è una transazione sporca, esegui rollback
+        if db.session.is_active:
+            db.session.rollback()
+    except Exception as e:
+        # Se il rollback stesso fallisce, forza una nuova sessione
+        try:
+            db.session.close()
+            db.session = db.create_scoped_session()
+        except:
+            pass
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    """Pulizia sessione al termine della richiesta"""
+    try:
+        if exception is not None:
+            db.session.rollback()
+        else:
+            db.session.commit()
+    except:
+        db.session.rollback()
+    finally:
+        db.session.remove()
 
 # ===================================
 # DATABASE MODELS
@@ -289,6 +421,12 @@ def admin_required(f):
 @app.route('/api/auth/signup', methods=['POST'])
 def signup():
     """Registrazione nuovo utente"""
+    # CRITICO: Pulizia sessione da transazioni sporche
+    try:
+        db.session.rollback()
+    except:
+        pass
+
     try:
         data = request.get_json()
 
@@ -363,54 +501,135 @@ def signup():
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
-    """Login utente"""
+    """
+    Login utente con error handling robusto.
+    Gestisce race condition da processi duplicati e errori database.
+    """
+    request_id = secrets.token_hex(4)  # ID univoco per tracciamento
+    print(f"\n[{request_id}] 🔐 Inizio login request")
+
+    # CRITICO: Pulizia sessione da transazioni sporche (PendingRollbackError)
+    # Questo è il fix per il problema del doppio login
+    try:
+        db.session.rollback()  # Rollback qualsiasi transazione sporca
+        print(f"[{request_id}] 🧹 Sessione database pulita")
+    except Exception as cleanup_err:
+        print(f"[{request_id}] ⚠️  Errore cleanup sessione: {cleanup_err}")
+
     try:
         data = request.get_json()
+
+        if not data:
+            print(f"[{request_id}] ❌ JSON payload vuoto")
+            return jsonify({
+                'success': False,
+                'message': 'Payload JSON richiesto'
+            }), 400
 
         email = data.get('email', '').lower().strip()
         password = data.get('password', '')
 
         if not email or not password:
+            print(f"[{request_id}] ❌ Email o password mancanti")
             return jsonify({
                 'success': False,
                 'message': 'Email e password richiesti'
             }), 400
 
-        # Trova utente
-        user = User.query.filter_by(email=email).first()
+        print(f"[{request_id}] 🔍 Ricerca utente: {email}")
 
-        if not user or not user.check_password(password):
+        # Retry logic per gestire race condition
+        max_retries = 3
+        user = None
+        for attempt in range(max_retries):
+            try:
+                user = User.query.filter_by(email=email).first()
+                break
+            except Exception as db_err:
+                print(f"[{request_id}] ⚠️  Errore query DB (tentativo {attempt + 1}): {db_err}")
+                if attempt < max_retries - 1:
+                    time.sleep(0.5)
+                else:
+                    raise
+
+        if not user:
+            print(f"[{request_id}] ❌ Utente non trovato: {email}")
             return jsonify({
                 'success': False,
                 'message': 'Credenziali non valide'
             }), 401
 
+        print(f"[{request_id}] ✅ Utente trovato: {user.firstname} {user.lastname}")
+
+        # Verifica password
+        if not user.check_password(password):
+            print(f"[{request_id}] ❌ Password non corretta")
+            return jsonify({
+                'success': False,
+                'message': 'Credenziali non valide'
+            }), 401
+
+        print(f"[{request_id}] ✅ Password corretta")
+
+        # Verifica stato account
         if not user.is_active:
+            print(f"[{request_id}] ❌ Account disabilitato")
             return jsonify({
                 'success': False,
                 'message': 'Account disabilitato'
             }), 401
 
-        # Aggiorna last login
-        user.last_login = datetime.datetime.utcnow()
-        db.session.commit()
+        # Aggiorna last login con retry
+        print(f"[{request_id}] 📝 Aggiornamento last_login...")
+        for attempt in range(max_retries):
+            try:
+                user.last_login = datetime.datetime.utcnow()
+                db.session.commit()
+                print(f"[{request_id}] ✅ Last login aggiornato")
+                break
+            except Exception as commit_err:
+                print(f"[{request_id}] ⚠️  Errore commit (tentativo {attempt + 1}): {commit_err}")
+                db.session.rollback()
+                if attempt < max_retries - 1:
+                    time.sleep(0.5)
+                else:
+                    # Non fallire il login se last_login non si aggiorna
+                    print(f"[{request_id}] ⚠️  Last login non aggiornato, continuo...")
 
         # Genera token
+        print(f"[{request_id}] 🔑 Generazione token...")
         token = generate_token(user.id)
 
+        print(f"[{request_id}] ✅ Login completato con successo")
         return jsonify({
             'success': True,
             'message': 'Login effettuato con successo',
             'token': token,
             'user': user.to_dict()
-        })
+        }), 200
 
     except Exception as e:
-        print(f"Login error: {e}")
+        print(f"[{request_id}] ❌ ERRORE LOGIN: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+
+        # Determina il tipo di errore
+        error_msg = 'Errore durante il login'
+        status_code = 500
+
+        if 'database' in str(e).lower() or 'connection' in str(e).lower():
+            error_msg = 'Errore connessione database - riprova tra poco'
+            status_code = 503
+            print(f"[{request_id}] 💥 PROBLEMA DATABASE - Possibile doppio processo auth_server!")
+        elif 'operational' in str(e).lower():
+            error_msg = 'Database non disponibile'
+            status_code = 503
+
         return jsonify({
             'success': False,
-            'message': 'Errore durante il login'
-        }), 500
+            'message': error_msg,
+            'error_id': request_id  # Permette al client di riportare l'ID per debugging
+        }), status_code
 
 
 @app.route('/api/auth/verify', methods=['GET'])
@@ -1289,12 +1508,23 @@ def change_user_plan(admin, user_id):
         }
         user.analyses_limit = plan_limits.get(new_plan, 0)
 
+        # Update subscription_ends_at if provided
+        new_expiry = data.get('subscription_ends_at')
+        if new_expiry is not None:
+            if new_expiry == '' or new_expiry is None:
+                user.subscription_ends_at = None
+            else:
+                try:
+                    user.subscription_ends_at = datetime.datetime.strptime(new_expiry[:10], '%Y-%m-%d')
+                except ValueError:
+                    pass
+
         # Log action
         log = AdminAuditLog(
             admin_id=admin.id,
             action='plan_changed',
             target_user_id=user.id,
-            details={'old_plan': old_plan, 'new_plan': new_plan},
+            details={'old_plan': old_plan, 'new_plan': new_plan, 'subscription_ends_at': new_expiry},
             ip_address=request.remote_addr
         )
         db.session.add(log)
@@ -1308,6 +1538,50 @@ def change_user_plan(admin, user_id):
     except Exception as e:
         db.session.rollback()
         print(f"Change plan error: {e}")
+        return jsonify({'success': False, 'message': 'Errore durante operazione'}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>/change-role', methods=['POST'])
+@admin_required
+def change_user_role(admin, user_id):
+    """Cambia ruolo utente (user/admin)"""
+    try:
+        data = request.get_json()
+        new_role = data.get('role')
+
+        valid_roles = ['user', 'admin']
+        if new_role not in valid_roles:
+            return jsonify({'success': False, 'message': 'Ruolo non valido. Ruoli disponibili: user, admin'}), 400
+
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'Utente non trovato'}), 404
+
+        # Non permettere di rimuovere il ruolo admin a se stessi
+        if user.id == admin.id and new_role != 'admin':
+            return jsonify({'success': False, 'message': 'Non puoi rimuovere il ruolo admin a te stesso'}), 403
+
+        old_role = user.role
+        user.role = new_role
+
+        log = AdminAuditLog(
+            admin_id=admin.id,
+            action='role_changed',
+            target_user_id=user.id,
+            details={'old_role': old_role, 'new_role': new_role},
+            ip_address=request.remote_addr
+        )
+        db.session.add(log)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': f'Ruolo aggiornato a {new_role}',
+            'user': user.to_dict()
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Change role error: {e}")
         return jsonify({'success': False, 'message': 'Errore durante operazione'}), 500
 
 
@@ -1619,13 +1893,77 @@ def send_password_reset_email(user, token):
 # ===================================
 
 def init_db():
-    """Inizializza database"""
-    with app.app_context():
-        db.create_all()
-        print("✅ Database inizializzato")
+    """
+    Inizializza database in modo thread-safe con retry logic.
+    Evita race condition su database PostgreSQL/MySQL condivisi.
+    """
+    global DB_INIT_FLAG
+
+    # Se è già stato inizializzato, salta
+    if DB_INIT_FLAG:
+        return True
+
+    # Usa lock per evitare race condition tra processi
+    with DB_INIT_LOCK:
+        # Doppio check nel lock
+        if DB_INIT_FLAG:
+            return True
+
+        max_retries = 3
+        retry_count = 0
+        last_error = None
+
+        while retry_count < max_retries:
+            try:
+                with app.app_context():
+                    print(f"🔧 Inizializzazione database (tentativo {retry_count + 1}/{max_retries})...")
+
+                    # Verifica connessione database
+                    try:
+                        db.session.execute("SELECT 1")
+                        db.session.commit()
+                        print("✅ Connessione database verificata")
+                    except Exception as conn_err:
+                        print(f"⚠️  Errore connessione: {conn_err}")
+                        db.session.rollback()
+
+                    # Crea tabelle
+                    db.create_all()
+                    print("✅ Database inizializzato correttamente")
+
+                    DB_INIT_FLAG = True
+                    return True
+
+            except Exception as e:
+                last_error = e
+                retry_count += 1
+                print(f"⚠️  Errore init database (tentativo {retry_count}/{max_retries}): {e}")
+
+                if retry_count < max_retries:
+                    wait_time = 2 ** retry_count  # Exponential backoff: 2, 4, 8 secondi
+                    print(f"⏳ Riprovo tra {wait_time} secondi...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"❌ ERRORE FATALE: Database non raggiungibile dopo {max_retries} tentativi")
+                    print(f"   Causa: {last_error}")
+                    print(f"   Verifica:")
+                    print(f"   1. DATABASE_URL configurata in .env")
+                    print(f"   2. Database server è online e raggiungibile")
+                    print(f"   3. Credenziali database corrette")
+
+                    # Non terminare, permetti al server di partire anche senza DB
+                    # (potrebbe essere usato solo per verifiche o demo)
+                    print(f"⚠️  Procedo comunque (funzionalità database degradate)")
+                    DB_INIT_FLAG = True
+                    return False
+
+        return False
 
 
 if __name__ == '__main__':
+    # PROTEZIONE SINGLETON - Previene istanze multiple che causano errori di login
+    check_singleton()
+    
     init_db()
 
     print("🚀 Kimerika Evolution Auth Server")

@@ -982,6 +982,36 @@
         } else {
             initPayPalButtons();
         }
+
+        // Scroll automatico alla sezione prezzi se arriva da profile.html con ?upgrade=
+        (function () {
+            const params = new URLSearchParams(window.location.search);
+            const upgradePlan = params.get('upgrade');
+            if (upgradePlan) {
+                document.addEventListener('DOMContentLoaded', function () {
+                    setTimeout(function () {
+                        const pricingEl = document.getElementById('pricing') || document.querySelector('[id*="pricing"], [id*="piani"], .pricing-section, .plans-section');
+                        if (pricingEl) pricingEl.scrollIntoView({ behavior: 'smooth' });
+                        history.replaceState(null, '', window.location.pathname);
+                    }, 400);
+                });
+            }
+        })();
+
+        // Mostra banner se l'utente è stato rimandato qui perché non ha un abbonamento attivo
+        (function () {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('accesso') === 'richiesto-abbonamento') {
+                document.addEventListener('DOMContentLoaded', function () {
+                    const banner = document.createElement('div');
+                    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#c0392b;color:#fff;text-align:center;padding:14px 20px;font-size:1rem;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+                    banner.innerHTML = '&#9888;&#65039; Accesso riservato agli abbonati. Scegli un piano per continuare. <button onclick="this.parentElement.remove()" style="margin-left:16px;background:transparent;border:1px solid #fff;color:#fff;cursor:pointer;padding:2px 10px;border-radius:4px;">&#x2715;</button>';
+                    document.body.prepend(banner);
+                    // Pulisce il parametro dall'URL senza ricaricare la pagina
+                    history.replaceState(null, '', window.location.pathname);
+                });
+            }
+        })();
     </script>
 
     <script src="static/js/landing.js"></script>

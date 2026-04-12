@@ -245,11 +245,25 @@ def start_web_server():
     try:
         # Cambia directory alla root del progetto
         os.chdir(os.path.dirname(os.path.abspath(__file__)))
-        
-        # Trova una porta libera
-        port = find_free_port()
-        if not port:
-            print("❌ Nessuna porta disponibile nel range 3000-3009")
+
+        # IMPORTANTE: usa sempre la porta 3000 come default
+        # Non cercare altre porte (5000 è riservata per auth_server)
+        # Se 3000 è occupata, c'è un vero conflitto da risolvere
+        port = 3000
+
+        # Verifica se la porta è disponibile
+        import socket
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('0.0.0.0', port))
+        except OSError:
+            print(f"❌ ERRORE: La porta {port} è già in uso!")
+            print(f"   auth_server.py usa la porta 5000")
+            print(f"   webapp deve usare la porta 3000")
+            print(f"   Per risolvere:")
+            print(f"   1. Verifica processi: ps aux | grep -E '(python|node|java)'")
+            print(f"   2. Cleanup server: python3 cleanup_servers.py force")
+            print(f"   3. Riavvia: ./restart_all.sh")
             return
         
         # Crea server HTTP
